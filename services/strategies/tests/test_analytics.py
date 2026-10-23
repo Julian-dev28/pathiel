@@ -6,6 +6,7 @@ conftest.py's make_candles/make_candles_ohlc.
 from __future__ import annotations
 
 import math
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -365,6 +366,99 @@ def test_cost_frac_matches_taker_plus_signed_funding():
     assert cost_short == pytest.approx(taker - funding_leg)
 
 
+# ── instrument structure (candle-derived, primaries only) ─────────────────
+
+def test_hourly_closed_excludes_the_still_forming_bar():
+    start = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    candles = make_candles([100.0, 101.0, 102.0], start=start, step=timedelta(hours=1))
+    now_ms = int((start + timedelta(hours=2, minutes=30)).timestamp() * 1000)  # mid the 3rd bar
+    closed = A._hourly_closed(candles, now_ms)
+    assert [c.c for c in closed] == [100.0, 101.0]   # the 3rd bar is still forming
+
+
+def test_hourly_closed_includes_a_bar_exactly_on_its_close_boundary():
+    start = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    candles = make_candles([100.0], start=start, step=timedelta(hours=1))
+    now_ms = int((start + timedelta(hours=1)).timestamp() * 1000)   # exactly HOUR_MS later
+    assert len(A._hourly_closed(candles, now_ms)) == 1
+
+
+def test_build_instrument_structure_hand_computed():
+    """50 hourly bars, constant true range of 2.0 (same construction as
+    test_atr14_pct_hand_computed_constant_range), `now` 30 min into the 50th
+    bar's hour so bars 0..48 (49 bars) are closed and bar 49 is still
+    forming. Every number here is recomputed independently from `rows`,
+    not copied from the function under test."""
+    start = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    rows = [{"o": 100.0 + i, "h": 101.0 + i, "l": 99.0 + i, "c": 100.0 + i} for i in range(50)]
+    candles = make_candles_ohlc(rows, start=start, step=timedelta(hours=1))
+    now = start + timedelta(hours=49, minutes=30)
+    mid = 123.456   # the live mid need not equal the last closed candle's close
+
+    st = A.build_instrument_structure("XYZ", candles, mid, now)
+    assert st is not None and st.coin == "XYZ" and st.mid == mid
+
+    closed_rows = rows[:49]   # bars 0..48
+    last = closed_rows[-1]
+    assert st.last_closed_1h.open == last["o"]
+    assert st.last_closed_1h.high == last["h"]
+    assert st.last_closed_1h.low == last["l"]
+    assert st.last_closed_1h.close == last["c"]
+    assert st.last_closed_1h.closed_at == start + timedelta(hours=49)   # bar 48 closes at hour 49
+
+    def rng(n):
+        window = closed_rows[-n:]
+        return max(r["h"] for r in window), min(r["l"] for r in window)
+
+    assert (st.range_8h.high, st.range_8h.low) == rng(8)
+    assert (st.range_24h.high, st.range_24h.low) == rng(24)
+    assert (st.range_48h.high, st.range_48h.low) == rng(48)
+
+    # atr14_1h_pct reuses the daily atr14_pct() helper verbatim on the closed
+    # hourly bars, so it divides by the LAST CLOSED bar's close, not the live
+    # mid - true range is a constant 2.0 every bar by construction.
+    assert st.atr14_1h_pct == pytest.approx(2.0 / last["c"])
+
+    hi, lo = rng(24)
+    assert st.mid_pos_in_24h == pytest.approx(round((mid - lo) / (hi - lo), 3))
+
+
+def test_build_instrument_structure_no_closed_bars_is_none():
+    start = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    candles = make_candles([100.0], start=start, step=timedelta(hours=1))
+    now = start + timedelta(minutes=10)   # the only bar is still forming
+    assert A.build_instrument_structure("XYZ", candles, 100.0, now) is None
+
+
+def test_build_instrument_structure_empty_hourly_is_none():
+    assert A.build_instrument_structure("XYZ", [], 100.0, datetime.now(timezone.utc)) is None
+
+
+def test_build_instrument_structure_short_history_skips_atr_and_mid_pos():
+    """Fewer than 15 closed bars: atr14_1h_pct is None (atr14_pct's own
+    floor), but the ranges and last_closed_1h still resolve from whatever is
+    there - partial structure beats no structure."""
+    start = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    candles = make_candles([100.0, 101.0, 102.0, 103.0], start=start, step=timedelta(hours=1))
+    now = start + timedelta(hours=3, minutes=30)
+    st = A.build_instrument_structure("XYZ", candles, 103.0, now)
+    assert st is not None
+    assert st.atr14_1h_pct is None
+    assert st.range_8h is not None and st.last_closed_1h is not None
+
+
+def test_build_instrument_structure_flat_range_leaves_mid_pos_none():
+    """A flat 24h range (high == low) can't place mid anywhere in it -
+    mid_pos_in_24h must stay None rather than divide by zero."""
+    start = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    candles = make_candles([100.0] * 30, start=start, step=timedelta(hours=1), wiggle=0.0)
+    now = start + timedelta(hours=29, minutes=30)
+    st = A.build_instrument_structure("XYZ", candles, 100.0, now)
+    assert st is not None
+    assert st.range_24h.high == st.range_24h.low == 100.0
+    assert st.mid_pos_in_24h is None
+
+
 # ── build_analytics entrypoint (desk-level, fully injected) ────────────────
 
 def test_build_analytics_end_to_end_with_fakes():
@@ -402,6 +496,56 @@ def test_build_analytics_end_to_end_with_fakes():
     assert levs_a == {5.0, 10.0}
     assert not any(r.coin == "B" for r in result.ladder)   # B is secondary, no ladder
     assert result.account.equity_usd == 500.0
+
+
+def test_build_analytics_builds_structure_for_primary_only():
+    from contracts.strategies.models import AccountSnapshot, DeskSpec, Instrument as Instr
+
+    spec = DeskSpec(
+        id="t3", name="Test3", tagline="t",
+        instruments=[Instr(coin="A", label="A", role="primary"),
+                    Instr(coin="B", label="B", role="secondary")],
+        leverage_ladder=[5], horizon_days=7,
+    )
+    daily_a = make_candles([100.0 + 0.1 * i for i in range(40)], wiggle=0.01)
+    daily_b = make_candles([50.0 + 0.05 * i for i in range(40)], wiggle=0.01)
+    start = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    hourly_a = make_candles([100.0 + 0.01 * i for i in range(30)], start=start,
+                            step=timedelta(hours=1), wiggle=0.002)
+
+    def fetcher(coin, interval, count):
+        if interval == "1h":
+            assert coin == "A", "only the primary should ever be asked for hourly bars"
+            return hourly_a
+        return {"A": daily_a, "B": daily_b}[coin]
+
+    result = A.build_analytics(spec, candle_fetcher=fetcher, meta_fetcher=lambda: {
+        "A": flat_meta(max_leverage=20), "B": flat_meta(max_leverage=10),
+    }, account_fetcher=lambda: AccountSnapshot(equity_usd=500.0, source="assumed"))
+
+    assert [s.coin for s in result.structure] == ["A"]
+    assert result.structure[0].mid == next(s.mid for s in result.instruments if s.coin == "A")
+
+
+def test_build_analytics_notes_a_failed_hourly_fetch_without_sinking_the_desk():
+    from contracts.strategies.models import AccountSnapshot, DeskSpec, Instrument as Instr
+
+    spec = DeskSpec(id="t4", name="Test4", tagline="t",
+                    instruments=[Instr(coin="A", label="A", role="primary")],
+                    leverage_ladder=[5], horizon_days=7)
+    daily_a = make_candles([100.0 + 0.1 * i for i in range(40)], wiggle=0.01)
+
+    def fetcher(coin, interval, count):
+        if interval == "1h":
+            raise RuntimeError("venue timeout")
+        return daily_a
+
+    result = A.build_analytics(spec, candle_fetcher=fetcher,
+                               meta_fetcher=lambda: {"A": flat_meta(max_leverage=20)},
+                               account_fetcher=lambda: AccountSnapshot(equity_usd=500.0))
+    assert result.structure == []
+    assert any("insufficient hourly history" in n for n in result.notes)
+    assert result.instruments, "a failed hourly fetch must not blank the rest of the desk"
 
 
 def test_build_analytics_notes_missing_candles():

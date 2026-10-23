@@ -66,6 +66,29 @@ def _next_catalyst(thesis: Thesis, now: Optional[datetime] = None) -> Optional[C
     return min(pool, key=lambda c: c.at)
 
 
+def _r_line(thesis: Thesis) -> Optional[str]:
+    """"Pays X.XR to <first target>" - the reward:risk the operator would
+    otherwise only see by opening sizing. Reuses
+    pathiel.agents.bracket.check_levels (the same function place_bracket
+    runs, and the one services/strategies/call_line.py's r_gate already
+    uses) rather than recomputing R here - one definition of R multiple for
+    the desk, the dashboard's 20x line, and the executor. None (no line) for
+    a flat/pair call, a call missing entry/stop/targets, or one whose
+    entry/stop/target do not form a valid bracket at all - check_stop_side
+    and check_targets_consistent are what report THAT problem."""
+    call = thesis.call
+    if call.side not in ("long", "short") or call.entry_px is None or call.stop_px is None or not call.targets:
+        return None
+    from pathiel.agents.bracket import check_levels
+
+    first_tp = call.targets[0]
+    gate = check_levels(call.entry_px, call.stop_px, first_tp)
+    r = gate.get("r_multiple")
+    if r is None:
+        return None
+    return f"Pays {r:.1f}R to {first_tp:g}"
+
+
 def decision_word(thesis: Thesis) -> str:
     """One word: what to actually do. Pure function of the call's side and
     the ladder verdict for the leverage rung the call picked - never a fresh
@@ -101,14 +124,17 @@ def _render_quick(thesis: Thesis) -> str:
     else:
         cat_line = "Next catalyst: none scheduled"
 
-    return "\n".join([
-        thesis.call.one_liner,
-        lev_line,
+    lines = [thesis.call.one_liner, lev_line]
+    r_line = _r_line(thesis)
+    if r_line is not None:
+        lines.append(r_line)
+    lines += [
         f"Out if: {thesis.call.invalidation}",
         risk_line,
         cat_line,
         f"Decision: {decision_word(thesis)}",
-    ])
+    ]
+    return "\n".join(lines)
 
 
 # -- full -------------------------------------------------------------------

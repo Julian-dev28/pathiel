@@ -38,8 +38,9 @@ from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional, Sequence
 
 from contracts.strategies.models import (
-    AccountSnapshot, ConditionalStats, DeskAnalytics, DeskSpec, ForwardStats,
-    Instrument, InstrumentSnapshot, LadderRung, PairSnapshot, Quantiles, Side,
+    AccountSnapshot, CandleBar, ConditionalStats, DeskAnalytics, DeskSpec, ForwardStats,
+    Instrument, InstrumentSnapshot, InstrumentStructure, LadderRung, PairSnapshot, PriceRange,
+    Quantiles, Side,
 )
 from pathiel.client.rate_limit import carry_priority
 from pathiel.models.types import Candle
@@ -51,6 +52,10 @@ logger = logging.getLogger(__name__)
 TAKER_FEE = 0.00045                  # HL taker fee, per side, per the MCP liquidation note
 STOP_FRACTION_OF_LIQ = 0.60          # suggested stop = 60% of the distance to liquidation
 DAILY_CANDLE_COUNT = 400             # history depth requested; HL returns whatever it actually has
+HOUR_MS = 3_600_000
+# 48h range + ATR14 (needs 15 closed bars) + a cushion for the currently-open
+# bar the venue always includes as the last row of a candleSnapshot request.
+HOURLY_CANDLE_COUNT = 60
 MIN_WINDOWS_FOR_FORWARD_STATS = 10   # below this, forward stats / ladder are too thin to trust
 CONDITIONAL_LOOKBACK_DAYS = 5
 CONDITIONAL_MOVE_THRESHOLD = 0.05
@@ -252,6 +257,62 @@ def _fnum(v: Any) -> Optional[float]:
         return float(v)
     except (TypeError, ValueError):
         return None
+
+
+# ── instrument structure (candle-derived price structure, primaries only) ────
+#
+# Same numbers services/strategies/levels.py::summarize computes for the oil
+# dashboard (mid, last closed 1h candle, 8h/24h/48h range, ATR14 on 1h, mid
+# position in the 24h range), rebuilt here on the injectable Candle shape
+# (coin, interval, count) -> Sequence[Candle] this module already uses for
+# daily bars, instead of levels.py's own raw-HL-dict shape (which carries a
+# "T" close-time field this Candle type does not) - so build_analytics stays
+# fully offline-testable and this never reaches for the network itself.
+
+
+def _hourly_closed(hourly: Sequence[Candle], now_ms: int) -> List[Candle]:
+    """Candles whose hour has fully elapsed. Candle.t is the bar's OPEN time
+    (ms); a 1h bar closes HOUR_MS after it opens. A candleSnapshot request
+    ending "now" always includes the still-forming bar as its last row, and
+    that bar's high/low are still moving - it must never anchor a stop or a
+    range, same rule levels.py's own closed_only enforces on HL's "T" field."""
+    return [c for c in hourly if c.t + HOUR_MS <= now_ms]
+
+
+def _price_range(candles: Sequence[Candle]) -> Optional[PriceRange]:
+    if not candles:
+        return None
+    return PriceRange(high=max(c.h for c in candles), low=min(c.l for c in candles))
+
+
+def build_instrument_structure(coin: str, hourly: Sequence[Candle], mid: float,
+                               now: datetime) -> Optional[InstrumentStructure]:
+    """Deterministic candle-derived price structure for one primary
+    instrument. None if there is not even one closed 1h bar - the caller
+    should note why and drop the entry, never fabricate a structure from an
+    empty read."""
+    now_ms = int(now.timestamp() * 1000)
+    closed = _hourly_closed(hourly, now_ms)
+    if not closed:
+        return None
+    last = closed[-1]
+    r24 = _price_range(closed[-24:])
+    structure = InstrumentStructure(
+        coin=coin, mid=mid,
+        last_closed_1h=CandleBar(
+            open=last.o, high=last.h, low=last.l, close=last.c,
+            closed_at=datetime.fromtimestamp((last.t + HOUR_MS) / 1000.0, tz=timezone.utc),
+        ),
+        range_8h=_price_range(closed[-8:]),
+        range_24h=r24,
+        range_48h=_price_range(closed[-48:]),
+        atr14_1h_pct=atr14_pct(closed),
+    )
+    if r24 is not None and r24.high > r24.low:
+        structure = structure.model_copy(update={
+            "mid_pos_in_24h": round((mid - r24.low) / (r24.high - r24.low), 3),
+        })
+    return structure
 
 
 # ── pair snapshot ─────────────────────────────────────────────────────────────
@@ -552,6 +613,13 @@ def build_analytics(spec: DeskSpec, *, candle_fetcher: Optional[CandleFetcher] =
     (stored_candle_fetcher); `candle_max_age_s` is how old a stored daily
     series may be before its tail is re-fetched (None = the store default,
     0 = always re-fetch the tail, which is what a thesis refresh wants).
+
+    A second, equally parallel round of fetches asks the SAME
+    `candle_fetcher` for `interval="1h"` bars, one request per PRIMARY
+    instrument only - stored_candle_fetcher routes anything but "1d"
+    straight past the disk store to the live venue, same as any other
+    non-daily interval this codebase already requests. Feeds
+    `build_instrument_structure`, stored on `DeskAnalytics.structure`.
     """
     candle_fetcher = candle_fetcher or stored_candle_fetcher(candle_max_age_s)
     meta_fetcher = meta_fetcher or default_meta_fetcher
@@ -595,8 +663,22 @@ def build_analytics(spec: DeskSpec, *, candle_fetcher: Optional[CandleFetcher] =
 
     forward: List[ForwardStats] = []
     ladder: List[LadderRung] = []
+    structure: List[InstrumentStructure] = []
     account = account_fetcher()
     primaries = [i for i in spec.instruments if i.role == "primary"]
+
+    hourly_by_coin: Dict[str, Sequence[Candle]] = {}
+    if primaries:
+        with ThreadPoolExecutor(max_workers=max(1, min(8, len(primaries)))) as pool:
+            fetch = carry_priority(candle_fetcher)
+            futures = {p.coin: pool.submit(fetch, p.coin, "1h", HOURLY_CANDLE_COUNT) for p in primaries}
+            for coin, fut in futures.items():
+                try:
+                    hourly_by_coin[coin] = fut.result()
+                except Exception as exc:  # noqa: BLE001 - structure is best-effort, never sinks the desk
+                    logger.warning(f"[strategies.analytics] hourly candle fetch failed for {coin}: {exc}")
+                    hourly_by_coin[coin] = []
+
     for instrument in primaries:
         daily = daily_by_coin.get(instrument.coin) or []
         fs = build_forward_stats(instrument.coin, daily, spec.horizon_days)
@@ -607,6 +689,15 @@ def build_analytics(spec: DeskSpec, *, candle_fetcher: Optional[CandleFetcher] =
             forward.append(fs)
 
         snap = next((s for s in instruments if s.coin == instrument.coin), None)
+
+        if snap is not None:
+            st = build_instrument_structure(instrument.coin, hourly_by_coin.get(instrument.coin) or [],
+                                            snap.mid, now)
+            if st is None:
+                notes.append(f"insufficient hourly history for {instrument.coin} structure")
+            else:
+                structure.append(st)
+
         max_lev = snap.max_leverage if snap else None
         funding = snap.funding_hourly if snap else None
         if max_lev is None:
@@ -621,5 +712,5 @@ def build_analytics(spec: DeskSpec, *, candle_fetcher: Optional[CandleFetcher] =
 
     return DeskAnalytics(
         desk_id=spec.id, as_of=now, instruments=instruments, pairs=pairs,
-        forward=forward, ladder=ladder, account=account, notes=notes,
+        forward=forward, ladder=ladder, structure=structure, account=account, notes=notes,
     )

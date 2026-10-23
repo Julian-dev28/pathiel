@@ -1,5 +1,5 @@
 {
-  "contract_version": "1.0.0",
+  "contract_version": "1.1.0",
   "desk_id": "oil",
   "as_of": "2026-10-17T02:10:00Z",
   "instruments": [
@@ -184,6 +184,33 @@
       "stop_px": 97.81,
       "p_stop": 0.248,
       "verdict": "avoid"
+    }
+  ],
+  "structure": [
+    {
+      "coin": "xyz:CL",
+      "mid": 99.339,
+      "last_closed_1h": {
+        "open": 99.2,
+        "high": 99.42,
+        "low": 99.05,
+        "close": 99.339,
+        "closed_at": "2026-10-17T02:00:00Z"
+      },
+      "range_8h": {
+        "high": 99.6,
+        "low": 98.6
+      },
+      "range_24h": {
+        "high": 100.1,
+        "low": 96.8
+      },
+      "range_48h": {
+        "high": 100.1,
+        "low": 95.5
+      },
+      "atr14_1h_pct": 0.0062,
+      "mid_pos_in_24h": 0.769
     }
   ],
   "account": {

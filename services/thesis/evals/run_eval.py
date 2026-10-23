@@ -21,15 +21,21 @@ from __future__ import annotations
 
 import sys
 from datetime import timedelta
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from contracts.strategies.fixtures import _build as oil_fixture
 from contracts.strategies.models import DeskAnalytics, DeskSpec, IntelPacket, Thesis
-from services.thesis import write_thesis
+from services.thesis import desk_lookup, write_thesis
 from services.thesis.evals.btc_fixture import build_btc_packet
 from services.thesis.validator import validate_thesis
 
 THRESHOLD = 0.85
+
+# Stop-sanity cap for stop_within_2_atr: the daily InstrumentSnapshot.atr14_pct
+# convention this codebase uses everywhere else (the market snapshot table,
+# check_entry_near_mid's band) - a second, looser opinion on the generated
+# call's stop distance alongside check_r_multiple's hard ladder-relative gate.
+MAX_STOP_ATR_MULTIPLE = 2.0
 
 _CHECK_NAMES = (
     "validator_pass",
@@ -39,7 +45,38 @@ _CHECK_NAMES = (
     "invalidation_present",
     "catalysts_in_horizon",
     "tokens_within_budget",
+    "r_gate_pass",
+    "stop_within_2_atr",
 )
+
+
+def call_r_multiple(thesis: Thesis) -> Optional[float]:
+    """R multiple to the call's first target, via
+    pathiel.agents.bracket.check_levels - the same function
+    services/thesis/validator.py's check_r_multiple and
+    services/thesis/render.py's quick-mode R line both use. None when
+    there's nothing to compute it from (flat/pair call, no stop, no
+    target)."""
+    call = thesis.call
+    if call.side not in ("long", "short") or call.entry_px is None or call.stop_px is None or not call.targets:
+        return None
+    from pathiel.agents.bracket import check_levels
+
+    return check_levels(call.entry_px, call.stop_px, call.targets[0]).get("r_multiple")
+
+
+def stop_distance_in_atr(thesis: Thesis, analytics: DeskAnalytics) -> Optional[float]:
+    """The call's stop distance from entry, as a multiple of the primary
+    instrument's daily ATR14 (InstrumentSnapshot.atr14_pct). None when
+    there's no stop/entry or no ATR to divide by."""
+    call = thesis.call
+    if call.side not in ("long", "short") or call.entry_px is None or call.stop_px is None:
+        return None
+    snap = desk_lookup.find_instrument(call.instrument, analytics)
+    if snap is None or not snap.atr14_pct:
+        return None
+    stop_dist_pct = abs(call.entry_px - call.stop_px) / call.entry_px
+    return stop_dist_pct / snap.atr14_pct
 
 
 def score_thesis(
@@ -47,6 +84,8 @@ def score_thesis(
 ) -> Dict[str, Any]:
     errors = validate_thesis(thesis, spec, analytics, intel)
     grounding_errors = [e for e in errors if "not grounded" in e]
+    r_errors = [e for e in errors if "pays" in e and "R to its first target" in e]
+    ladder_stop_errors = [e for e in errors if "wider than the" in e and "ladder rung" in e]
 
     horizon_end = thesis.created_at + timedelta(days=thesis.horizon_days)
     catalysts_in_horizon = (
@@ -62,6 +101,9 @@ def score_thesis(
         and out_tok <= spec.token_budget.max_output_tokens
     )
 
+    r_multiple = call_r_multiple(thesis)
+    stop_atr_multiple = stop_distance_in_atr(thesis, analytics)
+
     checks = {
         "validator_pass": not errors,
         "numbers_grounded": not grounding_errors,
@@ -70,9 +112,17 @@ def score_thesis(
         "invalidation_present": bool(thesis.call.invalidation.strip()),
         "catalysts_in_horizon": catalysts_in_horizon,
         "tokens_within_budget": tokens_within_budget,
+        # Root-cause check for the 2026-10-23 live Brent bug: the generated
+        # call must actually pay a real R, and never widen its stop past the
+        # chosen leverage's ladder limit. True when there's nothing to gate
+        # (flat call) - score_thesis never fails a flat call on a check
+        # that doesn't apply to it.
+        "r_gate_pass": not r_errors and not ladder_stop_errors,
+        "stop_within_2_atr": stop_atr_multiple is None or stop_atr_multiple <= MAX_STOP_ATR_MULTIPLE,
     }
     score = sum(1 for v in checks.values() if v) / len(_CHECK_NAMES)
-    return {"checks": checks, "score": score, "errors": errors}
+    return {"checks": checks, "score": score, "errors": errors,
+            "r_multiple": r_multiple, "stop_atr_multiple": stop_atr_multiple}
 
 
 def run_case(name: str, spec: DeskSpec, analytics: DeskAnalytics, intel: IntelPacket) -> Dict[str, Any]:
@@ -104,8 +154,11 @@ def _print_report(results: List[Dict[str, Any]]) -> float:
     print("=" * 72)
     for r in results:
         cost_txt = f"${r['cost_usd']:.4f}" if r["cost_usd"] is not None else "n/a"
+        r_txt = f"{r['r_multiple']:.2f}R" if r["r_multiple"] is not None else "n/a"
+        atr_txt = f"{r['stop_atr_multiple']:.2f} ATR" if r["stop_atr_multiple"] is not None else "n/a"
         print(f"\n[{r['name']}] score={r['score']:.3f}  "
               f"tokens_in={r['input_tokens']} tokens_out={r['output_tokens']} cost={cost_txt}")
+        print(f"  call: {r_txt} to first target, stop {atr_txt} from entry")
         if r["skipped_reason"]:
             print(f"  DEGRADED: {r['skipped_reason']}")
         for check in _CHECK_NAMES:

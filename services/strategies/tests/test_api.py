@@ -87,6 +87,20 @@ def test_post_refresh_unknown_desk_404(client):
 def test_post_refresh_default_body_is_force_false(client):
     r = client.post("/api/desks/oil/refresh", json={})
     assert r.status_code == 200
+    # Must be polled to completion, not fire-and-forget: the refresh runs on
+    # a background daemon thread (api.py's post_refresh), and this test's
+    # `client` fixture stubs build_analytics + the intel/thesis providers
+    # only for the lifetime of THIS test's monkeypatch. An unpolled thread
+    # that is still running when the next test's fixtures revert those
+    # patches goes on to call the REAL network (candles, then intel) under
+    # whatever desk/env the NEXT test set up - exactly the kind of
+    # leaked-background-work flake that showed up as unrelated "this gate
+    # test reached for the network" failures in test_oil_dashboard_routes.py
+    # once a slower analytics build (the 2026-10-23 structure fetch) gave
+    # the race more time to lose.
+    job = RefreshJob.model_validate(r.json())
+    final = _poll_job(client, job.id)
+    assert final["state"] in ("done", "skipped", "error")
 
 
 def test_get_job_unknown_404(client):
