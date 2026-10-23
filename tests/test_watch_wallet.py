@@ -45,3 +45,26 @@ def test_flat_account_and_short_side():
         "coin": "BTC", "szi": "-0.01", "entryPx": "80000", "liquidationPx": None, "leverage": 5}}]}
     p = assess(short, [])["positions"][0]
     assert p["side"] == "short" and p["liq_px"] is None and p["liq_dist_pct"] is None and p["leverage"] == 5
+
+
+
+def test_mark_fields_show_where_the_position_stands():
+    # 2026-10-23: Julien asked to see entry vs mark vs stop vs target at a glance.
+    out = assess(STATE, [STOP, TP], "xyz", mids={"xyz:BRENTOIL": "108.45"})
+    p = out["positions"][0]
+    assert p["mark_px"] == 108.45
+    assert p["pnl_pct"] == 1.204                      # long: (108.45-107.16)/107.16
+    assert p["to_stop_pct"] == 1.614                  # (108.45-106.70)/108.45
+    assert p["to_tp_pct"] == 0.0                      # mark sits on the target
+    assert p["r_now"] == 2.8                          # 1.29 gained over 0.46 risk
+    # a short reads the other way, and the NEAREST stop/target is the one measured
+    short = {"marginSummary": {}, "assetPositions": [{"position": {"coin": "xyz:GOLD", "szi": "-0.5", "entryPx": "4028"}}]}
+    stops = [{"coin": "xyz:GOLD", "reduceOnly": True, "orderType": "Stop Market", "triggerPx": "4042", "sz": "0.5"},
+             {"coin": "xyz:GOLD", "reduceOnly": True, "orderType": "Stop Market", "triggerPx": "4060", "sz": "0.5"}]
+    q = assess(short, stops, "xyz", mids={"xyz:GOLD": 4000})["positions"][0]
+    assert q["pnl_pct"] == 0.695 and q["to_stop_pct"] == 1.05 and q["r_now"] == 2.0 and q["to_tp_pct"] is None
+
+
+def test_without_mids_the_mark_fields_are_none_and_nothing_else_changes():
+    p = assess(STATE, [STOP, TP], "xyz")["positions"][0]
+    assert p["mark_px"] is None and p["pnl_pct"] is None and p["r_now"] is None and p["naked"] is False

@@ -25,9 +25,41 @@ logger = logging.getLogger(__name__)
 
 
 # ----------------------------------------------------------------- pure part
-def assess(state: Dict[str, Any], orders: List[Dict[str, Any]], dex: str = "") -> Dict[str, Any]:
+def _f(v: Any) -> Optional[float]:
+    try:
+        return float(v) if v not in (None, "") else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _mark_fields(side: str, entry: float, mark: Optional[float], stops: List[Any], tps: List[Any]) -> Dict[str, Any]:
+    """Where the position stands against its own levels, from the live mark:
+    P&L %, distance to the nearest stop and target (as % of mark), and R so
+    far (gain over the distance to the stop). None when a piece is missing."""
+    out: Dict[str, Any] = {"mark_px": mark, "pnl_pct": None, "to_stop_pct": None, "to_tp_pct": None, "r_now": None}
+    if not mark or not entry:
+        return out
+    sign = 1.0 if side == "long" else -1.0
+    out["pnl_pct"] = round(sign * (mark - entry) / entry * 100, 3)
+    stop_vals = [v for v in (_f(x) for x in stops) if v]
+    tp_vals = [v for v in (_f(x) for x in tps) if v]
+    if stop_vals:
+        stop = max(stop_vals) if side == "long" else min(stop_vals)      # the nearest stop
+        out["to_stop_pct"] = round(abs(mark - stop) / mark * 100, 3)
+        risk = abs(entry - stop)
+        if risk > 0:
+            out["r_now"] = round(sign * (mark - entry) / risk, 2)
+    if tp_vals:
+        tp = min(tp_vals) if side == "long" else max(tp_vals)             # the nearest target
+        out["to_tp_pct"] = round(abs(tp - mark) / mark * 100, 3)
+    return out
+
+
+def assess(state: Dict[str, Any], orders: List[Dict[str, Any]], dex: str = "",
+           mids: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Positions with their protection. `naked` is true for any position whose
-    reduce-only stop orders cover less than its size."""
+    reduce-only stop orders cover less than its size. With `mids` (coin -> mark)
+    each position also carries mark_px, pnl_pct, to_stop_pct, to_tp_pct, r_now."""
     ms = state.get("marginSummary") or {}
     positions = []
     for row in state.get("assetPositions") or []:
@@ -57,6 +89,8 @@ def assess(state: Dict[str, Any], orders: List[Dict[str, Any]], dex: str = "") -
             "liq_dist_pct": (round(abs(entry - liq_f) / entry * 100, 3) if liq_f and entry else None),
             "stop_px": [o.get("triggerPx") for o in stops], "tp_px": [o.get("triggerPx") for o in tps],
             "stop_covers": covered, "naked": covered + 1e-9 < abs(szi),
+            **_mark_fields("long" if szi > 0 else "short", entry, _f((mids or {}).get(coin)),
+                           [o.get("triggerPx") for o in stops], [o.get("triggerPx") for o in tps]),
         })
     return {"dex": dex or "main", "equity_usd": float(ms.get("accountValue") or 0),
             "notional_usd": float(ms.get("totalNtlPos") or 0), "positions": positions,
@@ -71,10 +105,15 @@ def _fetch_raw(user: str, dex: str) -> Dict[str, Any]:
     if dex:
         body["dex"] = dex
         orders["dex"] = dex
+    mids_req: Dict[str, Any] = {"type": "allMids"}
+    if dex:
+        mids_req["dex"] = dex
     state = _http_post("/info", body) or {}
     raw_orders = _http_post("/info", orders)
+    mids = _http_post("/info", mids_req)
     return {"state": state if isinstance(state, dict) else {},
-            "orders": raw_orders if isinstance(raw_orders, list) else []}
+            "orders": raw_orders if isinstance(raw_orders, list) else [],
+            "mids": mids if isinstance(mids, dict) else {}}
 
 
 def _dexes_with_margin(user: str) -> List[str]:
@@ -113,7 +152,7 @@ def fetch_positions_for_account(address: str, *, dexes: Optional[List[str]] = No
     for dex in target_dexes:
         try:
             raw = _fetch_raw(address, dex)
-            out_accounts.append(assess(raw["state"], raw["orders"], dex))
+            out_accounts.append(assess(raw["state"], raw["orders"], dex, mids=raw.get("mids")))
         except Exception as e:  # noqa: BLE001 - one dead dex must not blank the others
             logger.warning(f"[accounts.positions] read failed for {address} on dex {dex or 'main'}: {e}")
             out_accounts.append({"dex": dex or "main", "equity_usd": 0.0, "notional_usd": 0.0,
