@@ -663,3 +663,40 @@ class TestStdioE2E:
                 proc.wait(timeout=10)
             except subprocess.TimeoutExpired:
                 proc.kill()
+
+
+# ── set_leverage follows the open position's margin type ─────────────────────
+# 2026-10-24: the auto path sent cross against an isolated Brent long; the
+# venue answered "Cannot switch leverage type with open position" and the
+# non-strict wrapper still reported ok. The handler now reads the open
+# position's type and calls the venue strictly.
+
+_ISO_LONG = [{"position": {"coin": "xyz:BRENTOIL", "szi": "1.62", "leverage": {"type": "isolated", "value": 10}}}]
+_CROSS_SHORT = [{"position": {"coin": "BTC", "szi": "-0.01", "leverage": {"type": "cross", "value": 5}}}]
+_FLAT = [{"position": {"coin": "xyz:BRENTOIL", "szi": "0", "leverage": {"type": "isolated", "value": 10}}}]
+
+
+def test_open_position_margin_type_is_read_from_the_venue_shape():
+    assert M._open_position_margin_is_cross("xyz:BRENTOIL", _ISO_LONG) is False
+    assert M._open_position_margin_is_cross("BTC", _CROSS_SHORT) is True
+    assert M._open_position_margin_is_cross("xyz:BRENTOIL", _FLAT) is None        # flat: market default
+    assert M._open_position_margin_is_cross("ETH", _ISO_LONG + _CROSS_SHORT) is None
+
+
+def test_set_leverage_sends_the_open_positions_margin_type_and_is_strict(monkeypatch):
+    import pathiel.client.exchange as ex
+    seen = {}
+
+    def fake_set_leverage(coin, leverage, is_cross=None, strict=False):
+        seen.update(coin=coin, leverage=leverage, is_cross=is_cross, strict=strict)
+        return {"ok": True, "is_cross": bool(is_cross), "result": {"status": "ok"}}
+    monkeypatch.setattr(ex, "set_leverage", fake_set_leverage)
+    monkeypatch.setattr(M, "_open_position_margin_is_cross", lambda coin, positions=None: False)
+
+    out = json.loads(M.handle_set_leverage({"coin": "xyz:BRENTOIL", "leverage": 20}))
+    assert seen == {"coin": "xyz:BRENTOIL", "leverage": 20, "is_cross": False, "strict": True}
+    assert out["ok"] is True and out["margin_type"] == "position's own: isolated"
+
+    monkeypatch.setattr(M, "_open_position_margin_is_cross", lambda coin, positions=None: None)
+    out = json.loads(M.handle_set_leverage({"coin": "ETH", "leverage": 5}))
+    assert seen["is_cross"] is None and out["margin_type"].startswith("market default: ")

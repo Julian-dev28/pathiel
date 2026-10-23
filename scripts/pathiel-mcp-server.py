@@ -32,7 +32,7 @@ import threading
 import time
 import traceback
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 # Auto-load .env.local from project root
 _env_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '.env.local')
@@ -258,7 +258,7 @@ TOOLS = [
     },
     {
         "name": "set_leverage",
-        "description": "Set leverage for a coin (cross margin).",
+        "description": "Set leverage for a coin. With an open position the position's own margin type (isolated or cross) is kept; flat, the market default applies. A venue refusal is an error.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -1739,12 +1739,41 @@ def handle_close_position(params: Dict[str, Any]) -> str:
         return json.dumps({'closed': False, 'error': str(e)}, default=str)
 
 def handle_set_leverage(params: Dict[str, Any]) -> str:
-    """Handle set_leverage tool call."""
+    """Set a coin's leverage. With an open position on the coin, the margin
+    type is the position's own (Hyperliquid refuses to switch type on an
+    open position: 2026-10-24 the auto path sent cross against an isolated
+    Brent long and the venue answered "Cannot switch leverage type with
+    open position" while the tool still said ok). Strict: a venue "err"
+    body is an error, not ok."""
     from pathiel.client.exchange import set_leverage as set_leverage_fn
     coin = _norm_coin(params.get('coin', 'BTC'))
-    leverage = params.get('leverage', 5)
-    result = set_leverage_fn(coin, int(leverage))
+    leverage = int(params.get('leverage', 5))
+    is_cross = _open_position_margin_is_cross(coin)
+    result = set_leverage_fn(coin, leverage, is_cross=is_cross, strict=True)
+    result["margin_type"] = ("position's own: " if is_cross is not None else "market default: ") + (
+        "cross" if result.get("is_cross") else "isolated")
     return json.dumps(result, default=str)
+
+
+def _open_position_margin_is_cross(coin: str, positions: Optional[List[Dict[str, Any]]] = None) -> Optional[bool]:
+    """True/False for the margin type of the open position on `coin`; None
+    when flat (let the market default decide). `positions` is the venue's
+    assetPositions list; fetched for the active account when omitted."""
+    if positions is None:
+        try:
+            from pathiel.client.account_snapshot import account_state
+            positions = account_state(_user({}), include_hip3=True).get("asset_positions") or []
+        except Exception:  # noqa: BLE001 - unknown is "flat": the market default applies
+            return None
+    for row in positions:
+        p = (row or {}).get("position") or {}
+        try:
+            if p.get("coin") == coin and float(p.get("szi") or 0) != 0:
+                lev = p.get("leverage") or {}
+                return (lev.get("type") == "cross") if isinstance(lev, dict) else None
+        except (TypeError, ValueError):
+            continue
+    return None
 
 def handle_get_open_orders(params: Dict[str, Any]) -> str:
     """Open orders (frontend shape: trigger type, tp/sl). Also answers
