@@ -99,7 +99,16 @@ def assess(state: Dict[str, Any], orders: List[Dict[str, Any]], dex: str = "",
 
 # ------------------------------------------------------------------ live leg
 def _fetch_raw(user: str, dex: str) -> Dict[str, Any]:
-    from pathiel.client.hl_client import _http_post
+    """clearinghouseState + frontendOpenOrders (+ allMids) for one dex.
+
+    Strict: a read the venue never answered (rate budget exhausted, 429,
+    timeout) RAISES HLRequestError instead of posing as an empty state.
+    2026-10-24: the server's 120 weight/min budget starved the xyz read
+    behind five dust dexes; the starved read came back as {} and the Desk
+    page rendered the live Brent position as "No open positions" for 15 s
+    at a time. A missing answer is an error, never a flat account.
+    """
+    from pathiel.client.hl_client import _http_post_strict
     body: Dict[str, Any] = {"type": "clearinghouseState", "user": user}
     orders: Dict[str, Any] = {"type": "frontendOpenOrders", "user": user}
     if dex:
@@ -108,9 +117,9 @@ def _fetch_raw(user: str, dex: str) -> Dict[str, Any]:
     mids_req: Dict[str, Any] = {"type": "allMids"}
     if dex:
         mids_req["dex"] = dex
-    state = _http_post("/info", body) or {}
-    raw_orders = _http_post("/info", orders)
-    mids = _http_post("/info", mids_req)
+    state = _http_post_strict("/info", body)
+    raw_orders = _http_post_strict("/info", orders)
+    mids = _http_post_strict("/info", mids_req)
     return {"state": state if isinstance(state, dict) else {},
             "orders": raw_orders if isinstance(raw_orders, list) else [],
             "mids": mids if isinstance(mids, dict) else {}}
@@ -127,15 +136,41 @@ _now = _time.monotonic
 _CACHE: Dict[str, Any] = {}
 POSITIONS_TTL_S = 15.0
 DEXES_TTL_S = 120.0
+# A HIP-3 dex holding less than this (and no position) is dust left behind
+# by a closed trade; reading it costs the same 24 weight as a funded dex.
+DUST_USD = 1.0
 
 
-def _cached(key: str, ttl_s: float, build: Callable[[], Any]) -> Any:
+def _cached(key: str, ttl_s: float, build: Callable[[], Any],
+            good: Optional[Callable[[Any], bool]] = None) -> Any:
+    """TTL cache that keeps the last GOOD value. When `build` raises, or
+    returns a value `good` rejects, the previous good value is served again
+    (with a `stale_s` age when it is a dict) instead of caching the failure:
+    a venue hiccup must not replace a live position with a blank for a TTL.
+    With no previous value the failure propagates / the bad value is served
+    uncached, so the next call retries at once."""
     hit = _CACHE.get(key)
     now = _now()
     if hit is not None and now - hit[0] < ttl_s:
         return hit[1]
-    val = build()
+    try:
+        val = build()
+    except Exception:
+        if hit is None:
+            raise
+        return _stale(hit, now)
+    if good is not None and not good(val):
+        if hit is not None:
+            return _stale(hit, now)
+        return val                       # nothing better to serve; do not cache it
     _CACHE[key] = (now, val)
+    return val
+
+
+def _stale(hit: Any, now: float) -> Any:
+    at, val = hit
+    if isinstance(val, dict):
+        return {**val, "stale_s": round(now - at, 1)}
     return val
 
 
@@ -144,34 +179,42 @@ def clear_cache() -> None:
 
 
 def _dexes_with_margin(user: str) -> List[str]:
-    return _cached(f"dexes:{user.lower()}", DEXES_TTL_S, lambda: _dexes_with_margin_uncached(user))
+    return _cached(f"dexes:{user.lower()}", DEXES_TTL_S, lambda: _dexes_with_margin_uncached(user),
+                   good=bool)
 
 
 def _dexes_with_margin_uncached(user: str) -> List[str]:
-    """main ("") plus every HIP-3 dex this account holds equity or a
+    """Every dex this account holds at least DUST_USD of equity or a
     position on, read from the shared account snapshot — one cheap
     aggregated read instead of probing every registered HIP-3 dex one by
-    one."""
+    one. Main ("") only when it qualifies too, or when nothing does (a flat
+    account still reads as main-only). Dust dexes are skipped: each one
+    costs 24 weight a poll, and on 2026-10-24 four of them (a few cents
+    each) starved the one dex holding the live position."""
     from pathiel.client.account_snapshot import account_state
     state = account_state(user, include_hip3=True)
-    dexes = {""}
+    dexes = set()
+    # Main qualifies through ITS OWN equity (dex_equity[""]), never the
+    # snapshot's top-level total, which sums every dex.
     for d, v in (state.get("dex_equity") or {}).items():
         try:
-            if d and float(v or 0) != 0:
-                dexes.add(d)
+            if float(v or 0) >= DUST_USD:
+                dexes.add(d or "")
         except (TypeError, ValueError):
             continue
     for p in state.get("asset_positions") or []:
         coin = ((p or {}).get("position") or {}).get("coin") or ""
-        if ":" in coin:
-            dexes.add(coin.split(":", 1)[0])
+        dexes.add(coin.split(":", 1)[0] if ":" in coin else "")
+    if not dexes:
+        dexes = {""}
     return sorted(dexes, key=lambda d: (d != "", d))
 
 
 def fetch_positions_for_account(address: str, *, dexes: Optional[List[str]] = None) -> Dict[str, Any]:
     """Cached for POSITIONS_TTL_S per (address, dexes); see _fetch_positions_uncached."""
     key = f"positions:{address.lower()}:{','.join(dexes) if dexes is not None else '*'}"
-    return _cached(key, POSITIONS_TTL_S, lambda: _fetch_positions_uncached(address, dexes=dexes))
+    return _cached(key, POSITIONS_TTL_S, lambda: _fetch_positions_uncached(address, dexes=dexes),
+                   good=lambda v: not v.get("errors"))
 
 
 def _fetch_positions_uncached(address: str, *, dexes: Optional[List[str]] = None) -> Dict[str, Any]:
@@ -186,16 +229,21 @@ def _fetch_positions_uncached(address: str, *, dexes: Optional[List[str]] = None
     """
     target_dexes = dexes if dexes is not None else _dexes_with_margin(address)
     out_accounts = []
+    errors: List[str] = []
     for dex in target_dexes:
         try:
             raw = _fetch_raw(address, dex)
             out_accounts.append(assess(raw["state"], raw["orders"], dex, mids=raw.get("mids")))
         except Exception as e:  # noqa: BLE001 - one dead dex must not blank the others
             logger.warning(f"[accounts.positions] read failed for {address} on dex {dex or 'main'}: {e}")
+            errors.append(dex or "main")
             out_accounts.append({"dex": dex or "main", "equity_usd": 0.0, "notional_usd": 0.0,
                                  "positions": [], "any_naked": False, "error": str(e)})
-    return {"user": address, "accounts": out_accounts,
-            "any_naked": any(a["any_naked"] for a in out_accounts)}
+    out: Dict[str, Any] = {"user": address, "accounts": out_accounts,
+                           "any_naked": any(a["any_naked"] for a in out_accounts)}
+    if errors:
+        out["errors"] = errors            # the cache keeps the last good snapshot instead
+    return out
 
 
 __all__ = ["assess", "fetch_positions_for_account"]
