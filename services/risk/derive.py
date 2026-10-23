@@ -45,10 +45,30 @@ from dataclasses import dataclass
 from typing import List, Optional
 
 from contracts.risk.models import BookFeasibility, DerivedLimits, RiskProfile
-from pathiel.agents.sizing import equity_risk_budget_usd
 from services.risk import presets
 
 CONTRACT_VERSION = "1.0.0"
+
+
+def equity_risk_budget_usd(equity_usd: float, risk_per_trade_pct: float) -> float:
+    """Dollars at stake if the stop hits: equity x risk_per_trade_pct (a
+    percent, e.g. 3.0 means 3%). The one-line formula every risk-scaled trade
+    sizes against.
+
+    Moved in from `pathiel.agents.sizing` 2026-10-23 (wave 2): that module's
+    other two functions (`atr_equal_risk_notional`, `risk_of_ruin`) had no
+    caller left once the offline backtest harnesses that used them
+    (`scripts/backtest_logged.py`, `scripts/strategy_grid_search.py`) were
+    retired, so the whole module went rather than keeping it alive for this
+    one formula shared with nothing else.
+
+    Returns 0.0 for non-positive inputs — a degenerate risk budget must read
+    as "size nothing", never as a negative or NaN dollar figure a caller
+    might subtract or divide by.
+    """
+    if equity_usd <= 0 or risk_per_trade_pct <= 0:
+        return 0.0
+    return equity_usd * risk_per_trade_pct / 100.0
 
 _EPS = 1e-9
 

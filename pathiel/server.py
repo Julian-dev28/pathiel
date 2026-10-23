@@ -6,12 +6,10 @@ import asyncio
 import logging
 import os
 import threading
-import time
 from contextlib import asynccontextmanager
 from typing import Any, Dict
 
 
-from pathiel import compat  # noqa: E402 — pure, no env reads at import
 
 
 def _load_env_local_early() -> None:
@@ -54,10 +52,6 @@ from pathiel.agents.config_store import (                       # noqa: E402
     read_agent_config,
     update_agent_config,
 )
-from pathiel.agents.executor import maybe_execute               # noqa: E402
-from pathiel.agents.memory import memory                        # noqa: E402
-from pathiel.agents.perception import scan_once                 # noqa: E402
-from pathiel.agents.research import research                    # noqa: E402
 from pathiel.client.hl_client import (                          # noqa: E402
     fetch_account_state,
     fetch_all_mids,
@@ -100,39 +94,15 @@ async def _json_object(request: Request, *, empty_ok: bool = False) -> Dict[str,
     return body
 
 
-# ── PID file helpers (start/stop) ──────────────────────────────────────────────
-
-# Falls back to the pre-rename name so a server started before the rename is
-# still found by `pathiel stop`.
-PID_FILE = compat.legacy_path(os.path.expanduser("~/.pathiel.pid"),
-                              os.path.expanduser("~/.pathiel.pid"))
-
-
-def _is_alive(pid: int) -> bool:
-    try:
-        os.kill(pid, 0)
-        return True
-    except (ProcessLookupError, PermissionError, OSError):
-        return False
-
-
-# ── Rate limiter for scan endpoint ─────────────────────────────────────────────
-
-_last_scan_at: float = 0
-_SCAN_MIN_SECONDS = 30
-
-
 # ── Lifespan ───────────────────────────────────────────────────────────────────
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Load persisted memory on startup. NO shutdown flush (audit 2026-07-10:
-    the server's copy goes stale minutes after boot while the LOOP keeps
-    writing .agent-memory.json — a graceful shutdown could roll live trade
-    memory back to server-start time). PATHIEL_STATE_READONLY guards the
-    other write doors (executor-triggered flush / DSL saves) the same way."""
-    memory.load()
-    logger.info("Pathiel server started — memory loaded (state writes read-only)")
+    """Server startup/shutdown. No agent memory to load any more — the
+    autonomous scan/research/execute engine (and its `.agent-memory.json`
+    ledger) is retired 2026-10-23 (wave 2); Claude trades through the MCP
+    server, this process only serves the dashboard and the JSON/HL APIs."""
+    logger.info("Pathiel server started")
     # Desk analytics warm in a background thread so /desks opens instantly
     # (PATHIEL_DESK_WARMUP=0 skips; the test session sets it).
     from services.strategies.facade import start_warmup
@@ -436,179 +406,10 @@ def _hip3_on() -> bool:
 # tests/test_no_blocking_on_the_event_loop.py.
 
 
-@app.get("/api/agent/state", dependencies=[Depends(_require_operator)])
-def get_agent_state():
-    """GET /api/agent/state — full state snapshot for the UI."""
-    memory.load()
-    state = memory.get_full_state()
-    config = read_agent_config()
-    live_equity = _live_equity()
-
-    if live_equity > 0:
-        memory.update_equity(live_equity)
-
-    state["equity"] = live_equity if live_equity > 0 else state.get("equity", 0)
-    state["liveEquity"] = live_equity
-    state["config"] = config
-    return JSONResponse(content=state)
-
-
-@app.post("/api/agent/scan", dependencies=[Depends(_require_operator)])
-async def run_scan(request: Request):
-    """POST /api/agent/scan — sweep markets for trigger signals."""
-    global _last_scan_at
-    body = await _json_object(request, empty_ok=True)
-    min_score = body.get("minScore", 20)
-
-    # Check and claim the window with no await in between, which on the one
-    # event loop is atomic: two clicks cannot both start a scan (dozens of
-    # Hyperliquid reads) now that the scan itself runs on a worker thread.
-    elapsed = time.time() - _last_scan_at
-    if elapsed < _SCAN_MIN_SECONDS and _last_scan_at > 0:
-        remaining = max(1, int(_SCAN_MIN_SECONDS - elapsed))
-        raise HTTPException(
-            429,
-            detail=f"Rate limited. Try again in {remaining}s",
-        )
-    claimed_from, _last_scan_at = _last_scan_at, time.time()
-    try:
-        universe = await asyncio.to_thread(lambda: get_universe(include_hip3=_hip3_on()))
-    except Exception:
-        _last_scan_at = claimed_from        # a failed universe read never used the window
-        raise
-
-    perceptions = await asyncio.to_thread(scan_once, universe=universe, min_score=min_score)
-
-    result = {"perceptions": perceptions, "count": len(perceptions)}
-    await _append_session_log({"event": "scan", "perceptions": len(perceptions)})
-    return JSONResponse(content=result)
-
-
-@app.post("/api/agent/research/{coin}", dependencies=[Depends(_require_operator)])
-async def run_research(coin: str, request: Request):
-    """POST /api/agent/research/{coin} — full AI analysis for one coin."""
-    try:
-        body = await request.json()
-    except Exception:
-        body = {}
-    if not isinstance(body, dict):
-        body = {}
-
-    # A model call, tens of seconds: on a worker thread.
-    analysis = await asyncio.to_thread(_research, coin, body)
-    await _append_session_log({"event": "research", "coin": coin, "verdict": analysis.get("verdict")})
-    return JSONResponse(content=analysis)
-
-
-def _research(coin: str, body: Dict[str, Any]) -> Dict[str, Any]:
-    memory.load()
-
-    # Build a minimal perception from memory or request
-    perception: Dict[str, Any] = {"coin": coin, "type": "perp", "mid": 0, "composite_score": 0}
-
-    if body.get("perception"):
-        perception.update(body["perception"])
-        if "coin" not in perception:
-            perception["coin"] = coin
-    elif body.get("perceptionId"):
-        # Look up from recent perceptions
-        for p in memory.get_recent_perceptions(200):
-            if p.get("id") == body["perceptionId"] and p.get("coin") == coin:
-                perception = p
-                break
-
-    return research(coin=coin, perception=perception)
-
-
-@app.post("/api/agent/execute", dependencies=[Depends(_require_operator)])
-async def run_execute(request: Request):
-    """POST /api/agent/execute — run risk gates and execute an analysis."""
-    body = await _json_object(request)
-
-    analysis_id = body.get("analysisId")
-    if not analysis_id:
-        raise HTTPException(400, "analysisId required")
-
-    # Risk gates and, when they pass, the orders: on a worker thread.
-    result = await asyncio.to_thread(_execute, analysis_id)
-    await _append_session_log({
-        "event": "execute",
-        "analysisId": analysis_id,
-        "executed": result.get("executed"),
-    })
-    return JSONResponse(content=result)
-
-
-def _execute(analysis_id: str) -> Dict[str, Any]:
-    memory.load()
-    analysis = memory.get_analysis_by_id(analysis_id)
-    if not analysis:
-        raise HTTPException(404, f"analysis {analysis_id} not found")
-    return maybe_execute(analysis)
-
-
-@app.get("/api/agent/trades", dependencies=[Depends(_require_operator)])
-def get_trades():
-    """GET /api/agent/trades — all recorded trades."""
-    memory.load()
-    return JSONResponse(content=memory.get_all_trades())
-
-
 @app.get("/api/agent/session-log", dependencies=[Depends(_require_operator)])
 def get_session_log():
     """GET /api/agent/session-log — last 50 log entries."""
     return JSONResponse(content=session_log.tail(50))
-
-
-@app.get("/api/agent/start", dependencies=[Depends(_require_operator)])
-def agent_start():
-    """GET /api/agent/start — report whether the scanner process is running."""
-    if not os.path.exists(PID_FILE):
-        return JSONResponse(content={"running": False, "cycle": 0, "lastUpdate": None})
-
-    pid = int(open(PID_FILE).read().strip())
-    running = _is_alive(pid)
-    return JSONResponse(content={"running": running, "pid": pid if running else None})
-
-
-@app.post("/api/agent/start", dependencies=[Depends(_require_operator)])
-def agent_start_post():
-    """POST /api/agent/start — report scanner status.
-
-    The Python agent runs as its own process; this endpoint does not spawn it.
-    """
-    if os.path.exists(PID_FILE):
-        pid = int(open(PID_FILE).read().strip())
-        if _is_alive(pid):
-            return JSONResponse(content={"status": "already_running", "pid": pid})
-        # Stale pid file, clean up
-        try:
-            os.remove(PID_FILE)
-        except OSError:
-            pass
-
-    return JSONResponse(content={"status": "stub", "message": "Python agent runs independently"})
-
-
-@app.post("/api/agent/stop", dependencies=[Depends(_require_operator)])
-def agent_stop():
-    """POST /api/agent/stop — terminate the scanner process."""
-    if not os.path.exists(PID_FILE):
-        return JSONResponse(content={"status": "not_running"})
-
-    pid = int(open(PID_FILE).read().strip())
-    if _is_alive(pid):
-        try:
-            os.kill(pid, 15)  # SIGTERM
-        except OSError:
-            pass
-
-    try:
-        os.remove(PID_FILE)
-    except OSError:
-        pass
-
-    return JSONResponse(content={"status": "stopped", "pid": pid})
 
 
 @app.get("/api/agent/config", dependencies=[Depends(_require_operator)])

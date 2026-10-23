@@ -283,7 +283,6 @@ and `book_params.py` all changed. Every delta:
 ## Tests
 
     PATHIEL_STATE_DIR="$(mktemp -d)" .venv/bin/python -m pytest -q services/risk/ \
-        tests/test_risk_wiring_executor.py tests/test_risk_wiring_gates.py \
         tests/test_risk_wiring_config_store.py tests/test_book_params.py
 
 - `services/risk/tests/test_presets.py` — preset-table invariants (monotonic
@@ -294,7 +293,8 @@ and `book_params.py` all changed. Every delta:
   through the documented bump; more equity never shrinks the feasible set
   or drops `max_open_positions`; the headline agrees with `can_trade`.
 - `services/risk/tests/test_migrate.py` — every legacy-key mapping, in
-  isolation, plus the real $15.19-shaped config end to end.
+  isolation, plus a frozen snapshot of the real $15.19-shaped config end to
+  end.
 - `services/risk/tests/test_books.py` — `BOOK_NAMES` stays permanently
   empty; `all_book_specs()` returns the one-item `main_engine` roster, not
   `[]` (the regression this file exists to catch — see `books.py`'s module
@@ -302,30 +302,23 @@ and `book_params.py` all changed. Every delta:
   `enabled`.
 - `services/risk/tests/test_api.py` — every route through `TestClient`,
   including the 503 path and the accounts-service-preferred-over-fallback path.
-- `services/risk/tests/test_replay_benchmark.py` — the eval script's pure
-  core plus one real subprocess run of the actual CLI.
-- `tests/test_risk_wiring_executor.py` — **the e2e**: Julien's real
-  `.agent-config.json`, copied, at $15.19 equity, through a fully mocked
-  exchange, places a valid order; at $5 it refuses naming the dollar
-  shortfall; equities already served by the old $26 floor stay served.
-- `tests/test_risk_wiring_gates.py`, `tests/test_risk_wiring_config_store.py`
-  and `tests/test_book_params.py` — the risk_gates.py/config_store.py/
-  book_params.py wiring, each in isolation.
+- `tests/test_risk_wiring_config_store.py` and `tests/test_book_params.py` —
+  the config_store.py/book_params.py wiring, each in isolation.
 
-## Eval
-
-    .venv/bin/python services/risk/evals/replay_benchmark.py \
-        --state-dir "$PATHIEL_STATE_DIR" --equities 15,100,1000,10000,100000
-
-Copies `shadow_ledger/` out of `--state-dir` into a fresh temp directory
-(never touches the source, never signs or places anything), replays every
-recent signal in the forward ledger — whatever tag it carries, book or not
-— against the one surviving `main_engine` `BookSpec` at each equity, and
-reports risk taken vs. would-execute counts. Pass rule: **no trade exceeds
-its limit**. See the main agent report for a real run's numbers (no live
-`PATHIEL_STATE_DIR` exists in this isolated worktree, so that run used a
-representative synthetic ledger — the script itself takes a real one
-exactly the same way).
+`services/risk/tests/test_replay_benchmark.py` and `services/risk/evals/
+replay_benchmark.py` (a deterministic eval that replayed `pathiel.agents.
+shadow_ledger`'s forward-ledger signals against `derive_limits`) were
+removed 2026-10-23 (wave 2): their one signal source,
+`executor.py`'s `thin_short_relax` live experiment, is retired with the
+rest of the autonomous executor, and `shadow_ledger.py` itself is deleted
+with it — there is no forward ledger left to replay. `tests/
+test_risk_wiring_executor.py` (the maybe_execute e2e this section used to
+list) is removed the same wave: `pathiel.agents.executor.maybe_execute`,
+its subject, no longer exists — `place_bracket`'s own test coverage
+(`tests/test_mcp_shoreup.py`, `services/risk/tests/test_size.py`) is the
+equivalent for the surviving entry path. `tests/test_risk_wiring_gates.py`
+(risk_gates.py wiring) is removed the same wave: `risk_gates.py` itself is
+deleted.
 
 ## Sizing one trade (`size.py`)
 

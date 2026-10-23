@@ -128,15 +128,6 @@ def test_coin_catalyst_breaking_requires_verified_24h_freshness(monkeypatch):
     assert [a.title for a in rep.headlines] == ["VIRTUAL genuinely fresh"]
 
 
-def test_fetch_news_prefers_google(monkeypatch):
-    from pathiel.agents import research, news_catalyst as nc
-    monkeypatch.setattr(nc, "google_news_search",
-                        lambda q, when="1d", limit=5, ttl=0: [
-                            nc.Article("SOL upgrade ships", "u", "d", None, "s")])
-    out = research._fetch_news("SOL")
-    assert "SOL upgrade ships" in out
-
-
 def test_title_relevance_rejects_homonym_noise():
     from pathiel.agents.news_catalyst import _title_relevant
     # the live GRASS false positive (2026-07-12)
@@ -192,18 +183,6 @@ def test_macro_headlines_dedup_and_tags(monkeypatch):
     assert any(t.startswith("[politics]") for t in tape)
     # dedup: the doubled Fed headline appears once
     assert sum("Fed holds rates steady" in t for t in tape) == 1
-
-
-def test_user_message_carries_date_and_macro(monkeypatch):
-    from pathiel.agents import research
-    msg = research._build_user_message(
-        "ARB", {"mid": 0.1, "composite_score": 50, "triggers": []},
-        {}, {}, {}, "0.00%", "no news", 100.0, [], "LIVE",
-        macro_tape="[fed] Fed holds | [politics] tariffs",
-    )
-    assert "Today (UTC): 20" in msg
-    assert "NOT a catalyst" in msg
-    assert "Macro tape" in msg and "tariffs" in msg
 
 
 def test_title_relevance_requires_the_symbol_not_just_crypto_context():

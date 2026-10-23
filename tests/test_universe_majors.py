@@ -1,12 +1,13 @@
 """Gate tests for the majors universe restriction (2026-08-29).
 
-The restriction has to bind in THREE places or it is theatre:
-  1. the scan, so the candle + AI budget is not spent on untradable markets
-  2. the risk gate, so a book cannot route around the scan
-  3. the loop's own entry-block reason, which is a separate code path
-
-These tests pin all three, plus the bare-ticker matching that lets one entry
-cover every HIP-3 venue's prefix for the same underlying.
+2026-10-23 (wave 2): this used to pin the restriction in three places — the
+scan (pathiel.agents.perception), the risk gate (pathiel.agents.risk_gates),
+and the loop's own entry-block reason (scripts/trading_loop.py) — all three
+retired with the rest of the autonomous engine. Claude is the only trader
+now and names the coin directly on every place_bracket call, so there is no
+scan/gate/loop entry path left for the restriction to bind at; what remains
+here is the matching logic itself (pathiel.agents.universe, kept) and the
+one place it still surfaces: the default config's coin_allowlist.
 """
 from __future__ import annotations
 
@@ -60,47 +61,6 @@ def test_filter_markets_drops_the_tail():
     assert got == ["BTC", "xyz:GOLD"]
 
 
-# ── it binds where the cost is ───────────────────────────────────────────────
-
-def test_the_scan_applies_the_allowlist_not_just_the_entry_gate():
-    """Gating only at entry still burns the candle and AI budget on markets the
-    system can never trade. This is the test that would catch that regression."""
-    import inspect
-    from pathiel.agents import perception
-    src = inspect.getsource(perception)
-    assert "universe_filter.filter_markets" in src, (
-        "perception no longer filters the scan universe by coin_allowlist — the "
-        "restriction would be cosmetic and the scan would still pay for the tail")
-
-
-def test_risk_gate_rejects_a_coin_off_the_allowlist():
-    from pathiel.agents.risk_gates import coin_allowlist_gate
-
-    class _Ctx:
-        coin = "FARTCOIN"
-
-    assert coin_allowlist_gate(_Ctx(), list(U.MAJORS), [])["pass"] is False
-
-
-def test_risk_gate_admits_a_namespaced_major_on_a_bare_entry():
-    from pathiel.agents.risk_gates import coin_allowlist_gate
-
-    class _Ctx:
-        coin = "xyz:GOLD"
-
-    assert coin_allowlist_gate(_Ctx(), list(U.MAJORS), [])["pass"] is True
-
-
-def test_blocklist_still_wins_over_the_allowlist():
-    from pathiel.agents.risk_gates import coin_allowlist_gate
-
-    class _Ctx:
-        coin = "BTC"
-
-    r = coin_allowlist_gate(_Ctx(), list(U.MAJORS), ["BTC"])
-    assert r["pass"] is False and "blocklist" in r["reason"]
-
-
 def test_the_shipped_default_config_is_restricted_to_majors():
     import pathiel.agents.config_store as cs
     defaults = next(v for v in vars(cs).values()
@@ -111,109 +71,3 @@ def test_the_shipped_default_config_is_restricted_to_majors():
 def test_the_restriction_is_documented_as_capacity_not_edge():
     """A future reader must not mistake a universe cut for an alpha claim."""
     assert "not a strategy" in U.__doc__.lower() or "not an edge" in U.__doc__.lower()
-
-
-# ── the degraded-feed entry gate, end to end through the loop's own path ─────
-#
-# test_the_book_execute_path_blocks_on_a_degraded_feed (pinned _book_execute,
-# the single choke point every strategy book passed through) is removed:
-# the strategy books and _book_execute itself are retired (headless desk,
-# 2026-10-23) and trading_loop.py has no entry path left at all — there is
-# nothing left for a degraded-feed gate to guard inside that file. The MCP
-# server's own entry surface (scan/research/execute) is a separate agent's
-# lane; see tests/test_mcp_overhaul.py for its coverage.
-
-def test_the_dust_floor_guards_every_book():
-    """The other half of what the deleted preflight used to cover. The floor
-    lives in the executor, which every book reaches through _book_execute, so
-    it survived the deletion — this pins that."""
-    import inspect
-
-    from pathiel.agents import executor
-    src = inspect.getsource(executor.maybe_execute)
-    assert "min_tradable_equity" in src
-
-
-def test_main_engine_entries_are_gone():
-    """W-ME1: refuted by backtest, and structurally unable to fire on the
-    majors universe (0 signals in 17 days at the live gate of 54, peak 45.9)."""
-    import pathlib
-    src = (pathlib.Path(__file__).resolve().parents[1]
-           / "scripts" / "trading_loop.py").read_text()
-    # The marker string is gone deliberately: it was emitted as a session-log
-    # event per scanned coin, which made a deleted feature the top reason in
-    # the decision funnel. The DELETION is what this test pins, not the label.
-    assert "MAIN_ENGINE_DELETED" not in src, (
-        "a deleted feature's name is being emitted again")
-    assert "main_engine ENTRIES DELETED" in src, "the deletion comment is gone"
-    assert "_unclaimed += 1" in src, "the unheld-candidate branch changed shape"
-    assert "_fresh_entry_preblock_reason" not in src
-
-
-def test_ai_closes_survived_the_deletion():
-    """A standing hard operator requirement: "AI powered closes are a MUST
-    HAVE". Only main_engine's ENTRIES were removed; held coins still get their
-    throttled AI close-check."""
-    import pathlib
-    src = (pathlib.Path(__file__).resolve().parents[1]
-           / "scripts" / "trading_loop.py").read_text()
-    assert "held_research_ms" in src, "the held-coin AI close throttle is gone"
-    assert "analysis = research(coin, perception)" in src, (
-        "the research call the AI close path depends on was removed")
-    assert "route_verdict" in src
-
-
-# ── scan integrity must cross process boundaries ─────────────────────────────
-
-def test_scan_integrity_is_readable_from_another_process(tmp_path, monkeypatch):
-    """The scan runs in the trading loop; every consumer runs elsewhere.
-
-    /api/health/system, the pathiel_feed_trustworthy metric and
-    preflight_live.py all read scan integrity, and all three run in the server
-    or a CLI — not in the loop. While it was module state they saw
-    `ts: 0, markets: 0` forever, so PathielFeedDegraded could never fire and the
-    degraded-feed gate was invisible to everything watching it. Found
-    2026-08-31 with the loop scanning and the healthcheck reporting no scan.
-    """
-    from pathiel.agents import perception as P
-    from pathiel.agents.atomic_io import write_json_atomic
-
-    f = tmp_path / "scan_integrity.json"
-    monkeypatch.setattr(P, "_INTEGRITY_FILE", str(f))
-    # a reader process: nothing in memory, everything on disk
-    monkeypatch.setattr(P, "_last_scan_integrity",
-                        {"ts": 0, "markets": 0, "gaps": 0, "gap_frac": 0.0,
-                         "errors": 0})
-    write_json_atomic(str(f), {"ts": 123, "markets": 40, "gaps": 30,
-                               "gap_frac": 0.75, "errors": 0})
-    got = P.last_scan_integrity()
-    assert got["markets"] == 40 and got["gaps"] == 30
-    assert P.scan_is_trustworthy() is False, (
-        "a degraded feed published by the loop was invisible to the reader")
-
-
-def test_the_in_process_value_wins_when_this_process_scanned(tmp_path, monkeypatch):
-    """The scanning process must not read its own stale file back."""
-    from pathiel.agents import perception as P
-    from pathiel.agents.atomic_io import write_json_atomic
-
-    f = tmp_path / "scan_integrity.json"
-    monkeypatch.setattr(P, "_INTEGRITY_FILE", str(f))
-    write_json_atomic(str(f), {"ts": 1, "markets": 999, "gaps": 999,
-                               "gap_frac": 1.0, "errors": 0})
-    monkeypatch.setattr(P, "_last_scan_integrity",
-                        {"ts": 555, "markets": 40, "gaps": 0, "gap_frac": 0.0,
-                         "errors": 0})
-    assert P.last_scan_integrity()["markets"] == 40
-
-
-def test_a_missing_integrity_file_is_a_cold_start_not_a_fault(tmp_path, monkeypatch):
-    """No file yet must read as 'no scan', which is trustworthy — the gate
-    catches a DEGRADED feed, not a fresh process."""
-    from pathiel.agents import perception as P
-    monkeypatch.setattr(P, "_INTEGRITY_FILE", str(tmp_path / "absent.json"))
-    monkeypatch.setattr(P, "_last_scan_integrity",
-                        {"ts": 0, "markets": 0, "gaps": 0, "gap_frac": 0.0,
-                         "errors": 0})
-    assert P.last_scan_integrity()["ts"] == 0
-    assert P.scan_is_trustworthy() is True

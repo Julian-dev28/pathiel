@@ -61,8 +61,6 @@ def venue(monkeypatch):
     from pathiel import dashboard
     monkeypatch.setattr(dashboard, "resolve_user_address", lambda: ADDR)
     monkeypatch.setattr(dashboard, "read_position_snapshot", lambda max_age_s=120.0: None)
-    monkeypatch.setattr(dashboard.dsl_exit, "load_state", lambda force=False: None)
-    monkeypatch.setattr(dashboard.dsl_exit, "_active_positions", {})
     dashboard._POSITIONS_CACHE.update(ts=0.0, data=[])
     return v
 

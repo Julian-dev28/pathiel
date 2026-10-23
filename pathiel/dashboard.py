@@ -48,10 +48,9 @@ from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
 from pathiel import session_log
-from pathiel.agents import dsl_exit
 from pathiel.agents import capital_flows
+from pathiel.agents.bracket import min_tradable_equity as _min_tradable_equity
 from pathiel.agents.config_store import read_agent_config
-from pathiel.agents.executor import min_tradable_equity as _min_tradable_equity
 from pathiel.client.account_snapshot import account_state
 from pathiel.client.hl_client import resolve_user_address
 from pathiel.positions_snapshot import read_snapshot as read_position_snapshot
@@ -329,16 +328,6 @@ def _positions_payload() -> List[Dict[str, Any]]:
 
 
 def _positions_payload_uncached() -> List[Dict[str, Any]]:
-    dsl_exit.load_state(force=True)
-    # The loop process writes each position's entry context (book + open reason) to disk;
-    # the dashboard runs in a SEPARATE process whose memory is frozen at startup, so re-read
-    # the entry-context map here to surface the 'why this opened' line for live positions.
-    try:
-        from pathiel.agents.memory import memory as _mem
-        _mem.reload_entry_ctx()
-    except Exception:
-        pass
-
     # Prefer the loop's snapshot: it already fetched account state this cycle,
     # so reading the file avoids a duplicate fetch_account_state (~9 HL POSTs)
     # from this separate process — that duplication was tripping HL's per-IP
@@ -412,27 +401,16 @@ def _rows_from_state(state: Dict[str, Any]) -> List[Dict[str, Any]]:
         # column displays, and it already accounts for the open-side fee paid.
         roe_pct = (unrealized_usd / margin_used * 100) if margin_used > 0 else spot_pct * leverage
 
-        tracker = dsl_exit._active_positions.get(f"{coin}_{side}")
+        # DSL exit engine and the entry-context memory ledger were retired
+        # 2026-10-23 (wave 2: the autonomous scan/research/execute loop has
+        # no caller left — Claude trades through the MCP server now). Both
+        # fields are kept in the payload, always empty, rather than removed:
+        # dropping a key is a breaking change for any client still reading
+        # it, and "no DSL tracker / no recorded reason" is an honest answer,
+        # not a broken one.
         dsl_info = None
-        if tracker:
-            dsl_info = {
-                "peak_px": tracker.peak_px,
-                "floor_px": tracker._last_floor,
-                "phase": "phase2" if tracker._last_floor and (
-                    (side == "long" and tracker._last_floor > tracker.entry_px)
-                    or (side == "short" and tracker._last_floor < tracker.entry_px)
-                ) else "phase1",
-            }
-
-        # "why is this open" — the originating book + signal, captured at entry.
-        _ec = {}
-        try:
-            from pathiel.agents.memory import memory as _mem
-            _ec = _mem.peek_entry_context(coin, side) or {}
-        except Exception:
-            _ec = {}
-        _reason = str(_ec.get("reason") or "").replace('"', "'").replace("<", "(").replace(">", ")")[:160]
-        _book = str(_ec.get("book") or "")
+        _reason = ""
+        _book = ""
 
         rows.append({
             "coin": coin,
@@ -558,21 +536,17 @@ def _closed_trades_payload(limit: int = 20) -> List[Dict[str, Any]]:
 
 
 def _feed_health() -> Dict[str, Any]:
-    """Scan feed integrity, imported lazily so the dashboard keeps rendering in
-    a tree where the agents package is unavailable."""
-    try:
-        from pathiel.agents import perception
-        st = perception.last_scan_integrity()
-        return {
-            "gap_frac": st.get("gap_frac", 0.0),
-            "gaps": st.get("gaps", 0),
-            "markets": st.get("markets", 0),
-            "trustworthy": perception.scan_is_trustworthy(),
-            "ts": st.get("ts", 0),
-        }
-    except Exception:
-        return {"gap_frac": None, "gaps": 0, "markets": 0,
-                "trustworthy": None, "ts": 0}
+    """Scan feed integrity.
+
+    2026-10-23 (wave 2): the scanner (`pathiel.agents.perception`) that fed
+    this is retired with the rest of the autonomous engine — Claude trades
+    through the MCP server, which reads prices directly per call rather than
+    maintaining a scanned feed with its own integrity state. `trustworthy:
+    None` reads as "ok" everywhere this is consumed (GET /api/health/system,
+    the risk payload), which is the honest answer: there is no feed left to
+    be degraded."""
+    return {"gap_frac": None, "gaps": 0, "markets": 0,
+            "trustworthy": None, "ts": 0}
 
 
 def _derived_limits_for(equity: float, cfg: Dict[str, Any]):

@@ -231,19 +231,26 @@ def test_the_stop_endpoint_is_closed_in_both_configurations(monkeypatch):
     The root conftest loads the real .env.local into os.environ, so the token is
     usually present here and absent on CI. Both are pinned explicitly rather
     than left to the environment.
+
+    2026-10-23 (wave 2): the STOP TRADING button (and this test) moved from
+    POST /api/agent/stop (deleted with the rest of the retired autonomous
+    engine's start/stop surface) to POST /api/agent/config {"mode": "OFF"} —
+    the same endpoint the relabeled off switch actually calls
+    (pathiel/static/oil_desk.js), gated by the same operator-token dependency.
     """
     from pathiel.server import app as real_app
     client = TestClient(real_app)
+    body = {"mode": "OFF"}
 
     monkeypatch.setenv("PATHIEL_OPERATOR_TOKEN", "a-token-that-is-set")
-    assert client.post("/api/agent/stop").status_code == 401
-    assert client.post("/api/agent/stop",
+    assert client.post("/api/agent/config", json=body).status_code == 401
+    assert client.post("/api/agent/config", json=body,
                        headers={"X-Operator-Token": "wrong"}).status_code == 401
 
     monkeypatch.delenv("PATHIEL_OPERATOR_TOKEN", raising=False)
-    r = client.post("/api/agent/stop")
+    r = client.post("/api/agent/config", json=body)
     assert r.status_code == 503, "a missing token must close the surface, not open it"
-    assert client.post("/api/agent/stop",
+    assert client.post("/api/agent/config", json=body,
                        headers={"X-Operator-Token": "anything"}).status_code == 503
 
 
@@ -268,11 +275,12 @@ def test_a_partial_dex_blip_does_not_invent_a_drawdown(monkeypatch):
 
 def test_the_executor_refuses_to_trade_a_dust_account():
     """`mode: LIVE` against $0.03 was not a safe state just because the loop
-    happened to be stopped — a restart would have fired orders HL rejects under
-    its ~$10 minimum. The floor is enforced in the executor, the single choke
-    point every order passes through, so no book can route around it."""
-    from pathiel.agents.executor import (MIN_TRADABLE_EQUITY_USD,
-                                               min_tradable_equity)
+    happened to be stopped — a restart would have fired orders HL rejects
+    under its ~$10 minimum. The floor moved from executor.py to
+    pathiel.agents.bracket 2026-10-23 (wave 2); the dashboard's risk panel
+    still reads it through the same name."""
+    from pathiel.agents.bracket import (MIN_TRADABLE_EQUITY_USD,
+                                        min_tradable_equity)
     assert min_tradable_equity({}) == MIN_TRADABLE_EQUITY_USD
     assert MIN_TRADABLE_EQUITY_USD >= 10.0, (
         "the floor has to clear HL's own minimum order size or it does nothing")
@@ -280,8 +288,8 @@ def test_the_executor_refuses_to_trade_a_dust_account():
 
 def test_a_bad_floor_value_falls_back_instead_of_unlocking_trading():
     """A typo in a config file must never silently disable the guard."""
-    from pathiel.agents.executor import (MIN_TRADABLE_EQUITY_USD as M,
-                                               min_tradable_equity)
+    from pathiel.agents.bracket import (MIN_TRADABLE_EQUITY_USD as M,
+                                        min_tradable_equity)
     assert min_tradable_equity({"min_tradable_equity_usd": "oops"}) == M
     assert min_tradable_equity({"min_tradable_equity_usd": None}) == M
     assert min_tradable_equity({"min_tradable_equity_usd": -1}) == M
@@ -346,48 +354,15 @@ def test_above_the_floor_means_it_can_trade(monkeypatch):
 
 
 # ── a degraded feed is not a quiet market ────────────────────────────────────
-
-def test_a_blind_scan_is_not_trustworthy(monkeypatch):
-    """When Hyperliquid bulk-500s, every unreadable coin returns an empty candle
-    list and reads downstream as 'no signal' — indistinguishable from a market
-    we looked at and passed on. Entering on that is entering on an absence of
-    evidence."""
-    from pathiel.agents import perception as P
-    monkeypatch.setattr(P, "_last_scan_integrity",
-                        {"ts": 1, "markets": 100, "gaps": 80, "gap_frac": 0.8,
-                         "errors": 0})
-    assert P.scan_is_trustworthy() is False
-
-
-def test_a_healthy_scan_is_trustworthy(monkeypatch):
-    from pathiel.agents import perception as P
-    monkeypatch.setattr(P, "_last_scan_integrity",
-                        {"ts": 1, "markets": 100, "gaps": 3, "gap_frac": 0.03,
-                         "errors": 0})
-    assert P.scan_is_trustworthy() is True
-
-
-def test_a_cold_start_is_not_treated_as_degraded(monkeypatch):
-    """The gate catches a DEGRADED feed. It must not block the first scan of a
-    fresh process, which has no integrity record yet."""
-    from pathiel.agents import perception as P
-    monkeypatch.setattr(P, "_last_scan_integrity",
-                        {"ts": 0, "markets": 0, "gaps": 0, "gap_frac": 0.0,
-                         "errors": 0})
-    assert P.scan_is_trustworthy() is True
-
-
-def test_the_threshold_is_the_one_that_was_already_worth_warning_about():
-    from pathiel.agents.perception import MAX_SCAN_GAP_FRAC
-    assert MAX_SCAN_GAP_FRAC == 0.25
-
+#
+# 2026-10-23 (wave 2): the scanner (pathiel.agents.perception) that fed this
+# section is retired with the rest of the autonomous engine. _feed_health()
+# is now a static stub (trustworthy: None, reads as "ok" everywhere this is
+# consumed) — there is no scan integrity left to be degraded, so there is
+# nothing left here to test.
 
 def test_feed_health_reaches_the_risk_payload(monkeypatch, curve):
-    from pathiel.agents import perception as P
-    monkeypatch.setattr(P, "_last_scan_integrity",
-                        {"ts": 1, "markets": 40, "gaps": 30, "gap_frac": 0.75,
-                         "errors": 0})
     feed = db._risk_payload()["feed"]
-    assert feed["trustworthy"] is False and feed["gaps"] == 30
+    assert feed["trustworthy"] is None
 
 

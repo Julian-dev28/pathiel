@@ -1,10 +1,10 @@
 """The state backup: does it capture the irreplaceable, and can it be restored?
 
 Code is in git, logs rotate, prices refetch. Three things cannot be recreated:
-.agent-memory.json (trades and closes), .state/shadow_ledger/ (every signal
-every book ever recorded — the evidence under every VALIDATED and REFUTED
-verdict) and .state/capital_flows.jsonl (without which drawdown is not
-flow-neutral). All gitignored, all on one laptop, none had a copy.
+.agent-config.json (the live trading config), .state/strategies/ (every
+desk's thesis and trade journal — the evidence under every graded call) and
+.state/capital_flows.jsonl (without which drawdown is not flow-neutral). All
+gitignored, all on one laptop, none had a copy.
 
 The two ways a backup is worthless: it does not contain what you needed, or it
 does not read back. Both are tested here. The third way it is worse than
@@ -37,11 +37,11 @@ B = _load()
 @pytest.fixture
 def tree(tmp_path):
     """A miniature of the real layout, secrets included."""
-    (tmp_path / ".state" / "shadow_ledger").mkdir(parents=True)
-    (tmp_path / ".agent-memory.json").write_text(json.dumps({"trades": [1, 2]}))
+    (tmp_path / ".state" / "strategies" / "oil" / "theses").mkdir(parents=True)
+    (tmp_path / ".agent-config.json").write_text(json.dumps({"mode": "LIVE"}))
     (tmp_path / ".state" / "capital_flows.jsonl").write_text('{"usd": 24.46}\n')
-    (tmp_path / ".state" / "shadow_ledger" / "unlock_short.jsonl").write_text(
-        '{"coin": "ETH"}\n' * 50)
+    (tmp_path / ".state" / "strategies" / "oil" / "theses" / "t1.json").write_text(
+        '{"coin": "xyz:BRENTOIL"}\n' * 50)
     (tmp_path / ".env.local").write_text("HYPERLIQUID_PRIVATE_KEY=0xdeadbeef\n")
     (tmp_path / ".state" / "signing.pem").write_text("-----BEGIN PRIVATE KEY-----\n")
     return tmp_path
@@ -52,19 +52,19 @@ def tree(tmp_path):
 def test_it_captures_everything_that_cannot_be_recreated(tree):
     files, missing = B.collect(str(tree))
     names = {os.path.relpath(f, tree) for f in files}
-    assert ".agent-memory.json" in names
+    assert ".agent-config.json" in names
     assert ".state/capital_flows.jsonl" in names
-    assert ".state/shadow_ledger/unlock_short.jsonl" in names
+    assert ".state/strategies/oil/theses/t1.json" in names
     assert not missing
 
 
 def test_a_missing_source_is_reported_not_fatal(tmp_path):
-    """A fresh install has no shadow ledger. That must not abort the backup of
-    everything else."""
-    (tmp_path / ".agent-memory.json").write_text("{}")
+    """A fresh install has no desk journal yet. That must not abort the
+    backup of everything else."""
+    (tmp_path / ".agent-config.json").write_text("{}")
     files, missing = B.collect(str(tmp_path))
     assert len(files) == 1
-    assert ".state/shadow_ledger" in missing
+    assert ".state/strategies" in missing
 
 
 # ── what it must NEVER contain ───────────────────────────────────────────────
@@ -85,7 +85,7 @@ def test_secret_filenames_are_recognised(name):
 
 
 def test_ordinary_state_is_not_mistaken_for_a_secret():
-    for ok in (".agent-memory.json", "capital_flows.jsonl", "unlock_short.jsonl"):
+    for ok in (".agent-config.json", "capital_flows.jsonl", "t1.json"):
         assert B.is_secret(f"/x/{ok}") is False
 
 
@@ -168,14 +168,13 @@ def test_keep_zero_never_deletes_everything(tmp_path):
 
 # ── wiring ───────────────────────────────────────────────────────────────────
 
-def test_the_scheduler_runs_the_backup_daily():
-    spec = importlib.util.spec_from_file_location(
-        "sched_backup", os.path.join(ROOT, "scripts", "scheduler.py"))
-    m = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(m)
-    job = m.JOBS["backup-state"]
-    assert job["args"][-1].endswith("backup_state.py")
-    assert "hour" in job, "a daily job, not an interval one"
+# test_the_scheduler_runs_the_backup_daily (scripts/scheduler.py's JOBS
+# dict dispatching backup_state.py daily) was removed 2026-10-23, wave 2:
+# scheduler.py itself is retired with the rest of the autonomous engine's
+# cron-replacement infrastructure. scripts/backup_state.py survives (see
+# the keep list) but has no automatic dispatcher any more — flagged in the
+# wave-2 agent report as an operational gap for Julien, not silently
+# dropped.
 
 
 def test_an_unverified_backup_reports_as_no_backup(monkeypatch, tmp_path):
@@ -187,7 +186,7 @@ def test_an_unverified_backup_reports_as_no_backup(monkeypatch, tmp_path):
     (tmp_path / "backup.json").write_text(
         json.dumps({"ts": time.time(), "verified": False, "detail": "truncated"}))
 
-    import pathiel.agents.rebalancer_owned as ro
+    import pathiel.state as ro
     from pathiel import metrics
     il.reload(ro)
     try:

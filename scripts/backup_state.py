@@ -1,19 +1,26 @@
 #!/usr/bin/env python3
-"""Snapshot the state that cannot be recreated. Runs daily from the scheduler.
+"""Snapshot the state that cannot be recreated.
+
+Run it by hand (`python scripts/backup_state.py`) or from your own cron/
+launchd entry — 2026-10-23 (wave 2): scripts/scheduler.py, which used to
+dispatch this daily, is retired with the rest of the autonomous engine, so
+nothing currently runs this automatically. See docs/RUNBOOK.md.
 
 What is actually irreplaceable
 ------------------------------
 Code is in git. Logs rotate. Prices can be refetched. Three things cannot:
 
-  .agent-memory.json      trades, closes, equity history
-  .state/shadow_ledger/   every signal every book ever recorded — the evidence
-                          base under every VALIDATED and REFUTED verdict
+  .agent-config.json          the live trading config: risk profile, HIP-3
+                              dex allow/blocklist, the AI brain provider
+  .state/strategies/          every desk's thesis and trade journal — the
+                              evidence base under every graded call
+                              (services/strategies/journal.py, trades.py)
   .state/capital_flows.jsonl  deposits and withdrawals, without which the
                           drawdown number is not flow-neutral and cannot be
 
 All three are gitignored, all three live on one laptop, and none had a copy.
-Losing them does not just lose history: every book's verdict loses the evidence
-that justified it, and there is no way to re-derive it after the fact.
+Losing them does not just lose history: every desk's track record loses the
+evidence that justified it, and there is no way to re-derive it after the fact.
 
 Where it goes
 -------------
@@ -49,11 +56,11 @@ BACKUP_DIR = os.environ.get("PATHIEL_BACKUP_DIR") or os.path.expanduser("~/pathi
 KEEP = int(os.environ.get("PATHIEL_BACKUP_KEEP", "14"))
 RECEIPT = os.path.join(STATE_DIR, "backup.json")
 
-# Relative to ROOT. Missing entries are reported, never fatal — a fresh install
-# has no shadow ledger yet.
+# Relative to ROOT. Missing entries are reported, never fatal — a fresh
+# install has no desk journal yet.
 SOURCES: Tuple[str, ...] = (
-    ".agent-memory.json",
-    ".state/shadow_ledger",
+    ".agent-config.json",
+    ".state/strategies",
     ".state/capital_flows.jsonl",
 )
 

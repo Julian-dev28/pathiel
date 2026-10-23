@@ -20,14 +20,14 @@ leverage and $20 notional on a $34 account. The duplication WAS the safety.
 These tests exist so that is never true again: the config can be tidied because
 the fallback is correct, not because every value is spelled out.
 
-STILL LOAD-BEARING AFTER THE BOOKS ARE GONE
-`book_params()` is not book-only infrastructure: `pathiel.agents.executor.
-maybe_execute` calls it (via `services.risk.books.main_engine_spec`) for
-EVERY live trade now — main-engine / MCP-submitted entries resolve their
-stop/leverage/notional through this exact precedence (book value > top-level
-default > floor), just keyed on `"main_engine"` instead of a book name. The
-floor-safety invariant below matters more with the books gone, not less:
-there is only one entry path left, and this is its only sizing fallback.
+STILL LOAD-BEARING AFTER THE BOOKS AND THE EXECUTOR ARE GONE
+`book_params()` is not book-only infrastructure: `services.risk.books.
+main_engine_spec` calls it (keyed on `"main_engine"`) to build the one
+BookSpec the `risk_limits`/`risk_size_trade`/`place_bracket` feasibility
+check prices against — the one entry path left since the strategy books
+(wave 1) and the autonomous executor (wave 2) were both retired. The
+floor-safety invariant below matters more with everything else gone, not
+less: there is only one sizing fallback left, and this is it.
 """
 from __future__ import annotations
 
@@ -37,8 +37,7 @@ from pathlib import Path
 import pytest
 
 from pathiel.agents.book_params import (
-    BACKUP_SL_MAX_FRAC_OF_LIQ, FLOOR_LEVERAGE, FLOOR_NOTIONAL_USD,
-    FLOOR_STOP_PCT, LIQ_SAFETY_FRAC, book_params, max_stop_pct_at_leverage)
+    FLOOR_LEVERAGE, FLOOR_NOTIONAL_USD, FLOOR_STOP_PCT, book_params)
 
 # Synthetic config keys standing in for the retired books — the precedence
 # `book_params()` implements does not care what the key is named, and using
@@ -77,11 +76,14 @@ def test_an_empty_config_produces_the_smallest_placeable_position():
     assert p.stop_pct == FLOOR_STOP_PCT
 
 
-def test_floors_are_never_more_aggressive_than_the_live_config():
+def test_floors_are_never_more_aggressive_than_the_live_risk_profile():
     """Guards the floors themselves: raising FLOOR_LEVERAGE to 10 would
-    reintroduce the exact bug, and this fails if anyone does."""
-    assert FLOOR_LEVERAGE <= int(CFG["leverage"])
-    assert FLOOR_STOP_PCT <= float(CFG["default_stop_pct"])
+    reintroduce the exact bug, and this fails if anyone does. 2026-10-23
+    (wave 2): the live config no longer carries a top-level `leverage` /
+    `default_stop_pct` (both retired with the autonomous executor, the one
+    thing that read them as a global default) — the floor's job now is only
+    to never exceed what the operator's saved risk profile allows."""
+    assert FLOOR_LEVERAGE <= int(CFG["risk_profile"]["max_leverage"])
 
 
 # ------------------------------------------------------------- the precedence
@@ -100,79 +102,14 @@ def test_top_level_default_fills_what_the_book_omits():
 
 
 def test_main_engine_resolves_through_the_same_precedence():
-    """services.risk.books.main_engine_spec and executor.maybe_execute both
-    call book_params(config, "main_engine") — the one entry path left since
-    the strategy books were retired. No "main_engine" block exists in the
-    live config, so this always lands on the top-level default / floor,
-    exactly like any other key with no block of its own."""
+    """services.risk.books.main_engine_spec calls book_params(config,
+    "main_engine") — the one entry path left since the strategy books (wave
+    1) and the autonomous executor (wave 2) were both retired. No
+    "main_engine" block, and no top-level `leverage`/`default_stop_pct`
+    default, exists in the live config any more, so this always lands on
+    the conservative floor."""
     p = book_params(CFG, "main_engine")
-    assert (p.leverage, p.stop_pct) == (int(CFG["leverage"]), float(CFG["default_stop_pct"]))
-
-
-# ------------------------------------------------- the clamp, in one place
-class TestClampIsOneSourceOfTruth:
-    """`max_stop_pct_at_leverage` and `executor.stop_honoring_leverage` answer
-    the same question from opposite ends. If they ever disagree, a trade
-    requests a stop the executor silently narrows — which is the 2026-07-20
-    bug, a different strategy rather than a smaller one.
-    """
-
-    @pytest.mark.parametrize("leverage", [1, 2, 3, 4, 5, 6, 8, 10, 12, 20])
-    def test_the_widest_stop_round_trips_through_the_executor(self, leverage):
-        """The property that makes "derived" mean something.
-
-        Take the widest stop this leverage allows, hand it to the executor's
-        cap, and the executor must leave the leverage alone. Off by a hair in
-        either direction and this fails: too wide and the cap walks leverage
-        down, too narrow and the derivation is leaving size on the table.
-        """
-        from pathiel.agents.executor import stop_honoring_leverage
-        widest = max_stop_pct_at_leverage(leverage)
-        assert stop_honoring_leverage(leverage, widest) == leverage
-
-    @pytest.mark.parametrize("leverage", [2, 3, 4, 6, 10, 20])
-    def test_a_hair_wider_is_rejected(self, leverage):
-        """The other half: the boundary is a boundary, not a suggestion."""
-        from pathiel.agents.executor import stop_honoring_leverage
-        too_wide = max_stop_pct_at_leverage(leverage) * 1.02
-        assert stop_honoring_leverage(leverage, too_wide) < leverage
-
-    def test_the_derivation_tracks_a_change_to_either_input(self):
-        """Change the leverage or the clamp and the stop follows.
-
-        The whole point: two numbers that have to agree by hand eventually do
-        not, so this asserts the dependency rather than the current values.
-        """
-        assert max_stop_pct_at_leverage(20) == max_stop_pct_at_leverage(10) / 2
-        looser = max_stop_pct_at_leverage(10, max_frac_of_liq=0.80)
-        assert looser > max_stop_pct_at_leverage(10, max_frac_of_liq=0.60)
-
-    def test_the_liq_bound_binds_on_a_low_max_leverage_coin(self):
-        """`1/lev` overstates the liquidation distance because maintenance
-        margin eats into it. On a 3x-max coin the naive width bound would
-        authorize a stop the position dies before reaching."""
-        naive = max_stop_pct_at_leverage(3)
-        with_maint = max_stop_pct_at_leverage(3, coin_max_leverage=3)
-        assert with_maint < naive
-
-    def test_no_bound_is_not_read_as_a_safe_stop(self):
-        """Disabling both bounds means nothing constrains the stop here, which
-        is not the same as any stop being fine. `inf` cannot be mistaken for a
-        usable default the way a large float could."""
-        import math
-        assert math.isinf(
-            max_stop_pct_at_leverage(10, max_frac_of_liq=0, liq_safety_frac=0))
-
-    def test_the_shared_defaults_are_what_the_executor_uses(self):
-        """The constants live in book_params so a research/grading script
-        could read them without importing a signing stack. The executor must
-        still be reading the same ones."""
-        import inspect
-
-        from pathiel.agents import executor
-        sig = inspect.signature(executor.stop_honoring_leverage)
-        assert sig.parameters["max_frac_of_liq"].default == BACKUP_SL_MAX_FRAC_OF_LIQ
-        assert sig.parameters["liq_safety_frac"].default == LIQ_SAFETY_FRAC
+    assert (p.leverage, p.stop_pct) == (FLOOR_LEVERAGE, FLOOR_STOP_PCT)
 
 
 # ----------------------------------------------------------------- robustness

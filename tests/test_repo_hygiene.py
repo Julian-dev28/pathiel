@@ -223,17 +223,29 @@ AGENTS_DIR = ROOT / "pathiel" / "agents"
 # Owned by other overhaul agents (see docs/overhaul/SWARM_RULES.md section
 # 6) — out of scope for this guard, which only answers for cleanup's own
 # pathiel/agents/** ownership.
-NOT_CLEANUP_OWNED = {"executor.py", "sizing.py", "risk_gates.py", "hyperfeed.py"}
+NOT_CLEANUP_OWNED = {"hyperfeed.py"}
 
 ENTRY_POINT_FILES = (
-    ROOT / "scripts" / "trading_loop.py",
     ROOT / "pathiel" / "server.py",
     ROOT / "pathiel" / "dashboard.py",
     ROOT / "pathiel" / "__main__.py",
     ROOT / "scripts" / "pathiel-mcp-server.py",   # Claude's trading surface (bracket)
+    # 2026-10-23 (wave 2): the autonomous scan/research/execute engine
+    # (scripts/trading_loop.py, pathiel/agents/executor.py, risk_gates.py,
+    # sizing.py) is retired, so neither the script nor its NOT_CLEANUP_OWNED
+    # exemptions apply any more. book_params.py and news_catalyst.py lost
+    # their one direct pathiel/agents/*.py importer (executor.py) in the same
+    # deletion — both are still genuinely live, just reached from outside
+    # pathiel/agents/ now (services/risk/books.py's main_engine_spec,
+    # services/risk/migrate.py's legacy-key migration, and scripts/news.py's
+    # CLI), so those real callers join the BFS roots below rather than being
+    # left as a false "unreachable" positive — the same class of bug the
+    # NOT_CLEANUP_OWNED tracing fix (see the test's own docstring) existed to
+    # catch when executor.py was still the one doing the reaching.
+    ROOT / "services" / "risk" / "books.py",
+    ROOT / "services" / "risk" / "migrate.py",
+    ROOT / "scripts" / "news.py",
 )
-# scripts/autonomous_cycle.py (graded/promoted the strategy books) was
-# removed with the books themselves — headless desk, 2026-10-23.
 
 
 def _pathiel_agents_imports(source: str) -> Set[str]:

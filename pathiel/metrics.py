@@ -2,11 +2,22 @@
 
 The `/metrics` endpoint (served by `server.py`) is scraped by Prometheus. It is
 deliberately **network-free**: every gauge is refreshed from local state only
-(`memory`, the agent config, and the cross-process positions snapshot the loop
-writes each cycle), so a scrape never hits Hyperliquid and never contends with
-the loop's rate limiter. Process/GC collectors are auto-registered by
-prometheus_client on import (they populate on Linux — i.e. in the container/k8s,
-which is where the ops signal matters).
+(the agent config and on-disk receipts), so a scrape never hits Hyperliquid and
+never contends with any live request. Process/GC collectors are auto-registered
+by prometheus_client on import (they populate on Linux — i.e. in the
+container/k8s, which is where the ops signal matters).
+
+2026-10-23 (wave 2): the autonomous scan/research/execute engine is retired —
+Claude trades through the MCP server now, there is no trading loop, no
+scanner, no process supervisor and no alert evaluator running as a scheduled
+job on the operator's machine. EQUITY/OPEN_POSITIONS/OPEN_NOTIONAL/
+UNREALIZED_PNL (sourced from a position snapshot only that loop ever wrote),
+TRADES_TOTAL/the bot's own win-rate ledger, HEARTBEAT_AGE (the loop's
+heartbeat), FEED_GAP_FRAC/FEED_TRUSTWORTHY (the scanner's feed-integrity
+read), SUPERVISOR_AGE and ALERT_EVAL_AGE/ALERTS_FIRING (both scheduler jobs)
+are all dropped rather than kept and left reading a permanent, false
+"dead"/"zero" — the same reasoning that dropped GRADING_AGE in wave 1. Every
+gauge below still has a real writer.
 """
 
 from __future__ import annotations
@@ -18,35 +29,11 @@ from prometheus_client import CONTENT_TYPE_LATEST, REGISTRY, Gauge, generate_lat
 
 logger = logging.getLogger(__name__)
 
-EQUITY = Gauge("pathiel_equity_usd", "Last known account equity in USD")
-OPEN_POSITIONS = Gauge(
-    "pathiel_open_positions", "Open positions (from the loop snapshot)"
-)
-OPEN_NOTIONAL = Gauge(
-    "pathiel_open_notional_usd", "Sum of open position notional in USD"
-)
-UNREALIZED_PNL = Gauge(
-    "pathiel_unrealized_pnl_usd", "Sum of unrealized PnL across open positions in USD"
-)
-TRADES_TOTAL = Gauge("pathiel_trades_total", "Number of recorded trades")
 LIVE_MODE = Gauge("pathiel_live_mode", "1 when agent mode is LIVE, 0 otherwise")
 
 # ── failure-mode metrics ─────────────────────────────────────────────────────
-# Everything above measures the happy path: equity, positions, PnL. None of it
-# moves when the system BREAKS, which is how a dead loop, a blind market feed
-# and an unrotated disk all went unnoticed. These are the failures, exported so
-# something can page on them instead of a human noticing weeks later.
-HEARTBEAT_AGE = Gauge(
-    "pathiel_heartbeat_age_seconds",
-    "Seconds since the trading loop last wrote a heartbeat. Grows without "
-    "bound when the loop is dead — which is the point")
-FEED_GAP_FRAC = Gauge(
-    "pathiel_feed_gap_fraction",
-    "Share of the scanned universe that was unreadable on the last scan. A "
-    "degraded feed reads downstream as a quiet market")
-FEED_TRUSTWORTHY = Gauge(
-    "pathiel_feed_trustworthy", "1 when the last scan was trustworthy enough to "
-    "trade on, 0 when entries are blocked")
+# Everything that measures the happy path moved to the desk-grading service's
+# own trace; these are the failures a human would otherwise have to notice.
 DISK_FREE = Gauge("pathiel_disk_free_bytes", "Free bytes on the state filesystem")
 LOG_DIR_BYTES = Gauge("pathiel_log_dir_bytes", "Total bytes under logs/")
 BRAIN_READY = Gauge(
@@ -54,30 +41,16 @@ BRAIN_READY = Gauge(
     "dead brain returns empty completions, which downstream reads as a PASS")
 CAN_TRADE = Gauge(
     "pathiel_can_trade", "1 when equity clears the structural minimum. LIVE mode "
-    "with 0 here means the executor refuses every order")
+    "with 0 here means every order attempt is refused")
 DRAWDOWN_PCT = Gauge(
     "pathiel_drawdown_pct", "Current drawdown from peak, flow-neutral where "
     "capital flows are recorded (negative)")
 MAX_DRAWDOWN_PCT = Gauge(
     "pathiel_max_drawdown_pct", "Worst drawdown over the risk window (negative)")
-# Who watches the watchers. Every metric above depends on something still
-# running to act on it. If the supervisor stops, dead processes stop being
-# restarted; if the alert evaluator stops, nothing is delivered. Both fail the
-# same silent way everything else here did — by simply not happening.
-SUPERVISOR_AGE = Gauge(
-    "pathiel_supervisor_age_seconds",
-    "Seconds since the process supervisor last ran. Grows without bound when "
-    "supervision has stopped, which is when a dead process stays dead")
-ALERT_EVAL_AGE = Gauge(
-    "pathiel_alert_eval_age_seconds",
-    "Seconds since the alert evaluator last ran. Nothing is being delivered "
-    "while this grows")
-ALERTS_FIRING = Gauge(
-    "pathiel_alerts_firing", "Number of alert rules currently firing")
 BACKUP_AGE = Gauge(
     "pathiel_backup_age_seconds",
     "Seconds since the last VERIFIED state backup. The evidence base under "
-    "every book verdict is gitignored and lives on one disk")
+    "every desk's track record is gitignored and lives on one disk")
 
 
 def _to_float(value: object) -> float:
@@ -91,15 +64,6 @@ def _refresh() -> None:
     """Pull current values from local state. Never raises — a partial scrape
     beats a 500 that blinds the dashboard."""
     try:
-        from pathiel.agents.memory import memory
-
-        memory.load()
-        EQUITY.set(_to_float(memory.get_full_state().get("equity", 0)))
-        TRADES_TOTAL.set(len(memory.get_all_trades() or []))
-    except Exception as e:  # noqa: BLE001 — metrics must never break the endpoint
-        logger.debug(f"[metrics] memory read failed: {e}")
-
-    try:
         from pathiel.agents.config_store import read_agent_config
 
         mode = str(read_agent_config().get("mode", "OFF")).upper()
@@ -107,55 +71,13 @@ def _refresh() -> None:
     except Exception as e:  # noqa: BLE001
         logger.debug(f"[metrics] config read failed: {e}")
 
-    try:
-        from pathiel.positions_snapshot import read_snapshot
-
-        snap = read_snapshot(max_age_s=600.0) or {}
-        count = 0
-        notional = 0.0
-        upnl = 0.0
-        for entry in snap.get("asset_positions", []):
-            pos = entry.get("position", {}) if isinstance(entry, dict) else {}
-            if _to_float(pos.get("szi")) == 0:
-                continue
-            count += 1
-            notional += abs(_to_float(pos.get("positionValue")))
-            upnl += _to_float(pos.get("unrealizedPnl"))
-        OPEN_POSITIONS.set(count)
-        OPEN_NOTIONAL.set(notional)
-        UNREALIZED_PNL.set(upnl)
-    except Exception as e:  # noqa: BLE001
-        logger.debug(f"[metrics] snapshot read failed: {e}")
-
-    # `_never_ran` is a large sentinel, not 0: "no supervisor state file" must
-    # read as maximally stale, never as "ran just now". Same reason the
-    # heartbeat uses one.
+    # `_never_ran` is a large sentinel, not 0: "no backup receipt" must read as
+    # maximally stale, never as "ran just now".
     _never_ran = 10 ** 6
-    for gauge, name in ((SUPERVISOR_AGE, "supervisor.json"),
-                        (ALERT_EVAL_AGE, "alerts.json")):
-        try:
-            from pathiel.agents.atomic_io import read_json
-            from pathiel.agents.rebalancer_owned import state_file
-
-            payload = read_json(state_file(name), default=None)
-            ts = _to_float((payload or {}).get("ts"))
-            gauge.set(time.time() - ts if ts > 0 else _never_ran)
-        except Exception as e:  # noqa: BLE001
-            logger.debug(f"[metrics] {name} read failed: {e}")
-            gauge.set(_never_ran)
 
     try:
         from pathiel.agents.atomic_io import read_json
-        from pathiel.agents.rebalancer_owned import state_file
-
-        firing = (read_json(state_file("alerts.json"), default=None) or {}).get("firing")
-        ALERTS_FIRING.set(len(firing) if isinstance(firing, list) else 0)
-    except Exception as e:  # noqa: BLE001
-        logger.debug(f"[metrics] alerts firing read failed: {e}")
-
-    try:
-        from pathiel.agents.atomic_io import read_json
-        from pathiel.agents.rebalancer_owned import state_file
+        from pathiel.state import state_file
 
         receipt = read_json(state_file("backup.json"), default=None) or {}
         ts = _to_float(receipt.get("ts"))
@@ -171,25 +93,6 @@ def _refresh() -> None:
     # Each block is independently guarded: one broken source must degrade a
     # single metric, never blank the whole scrape. A monitoring gap that hides
     # the other metrics is worse than the gap itself.
-    try:
-        from pathiel import dashboard as _db
-
-        age = (_db._summary_payload() or {}).get("last_tick_age_s")
-        # No heartbeat at all is not "age 0" — that would read as perfectly
-        # healthy. A large sentinel keeps the alert firing.
-        HEARTBEAT_AGE.set(float(age) if age is not None else 1e9)
-    except Exception as e:  # noqa: BLE001
-        logger.debug(f"[metrics] heartbeat read failed: {e}")
-
-    try:
-        from pathiel.agents import perception
-
-        st = perception.last_scan_integrity()
-        FEED_GAP_FRAC.set(_to_float(st.get("gap_frac")))
-        FEED_TRUSTWORTHY.set(1.0 if perception.scan_is_trustworthy() else 0.0)
-    except Exception as e:  # noqa: BLE001
-        logger.debug(f"[metrics] feed read failed: {e}")
-
     try:
         from pathiel import log_setup
 

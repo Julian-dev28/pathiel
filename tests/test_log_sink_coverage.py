@@ -27,10 +27,6 @@ def _restart_sh() -> str:
     return (ROOT / "scripts" / "restart.sh").read_text()
 
 
-def _scheduler_py() -> str:
-    return (ROOT / "scripts" / "scheduler.py").read_text()
-
-
 def test_the_rotator_globs_the_whole_log_directory():
     """A glob, not an enumerated list: a log file added next month must be
     bounded without anyone remembering to register it."""
@@ -51,17 +47,20 @@ def test_every_shell_redirected_sink_lands_in_the_log_dir():
                 f"rotator sweeps")
 
 
-def test_scheduler_job_logs_are_under_the_log_dir():
-    """scheduler.py opens each job's log itself, so those are sinks too."""
-    body = _scheduler_py()
-    for log in re.findall(r'"log":\s*"([^"]+)"', body):
-        assert log.startswith("logs/"), f"scheduler job log {log} escapes logs/"
+# test_scheduler_job_logs_are_under_the_log_dir (scripts/scheduler.py's own
+# per-job log paths) was removed 2026-10-23, wave 2: scheduler.py is
+# retired with the rest of the autonomous engine's cron-replacement
+# infrastructure.
 
 
 def test_no_entrypoint_mixes_both_rotation_mechanisms():
     """An in-process handler on a file the shell is also appending to would
-    double-log and rename a path the shell fd still holds."""
-    redirected = {"trading_loop.py", "scheduler.py", "log_rotate.py"}
+    double-log and rename a path the shell fd still holds.
+
+    2026-10-23 (wave 2): trading_loop.py and scheduler.py are retired with
+    the rest of the autonomous engine, so restart.sh no longer shell-
+    redirects either — log_rotate.py is the one entrypoint left to check."""
+    redirected = {"log_rotate.py"}
     for name in redirected:
         src = (ROOT / "scripts" / name).read_text()
         assert "configure_logging(" not in src, (

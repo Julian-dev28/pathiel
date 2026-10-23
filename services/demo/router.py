@@ -77,7 +77,6 @@ _PATH_FROZEN_MODULES = (
     "pathiel.session_log",
     "pathiel.positions_snapshot",
     "pathiel.agents.config_store",
-    "pathiel.agents.memory",
 )
 
 

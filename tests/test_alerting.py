@@ -33,11 +33,16 @@ def scrape():
 
 
 def test_every_failure_mode_has_a_metric(scrape):
-    """A dashboard number nobody scrapes cannot page anyone."""
-    for metric in ("pathiel_heartbeat_age_seconds", "pathiel_feed_trustworthy",
-                   "pathiel_feed_gap_fraction", "pathiel_can_trade",
-                   "pathiel_ai_brain_ready", "pathiel_disk_free_bytes",
-                   "pathiel_log_dir_bytes", "pathiel_max_drawdown_pct"):
+    """A dashboard number nobody scrapes cannot page anyone.
+
+    2026-10-23 (wave 2): pathiel_heartbeat_age_seconds/pathiel_feed_trustworthy/
+    pathiel_feed_gap_fraction dropped — the trading loop and its scanner that
+    wrote them are retired, and a metric with no writer left reads as a
+    permanent, false failure rather than a real one (the same reasoning that
+    dropped pathiel_grading_age_seconds in wave 1)."""
+    for metric in ("pathiel_can_trade", "pathiel_ai_brain_ready",
+                   "pathiel_disk_free_bytes", "pathiel_log_dir_bytes",
+                   "pathiel_max_drawdown_pct", "pathiel_backup_age_seconds"):
         assert metric in scrape, f"{metric} is not exported"
 
 
@@ -51,21 +56,6 @@ def test_every_alert_references_a_metric_that_is_actually_exported(rules, scrape
         assert used, f"{name} references no pathiel metric"
         for m in used:
             assert m in exported, f"{name} alerts on {m}, which is not exported"
-
-
-def test_the_loop_death_alert_exists_and_is_critical(rules):
-    """The zombie week: the machine slept, the loop stopped, nothing said so."""
-    r = rules["PathielLoopDead"]
-    assert r["labels"]["severity"] == "critical"
-
-
-def test_the_loop_alert_threshold_clears_the_p99_heartbeat_gap(rules):
-    """p99 is ~420s on healthy days. A tighter threshold pages on ordinary slow
-    cycles, and an alert that cries wolf gets muted — which is how you end up
-    with no alerting at all."""
-    expr = rules["PathielLoopDead"]["expr"]
-    threshold = float(expr.split(">")[1].strip())
-    assert threshold >= 840, "threshold would fire on a normal slow cycle"
 
 
 def test_alerts_have_actionable_annotations(rules):
@@ -119,79 +109,11 @@ def test_heartbeat_age_tracks_the_heartbeat_not_any_log_write(monkeypatch):
     assert s["last_event_age_s"] < 10, "last_event_age_s lost its own meaning"
 
 
-def test_no_heartbeat_at_all_is_not_reported_as_age_zero(monkeypatch):
-    """Age 0 would read as perfectly healthy, which is the opposite of true."""
-    import pathiel.metrics as M
-    import pathiel.dashboard as db
-    monkeypatch.setattr(db, "_summary_payload", lambda: {"last_tick_age_s": None})
-    M._refresh()
-    assert M.HEARTBEAT_AGE._value.get() > 1e6
-
-
-# ── a job that fails daily still looks like it ran daily ────────────────────
-
-def test_success_is_tracked_separately_from_dispatch(tmp_path):
-    """`last_run` moves on every dispatch, success or not. autonomous-cycle hit
-    its 1500s deadline on every run from 2026-08-23 to 08-31 — eight days with
-    no book graded, no demotion possible, and every surface reporting it as
-    having "run today"."""
-    import importlib.util
-    import json as _json
-    import os as _os
-
-    root = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
-    spec = importlib.util.spec_from_file_location(
-        "sched_ok", _os.path.join(root, "scripts", "scheduler.py"))
-    m = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(m)
-
-    state_path = str(tmp_path / "sched.json")
-    m._stamp("job", 1000.0, {"rc": 1, "elapsed_s": 1500.0}, state_path)
-    st = _json.loads(open(state_path).read())["job"]
-    assert st["last_run"] == 1000.0
-    assert "last_ok" not in st, "a failed run must not count as a success"
-
-    m._stamp("job", 2000.0, {"rc": 0, "elapsed_s": 12.0}, state_path)
-    st = _json.loads(open(state_path).read())["job"]
-    assert st["last_ok"] == 2000.0
-
-    m._stamp("job", 3000.0, {"rc": 1, "elapsed_s": 1500.0}, state_path)
-    st = _json.loads(open(state_path).read())["job"]
-    assert st["last_run"] == 3000.0
-    assert st["last_ok"] == 2000.0, "a later failure erased the last success"
-
-
-def test_a_deleted_jobs_state_entry_is_pruned():
-    """A deleted job's last_run stays forever, so `scheduler.py status` lists
-    poly-board with a timestamp — a job that will never run again looking like
-    one that just did."""
-    import importlib.util
-    import os as _os
-
-    root = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
-    spec = importlib.util.spec_from_file_location(
-        "sched_prune", _os.path.join(root, "scripts", "scheduler.py"))
-    m = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(m)
-
-    state = {"alerts": {"last_run": 1.0}, "poly-board": {"last_run": 2.0}}
-    kept = m.prune_ghosts(state, {"alerts": {}})
-    assert kept == {"alerts": {"last_run": 1.0}}
-
-
-def test_pruning_keeps_every_real_job():
-    """Over-pruning would silently reset every job's clock and re-run
-    everything at once."""
-    import importlib.util
-    import os as _os
-
-    root = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
-    spec = importlib.util.spec_from_file_location(
-        "sched_prune2", _os.path.join(root, "scripts", "scheduler.py"))
-    m = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(m)
-
-    state = {name: {"last_run": 1.0} for name in m.JOBS}
-    assert m.prune_ghosts(state) == state
+# 2026-10-23 (wave 2): pathiel.metrics.HEARTBEAT_AGE and scripts/scheduler.py
+# are both retired with the rest of the autonomous engine (the trading loop
+# that wrote the heartbeat, and the cron-replacement scheduler whose
+# dispatch/success/pruning bookkeeping the tests here used to cover). Claude
+# trades through the MCP server now; there is no scheduled job, no heartbeat,
+# and nothing left for those tests to exercise.
 
 

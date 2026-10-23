@@ -395,25 +395,11 @@ def test_configure_logging_rotates_and_gzips(tmp_path):
 
 # ── the log table must describe the logs that exist ─────────────────────────
 
-def test_every_scheduler_job_log_is_documented():
-    """docs/LOGGING.md is the map an operator reads at 3am. It listed
-    `logs/updown_sampler.log` for a `restart.sh sampler` action that does not
-    exist, and omitted the supervisor, the alert evaluator, the backup and
-    capital-flows logs entirely — four of the six jobs actually running.
-    """
-    import importlib.util
-    import pathlib
-
-    root = pathlib.Path(__file__).resolve().parent.parent
-    spec = importlib.util.spec_from_file_location(
-        "sched_logs", root / "scripts" / "scheduler.py")
-    m = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(m)
-
-    doc = (root / "docs" / "LOGGING.md").read_text()
-    missing = [log for log in {j["log"] for j in m.JOBS.values()}
-               if f"`{log}`" not in doc]
-    assert not missing, f"docs/LOGGING.md does not mention: {missing}"
+# test_every_scheduler_job_log_is_documented (cross-checked docs/LOGGING.md
+# against scripts/scheduler.py's JOBS dict) was removed 2026-10-23, wave 2:
+# scheduler.py itself is retired with the rest of the autonomous engine's
+# cron-replacement infrastructure — there is no scheduled job log left to
+# document.
 
 
 def test_the_log_table_does_not_document_deleted_processes():
