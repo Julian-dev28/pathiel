@@ -3248,6 +3248,12 @@ def handle_place_bracket(params: Dict[str, Any]) -> str:
         from services.risk.size import size_trade
         profile, books, venue = _risk_inputs()
         coin_max, sz_dec = _coin_specs(coin)
+        if not coin_max:
+            # Refuse rather than guess: without the venue's max leverage the
+            # liquidation estimate and the 20x rule cannot run, and a trade
+            # placed blind is the failure this desk exists to prevent.
+            return json.dumps({"ok": False, "coin": coin, "placed": False,
+                               "error": f"venue max leverage for {coin} could not be read; not trading blind"})
         ref = entry if entry is not None else float(get_hl_price(coin))
         leverage = _fnum(lev_raw) if lev_raw not in (None, "") else (profile.max_leverage or None)
         sized = size_trade(_live_equity(), profile, books, entry_px=ref, stop_px=stop,
