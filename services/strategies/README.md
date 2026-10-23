@@ -1,6 +1,6 @@
 # services/strategies — the desks facility
 
-A desk is one siloed trading focus (oil, btc, top5 crypto, AI equities,
+A desk is one siloed trading focus (oil, gas, btc, top5 crypto, AI equities,
 metals, indices) with its own instruments, news queries, policy topics,
 catalysts, leverage ladder, token budget and thesis journal. Oil is the
 flagship — Julien wants to become a master oil trader — and gets the most
@@ -20,6 +20,7 @@ one degrades gracefully when they're missing (see "Pipeline" below).
 | id | instruments | notes |
 |---|---|---|
 | `oil` | xyz:BRENTOIL (Brent, primary since 2026-10-19), xyz:CL (WTI, secondary), xyz:NATGAS (hedge) | Brent-WTI pair. Checked heating oil (xyz:HO, $43k/24h) and gasoline/RBOB (doesn't exist on HL) — both excluded, see `desks/oil.py`. |
+| `gas` | xyz:NATGAS (primary, no secondary, no pair) | Weekly EIA natural gas storage report (Thursday 14:30 UTC, `eia_gas_storage` catalyst) vs. consensus, heating/cooling degree days, LNG export feedgas flows. Verified 2026-10-23: $16.1M 24h volume, maxLeverage 10 — see `desks/gas.py`. |
 | `btc` | BTC | Single largest, most liquid perp on the main dex. |
 | `top5` | BTC, ETH, SOL, HYPE, ZEC (all primary) | The 5 largest native crypto perps by 24h volume, verified 2026-10-17. Drifts — see "Adding/updating a desk" below. |
 | `ai` | xyz:NVDA, MU, AMD, GOOGL, META, PLTR, TSM (primary); MSFT, AVGO, ORCL, ARM (secondary) | HIP-3 AI-chip/AI-infra equities, >$1M 24h volume. |
@@ -263,7 +264,16 @@ duration) regardless of outcome, so cost per thesis is visible.
 3. Add it to `_BUILDERS` in `desks/__init__.py`.
 4. `python -m services.strategies list` and `pytest services/strategies` pick
    it up automatically (test_desks.py iterates the registry, nothing is
-   hardcoded to the 6 existing ids).
+   hardcoded to the previously-existing ids) — except a few tests that
+   assert the FULL set of desk ids by name (`test_api.py`,
+   `test_cli.py`, `test_desks.py`'s registry test): update those sets too,
+   the gate test failure points straight at them.
+5. No change needed in `evals/verdict_backtest.py`: `run_for_desk`/`main`
+   already iterate `desks.list_desk_ids()`, so a new desk's primary
+   instrument(s) get the walk-forward liquidation backtest for free the
+   next time the eval runs (`test_verdict_backtest_eval.py` covers the
+   pure walk-forward loop offline; the eval itself hits live HL candles, so
+   it is periodic, not a commit gate).
 
 ## Running it
 

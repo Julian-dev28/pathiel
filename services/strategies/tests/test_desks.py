@@ -10,11 +10,11 @@ import pytest
 from services.strategies import desks
 
 
-def test_registry_lists_all_six_desks():
-    assert set(desks.list_desk_ids()) == {"oil", "btc", "top5", "ai", "metals", "indices"}
+def test_registry_lists_all_seven_desks():
+    assert set(desks.list_desk_ids()) == {"oil", "gas", "btc", "top5", "ai", "metals", "indices"}
 
 
-@pytest.mark.parametrize("desk_id", ["oil", "btc", "top5", "ai", "metals", "indices"])
+@pytest.mark.parametrize("desk_id", ["oil", "gas", "btc", "top5", "ai", "metals", "indices"])
 def test_every_desk_spec_validates(desk_id):
     spec = desks.get_spec(desk_id)
     assert spec is not None
@@ -63,6 +63,48 @@ def test_oil_desk_keeps_iran_in_the_gdelt_query():
     assert "Iran oil exports" in spec.news_queries[:6]
     assert "Brent crude" in spec.news_queries[:8]
     assert '"Iran oil exports"' in news._gdelt_query(spec)
+
+
+def test_gas_desk_is_natgas_only_no_secondary_no_pair():
+    """Build brief: primary xyz:NATGAS, no secondary, no pair."""
+    spec = desks.require_spec("gas")
+    assert [i.coin for i in spec.instruments] == ["xyz:NATGAS"]
+    assert spec.instruments[0].role == "primary"
+    assert spec.pairs == []
+
+
+def test_gas_desk_leverage_ladder_and_horizon():
+    spec = desks.require_spec("gas")
+    assert spec.leverage_ladder == [5, 10]
+    assert spec.horizon_days == 7
+
+
+def test_gas_desk_catalyst_kinds_match_the_build_brief():
+    spec = desks.require_spec("gas")
+    assert spec.catalyst_kinds == ["eia_gas_storage", "fomc", "cftc_cot"]
+
+
+def test_gas_desk_news_and_policy_cover_storage_weather_and_lng():
+    """Build brief: storage report vs expectations, weather (heating/cooling
+    degree days), LNG export flows must show up in the desk's own queries,
+    not just be implied."""
+    spec = desks.require_spec("gas")
+    hay = " ".join(spec.news_queries).lower()
+    assert "eia" in hay and "storage" in hay
+    assert "heating degree days" in hay
+    assert "cooling degree days" in hay
+    assert "lng" in hay
+    policy_hay = " ".join(spec.policy_topics).lower()
+    assert "lng export" in policy_hay
+    assert "ferc" in policy_hay
+    assert "doe export" in policy_hay
+
+
+def test_gas_desk_lessons_cover_the_named_concepts():
+    spec = desks.require_spec("gas")
+    lessons_hay = " ".join(spec.lessons).lower()
+    for term in ("storage surprise", "degree days", "henry hub", "lng feedgas", "shoulder season"):
+        assert term in lessons_hay
 
 
 def test_btc_desk_is_btc_only():
