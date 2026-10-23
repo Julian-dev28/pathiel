@@ -121,6 +121,19 @@ def _quick_markdown(brief: DeskBrief) -> Optional[str]:
         return None
 
 
+def _quick_fields(brief: DeskBrief) -> Optional[dict]:
+    """quick_fields(thesis) for the Desk page's call card; None without a
+    thesis or when the render misses (same contract as _quick_markdown)."""
+    if brief.thesis is None or brief.analytics is None:
+        return None
+    try:
+        from services.thesis.render import quick_fields
+        return quick_fields(brief.thesis)
+    except Exception as e:  # noqa: BLE001 - a render miss must not 500 the whole brief
+        logger.warning(f"[strategies.api] quick fields render failed for {brief.spec.id}: {e}")
+        return None
+
+
 @router.get("/api/desks/{desk_id}", response_model=DeskBrief)
 def get_desk_brief(desk_id: str) -> DeskBrief:
     try:
@@ -128,7 +141,8 @@ def get_desk_brief(desk_id: str) -> DeskBrief:
     except desks.UnknownDeskError:
         raise _unknown_desk(desk_id)
     return brief.model_copy(update={"refresh_job": running_job(desk_id),
-                                    "quick_markdown": _quick_markdown(brief)})
+                                    "quick_markdown": _quick_markdown(brief),
+                                    "quick_fields": _quick_fields(brief)})
 
 
 @router.post("/api/desks/{desk_id}/refresh", response_model=RefreshJob)

@@ -289,14 +289,16 @@ def test_the_desk_page_has_every_section(client):
     has no working no-network pattern for the Desk page specifically — its
     fixtures are desks.html/onboarding-flow specific). Covers every section
     docs/overhaul/DESK_UI_2026-10-23.md lists for "/": the call, wallets,
-    levels, headlines and catalysts, loop log, track record, the old
-    auto-trader kill switch, plus the onboarding wizard root that gates all
-    of it for a brand-new visitor."""
+    levels, headlines and catalysts, loop log, track record, plus the
+    onboarding wizard root that gates all of it for a brand-new visitor.
+    The old auto-trader kill switch left on 2026-10-24 (operator ask; the bot
+    it switched off no longer exists)."""
     body = client.get("/").text
     for section_id in ("onboarding-root", "oil-desk-root", "call-section",
                        "wallets-section", "levels-section", "intel-section",
-                       "log-section", "track-section", "stop-section"):
+                       "log-section", "track-section"):
         assert f'id="{section_id}"' in body, f"/ is missing #{section_id}"
+    assert 'id="stop-section"' not in body
 
 
 # ── nav: Desk / Thesis / Account (2026-10-23 Desk UI overhaul) ──────────────

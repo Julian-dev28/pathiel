@@ -274,3 +274,34 @@ def test_full_send_table_has_a_side_column(oil):
     full_send = text[text.index("### Full send"):]
     assert "| Side | Lev | P10 |" in full_send
     assert f"| **{oil.thesis.call.side}** | 5x |" in full_send   # the call's side, bolded
+
+
+# -- quick_fields: the card and the text share one source ------------------
+
+
+def test_quick_fields_carry_exactly_what_the_quick_text_says(oil):
+    """2026-10-24: the Desk page lays the quick brief out as a card from these
+    fields; the text render composes its lines from the same dict, so the two
+    cannot drift."""
+    f = render.quick_fields(oil.thesis)
+    text = render.render_markdown(oil.thesis, oil.analytics, mode="quick")
+    lines = text.splitlines()
+    assert lines[0] == f["call"] == oil.thesis.call.one_liner
+    assert f"Leverage: {f['leverage_text']}" in lines
+    assert f["pays"] is not None and f["pays"]["text"] in lines
+    assert f["pays"]["target"] == oil.thesis.call.targets[0]
+    assert f"Pays {f['pays']['r']:.1f}R" in f["pays"]["text"]
+    assert f"Out if: {f['out_if']}" in lines and f["out_if"] == oil.thesis.call.invalidation
+    assert f["biggest_risk"] is not None and f"Biggest risk: {f['biggest_risk']['text']}" in lines
+    assert 0 < f["biggest_risk"]["probability"] <= 1
+    assert f["next_catalyst"] is None or f"Next catalyst: {f['next_catalyst']['text']}" in lines
+    assert lines[-1] == f"Decision: {f['decision']}" and f["decision"] == render.decision_word(oil.thesis)
+    assert f["side"] == oil.thesis.call.side and f["instrument"] == oil.thesis.call.instrument
+    assert f["leverage"] == oil.thesis.call.leverage and f["verdict"]
+
+
+def test_quick_fields_for_a_flat_call_have_no_pays_and_no_verdict(oil):
+    flat = oil.thesis.model_copy(update={"call": oil.thesis.call.model_copy(update={"side": "flat", "leverage": None})})
+    f = render.quick_fields(flat)
+    assert f["pays"] is None and f["verdict"] is None
+    assert f["leverage_text"] == "flat, no position" and f["decision"] == "WAIT"

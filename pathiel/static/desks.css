@@ -140,6 +140,8 @@
   margin-bottom:16px;
 }
 .lev-stats .kv{ font-size:20px; }
+/* a key/value cell whose value is a sentence, not a number */
+.kv.kv-text{ font-size:14px; font-weight:500; line-height:1.35; font-variant-numeric:normal; }
 .lev-verdict-row{
   display:flex; align-items:baseline; gap:10px; flex-wrap:wrap;
   padding-top:14px; border-top:1px solid var(--rule);

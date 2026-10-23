@@ -105,35 +105,62 @@ def decision_word(thesis: Thesis) -> str:
 # -- quick ---------------------------------------------------------------
 
 
-def _render_quick(thesis: Thesis, *, now: Optional[datetime] = None) -> str:
+def quick_fields(thesis: Thesis, *, now: Optional[datetime] = None) -> dict:
+    """The quick brief as fields, for a page that lays them out instead of
+    printing text (Desk page call card, 2026-10-24). `_render_quick` composes
+    its lines from these, so the text and the card can never disagree.
+
+    Keys: call, side, instrument, leverage (float|None), verdict (str|None),
+    leverage_text, pays ({r, target, text}|None), out_if, biggest_risk
+    ({probability, description, text}|None), next_catalyst ({title, at, text}
+    |None), decision."""
+    call = thesis.call
     lv = _leverage_pick(thesis)
-    if lv is not None and thesis.call.leverage:
-        lev_line = (f"Leverage: {thesis.call.leverage:.0f}x on {thesis.call.instrument}"
-                    f" - {lv.verdict.upper()}")
+    if lv is not None and call.leverage:
+        verdict = lv.verdict
+        leverage_text = f"{call.leverage:.0f}x on {call.instrument} - {verdict.upper()}"
     else:
-        lev_line = "Leverage: flat, no position"
+        verdict = None
+        leverage_text = "flat, no position"
 
-    worst = _worst_case_scenario(thesis)
-    if worst is not None:
-        risk_line = f"Biggest risk: {worst.probability * 100:.0f}% chance of {worst.description}"
-    else:
-        risk_line = "Biggest risk: n/a"
-
-    cat = _next_catalyst(thesis, now=now)
-    if cat is not None:
-        cat_line = f"Next catalyst: {cat.title} ({cat.at.strftime('%Y-%m-%d %H:%M')} UTC)"
-    else:
-        cat_line = "Next catalyst: none scheduled"
-
-    lines = [thesis.call.one_liner, lev_line]
+    pays = None
     r_line = _r_line(thesis)
     if r_line is not None:
-        lines.append(r_line)
+        from pathiel.agents.bracket import check_levels
+        first_tp = call.targets[0]
+        pays = {"r": check_levels(call.entry_px, call.stop_px, first_tp).get("r_multiple"),
+                "target": first_tp, "text": r_line}
+
+    worst = _worst_case_scenario(thesis)
+    biggest_risk = None
+    if worst is not None:
+        biggest_risk = {"probability": worst.probability, "description": worst.description,
+                        "text": f"{worst.probability * 100:.0f}% chance of {worst.description}"}
+
+    cat = _next_catalyst(thesis, now=now)
+    next_catalyst = None
+    if cat is not None:
+        next_catalyst = {"title": cat.title, "at": cat.at.isoformat(),
+                         "text": f"{cat.title} ({cat.at.strftime('%Y-%m-%d %H:%M')} UTC)"}
+
+    return {
+        "call": call.one_liner, "side": call.side, "instrument": call.instrument,
+        "leverage": call.leverage, "verdict": verdict, "leverage_text": leverage_text,
+        "pays": pays, "out_if": call.invalidation, "biggest_risk": biggest_risk,
+        "next_catalyst": next_catalyst, "decision": decision_word(thesis),
+    }
+
+
+def _render_quick(thesis: Thesis, *, now: Optional[datetime] = None) -> str:
+    f = quick_fields(thesis, now=now)
+    lines = [f["call"], f"Leverage: {f['leverage_text']}"]
+    if f["pays"] is not None:
+        lines.append(f["pays"]["text"])
     lines += [
-        f"Out if: {thesis.call.invalidation}",
-        risk_line,
-        cat_line,
-        f"Decision: {decision_word(thesis)}",
+        f"Out if: {f['out_if']}",
+        f"Biggest risk: {f['biggest_risk']['text'] if f['biggest_risk'] else 'n/a'}",
+        f"Next catalyst: {f['next_catalyst']['text'] if f['next_catalyst'] else 'none scheduled'}",
+        f"Decision: {f['decision']}",
     ]
     return "\n".join(lines)
 

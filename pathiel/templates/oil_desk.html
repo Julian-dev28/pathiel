@@ -32,8 +32,6 @@
       <div id="wallet-connect-root"></div>
       <button id="discreet-toggle" type="button" class="icon-btn"
               title="Blur all cash amounts. Percentages stay visible.">Hide amounts</button>
-      <button id="op-token-btn" type="button" popovertarget="token-pop" class="icon-btn">Operator token</button>
-      <span id="status-pill" class="pill offline">Offline</span>
     </div>
   </div>
 </div>
@@ -134,17 +132,32 @@
     </div>
 
     <div id="call-card" class="card call-card" hidden>
-      <pre class="call-sentence mono" id="call-markdown"></pre>
+      <!-- Structured from brief.quick_fields (services/thesis/render.py);
+           the <pre> is the fallback when a brief has only the text. -->
+      <div class="call-top">
+        <span id="call-side-badge"></span>
+        <span id="call-decision-badge"></span>
+        <span class="note" id="call-instrument"></span>
+      </div>
+      <p class="call-sentence" id="call-sentence"></p>
+      <div class="call-meta-row" id="call-meta">
+        <div><div class="sec-label">Leverage</div><div class="kv kv-text" id="call-leverage">&mdash;</div></div>
+        <div><div class="sec-label">Pays</div><div class="kv" id="call-pays">&mdash;</div></div>
+        <div><div class="sec-label">Biggest risk</div><div class="kv kv-text" id="call-risk">&mdash;</div></div>
+        <div><div class="sec-label">Next catalyst</div><div class="kv kv-text" id="call-catalyst">&mdash;</div></div>
+      </div>
+      <div class="call-invalidation"><b>Out if</b> <span id="call-out-if"></span></div>
+      <pre class="call-sentence mono" id="call-markdown" hidden></pre>
       <a href="/desk/oil" class="note" id="full-thesis-link">Full thesis &rarr;</a>
     </div>
 
     <div id="line-card" class="card lev-card" hidden>
       <div class="lev-seg" id="line-seg" role="radiogroup" aria-label="Leverage"></div>
       <div class="lev-stats">
-        <div><div class="sec-label">Liquidation</div><div class="kv" id="line-liq-px">&mdash;</div></div>
-        <div><div class="sec-label">Stop / liq distance</div><div class="kv" id="line-stop-frac">&mdash;</div></div>
+        <div><div class="sec-label" id="line-liq-label">Liquidation at this leverage</div><div class="kv" id="line-liq-px">&mdash;</div></div>
+        <div><div class="sec-label">Stop uses of the way to liquidation</div><div class="kv" id="line-stop-frac">&mdash;</div></div>
         <div><div class="sec-label">Entry / Stop</div><div class="kv call-num"><span id="line-entry">&mdash;</span> / <span id="line-stop">&mdash;</span></div></div>
-        <div><div class="sec-label">R to targets</div><div class="kv" id="line-r-targets">&mdash;</div></div>
+        <div><div class="sec-label">Pays, per target</div><div class="kv" id="line-r-targets">&mdash;</div></div>
       </div>
       <div class="lev-verdict-row">
         <span id="line-verdict-badge"></span>
@@ -224,23 +237,6 @@
     <div class="track-cols" id="track-cols"></div>
   </section>
 
-  <!-- STOP TRADING — the old auto-trader's kill switch (sets agent config
-       mode: OFF). Does not touch this desk's loop (place_bracket/
-       bracket_sweep) or your own hand trades; labelled accordingly so
-       nobody mistakes this for a full stop. -->
-  <section class="section" id="stop-section">
-    <div class="section-head"><h2 class="sec-label">Old auto-trader kill switch</h2></div>
-    <div class="refresh-row">
-      <button type="button" id="stop-trading-btn" class="btn btn-danger">Turn off old auto-trader</button>
-      <span id="stop-trading-status" class="note"></span>
-    </div>
-    <p class="note">
-      This only disables the retired bot's own execute path (agent config
-      <code class="mono">mode: OFF</code>). It does not stop this desk's loop,
-      and it does not touch your own trades.
-    </p>
-  </section>
-
   </main>
 
   <footer class="site-foot">
@@ -250,20 +246,6 @@
 
 </div>
 
-<!-- operator token entry — native popover in the top layer; the value lives
-     in localStorage ONLY and is sent as X-Operator-Token by the kill-switch
-     call above and by any tooling that calls the token-gated /api/agent +
-     /api/hl endpoints. -->
-<div id="token-pop" popover class="pop">
-  <div class="sec-label mb-2">Operator token</div>
-  <input id="token-input" type="password" autocomplete="off" spellcheck="false" placeholder="PATHIEL_OPERATOR_TOKEN" />
-  <p class="note" style="margin-top:8px">Stored only in this browser. This page never transmits it.</p>
-  <div class="flex gap-2 mt-3">
-    <button id="token-save" type="button" class="icon-btn">Save</button>
-    <button id="token-clear" type="button" class="icon-btn">Clear</button>
-    <button type="button" class="icon-btn ml-auto" popovertarget="token-pop" popovertargetaction="hide">Close</button>
-  </div>
-</div>
 
 <script src="/static/desks.js?v=20261019"></script>
 <script src="/static/oil_desk.js?v=20261023"></script>

@@ -195,26 +195,19 @@ def test_risk_endpoint_serves(client, curve, monkeypatch):
                          "fee_drag_pct", "kill_used_frac", "mode"}
 
 
-def test_the_desk_page_carries_an_off_switch_that_says_what_it_does(client):
-    """The old landing page's risk band (drawdown/win-rate/fee-drag numbers,
-    /api/agent/stop kill switch) is gone with it (docs/overhaul/
-    DESK_UI_2026-10-23.md) — the Desk page keeps a narrower off switch for
-    the retired auto-trader only, wired to /api/agent/config {mode: OFF},
-    not /api/agent/stop (which killed a PID-based bot process that no
-    longer exists). The button markup is static HTML; its two-step confirm
-    and the actual fetch call live in the external oil_desk.js (this page
-    uses an external script, unlike the old landing.html's inline one)."""
+def test_the_desk_page_carries_no_off_switch_and_no_operator_token(client):
+    """2026-10-23 the Desk page kept a narrow off switch for the retired
+    auto-trader (POST /api/agent/config {mode: OFF}) behind an operator-token
+    popover. 2026-10-24 the operator asked for both leftovers gone: the bot
+    it switched off no longer exists, and the page has no token-gated action
+    left (local reads need no token). The endpoint itself stays token-gated,
+    see test_the_stop_endpoint_is_closed_in_both_configurations."""
     from pathlib import Path
     body = client.get("/").text
-    assert 'id="stop-trading-btn"' in body
-    assert "does not stop this desk's loop" in body, (
-        "the button's own caption must say what it does NOT touch — an off "
-        "switch people misread is worse than no off switch")
-    assert "mode: OFF" in body
-
+    for leftover in ('id="stop-trading-btn"', "Operator token", 'id="token-pop"', 'id="status-pill"', "Offline"):
+        assert leftover not in body, f"leftover on the Desk page: {leftover}"
     js = (Path(__file__).resolve().parents[1] / "pathiel" / "static" / "oil_desk.js").read_text()
-    assert "/api/agent/config" in js and "mode: 'OFF'" in js
-    assert "Confirm" in js, "a live kill needs a confirm step"
+    assert "pathiel-op-token" not in js and "X-Operator-Token" not in js
 
 
 def test_the_stop_endpoint_is_closed_in_both_configurations(monkeypatch):
