@@ -144,6 +144,50 @@ def eia_weekly_release(start: date, end: date) -> List[Release]:
     return out
 
 
+def eia_gas_storage_release(start: date, end: date) -> List[Release]:
+    """EIA Weekly Natural Gas Storage Report. Standard: Thursday 10:30 ET.
+    Verified rule (ir.eia.gov/ngs/schedule.html, fetched 2026-10-23 — the
+    live page's own alternate-date table): two different shifts depending on
+    WHICH day of release week the holiday lands on, not one shift-by-a-day
+    rule for both directions.
+
+      - Holiday ON the Thursday release day itself -> released EARLIER, the
+        Wednesday before, at NOON ET (not 10:30). Reproduces every Thursday-
+        holiday entry on the live table: Jan 9 2025 (National Day of
+        Mourning) -> Wed Jan 8 12:00; Jun 19 2025 (Juneteenth) -> Wed Jun 18
+        12:00; Nov 27 2025 (Thanksgiving) -> Wed Nov 26 12:00; Nov 26 2026
+        (Thanksgiving) -> Wed Nov 25 12:00.
+      - Holiday on the Wednesday immediately before release -> released
+        LATER, Friday, still at the standard 10:30 ET. Reproduces: Jan 1
+        2025 (New Year's, a Wednesday) -> Fri Jan 3 10:30; Nov 11 2026
+        (Veterans Day, a Wednesday in 2026) -> Fri Nov 13 10:30 (both are
+        on the live page's 2026 table, which lists exactly these two
+        exceptions for the year and nothing else).
+
+    Known unmodeled edge (flagged, not silently assumed correct): the live
+    table's Nov 11 2025 entry (Veterans Day, a Tuesday that year) also
+    shifted to Friday, and Dec 25 2025 (Christmas, a Thursday) shifted to
+    the following Monday rather than the preceding Wednesday — a holiday on
+    a Tuesday, or a Thursday holiday falling in the same week as another
+    nearby holiday, is not covered by the two rules above. Neither case
+    falls inside 2026's own exception table (only Veterans Day and
+    Thanksgiving), so it does not affect this build; a future year needs a
+    fresh live check before trusting this function past 2026."""
+    out = []
+    for thu in _weekly_dates(start, end, THU):
+        wed = thu - timedelta(days=1)
+        if is_federal_holiday(thu):
+            out.append(Release(_et_datetime(wed, 12, 0).astimezone(UTC),
+                                "shifted from Thu (holiday on the release day itself) to Wed noon ET"))
+        elif is_federal_holiday(wed):
+            fri = thu + timedelta(days=1)
+            out.append(Release(_et_datetime(fri, 10, 30).astimezone(UTC),
+                                "shifted from Thu (holiday on the preceding Wed) to Fri 10:30 ET"))
+        else:
+            out.append(Release(_et_datetime(thu, 10, 30).astimezone(UTC), "standard Thu 10:30 ET"))
+    return out
+
+
 def steo_release_date(year: int, month: int) -> date:
     """EIA Short-Term Energy Outlook. Verified rule (eia.gov/outlooks/steo/
     release_schedule.php, fetched 2026-10-17 — quoted verbatim): "released ...

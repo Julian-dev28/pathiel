@@ -119,7 +119,7 @@ def _make_stub_handler(tool_name: str):
 SERVER_INSTRUCTIONS = """pathiel: a headless oil desk on live Hyperliquid. Real money. Claude is the trader; there is no autonomous bot.
 
 Start here
-- desk_list, then desk_brief {desk} for that desk's call (oil is primary; btc, top5, ai, metals, indices also exist). Quick mode is short markdown, call first, and includes "Your size" for the active account.
+- desk_list, then desk_brief {desk} for that desk's call (oil is primary; gas, btc, top5, ai, metals, indices also exist). Quick mode is short markdown, call first, and includes "Your size" for the active account.
 - desk_refresh {desk} writes a NEW thesis (news + one local model call, about a minute). Use it when asked, or when the brief says the thesis is stale.
 - place_bracket {coin, entry_px, stop_px, tp_px}: one entry with an exact stop and target, sized and leverage-checked by the tool. bracket_sweep {coin}: cancel a stranded sibling order and confirm an open position is covered by a stop. Run bracket_sweep after every close.
 - account_overview: equity and where it sits. HIP-3 money (oil: xyz:BRENTOIL, xyz:CL; xyz:NVDA, ...) lives on its own dex (xyz), not main; main-dex-only reads look empty for it.

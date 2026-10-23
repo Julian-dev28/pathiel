@@ -1,4 +1,4 @@
-"""Desk registry. One module per desk (oil, btc, top5, ai, metals, indices),
+"""Desk registry. One module per desk (oil, gas, btc, top5, ai, metals, indices),
 each exporting `build_spec() -> DeskSpec`. This module is the single place
 that knows the full list; nothing else should import a desk module directly.
 
@@ -16,12 +16,13 @@ from typing import Callable, Dict, List
 
 from contracts.strategies.models import DeskSpec
 
-from services.strategies.desks import ai, btc, indices, metals, oil, top5
+from services.strategies.desks import ai, btc, gas, indices, metals, oil, top5
 
 # id -> builder. Order here is the order `list_desks()` returns, which is the
 # order the /desks overview page renders — oil first, it's the flagship.
 _BUILDERS: Dict[str, Callable[[], DeskSpec]] = {
     oil.DESK_ID: oil.build_spec,
+    gas.DESK_ID: gas.build_spec,
     btc.DESK_ID: btc.build_spec,
     top5.DESK_ID: top5.build_spec,
     ai.DESK_ID: ai.build_spec,
