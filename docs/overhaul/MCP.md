@@ -20,7 +20,7 @@ Every tool carries MCP annotations (readOnlyHint / destructiveHint). Live smoke 
 | `accounts` | read-only |  | Hyperliquid accounts registered in pathiel (connected wallets, API keys, watch-only), which one is active, and which address the bot trades with. Connect or switch in the dashboard's Account tab. |
 | `risk_limits` | read-only |  | What the account may trade under its risk profile: positions at once, $ lost per stop-out, daily pause, max leverage. equity_usd/preset = what-if. |
 | `risk_size_trade` | read-only |  | Size ONE trade for the active account: size, margin, $ at risk, payoff per target, liquidation price. Same rules as the bot's books. Use it before suggesting any size. |
-| `place_bracket` | LIVE MONEY |  | LIVE MONEY: acts on the real account. One trade with exact stop and take-profit, sized like risk_size_trade. entry_px = resting limit, stop/target attached on fill; omit for market. Refuses under min_r (1.5R) or an existing position/entry on the coin. dry_run = size only. |
+| `place_bracket` | LIVE MONEY |  | LIVE MONEY: acts on the real account. One trade with exact stop and take-profit, sized like risk_size_trade. entry_px = resting limit, stop/target attached on fill; omit for market. Refuses under min_r (1.5R) or an existing position/entry on the coin, unless add=true: then it tops the open position up to the full-port size on the same side, stop no wider than the resting one, existing protection untouched. dry_run = size only. |
 | `bracket_sweep` | LIVE MONEY |  | LIVE MONEY: acts on the real account. Flat: cancel leftover reduce-only orders (sibling of a fired stop/target), list resting entries. In a position: say whether a stop covers it. Never opens or closes. |
 
 ## Agent loop and live-money actions

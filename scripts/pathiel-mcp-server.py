@@ -939,7 +939,9 @@ TOOLS = [
         "description": "One trade with exact stop and take-profit, sized like "
                        "risk_size_trade. entry_px = resting limit, stop/target attached on "
                        "fill; omit for market. Refuses under min_r (1.5R) or an existing "
-                       "position/entry on the coin. dry_run = size only.",
+                       "position/entry on the coin, unless add=true: then it tops the open "
+                       "position up to the full-port size on the same side, stop no wider "
+                       "than the resting one, existing protection untouched. dry_run = size only.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -950,6 +952,7 @@ TOOLS = [
                 "leverage": {"type": "number"},
                 "min_r": {"type": "number"},
                 "dry_run": {"type": "boolean"},
+                "add": {"type": "boolean", "description": "Top up an open same-side position to the full-port size; the stop may not be wider than the one resting."},
             },
             "required": ["coin", "stop_px", "tp_px"],
         },
@@ -3292,7 +3295,8 @@ def handle_place_bracket(params: Dict[str, Any]) -> str:
         # or worse, half-fill.
         from pathiel.client.exchange import resolve_user_address
         slots = int(getattr(profile, "max_open_positions", None) or 1)
-        taken = bracket.slot_taken_by(resolve_user_address(), coin, slots)
+        user = resolve_user_address()
+        taken = bracket.slot_taken_by(user, coin, slots)
         if taken:
             return json.dumps({"ok": False, "coin": coin, "placed": False,
                                "error": f"slot taken by {taken}: the account allows {slots} open position(s)"})
@@ -3301,17 +3305,61 @@ def handle_place_bracket(params: Dict[str, Any]) -> str:
         sized = size_trade(_live_equity(), profile, books, entry_px=ref, stop_px=stop,
                            leverage=leverage, coin_max_leverage=coin_max, targets=[tp],
                            venue=venue, sz_decimals=sz_dec)
+        add = _as_bool(params.get("add"))
+        size = float(sized.size or 0)
+        topup: Optional[Dict[str, Any]] = None
+        if add:
+            # The operator wants the whole stake in ONE position (2026-10-24):
+            # the top-up is the full-port size minus what is already on.
+            from pathiel.client.exchange import _position_size_on_coin
+            held = _position_size_on_coin(user, coin)
+            if held is None:
+                return json.dumps({"ok": False, "coin": coin, "placed": False,
+                                   "error": "position read failed; not trading blind"})
+            # ...and never more than the free margin on that dex can carry at
+            # this leverage, keeping the venue rule's 10% floor free: the open
+            # position may hold more margin than its size implies (the venue
+            # keeps isolated margin when leverage is raised), so equity alone
+            # over-sizes the top-up and the venue would reject it.
+            from pathiel.client.account_snapshot import account_state
+            st = account_state(user, include_hip3=True)
+            dex = coin.split(":", 1)[0] if ":" in coin else ""
+            free = float((st.get("dex_available") or {}).get(dex, st.get("available") or 0) or 0)
+            equity = float(st.get("equity") or 0)
+            budget = max(0.0, free - 0.10 * equity)
+            cap = _round_size(budget * float(sized.leverage or leverage or 1) / ref, sz_dec)
+            size = _round_size(min(size - abs(held), cap), sz_dec)
+            topup = {"held": held, "full_size": sized.size, "free_margin_usd": round(free, 2),
+                     "topup_cap_size": cap, "topup_size": size}
+            if size <= 0:
+                return json.dumps({"ok": True, "coin": coin, "placed": False, "add": True, **topup,
+                                   "reason": f"position {abs(held)} already at or above the full-port size {sized.size}"},
+                                  default=str)
     except Exception as e:
         return json.dumps({"ok": False, "coin": coin, "error": f"sizing failed: {e}"})
     if not sized.can_trade or not sized.size:
         return json.dumps({"ok": False, "coin": coin, "placed": False,
                            "error": f"sizing refused: {sized.reason}"}, default=str)
-    out = bracket.place_bracket(coin, entry_px=entry, stop_px=stop, tp_px=tp, size=float(sized.size),
+    out = bracket.place_bracket(coin, entry_px=entry, stop_px=stop, tp_px=tp, size=size,
                                 leverage=int(sized.leverage or 1), min_r=min_r,
-                                coin_max_leverage=coin_max, dry_run=bool(params.get("dry_run")))
+                                coin_max_leverage=coin_max, dry_run=bool(params.get("dry_run")), add=add)
     out["sizing"] = {"notional_usd": sized.notional_usd, "margin_usd": sized.margin_usd,
                      "risk_usd": sized.risk_usd, "risk_pct": sized.risk_pct}
+    if topup:
+        out["topup"] = topup
     return json.dumps(out, default=str)
+
+
+def _as_bool(v: Any) -> bool:
+    return v is True or str(v).strip().lower() in ("1", "true", "yes", "y")
+
+
+def _round_size(size: float, sz_decimals: Any) -> float:
+    try:
+        d = int(sz_decimals) if sz_decimals is not None else 2
+    except (TypeError, ValueError):
+        d = 2
+    return round(max(0.0, size), d)
 
 
 def handle_bracket_sweep(params: Dict[str, Any]) -> str:

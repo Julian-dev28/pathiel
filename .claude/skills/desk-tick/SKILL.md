@@ -50,6 +50,17 @@ or a script, never from mental arithmetic.
    - **In a position on COIN:** HOLD. `close_position` only if the thesis
      invalidation triggered on a CLOSED hourly candle, or a headline from
      the brief's `what_changes_my_mind` landed. After any close, sweep again.
+     **Top-up (operator, 2026-10-24: "add to position when possible"):** if
+     the position is under the full-port size (the brief's "Your size" is
+     bigger than the position) and nothing is resting on COIN, rest ONE
+     top-up at the thesis's own entry level with `place_bracket {coin,
+     entry_px, stop_px, tp_px, add: true}`: the stop is the position's
+     current stop (never wider), the target the position's target. The tool
+     sizes the top-up as full-port minus what is held and leaves the live
+     stop and target orders alone. Never top up at market above the thesis
+     entry: that is chasing. A resting top-up is re-judged each tick like
+     any resting entry (within one ATR of the mid or on a structural edge,
+     else cancel).
    - **Flat with a resting entry on COIN:** keep it if `--check` still
      passes AND the entry is within one ATR14 of the mid or still on a
      current structural edge (within 0.25 ATR of the 8h or 24h range low
