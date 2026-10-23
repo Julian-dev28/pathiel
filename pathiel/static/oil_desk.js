@@ -153,8 +153,16 @@ function renderWalletAccount(account, snapshot) {
     </div>
     <div class="dc-call">${esc(account.main_address)}</div>`;
 
+  // A dex the venue did not answer is reported, never shown as flat; a
+  // snapshot served from the last good read says how old it is.
+  const failed = (snapshot.errors || []).length
+    ? `<div class="note warn">Venue read failed on ${esc(snapshot.errors.join(', '))}; positions there are unknown this refresh.</div>` : '';
+  const stale = snapshot.stale_s != null
+    ? `<div class="note muted">Last good read ${Math.round(snapshot.stale_s)}s ago; the venue has not answered since.</div>` : '';
+
   if (!positions.length) {
-    return `<div class="card" style="margin-bottom:14px">${head}<div class="note">Equity ${esc(fmtMoney(equity))}. No open positions.</div></div>`;
+    const body = failed ? failed : `<div class="note">Equity ${esc(fmtMoney(equity))}. No open positions.</div>`;
+    return `<div class="card" style="margin-bottom:14px">${head}${body}${stale}</div>`;
   }
 
   const rows = positions.map(p => `
@@ -176,7 +184,7 @@ function renderWalletAccount(account, snapshot) {
       <td>${p.naked ? '<span class="badge b-fail">NAKED</span>' : ''}</td>
     </tr>`).join('');
 
-  return `<div class="card" style="margin-bottom:14px">${head}
+  return `<div class="card" style="margin-bottom:14px">${head}${failed}${stale}
     <div class="scroll-x"><table>
       <thead><tr><th>Dex</th><th>Coin</th><th>Side</th><th class="num">Size</th><th class="num">Entry</th><th class="num">Mark</th><th class="num">P&amp;L %</th><th class="num">R now</th>
         <th class="num">Lev</th><th class="num">Liq</th><th class="num">Dist</th><th class="num">uPnL</th>
