@@ -27,11 +27,11 @@
   "hip3_dex_blocklist": [],
   "risk_profile": {
     "preset": "auto",
-    "risk_per_trade_pct": 15.749999999999996,
-    "daily_loss_limit_pct": 12.1,
+    "risk_per_trade_pct": 100,
+    "daily_loss_limit_pct": 100,
     "max_leverage": 10.0,
     "max_open_positions": 1,
     "allow_min_order_bump": true,
-    "max_bumped_risk_pct": 25.0
+    "max_bumped_risk_pct": 100
   }
 }

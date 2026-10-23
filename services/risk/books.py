@@ -27,7 +27,7 @@ from typing import Any, Dict, List
 from pathiel.agents.book_params import book_params
 from services.risk.derive import BookSpec
 
-CONTRACT_VERSION = "1.0.0"
+CONTRACT_VERSION = "1.1.0"
 
 # Empty on purpose — see module docstring. Was the seven-name live-book
 # roster; every one of those books is deleted.

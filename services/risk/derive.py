@@ -47,7 +47,7 @@ from typing import List, Optional
 from contracts.risk.models import BookFeasibility, DerivedLimits, RiskProfile
 from services.risk import presets
 
-CONTRACT_VERSION = "1.0.0"
+CONTRACT_VERSION = "1.1.0"
 
 
 def equity_risk_budget_usd(equity_usd: float, risk_per_trade_pct: float) -> float:

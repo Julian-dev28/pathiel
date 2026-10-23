@@ -37,7 +37,7 @@ from contracts.risk.models import RiskProfile
 from pathiel.agents.book_params import book_params as _book_params
 from services.risk.books import RISK_SCALED_BOOK_NAMES, config_key_for
 
-CONTRACT_VERSION = "1.0.0"
+CONTRACT_VERSION = "1.1.0"
 
 # Mirrors the fallbacks already load-bearing elsewhere, so a migrated profile
 # reproduces the EXACT $ sizing the legacy config was already producing:
