@@ -168,8 +168,17 @@ class TokenBucket:
 # 600cap+20/s loop plus 200cap+5/s server allowed 2,300 weight/min against
 # HL's 1,200 — the limiter never braked while the exchange returned 522 real
 # 429s/14d). Loop: 300 burst + 15/s = 900/min sustained; server (restart.sh
-# env) gets 60 burst + 2/s = 120/min. Combined ~1,020/min, margin for the SDK
+# env) got 60 burst + 2/s = 120/min. Combined ~1,020/min, margin for the SDK
 # calls that bypass this bucket.
+#
+# 2026-10-24: the autonomous loop is retired (wave 2); the only other process
+# on this IP is the MCP server Claude drives, a handful of reads per 15-minute
+# tick. The 120/min server budget then starved itself: cheap allMids +
+# clearinghouseState reads drained the bucket faster than it refilled and a
+# 20-weight frontendOpenOrders read never found room (31 refused, 0 granted
+# in two minutes; the Desk page showed the live position as flat). restart.sh
+# now gives the server 200 burst + 8/s = 480/min; with the MCP's bursts that
+# still fits 1,200/min with margin.
 #
 # Background reserve: half the bucket by default (server: 30 of 60), so a
 # clicked refresh or a cold page read can always take ~30 weight at once.

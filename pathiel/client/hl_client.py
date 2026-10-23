@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import logging
 import os
+import sys
 import threading
 import time
 from typing import TYPE_CHECKING, Any, Dict, Iterable, List, Optional, Set, Tuple
@@ -130,6 +131,23 @@ class HLRequestError(RuntimeError):
     """An /info or /exchange request that did not produce a response body."""
 
 
+def _caller() -> str:
+    """`module.function` of the first frame outside pathiel.client: who is
+    spending the venue budget. Recorded in the limiter's per-label counters
+    so GET /api/health/system answers "who burns it" with numbers, not a
+    guess (2026-10-24: 92 allMids reads in two minutes starved every
+    open-orders read and blanked the Desk page's positions; nothing in the
+    log said which code path made them)."""
+    f = sys._getframe(2)
+    while f is not None:
+        mod = f.f_globals.get("__name__", "")
+        if not mod.startswith("pathiel.client"):
+            short = ".".join(mod.split(".")[-2:])          # services.positions, pathiel.server
+            return f"{short}.{f.f_code.co_name}"
+        f = f.f_back
+    return "?"
+
+
 def _http_post_strict(path: str, payload: Dict[str, Any], timeout: int = 5) -> Any:
     """`_http_post` that raises HLRequestError instead of returning None.
 
@@ -139,8 +157,9 @@ def _http_post_strict(path: str, payload: Dict[str, Any], timeout: int = 5) -> A
     """
     weight = _endpoint_weight(payload.get("type"))
     max_wait = float(os.environ.get("PATHIEL_HL_RATE_MAX_WAIT_S", "30"))
+    label = f"{payload.get('type') or 'unknown'}<{_caller()}"
     if not _HL_LIMITER.acquire(weight, max_wait=max_wait, background=_in_background(),
-                               label=str(payload.get("type") or "unknown")):
+                               label=label):
         raise HLRequestError(
             f"rate budget exhausted for {payload.get('type') or 'unknown'} "
             f"(weight={weight}, waited {max_wait:g}s)"
