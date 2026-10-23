@@ -374,3 +374,29 @@ def close_position(coin: str) -> Dict[str, Any]:
             out["realized_pnl_pct"] = round(spot_pct * leverage - fees_pct, 4)
             out["fees_pct"] = round(fees_pct, 4)
     return out
+
+
+def slot_taken_by(user: str, coin: str, max_open_positions: int, fetch_raw: Any = None,
+                  dexes: Any = None) -> Optional[str]:
+    """Account-wide check behind place_bracket: with max_open_positions slots,
+    an open position or a resting entry on ANY other coin takes a slot. Returns
+    the coin holding the last free slot's blocker, or None when a slot is free.
+    The same-coin case is place_bracket's own refusal. Fetchers injectable."""
+    from services.accounts import positions as acc_pos
+    fetch_raw = fetch_raw or acc_pos._fetch_raw
+    dexes = acc_pos._dexes_with_margin(user) if dexes is None else dexes
+    holders: list = []
+    for dex in dexes:
+        raw = fetch_raw(user, dex)
+        for row in (raw.get("state") or {}).get("assetPositions") or []:
+            pos = (row or {}).get("position") or {}
+            try:
+                if pos.get("coin") and pos.get("coin") != coin and float(pos.get("szi") or 0) != 0:
+                    holders.append(pos["coin"])
+            except (TypeError, ValueError):
+                continue
+        for o in raw.get("orders") or []:
+            if o.get("coin") and o.get("coin") != coin and not o.get("reduceOnly"):
+                holders.append(o["coin"])
+    holders = sorted(set(holders))
+    return ", ".join(holders) if len(holders) >= max(1, int(max_open_positions)) else None

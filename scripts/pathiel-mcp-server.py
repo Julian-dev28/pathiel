@@ -3254,6 +3254,17 @@ def handle_place_bracket(params: Dict[str, Any]) -> str:
             # placed blind is the failure this desk exists to prevent.
             return json.dumps({"ok": False, "coin": coin, "placed": False,
                                "error": f"venue max leverage for {coin} could not be read; not trading blind"})
+        # One wallet, N slots (risk_profile.max_open_positions): a position or a
+        # resting entry on another coin takes a slot. Three desks share this
+        # wallet since 2026-10-23; without this, two desks could both rest an
+        # entry and the second fill would be refused by the venue for margin,
+        # or worse, half-fill.
+        from pathiel.client.exchange import resolve_user_address
+        slots = int(getattr(profile, "max_open_positions", None) or 1)
+        taken = bracket.slot_taken_by(resolve_user_address(), coin, slots)
+        if taken:
+            return json.dumps({"ok": False, "coin": coin, "placed": False,
+                               "error": f"slot taken by {taken}: the account allows {slots} open position(s)"})
         ref = entry if entry is not None else float(get_hl_price(coin))
         leverage = _fnum(lev_raw) if lev_raw not in (None, "") else (profile.max_leverage or None)
         sized = size_trade(_live_equity(), profile, books, entry_px=ref, stop_px=stop,
