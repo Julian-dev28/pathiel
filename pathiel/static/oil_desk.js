@@ -24,7 +24,7 @@
  * page. Refreshes every 30s, per the product spec.
  */
 
-const REFRESH_MS = 30_000;
+const REFRESH_MS = 60_000;   // 30s starved the venue budget (2026-10-23)
 const LEVERAGE_CHOICES = [5, 10, 20];
 const DEFAULT_LEVERAGE = 20;
 const INTEL_CAP = 6;   // small tables, per the ADHD-first brief
@@ -442,6 +442,7 @@ function renderDeskSwitcher() {
 // convention every page's own refresh loop uses; see
 // tests/test_page_polling.py.
 async function loadAll() {
+    if (document.hidden) return;   // a hidden tab must not spend the venue budget
   await Promise.all([loadCall(), loadLine(), loadWallets(), loadLevels(), loadLog()]);
 }
 
@@ -451,6 +452,7 @@ async function startOilDesk() {
   await loadActiveDesks();
   loadAll();                     // once immediately — pollEvery's own first
   pollEvery(loadAll, REFRESH_MS); // tick fires only after the first REFRESH_MS
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) loadAll(); });
 }
 
 // ── Onboarding: first run + the "how much risk" wizard ──────────────────────

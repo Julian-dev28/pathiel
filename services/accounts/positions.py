@@ -19,7 +19,7 @@ the public-script's curl subprocess.
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -116,7 +116,38 @@ def _fetch_raw(user: str, dex: str) -> Dict[str, Any]:
             "mids": mids if isinstance(mids, dict) else {}}
 
 
+# ── small in-process TTL caches ──────────────────────────────────────────────
+# The Desk page polls positions for every account; each poll per dex is three
+# venue reads, one of them frontendOpenOrders at weight 20. Without a cache the
+# dashboard alone burned the 1,200/min budget (2026-10-23 17:40 UTC: 227
+# starved open-order reads in 15 minutes, every Wallets request timing out).
+import time as _time
+
+_now = _time.monotonic
+_CACHE: Dict[str, Any] = {}
+POSITIONS_TTL_S = 15.0
+DEXES_TTL_S = 120.0
+
+
+def _cached(key: str, ttl_s: float, build: Callable[[], Any]) -> Any:
+    hit = _CACHE.get(key)
+    now = _now()
+    if hit is not None and now - hit[0] < ttl_s:
+        return hit[1]
+    val = build()
+    _CACHE[key] = (now, val)
+    return val
+
+
+def clear_cache() -> None:
+    _CACHE.clear()
+
+
 def _dexes_with_margin(user: str) -> List[str]:
+    return _cached(f"dexes:{user.lower()}", DEXES_TTL_S, lambda: _dexes_with_margin_uncached(user))
+
+
+def _dexes_with_margin_uncached(user: str) -> List[str]:
     """main ("") plus every HIP-3 dex this account holds equity or a
     position on, read from the shared account snapshot — one cheap
     aggregated read instead of probing every registered HIP-3 dex one by
@@ -138,6 +169,12 @@ def _dexes_with_margin(user: str) -> List[str]:
 
 
 def fetch_positions_for_account(address: str, *, dexes: Optional[List[str]] = None) -> Dict[str, Any]:
+    """Cached for POSITIONS_TTL_S per (address, dexes); see _fetch_positions_uncached."""
+    key = f"positions:{address.lower()}:{','.join(dexes) if dexes is not None else '*'}"
+    return _cached(key, POSITIONS_TTL_S, lambda: _fetch_positions_uncached(address, dexes=dexes))
+
+
+def _fetch_positions_uncached(address: str, *, dexes: Optional[List[str]] = None) -> Dict[str, Any]:
     """assess() per dex this account holds margin on. Same shape as
     scripts/watch_wallet.py's CLI output:
     {"user", "accounts": [...one assess() dict per dex...], "any_naked"}.
