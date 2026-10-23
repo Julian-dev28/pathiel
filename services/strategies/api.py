@@ -20,14 +20,15 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
 import pathiel
 from contracts.strategies.models import DeskBrief, DeskCard, RefreshJob, Thesis, UserThesisIn
 
-from services.strategies import desks, facade, journal
+from services.strategies import desks, facade, journal, levels, oil_log
+from services.strategies.call_line import call_line
 
 logger = logging.getLogger(__name__)
 
@@ -164,6 +165,64 @@ def post_thesis(desk_id: str, body: UserThesisIn) -> Thesis:
         return facade.submit_user_thesis(desk_id, body)
     except desks.UnknownDeskError:
         raise _unknown_desk(desk_id)
+
+
+# ── Oil Desk dashboard: 20x line, candle levels, loop log ───────────────────
+#
+# The first of these is generic (any desk's current call); the other two are
+# deliberately hardwired to desk "oil" — the dashboard this wave builds is
+# oil-only (docs/overhaul/OIL_DESK_UI_2026-10-23.md), and there is exactly
+# one oil-tick loop and one log file to show.
+
+@router.get("/api/desks/{desk_id}/line")
+def get_call_line(desk_id: str, leverage: float = Query(20, gt=0, le=100)) -> Dict[str, object]:
+    """The 20x line for this desk's current call, recomputed at `leverage`
+    (the dashboard's 5/10/20 selector). See services/strategies/call_line.py
+    for the math; pathiel/agents/bracket.py for the underlying rule. Never
+    500s on a desk with no thesis yet or incomplete market data — answers
+    {"ok": False, "reason": "..."} instead."""
+    try:
+        brief = facade.get_brief(desk_id)
+    except desks.UnknownDeskError:
+        raise _unknown_desk(desk_id)
+    if brief.thesis is None:
+        return {"ok": False, "reason": "no thesis yet — call desk_refresh"}
+
+    from pathiel.client.exchange import get_max_leverage
+    coin = brief.thesis.call.instrument
+    try:
+        coin_max_leverage: Optional[float] = float(get_max_leverage(coin))
+    except Exception as e:  # noqa: BLE001 - a venue-metadata miss must not 500 the line
+        logger.warning(f"[strategies.api] get_max_leverage({coin!r}) failed: {e}")
+        coin_max_leverage = None
+    return call_line(brief.thesis.call, coin_max_leverage, leverage)
+
+
+def _oil_primary_coin() -> str:
+    spec = desks.require_spec("oil")
+    primary = next((i for i in spec.instruments if i.role == "primary"), spec.instruments[0])
+    return primary.coin
+
+
+@router.get("/api/desks/oil/levels")
+def get_oil_levels() -> Dict[str, object]:
+    """Candle-derived levels for the oil desk's primary instrument: mid,
+    last closed 1h candle, 8h/24h/48h range, ATR14, where the mid sits in
+    the 24h range. See services/strategies/levels.py::summarize_coin."""
+    coin = _oil_primary_coin()
+    try:
+        return levels.summarize_coin(coin)
+    except Exception as e:  # noqa: BLE001 - report the failure, never a 500 with no detail
+        raise HTTPException(status_code=502, detail=f"could not read live levels for {coin}: {e}")
+
+
+@router.get("/api/desks/oil/log")
+def get_oil_log(n: int = Query(30, ge=1, le=500)) -> Dict[str, object]:
+    """The last `n` lines of the oil-tick loop's plain-text progress log
+    (env PATHIEL_OIL_LOG, default /tmp/oil-loop/progress.log). An empty
+    `lines` list — including when the file does not exist yet — means "no
+    ticks yet", not an error."""
+    return {"lines": oil_log.read_oil_log(n)}
 
 
 # ── HTML routes ────────────────────────────────────────────────────────────

@@ -379,6 +379,14 @@ class Thesis(_M):
 #   GET  /api/desks/jobs/{job_id}       -> RefreshJob
 #   GET  /api/desks/{desk_id}/theses    -> List[Thesis]   (newest first)
 #   POST /api/desks/{desk_id}/theses    -> Thesis         body: UserThesisIn
+#   GET  /api/desks/{desk_id}/line      -> {"ok", "verdict", "liq_px", ...}
+#                                           query: leverage (default 20)
+#                                           the 20x line for the desk's current
+#                                           call (services/strategies/call_line.py)
+#   GET  /api/desks/oil/levels          -> candle-derived levels, oil's primary
+#                                           instrument (services/strategies/levels.py)
+#   GET  /api/desks/oil/log             -> {"lines": [...]}  query: n (default 30)
+#                                           tail of the oil-tick loop's progress log
 #   GET  /desks, /desks/{desk_id}       -> HTML pages
 
 class TrackRecord(_M):
