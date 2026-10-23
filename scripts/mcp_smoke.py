@@ -34,16 +34,14 @@ REPO = Path(__file__).resolve().parent.parent
 SERVER = REPO / "scripts" / "pathiel-mcp-server.py"
 OIL = "xyz:BRENTOIL"   # the oil desk prices off Brent since 2026-10-19
 WTI = "xyz:CL"        # the desk's spread leg
-HLP_VAULT = "0xdfc24b077bc1425ad1dea75bcb6f8158e10df303"
 
 # Never called by the smoke: live orders, journal writes, billable LLM calls.
 SKIPPED: Dict[str, str] = {
-    "execute": "places a live order",
+    "place_bracket": "places a live order",
+    "bracket_sweep": "cancels a stranded live order",
     "close_position": "closes a live position",
     "set_leverage": "changes live leverage",
     "cancel_order": "cancels a live order",
-    "submit_verdict": "writes an analysis the execute tool can act on",
-    "research": "spends LLM tokens",
     "desk_refresh": "spends LLM tokens (run it on purpose, not in a smoke)",
     "desk_submit_call": "writes to the desk journal",
     "risk_set_profile": "changes live position sizing",
@@ -58,44 +56,35 @@ class Case:
     expect_error: bool = False
 
 
-def cases(user: str) -> List[Case]:
+def cases() -> List[Case]:
     now_ms = int(time.time() * 1000)
     week_ms = 7 * 86_400_000
     return [
         Case("state"), Case("connected_wallets"), Case("wallet_account"), Case("config"),
-        Case("scan", {"maxMarkets": 5}, budget_s=90),
-        Case("leaderboard_get_markets", {"limit": 5}),
-        Case("leaderboard_get_top_traders", {"limit": 3}),
-        Case("leaderboard_get_trader_positions", {"trader_id": user}),
-        Case("discovery_get_top_traders", {"limit": 3}),
-        Case("discovery_get_trader_state", {"trader_addresses": [user]}),
         Case("market_get_asset_data", {"asset": OIL}),
         Case("market_get_funding_regime"), Case("market_list_instruments"),
         Case("get_price", {"coin": OIL}), Case("get_price", {"coin": WTI}),
         Case("get_candles", {"coin": OIL, "interval": "1h", "count": 24}),
-        Case("get_open_orders"), Case("get_spot_balances"), Case("get_user_fees"),
-        Case("get_referral"), Case("get_trade_history", {"limit": 5}),
-        Case("get_funding_history", {"coin": OIL, "limit": 5}),
-        Case("get_l2_book", {"coin": OIL}), Case("get_user_state"), Case("get_user_twist"),
+        Case("get_open_orders"), Case("get_user_fees"),
+        Case("get_trade_history", {"limit": 5}),
+        Case("get_l2_book", {"coin": OIL}), Case("get_user_state"),
         Case("get_withdrawals", {"limit": 5}), Case("get_predicted_funding", {"coin": OIL}),
-        Case("get_asset_context", {"coin": OIL}), Case("get_user_defined_types"),
+        Case("get_asset_context", {"coin": OIL}),
         Case("get_price_history", {"coin": OIL}), Case("get_assets"),
         Case("get_deposits", {"limit": 5}), Case("get_transfers", {"limit": 5}),
-        Case("get_rewards"), Case("get_staking_info"), Case("get_user_roles"),
         Case("get_max_trade_size", {"coin": OIL}), Case("get_portfolio_status"),
         Case("get_coin_info", {"coin": OIL}), Case("get_all_mids"),
         Case("get_order_by_oid", {"oid": 1}),          # answers status "unknownOid"
-        Case("get_trading_permissions"), Case("get_account_summary"),
+        Case("get_account_summary"),
         Case("get_asset_positions"), Case("get_24h_stats", {"coin": OIL}),
         Case("get_funding_rate", {"coin": OIL}), Case("get_portfolio_pnl"),
-        Case("get_risk_metrics"), Case("get_spot_markets"),
+        Case("get_risk_metrics"),
         Case("get_historical_funding", {"coin": OIL, "limit": 5}),
         Case("get_open_interest", {"coin": OIL}),
-        Case("get_vault_details", {"vaultAddress": HLP_VAULT}),
         Case("get_api_rate_limits"), Case("get_server_time"),
         Case("get_user_orders_history", {"limit": 5}),
         Case("get_price_impact", {"coin": OIL, "notionalUsd": 100}),
-        Case("get_withdrawal_status"), Case("get_validator_info"), Case("get_network_stats"),
+        Case("get_withdrawal_status"),
         Case("get_liquidation_price", {"coin": OIL, "leverage": 10, "is_long": True}),
         Case("get_max_leverage", {"coin": OIL}),
         Case("get_user_fills_by_time", {"start_time": now_ms - week_ms}),
@@ -251,14 +240,7 @@ def run(only: Optional[List[str]], report_path: Path) -> int:
         client.notify("notifications/initialized")
         tools = client.request("tools/list", {}, timeout=30)["result"]["tools"]
         advertised = {t["name"] for t in tools}
-        user = ""
-        try:
-            sys.path.insert(0, str(REPO))
-            from pathiel.client.hl_client import resolve_user_address  # noqa: E402
-            user = resolve_user_address()
-        except Exception:
-            pass
-        all_cases = cases(user)
+        all_cases = cases()
         covered = {c.tool for c in all_cases} | set(SKIPPED)
         uncovered = sorted(advertised - covered)
         stale = sorted({c.tool for c in all_cases} - advertised)

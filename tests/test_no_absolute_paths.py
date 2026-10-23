@@ -261,7 +261,11 @@ def test_no_stub_shadows_a_capability_the_client_already_has():
     aliases = {k.value: v.value for k, v in zip(g["ALIASES"].keys, g["ALIASES"].values)} \
         if "ALIASES" in g else {}
     assert stubs == set(), f"stubs are back: {sorted(stubs)}"
-    for name in ("get_coin_price", "get_leverage", "get_funding_history",
+    # get_funding_history (one of the original six) was cut entirely on
+    # 2026-10-23 -- the headless oil desk keeps get_funding_rate and
+    # get_predicted_funding instead -- so it is gone from this list too: a
+    # removed tool cannot "regress to a stub," there is nothing left to shadow.
+    for name in ("get_coin_price", "get_leverage",
                  "get_asset_context", "get_open_interest", "get_predicted_funding",
                  "get_price_impact", "get_max_trade_size", "get_portfolio_status",
                  "get_trade_history", "get_user_orders", "get_api_rate_limits"):

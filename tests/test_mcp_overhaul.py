@@ -73,14 +73,19 @@ def info(monkeypatch):
 
 class TestToolsListBudget:
     def test_tool_count_snapshot(self):
-        """Pins the exact count (81: 90 - 19 names folded into hidden
-        aliases + 5 desk_* tools + 4 account/risk tools added 2026-10-18:
-        account_overview, accounts, risk_limits, risk_size_trade + desk_grade
-        added 2026-10-23 for the grade-everything build) so a drift --
-        someone re-adding a duplicate schema, or silently dropping a tool --
-        shows up as a failing assert, not a surprise someone has to notice
-        by eye."""
-        assert len(M.TOOLS) == 81
+        """Pins the exact count (59: 80 - 22 bot-era/off-topic tools cut on
+        2026-10-23 when pathiel became a headless oil desk -- scan, research,
+        submit_verdict, execute (the bot's brain path, replaced by
+        place_bracket/bracket_sweep), discovery_*, leaderboard_*,
+        get_staking_info, get_validator_info, get_vault_details, get_referral,
+        get_rewards, get_spot_balances, get_spot_markets, get_user_twist,
+        get_user_roles, get_user_defined_types, get_network_stats, plus
+        get_funding_history and get_trading_permissions, redundant with the
+        funding/fee reads kept -- + 1 desk_grade tool added the same day for
+        the grade-everything build) so a drift -- someone re-adding a
+        duplicate schema, or silently dropping a tool -- shows up as a
+        failing assert, not a surprise someone has to notice by eye."""
+        assert len(M.TOOLS) == 59
 
     def test_desk_tools_are_present(self):
         names = {t["name"] for t in M.TOOLS}
@@ -93,13 +98,15 @@ class TestToolsListBudget:
         cost 29568 after. 2026-10-18 (MCP shore-up): +4 account/risk tools,
         safety annotations on every tool and narrowing params on the
         oversized readers, paid for mostly by compacting the config schema
-        (4.9k -> 0.9k chars): 32847 chars (~8.2k tokens). 2026-10-23: +1
-        desk_grade tool for grade-everything. The gate leaves a little
-        headroom without letting bloat slide in unnoticed -- a future PR
-        that blows through this number has to touch this test."""
+        (4.9k -> 0.9k chars): 32847 chars (~8.2k tokens). 2026-10-23
+        (headless oil desk): 80 -> 58 tools cut 33945 -> 26079 chars, then +1
+        desk_grade tool for grade-everything: 59 tools, 26115 chars. The cap
+        drops to 26115 + 10% (28727) so it keeps biting instead of riding the
+        old 80-tool ceiling. A future PR that blows through this number has
+        to touch this test."""
         payload = json.dumps({"tools": M.TOOLS})
-        assert len(M.TOOLS) <= 81, "tool count crept back up -- did a duplicate return?"
-        assert len(payload) <= 34000, f"tools/list grew to {len(payload)} chars"
+        assert len(M.TOOLS) <= 59, "tool count crept back up -- did a duplicate return?"
+        assert len(payload) <= 28727, f"tools/list grew to {len(payload)} chars"
 
     def test_no_duplicate_names_between_tools_and_aliases(self):
         tool_names = {t["name"] for t in M.TOOLS}
@@ -547,13 +554,15 @@ class TestDeskTools:
 # ── live-money tools: mocked only, never reach the network ─────────────────
 
 class TestLiveMoneyToolsNeverTouchNetwork:
-    """execute / close_position / set_leverage / cancel_order are the only
-    tools that could ever move real money. Every test here proves two
-    independent things, so either guard failing fails the test: (1) the SDK
-    object that would place an order is never even constructed (credentials
-    forced empty, deterministically -- not dependent on whether this
-    machine's .env.local happens to hold real keys), and (2) nothing on the
-    call path reaches a real socket (requests.Session.request raises).
+    """place_bracket / bracket_sweep / close_position / set_leverage /
+    cancel_order are the only tools that could ever move real money (the
+    bot's old execute path is retired as of the 2026-10-23 headless-oil-desk
+    cut). Every test here proves two independent things, so either guard
+    failing fails the test: (1) the SDK object that would place an order is
+    never even constructed (credentials forced empty, deterministically --
+    not dependent on whether this machine's .env.local happens to hold real
+    keys), and (2) nothing on the call path reaches a real socket
+    (requests.Session.request raises).
     """
 
     @pytest.fixture(autouse=True)
@@ -589,14 +598,19 @@ class TestLiveMoneyToolsNeverTouchNetwork:
         # a crash and never a real order.
         assert result["isError"] or body.get("closed") is False
 
-    def test_execute_without_a_stored_analysis_never_reaches_the_exchange(self):
-        result, body = _call("execute", {"analysisId": "does-not-exist-in-this-test"})
-        assert result["isError"]
-        assert "not found" in body["error"]
+    def test_place_bracket_never_builds_a_real_exchange(self):
+        result, body = _call("place_bracket", {"coin": "BTC", "entry_px": 100000,
+                                               "stop_px": 98000, "tp_px": 103000})
+        assert result["isError"] or body.get("placed") is False
 
-    @pytest.mark.parametrize("tool", ["execute", "close_position", "set_leverage", "cancel_order"])
+    def test_bracket_sweep_never_reaches_the_exchange(self):
+        result, body = _call("bracket_sweep", {"coin": "BTC"})
+        assert result["isError"] or body.get("ok") is False
+
+    @pytest.mark.parametrize("tool", ["place_bracket", "bracket_sweep", "close_position",
+                                      "set_leverage", "cancel_order"])
     def test_every_live_money_tool_is_a_hard_boundary_in_swarm_rules(self, tool):
-        """Belt-and-suspenders on the policy itself: these four names are
+        """Belt-and-suspenders on the policy itself: these five names are
         exactly the ones docs/overhaul/SWARM_RULES.md section 1 bans
         calling live. If that list and this test ever drift apart, this
         fails loudly instead of quietly under-covering the boundary."""
@@ -634,7 +648,7 @@ class TestStdioE2E:
             names = {t["name"] for t in listing["result"]["tools"]}
             assert "get_server_time" in names and "desk_list" in names
             assert "get_coin_price" not in names, "hidden alias leaked into tools/list"
-            assert len(names) == len(M.TOOLS) == 81
+            assert len(names) == len(M.TOOLS) == 59
 
             send({"jsonrpc": "2.0", "id": 3, "method": "tools/call",
                  "params": {"name": "get_server_time", "arguments": {}}})
