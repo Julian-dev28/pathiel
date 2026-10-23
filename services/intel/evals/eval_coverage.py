@@ -63,6 +63,11 @@ def _has_positioning(packet: IntelPacket) -> bool:
 CATALYST_HARD_DATA_MAP: Dict[str, Callable[[IntelPacket], bool]] = {
     "eia_weekly": lambda p: _has_datapoint(p, sources=("eia",), label_has=("crude stocks",)),
     "eia_steo": lambda p: _has_datapoint(p, sources=("eia",)),
+    "eia_gas_storage": lambda p: _has_datapoint(p, sources=("eia",), label_has=("natural gas storage",)),
+    # ^ the "gas" desk's own kind (services/strategies/desks/gas.py,
+    # services/intel/calendar_us.py:eia_gas_storage_release) — not exercised
+    # by THIS script's oil-desk eval (oil's active_kinds never includes it),
+    # kept correct here anyway for whoever runs this against the gas desk.
     "api_weekly": lambda p: False,   # API's own weekly number has no free structured feed
                                      # distinct from EIA's (API publishes PDF/press release only)
     "opec_meeting": lambda p: False,  # OPEC+ quota/compliance data has no free structured API

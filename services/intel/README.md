@@ -34,7 +34,7 @@ gated oilprice.com and the crypto RSS feed before this branch.
 | `sources/positioning.py` | oil, metals, btc, indices | none | `WTI non-commercial net long: 100,343 (chg +1,283) pct1y=0.67 as_of 2026-10-13` |
 | `sources/catalysts.py` | all | none | EIA/API/FOMC/CPI calendar, NHC storms, token unlocks, earnings estimate |
 | `sources/venue.py` | **all** | none | `Brent funding rate (hourly): -1.037e-05 rate_per_hr (prior n/a, chg n/a) \| insufficient 30d funding history (20 samples)` |
-| `sources/eia.py` | **oil** | `EIA_API_KEY` (free) | `EIA crude stocks weekly change: -10 mm_bbl (prior -1, chg -8.625) \| surprise -8.62 vs 4wk avg chg -1.38` |
+| `sources/eia.py` | **oil** (crude stocks); **oil, gas** (nat gas storage — the `gas` desk added on `overhaul-2026-10-17` alongside this branch has no "oil" token to match, so it gets its own `desk_rules.is_natgas_desk` gate) | `EIA_API_KEY` (free) | `EIA crude stocks weekly change: -10 mm_bbl (prior -1, chg -8.625) \| surprise -8.62 vs 4wk avg chg -1.38` |
 | `sources/fred.py` | **metals, indices** | `FRED_API_KEY` (free) | `10y Treasury yield: 4.1 pct (prior 4, chg +0.1) \| 5d change +0.100` |
 | `sources/cboe.py` | **indices, ai (equity)** | none | `VIX: 19.03 index_pts (prior 16.68, chg +2.35) \| day chg +2.35` plus `VIX term structure slope (9D/3M): 0.9374 ratio \| contango (calm)` |
 | `sources/edgar.py` | **ai (equity)** | none (contact User-Agent only, SEC's own rule) | `NVDA insider Form 4 net (buys-sells): 0 count \| 0 buys, 0 sells across 1/1 Form 4 filings in the last 14d (open-market P/S only)` and `NVDA next earnings (estimated): 33.5 days \| estimated 2026-11-25 from last 10-Q/10-K (2026-08-26) + ~91d cadence, not confirmed` |

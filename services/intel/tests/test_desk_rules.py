@@ -41,3 +41,23 @@ def test_is_indices_desk_false_for_metals_or_ai():
     ai = _spec("ai", ("xyz:NVDA", "Nvidia"))
     assert desk_rules.is_indices_desk(metals) is False
     assert desk_rules.is_indices_desk(ai) is False
+
+
+def test_is_natgas_desk_true_for_the_dedicated_gas_desk():
+    """Regression: the "gas" desk (services/strategies/desks/gas.py, added
+    on overhaul-2026-10-17 alongside this branch) has no "oil"/"wti"/
+    "brent"/"crude" token anywhere in its id or instrument labels, so
+    is_oil_desk alone would miss it and sources/eia.py's natural-gas-
+    storage number — this desk's own primary edge — would never fire."""
+    gas = _spec("gas", ("xyz:NATGAS", "Nat Gas"))
+    assert desk_rules.is_natgas_desk(gas) is True
+
+
+def test_is_natgas_desk_true_for_oil_desk_too():
+    oil = _spec("oil", ("xyz:BRENTOIL", "Brent"), ("xyz:NATGAS", "Nat Gas"))
+    assert desk_rules.is_natgas_desk(oil) is True
+
+
+def test_is_natgas_desk_false_for_unrelated_desks():
+    metals = _spec("metals", ("xyz:GOLD", "Gold"))
+    assert desk_rules.is_natgas_desk(metals) is False
