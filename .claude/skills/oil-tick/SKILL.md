@@ -40,10 +40,13 @@ never from mental arithmetic.
      invalidation triggered on a CLOSED hourly candle, or a Hormuz reopen /
      ceasefire headline landed (the desk brief's `what_changes_my_mind`).
      After any close, run `bracket_sweep` again.
-   - **Flat with a resting entry:** keep it if the entry is still within one
-     ATR14 of the mid and `scripts/oil_levels.py --check ENTRY STOP TP`
-     still passes. Otherwise `cancel_order` it and fall through to the next
-     case.
+   - **Flat with a resting entry:** keep it if `scripts/oil_levels.py
+     --check ENTRY STOP TP` still passes AND the entry is either within one
+     ATR14 of the mid or still sits on a current structural edge (within
+     0.25 ATR of the 8h or 24h range low for a long, high for a short). A
+     level that is still the edge is not stale just because price drifted
+     away; cancelling and re-placing it is churn. Otherwise `cancel_order`
+     it (pass `coin`) and fall through to the next case.
    - **Flat, nothing resting:** look for one setup in the thesis direction,
      anchored on structure from step 2: a pullback to the 8h or 24h range
      edge, or a breakout retest. Stop beyond the structure, target at the
