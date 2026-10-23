@@ -14,7 +14,7 @@ FIX = Path(__file__).resolve().parent.parent / "fixtures"
 
 @pytest.mark.parametrize("name,model", [
     ("oil_spec", DeskSpec), ("oil_analytics", DeskAnalytics),
-    ("oil_intel", IntelPacket), ("oil_thesis", Thesis),
+    ("oil_intel", IntelPacket), ("oil_thesis", Thesis), ("oil_thesis_brent", Thesis),
 ])
 def test_fixture_round_trips(name, model):
     raw = json.loads((FIX / f"{name}.json").read_text())

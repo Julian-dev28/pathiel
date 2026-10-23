@@ -39,17 +39,77 @@ analytics.py     DeskAnalytics (deterministic: snapshots, pairs, forward
                  stats, leverage ladder) — the ONLY numbers a Thesis may quote
 journal.py       Thesis storage on disk, atomic writes
 grader.py        Grade expired theses from hourly candles; TrackRecord roll-up
+trades.py        Grade every registered account's trades against the thesis
+                 that was live when they placed them; TrackRecord enrichment
 pipeline.py      refresh(): analytics -> intel -> token gate -> thesis -> journal
                  (on_stage reports "reading market data" ... "writing the thesis")
 candle_store.py  daily candles on disk, shared by server, MCP and scheduler;
                  only the missing tail is fetched, a failed fetch serves disk
 facade.py        list_cards / get_brief / refresh / submit_user_thesis /
-                 track_record / grade_due — the stable surface other agents import;
-                 also the one background analytics worker (revalidate, warm_all)
+                 track_record / grade_due / grade_due_trades — the stable surface
+                 other agents import; also the one background analytics worker
+                 (revalidate, warm_all)
 api.py           FastAPI routes (contracts/strategies/models.py's route list)
 __main__.py      CLI: list / brief / refresh / grade
-evals/           verdict_backtest.py — walk-forward backtest, runnable as a script
+evals/           verdict_backtest.py — walk-forward liquidation backtest;
+                 trades_replay.py — replays a real fill history through trades.py
 ```
+
+## Grading: what, when, where
+
+**Thesis grading** (`grader.py`, unchanged by this build): every expired
+thesis gets a point-in-time `Grade` (direction hit, target/stop-first, Brier,
+MAE/MFE) from hourly candles, written back onto the thesis itself
+(`journal.save_thesis`). Idempotent — a thesis with `.grade` already set is
+skipped.
+
+**Trade grading** (`trades.py`, 2026-10-23): every REGISTERED account (every
+mode — trade and watch — plus the synthetic `env` account for `.env.local`
+keys; `services.accounts.view.list_all_accounts()`) gets graded against every
+thesis that is graded-or-expired, on the call's instrument coin(s) (both legs
+for a `pair` call), over the window `[thesis.created_at, min(thesis.expires_at,
+the next thesis's created_at)]`. Per account, per thesis: `n_fills`,
+`n_opens`, `n_closes`, `realized_pnl_usd` (sum(closedPnl) - sum(fee)),
+`follow_rate` (fraction of OPENING fills in the call's own direction — a long
+call's correct open is a Buy), `first_entry_px` / `entered_in_zone`, and
+`max_adverse_fill` (the single worst closedPnl fill). See `trades.py`'s
+module docstring for the exact rules.
+
+**Why a sibling file, not a `Thesis.trades` field.** The build brief offered
+either: extend the `Thesis` contract (a `CONTRACT_VERSION` bump, since every
+thesis already on disk would need to keep validating) or store trades next to
+the thesis. This ships the sibling file:
+
+    $PATHIEL_STATE_DIR/strategies/<desk_id>/trades/<thesis_id>.json   # ThesisTrades
+
+A thesis is written once and frozen; its trades keep arriving for as long as
+the window is open and get recomputed independently. Keeping them apart means
+`trades.py` never has to import-and-widen the `Thesis` model to do its job —
+one more service, one more sharp boundary. `AccountTradeGrade`/`ThesisTrades`
+(`contracts/strategies/models.py`) are additive: no existing model's shape
+changed, so `CONTRACT_VERSION` did not need to bump either.
+
+**Reading it back.** `trade_grading.track_record_for_desk(desk_id)` (what
+`facade.list_cards()`, `facade.get_brief()` and `facade.track_record()` all
+call) returns a `TrackRecord` with the thesis-grading fields PLUS
+`realized_pnl_usd` / `n_trades` / `follow_rate` flattened across every
+account's trade grade for every graded thesis on that desk — `None`/`0` when
+nothing has been graded yet, never a stand-in zero for "no data." The
+`desk_track_record` MCP tool and `/desks` pages read the same combined
+number; nothing reads `grader.py`'s thesis-only roll-up directly any more.
+
+**When it runs.**
+- **Automatically**: `pathiel/server.py`'s lifespan starts a background task
+  ~60s after boot (`PATHIEL_GRADE_INITIAL_DELAY_S`), then every
+  `PATHIEL_GRADE_INTERVAL_MIN` minutes (default 60) — thesis grading, THEN
+  trade grading, both via `asyncio.to_thread` so the shared event loop is
+  never held for a Hyperliquid read. `PATHIEL_GRADE_LOOP=0` turns it off (the
+  gate test session does). This replaces `scripts/scheduler.py`'s
+  `desks-grade` job as the live grading path — the scheduler process is not
+  running on the operator's machine.
+- **On demand**: `python -m services.strategies grade` (CLI) or the
+  `desk_grade` MCP tool (optional `desk` — narrows TRADE grading only;
+  thesis grading always covers every desk, it is cheap and idempotent).
 
 Analytics freshness (2026-10-18). Rebuilding live on every `get_brief()` ran
 through the dashboard server's Hyperliquid budget (60 burst, 2 weight/s) and
@@ -195,6 +255,7 @@ export PATHIEL_STATE_DIR="$(mktemp -d)"                      # never the live on
 .venv/bin/python -m services.strategies brief oil
 .venv/bin/python -m services.strategies refresh oil --force
 .venv/bin/python -m services.strategies refresh --all      # every desk, one call — the scheduler hook
-.venv/bin/python -m services.strategies grade
+.venv/bin/python -m services.strategies grade          # theses, then every account's trades
 .venv/bin/python -m services.strategies.evals.verdict_backtest          # periodic eval, hits live HL
+.venv/bin/python -m services.strategies.evals.trades_replay             # offline, two fixtures, no HL
 ```

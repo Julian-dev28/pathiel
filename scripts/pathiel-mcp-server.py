@@ -3,7 +3,7 @@
 
 Tool families (tools/list is the source of truth; SERVER_INSTRUCTIONS below is
 what a client model reads first):
-  desks      desk_list, desk_brief, desk_refresh, desk_submit_call, desk_track_record
+  desks      desk_list, desk_brief, desk_refresh, desk_submit_call, desk_track_record, desk_grade
   account    account_overview, accounts, state, wallet_account, get_* account reads
   risk       risk_limits, risk_size_trade
   market     get_price, get_candles, get_l2_book, market_*, leaderboard_*, ...
@@ -129,7 +129,7 @@ Start here
 
 Coins: main-dex perps by name (BTC, ETH). HIP-3 perps as dex:SYMBOL (xyz:BRENTOIL = Brent, the oil desk's price; xyz:CL = WTI; xyz:GOLD).
 
-LIVE MONEY: execute, close_position, set_leverage, cancel_order act on the real account, and config with arguments rewrites the live trading config. Call them only when the operator asked for that exact action in this conversation. Every other tool only reads (desk_refresh and desk_submit_call write the desk journal)."""
+LIVE MONEY: execute, close_position, set_leverage, cancel_order act on the real account, and config with arguments rewrites the live trading config. Call them only when the operator asked for that exact action in this conversation. Every other tool only reads (desk_refresh, desk_submit_call and desk_grade write the desk journal; desk_grade never places or touches an order, it only grades what already happened)."""
 
 
 # Tools definition
@@ -212,11 +212,10 @@ TOOLS = [
     {
         "name": "connected_wallets",
         "description": (
-            "Wallets that have signed in to the dashboard with Sign-In With Ethereum, "
-            "newest first. READ-ONLY and informational: this server signs with the "
-            "deployment's own key, so it can never place, close or size an order on "
-            "any wallet listed here. Use it to answer 'whose account am I looking at' "
-            "and to feed an address to wallet_account below."
+            "Wallets signed in to the dashboard, newest first. READ-ONLY: this server "
+            "signs with its own key, so it can never place, close or size an order on "
+            "any wallet listed here. Answers 'whose account am I looking at'; feed an "
+            "address to wallet_account below."
         ),
         "inputSchema": {
             "type": "object",
@@ -229,11 +228,10 @@ TOOLS = [
     {
         "name": "wallet_account",
         "description": (
-            "Read-only Hyperliquid state for any address: equity, withdrawable, and "
-            "open positions. Needs no key, because /info clearinghouseState takes a "
-            "plain address. Omit `address` to read the active account (Account tab); "
-            "pass one to read any account. An unfunded address is not an error — it "
-            "returns funded=false."
+            "Read-only Hyperliquid state for any address: equity, withdrawable, open "
+            "positions. Needs no key (/info clearinghouseState takes a plain address). "
+            "Omit `address` for the active account; an unfunded address returns "
+            "funded=false, not an error."
         ),
         "inputSchema": {
             "type": "object",
@@ -249,8 +247,8 @@ TOOLS = [
             "Read the agent config (no arguments), or change it: passing ANY field "
             "rewrites the live config the trading loop reads. Every top-level key in "
             ".agent-config.json is accepted (read first to see them); nested blocks "
-            "such as dsl_exit or ai_brain are deep-merged. Position sizing is the risk "
-            "profile now (risk_limits), not the legacy sizing keys."
+            "(dsl_exit, ai_brain) are deep-merged. Sizing is the risk profile now "
+            "(risk_limits), not the legacy sizing keys."
         ),
         "inputSchema": {
             "type": "object",
@@ -458,9 +456,9 @@ TOOLS = [
     },
     {
         "name": "get_open_orders",
-        "description": ("Open orders (frontend shape: trigger type, tp/sl) on the main dex AND "
-                        "every HIP-3 dex holding margin (xyz:CL orders live on xyz), optionally "
-                        "filtered by coin. Also answers get_frontend_open_orders, get_user_orders."),
+        "description": ("Open orders (trigger type, tp/sl) on the main dex AND every HIP-3 dex "
+                        "holding margin (xyz:CL orders live on xyz), optionally filtered by "
+                        "coin. Also answers get_frontend_open_orders, get_user_orders."),
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -581,8 +579,7 @@ TOOLS = [
         "name": "get_predicted_funding",
         "description": ("Predicted next funding per venue for one coin, or every main-dex coin "
                         "when omitted. HIP-3 coins (xyz:, vntl:, km:, ...) have no cross-venue "
-                        "prediction on HL; this falls back to their current hourly rate, "
-                        "clearly labeled as such."),
+                        "prediction on HL; falls back to their current hourly rate, labeled."),
         "inputSchema": {"type": "object", "properties": {
             "coin": {"type": "string", "description": "Coin ticker (optional)"}
         }}
@@ -1095,8 +1092,8 @@ TOOLS = [
     {
         "name": "desk_refresh",
         "description": "Refresh a desk: market data, news/policy/odds, then a NEW thesis via "
-                       "the local model (about a minute; progress is reported). Skips the model "
-                       "unless the market moved, a big headline landed, the thesis expired, or "
+                       "the local model (~1 min; progress reported). Skips the model unless "
+                       "the market moved, a big headline landed, the thesis expired, or "
                        "force=true.",
         "inputSchema": {
             "type": "object",
@@ -1170,11 +1167,21 @@ TOOLS = [
         },
     },
     {
+        "name": "desk_grade",
+        "description": "Grade now: expired theses, then accounts' trades vs each call. desk "
+                       "narrows trade grading only.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "desk": {"type": "string"},
+            },
+        },
+    },
+    {
         "name": "account_overview",
-        "description": "The active account's money: total equity, where it sits (each perp dex "
-                       "incl. HIP-3 such as xyz, plus spot), open positions, and whether it can "
-                       "trade right now (with plain-English blockers). Start here for "
-                       "\"how much do I have\".",
+        "description": "The active account's money: total equity, where it sits (each perp "
+                       "dex incl. HIP-3, plus spot), open positions, and whether it can trade "
+                       "right now (plain-English blockers). Start here for \"how much do I have\".",
         "inputSchema": {"type": "object", "properties": {}},
     },
     {
@@ -1218,8 +1225,8 @@ TOOLS = [
         "name": "place_bracket",
         "description": "One trade with exact stop and take-profit, sized like "
                        "risk_size_trade. entry_px = resting limit, stop/target attached on "
-                       "fill; omit for market. Refuses under min_r (1.5R) or if the "
-                       "coin has a position or resting entry. dry_run = size only.",
+                       "fill; omit for market. Refuses under min_r (1.5R) or an existing "
+                       "position/entry on the coin. dry_run = size only.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -1254,7 +1261,7 @@ TOOLS = [
 LIVE_MONEY_TOOLS = frozenset({"execute", "close_position", "set_leverage", "cancel_order",
                               "place_bracket", "bracket_sweep"})
 LIVE_CONFIG_TOOLS = frozenset({"config"})
-LOCAL_WRITE_TOOLS = frozenset({"submit_verdict", "desk_refresh", "desk_submit_call"})
+LOCAL_WRITE_TOOLS = frozenset({"submit_verdict", "desk_refresh", "desk_submit_call", "desk_grade"})
 
 
 def _annotate_tools(tools: List[Dict[str, Any]]) -> None:
@@ -1902,6 +1909,7 @@ def _tool_handlers() -> Dict[str, Any]:
         "desk_refresh": handle_desk_refresh,
         "desk_submit_call": handle_desk_submit_call,
         "desk_track_record": handle_desk_track_record,
+        "desk_grade": handle_desk_grade,
         "account_overview": handle_account_overview,
         "accounts": handle_accounts,
         "risk_limits": handle_risk_limits,
@@ -4101,6 +4109,20 @@ def handle_desk_track_record(params: Dict[str, Any]) -> str:
         facade = _strategies_facade()
         tr = facade.track_record(desk_id)
         return json.dumps({"desk": desk_id, "track_record": tr.model_dump(mode="json")})
+    except Exception as e:
+        return json.dumps({"error": str(e), "desk": desk_id})
+
+
+def handle_desk_grade(params: Dict[str, Any]) -> str:
+    """Grade every expired thesis (one desk, or every desk), then every
+    registered account's trades against each graded call, right now --
+    the same two calls the server's hourly background sweep makes."""
+    desk_id = str(params.get("desk") or "").strip() or None
+    try:
+        facade = _strategies_facade()
+        n_theses = facade.grade_due()
+        n_trades = facade.grade_due_trades(desk_id)
+        return json.dumps({"desk": desk_id, "theses_graded": n_theses, "trades_graded": n_trades})
     except Exception as e:
         return json.dumps({"error": str(e), "desk": desk_id})
 

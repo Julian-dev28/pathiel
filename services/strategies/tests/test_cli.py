@@ -92,7 +92,27 @@ def test_cmd_refresh_error_exit_code(capsys, monkeypatch):
 def test_cmd_grade_no_theses(capsys):
     rc = cli.main(["grade"])
     assert rc == 0
-    assert "graded 0 theses" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "graded 0 theses" in out
+    assert "0 trade grades" in out
+
+
+def test_cmd_grade_json_reports_both_counts(capsys):
+    rc = cli.main(["--json", "grade"])
+    assert rc == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload == {"theses_graded": 0, "trades_graded": 0}
+
+
+def test_cmd_grade_runs_trade_grading_after_thesis_grading(capsys, monkeypatch):
+    from services.strategies import facade as facade_mod
+    order = []
+    monkeypatch.setattr(facade_mod, "grade_due", lambda: (order.append("theses"), 2)[1])
+    monkeypatch.setattr(facade_mod, "grade_due_trades", lambda: (order.append("trades"), 5)[1])
+    rc = cli.main(["grade"])
+    assert rc == 0
+    assert order == ["theses", "trades"]
+    assert "graded 2 theses, 5 trade grades" in capsys.readouterr().out
 
 
 def test_main_requires_a_subcommand():

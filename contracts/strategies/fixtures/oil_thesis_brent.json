@@ -1,0 +1,90 @@
+{
+  "contract_version": "1.0.0",
+  "id": "oil-20260910T0000-m-brent",
+  "desk_id": "oil",
+  "author": "machine",
+  "created_at": "2026-09-10T00:00:00Z",
+  "expires_at": "2026-10-24T00:00:00Z",
+  "horizon_days": 44,
+  "call": {
+    "side": "long",
+    "instrument": "xyz:BRENTOIL",
+    "one_liner": "Long Brent at 20x off the Hormuz escalation: out below 95.",
+    "entry_px": 103.95,
+    "entry_zone": [
+      100.0,
+      108.0
+    ],
+    "stop_px": 95.0,
+    "targets": [
+      112.0,
+      118.0
+    ],
+    "leverage": 20.0,
+    "confidence": 0.55,
+    "invalidation": "Daily close below 95, or a confirmed Hormuz reopening"
+  },
+  "scenarios": [
+    {
+      "name": "Hormuz stays shut",
+      "probability": 0.55,
+      "move_lo_pct": 0.03,
+      "move_hi_pct": 0.4,
+      "description": "Grinds to 112-118.",
+      "triggers": []
+    },
+    {
+      "name": "Chop",
+      "probability": 0.25,
+      "move_lo_pct": -0.05,
+      "move_hi_pct": 0.03,
+      "description": "Range 99-107.",
+      "triggers": []
+    },
+    {
+      "name": "Deal / SPR release",
+      "probability": 0.2,
+      "move_lo_pct": -0.4,
+      "move_hi_pct": -0.05,
+      "description": "Gap down on a de-escalation headline.",
+      "triggers": []
+    }
+  ],
+  "bull": [
+    {
+      "text": "Record tanker attacks keep the Strait effectively closed",
+      "source_ids": []
+    }
+  ],
+  "bear": [
+    {
+      "text": "G7/IEA 100M bbl emergency release accelerating",
+      "source_ids": []
+    }
+  ],
+  "catalysts": [],
+  "leverage_view": [],
+  "lessons": [],
+  "what_changes_my_mind": [
+    "Iran accepts a reopening framework",
+    "daily close below 95"
+  ],
+  "sources": [],
+  "analytics_ref": {
+    "as_of": "2026-10-17T02:10:00Z",
+    "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "intel_ref": null,
+  "primary_coins": [
+    "xyz:BRENTOIL"
+  ],
+  "usage": {
+    "model": "fixture",
+    "input_tokens": 4800,
+    "output_tokens": 1300,
+    "duration_s": null,
+    "cost_usd": null,
+    "skipped_reason": null
+  },
+  "grade": null
+}

@@ -413,6 +413,84 @@ def test_the_body_helper_answers_400_for_anything_but_an_object(raw, empty_ok, e
     assert err.value.status_code == 400 and err.value.detail == expect
 
 
+# ── grading background task (PATHIEL_GRADE_LOOP) ────────────────────────────
+
+def test_grade_loop_runs_thesis_then_trade_grading_on_an_interval(monkeypatch):
+    """The lifespan-started background task (server.py's _grade_loop) calls
+    facade.grade_due() THEN facade.grade_due_trades() every sweep, both via
+    asyncio.to_thread so the shared loop is never held for the call's
+    duration, and survives a sweep that raises."""
+    import pathiel.server as srv
+    import services.strategies.facade as facade
+
+    calls = []
+
+    def fake_grade_due():
+        calls.append(("theses", _on_event_loop()))
+        return 3
+
+    def fake_grade_due_trades(desk_id=None):
+        calls.append(("trades", _on_event_loop()))
+        return 2
+
+    _no_deployment(monkeypatch)
+    monkeypatch.setenv("PATHIEL_GRADE_LOOP", "1")
+    monkeypatch.setenv("PATHIEL_GRADE_INITIAL_DELAY_S", "0")
+    monkeypatch.setenv("PATHIEL_GRADE_INTERVAL_MIN", "0.001")   # ~0.06s between sweeps
+    monkeypatch.setattr(facade, "grade_due", fake_grade_due)
+    monkeypatch.setattr(facade, "grade_due_trades", fake_grade_due_trades)
+    monkeypatch.setattr(srv, "read_agent_config", lambda: {})
+
+    with _local_client(srv.app):
+        deadline = time.monotonic() + 3
+        while time.monotonic() < deadline and sum(1 for n, _ in calls if n == "trades") < 2:
+            time.sleep(0.02)
+
+    assert sum(1 for n, _ in calls if n == "theses") >= 2
+    assert sum(1 for n, _ in calls if n == "trades") >= 2
+    assert all(not on_loop for _, on_loop in calls), "grading ran on the event loop, not a worker thread"
+    # Every sweep grades theses before trades.
+    first_two = [n for n, _ in calls[:2]]
+    assert first_two == ["theses", "trades"]
+
+
+def test_grade_loop_survives_a_failing_sweep(monkeypatch):
+    """A sweep that raises (a bad desk directory, a 429) is logged and the
+    loop tries again next interval instead of dying."""
+    import pathiel.server as srv
+    import services.strategies.facade as facade
+
+    attempts = []
+
+    def flaky_grade_due():
+        attempts.append(1)
+        if len(attempts) == 1:
+            raise RuntimeError("boom")
+        return 0
+
+    _no_deployment(monkeypatch)
+    monkeypatch.setenv("PATHIEL_GRADE_LOOP", "1")
+    monkeypatch.setenv("PATHIEL_GRADE_INITIAL_DELAY_S", "0")
+    monkeypatch.setenv("PATHIEL_GRADE_INTERVAL_MIN", "0.001")
+    monkeypatch.setattr(facade, "grade_due", flaky_grade_due)
+    monkeypatch.setattr(facade, "grade_due_trades", lambda desk_id=None: 0)
+    monkeypatch.setattr(srv, "read_agent_config", lambda: {})
+
+    with _local_client(srv.app):
+        deadline = time.monotonic() + 3
+        while time.monotonic() < deadline and len(attempts) < 2:
+            time.sleep(0.02)
+
+    assert len(attempts) >= 2, "the loop stopped retrying after the first sweep raised"
+
+
+def test_grade_loop_off_by_default_in_the_test_session():
+    """conftest.py sets PATHIEL_GRADE_LOOP=0 so the gate suite never starts
+    this background task against real services.strategies state."""
+    import os
+    assert os.environ.get("PATHIEL_GRADE_LOOP") == "0"
+
+
 def test_two_config_saves_landing_together_keep_both_changes(monkeypatch):
     """On the loop two saves could not interleave. On worker threads, without
     the lock, both read the old config and the second write drops the first
