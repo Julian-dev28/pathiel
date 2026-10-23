@@ -35,10 +35,28 @@ def test_decision_word_watch_when_call_leverage_is_not_on_the_ladder(oil):
 # -- quick render -----------------------------------------------------------
 
 
-def test_render_quick_is_six_lines(oil):
+def test_render_quick_is_seven_lines_with_the_r_line(oil):
     text = render.render_markdown(oil.thesis, oil.analytics, mode="quick")
     lines = text.splitlines()
-    assert len(lines) == 6
+    assert len(lines) == 7
+
+
+def test_render_quick_shows_the_r_multiple_to_first_target(oil):
+    """The fixture call pays 101.19/entry/stop -> 2.21R - check against the
+    same check_levels call the line itself uses, not a hand-typed number."""
+    from pathiel.agents.bracket import check_levels
+
+    text = render.render_markdown(oil.thesis, oil.analytics, mode="quick")
+    call = oil.thesis.call
+    gate = check_levels(call.entry_px, call.stop_px, call.targets[0])
+    assert f"Pays {gate['r_multiple']:.1f}R to {call.targets[0]:g}" in text.splitlines()
+
+
+def test_render_quick_omits_the_r_line_for_a_flat_call(oil):
+    flat = oil.thesis.model_copy(update={"call": oil.thesis.call.model_copy(
+        update={"side": "flat", "leverage": None})})
+    text = render.render_markdown(flat, oil.analytics, mode="quick")
+    assert not any(line.startswith("Pays ") for line in text.splitlines())
 
 
 def test_render_quick_states_the_exit_and_the_instrument(oil):

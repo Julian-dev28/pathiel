@@ -183,12 +183,14 @@ def test_a_background_desk_build_stays_background_on_its_fetch_threads():
     seen = []
 
     def fetcher(coin, interval, count):
-        seen.append((coin, threading.current_thread().name, rate_limit.in_background()))
+        seen.append((coin, interval, threading.current_thread().name, rate_limit.in_background()))
         return make_candles([100.0 + 0.1 * i for i in range(40)], wiggle=0.01)
 
     with rate_limit.background_priority():
         A.build_analytics(spec, candle_fetcher=fetcher, meta_fetcher=lambda: {},
                           account_fetcher=lambda: AccountSnapshot())
-    assert sorted(c for c, _, _ in seen) == ["A", "B"]
-    assert all(bg for _, _, bg in seen), seen
-    assert any(name != threading.current_thread().name for _, name, _ in seen), "ran on pool threads"
+    # "A" is primary: one daily fetch (every instrument) plus one hourly fetch
+    # (structure, primaries only, 2026-10-23). "B" is secondary: daily only.
+    assert sorted((c, i) for c, i, _, _ in seen) == [("A", "1d"), ("A", "1h"), ("B", "1d")]
+    assert all(bg for _, _, _, bg in seen), seen
+    assert any(name != threading.current_thread().name for _, _, name, _ in seen), "ran on pool threads"

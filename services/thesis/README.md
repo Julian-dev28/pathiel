@@ -31,6 +31,42 @@ is allowed to cite - get the scaling wrong (as happened twice during
 development, see below) and it either lets an invented number through or
 rejects a correct one.
 
+## Structure, the R gate, and the ladder-stop limit (2026-10-23)
+
+Root cause fixed this date: the live Brent desk's thesis read "Buy dips to
+105.00-107.44 at 5x. Target 110.31 then 112.19. Stop 95.87." - a stop 10%
+below entry (copied straight off the leverage ladder's liquidation-derived
+`stop_px`, 60% of the distance to liquidation) with a best target paying
+0.47R. Sizing correctly refused the call; nothing upstream would have
+caught it before sizing did.
+
+Three pieces, in the order the data flows:
+
+1. **`contracts.strategies.models.InstrumentStructure`** (contract 1.1.0):
+   per-primary-instrument price structure - the last closed 1h candle,
+   8h/24h/48h range, ATR14 on 1h bars, and where mid sits in the 24h range.
+   Built by `services/strategies/analytics.py::build_instrument_structure`
+   from an injectable hourly candle fetcher (same `CandleFetcher` shape as
+   the daily fetch; fully offline-testable), stored on
+   `DeskAnalytics.structure`.
+2. **The prompt (prompt.py)** renders a STRUCTURE block (full and
+   incremental modes) and tells the model: the stop must sit just beyond a
+   real structural edge, the LEVERAGE LADDER's stop for the chosen leverage
+   is that leverage's LIMIT (never a target to widen toward), targets sit
+   at the next structural level, and the call must pay at least 1.5R to its
+   first target.
+3. **The validator** adds `check_r_multiple` (>=1.5R via
+   `pathiel.agents.bracket.check_levels` - the SAME function `place_bracket`
+   runs, so the desk and the executor can never disagree about what counts
+   as a tradable R) and `check_stop_within_ladder` (the call's stop may
+   never sit wider, as a fraction of entry, than the matching ladder rung's
+   own stop). Both feed the existing one-shot repair loop in api.py.
+
+The quick-mode card (render.py) now shows "Pays X.XR to <first target>"
+right after the leverage line, reusing `check_levels` - the same number the
+dashboard's 20x line (`services/strategies/call_line.py`) and the validator
+compute, never a fourth copy of the math.
+
 ## Real-eval findings (2026-10-17)
 
 Two real runs against the live CLI (oil fixture + evals/btc_fixture.py),
@@ -83,20 +119,37 @@ calls is fine."
 PATHIEL_STATE_DIR="$(mktemp -d)" .venv/bin/python -m pytest services/thesis/tests -q
 ```
 
-158 unit/e2e tests, all offline (the LLM is faked throughout - see
-test_api_e2e.py's `_FakeLlm`). Covers: prompt building and budget trimming
-(including the incremental-mode diff, measured ~52% smaller than a full
-rewrite on the oil fixture); every validator rule with its adversarial
-case (invented number, wrong-side stop, probabilities summing to 0.9,
-overlapping buckets, uncited source, avoid-rung leverage, plus the extras
-above); both renderers; deterministic assembly and the two fallback paths;
-and the full write_thesis orchestration against a scripted fake LLM
-(happy path, resumed repair, resume-failure fallback, reject-with-prev,
-flat fallback, malformed JSON, and a "never raises no matter how long the
-LLM misbehaves" check).
+All offline (the LLM is faked throughout - see test_api_e2e.py's
+`_FakeLlm`; run_eval.py's PURE scoring logic gets its own free,
+deterministic coverage in test_run_eval.py, with write_thesis itself never
+called there). Covers: prompt building and budget trimming (including the
+incremental-mode diff, measured ~52% smaller than a full rewrite on the oil
+fixture, and the STRUCTURE block in both modes); every validator rule with
+its adversarial case (invented number, wrong-side stop, probabilities
+summing to 0.9, overlapping buckets, uncited source, avoid-rung leverage,
+under-1.5R call, stop wider than the ladder limit, plus the extras above);
+both renderers (quick mode's "Pays X.XR" line included); deterministic
+assembly and the two fallback paths; and the full write_thesis
+orchestration against a scripted fake LLM (happy path, resumed repair,
+resume-failure fallback, reject-with-prev, flat fallback, malformed JSON,
+and a "never raises no matter how long the LLM misbehaves" check).
 
 Eval (paid, real CLI calls - not part of the free suite above):
 
 ```sh
 PATHIEL_STATE_DIR="$(mktemp -d)" .venv/bin/python -m services.thesis.evals.run_eval
 ```
+
+Scores each case on a 9-point rubric (7 from the 2026-10-17 run above, plus
+`r_gate_pass` and `stop_within_2_atr`, added 2026-10-23): `r_gate_pass` is
+`check_r_multiple` + `check_stop_within_ladder` both clean;
+`stop_within_2_atr` is a looser, convention-matching second opinion (the
+call's stop distance divided by the primary instrument's daily
+`InstrumentSnapshot.atr14_pct`, capped at `MAX_STOP_ATR_MULTIPLE = 2.0`).
+A case's score is (checks passed) / 9; **the eval passes at mean score >=
+`THRESHOLD = 0.85` across every case**, same threshold as before - the two
+new checks raise the bar a real run has to clear, not a separate gate.
+The report line per case now also prints the generated call's R multiple
+and its stop distance in ATR (`[oil] call: 2.21R to first target, stop
+0.84 ATR from entry`-shaped), so a FAIL is legible without reading the
+raw Thesis.

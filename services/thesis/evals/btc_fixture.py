@@ -14,9 +14,9 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 from contracts.strategies.models import (
-    AccountSnapshot, Catalyst, ConditionalStats, DeskAnalytics, DeskSpec, ForwardStats, Headline,
-    Instrument, InstrumentSnapshot, IntelPacket, LadderRung, MarketOdds, PositioningItem, Quantiles,
-    TokenBudget,
+    AccountSnapshot, CandleBar, Catalyst, ConditionalStats, DeskAnalytics, DeskSpec, ForwardStats,
+    Headline, Instrument, InstrumentSnapshot, InstrumentStructure, IntelPacket, LadderRung,
+    MarketOdds, PositioningItem, PriceRange, Quantiles, TokenBudget,
 )
 
 T0 = datetime(2026, 10, 17, 12, 0, tzinfo=timezone.utc)
@@ -80,8 +80,24 @@ def build_btc_analytics() -> DeskAnalytics:
             p_lose_half=0.60, fees_funding_pct=0.042, stop_px=105800.0, p_stop=0.25, verdict="avoid",
         ),
     ]
+    # Synthetic structure, same reasoning as the rest of this module: the
+    # system prompt (2026-10-23) tells the model to place its stop/target
+    # against STRUCTURE, not the ladder's liquidation-derived stop, so the
+    # BTC eval case needs one too or the model has nothing but the ladder to
+    # work from.
+    structure = [InstrumentStructure(
+        coin="BTC", mid=108_450.0,
+        last_closed_1h=CandleBar(open=108_200.0, high=108_600.0, low=108_050.0, close=108_450.0,
+                                 closed_at=T0),
+        range_8h=PriceRange(high=109_800.0, low=107_200.0),
+        range_24h=PriceRange(high=111_500.0, low=105_800.0),
+        range_48h=PriceRange(high=114_200.0, low=103_000.0),
+        atr14_1h_pct=0.0041,
+        mid_pos_in_24h=0.465,
+    )]
     return DeskAnalytics(
         desk_id="btc", as_of=T0, instruments=[instrument], pairs=[], forward=[forward], ladder=ladder,
+        structure=structure,
         account=AccountSnapshot(equity_usd=15.21, source="fixture"),
         notes=["sample includes the 2026-03 leverage flush (-18% day)"],
     )

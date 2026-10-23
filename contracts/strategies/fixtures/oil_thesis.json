@@ -1,5 +1,5 @@
 {
-  "contract_version": "1.0.0",
+  "contract_version": "1.1.0",
   "id": "oil-20261017T0210-m",
   "desk_id": "oil",
   "author": "machine",
@@ -9,20 +9,20 @@
   "call": {
     "side": "long",
     "instrument": "xyz:CL",
-    "one_liner": "Long WTI at 5x: Hormuz shut, talks dead, specs light. Out below 91.4.",
+    "one_liner": "Long WTI at 5x: Hormuz shut, talks dead, specs light. Out below 98.5.",
     "entry_px": 99.339,
     "entry_zone": [
       96.5,
       99.5
     ],
-    "stop_px": 91.4,
+    "stop_px": 98.5,
     "targets": [
-      106.6,
-      111.0
+      101.19,
+      106.62
     ],
     "leverage": 5.0,
     "confidence": 0.58,
-    "invalidation": "US-Iran deal headline, or WTI daily close below 91.4"
+    "invalidation": "US-Iran deal headline, or WTI daily close below 98.5"
   },
   "scenarios": [
     {

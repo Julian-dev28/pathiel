@@ -60,6 +60,13 @@ def test_system_prompt_states_the_160_char_cap_and_the_grounding_rule(oil):
     assert "invent" in text.lower()
 
 
+def test_system_prompt_states_the_structural_stop_and_r_rules(oil):
+    text = prompt_mod.build_system_prompt(oil.spec)
+    assert "structural edge" in text
+    assert "1.5R" in text
+    assert "LIMIT" in text
+
+
 # -- render_analytics_dense ---------------------------------------------------
 
 
@@ -73,6 +80,28 @@ def test_render_analytics_dense_includes_every_instrument_and_key_figures(oil):
 
 def test_render_analytics_dense_has_no_em_dash(oil):
     assert "\u2014" not in prompt_mod.render_analytics_dense(oil.spec, oil.analytics)
+
+
+def test_render_analytics_dense_includes_the_structure_block(oil):
+    text = prompt_mod.render_analytics_dense(oil.spec, oil.analytics)
+    assert "STRUCTURE" in text
+    st = oil.analytics.structure[0]
+    assert st.coin in text
+    assert "98.60" in text or "98.6" in text   # range_8h low
+    assert "ATR14 (1h)" in text
+    assert "mid sits at 77% of the 24h range" in text   # 0.769 -> 77%
+
+
+def test_render_analytics_dense_omits_the_structure_block_when_empty(oil):
+    analytics_no_structure = oil.analytics.model_copy(update={"structure": []})
+    text = prompt_mod.render_analytics_dense(oil.spec, analytics_no_structure)
+    assert "STRUCTURE" not in text
+
+
+def test_render_analytics_dense_ladder_header_names_the_stop_as_a_limit(oil):
+    text = prompt_mod.render_analytics_dense(oil.spec, oil.analytics)
+    assert "LEVERAGE LADDER" in text
+    assert "LIMIT" in text
 
 
 # -- render_intel_compact (fallback renderer) ---------------------------------
@@ -149,6 +178,12 @@ def test_build_user_prompt_incremental_is_smaller_than_full(oil):
     assert inc_tokens <= full_tokens * 0.6  # measured ~52% smaller on this fixture
     assert "SMALL update" in inc_text
     assert "PREVIOUS CALL" in inc_text
+
+
+def test_build_user_prompt_incremental_includes_the_primary_structure(oil):
+    text, _ = prompt_mod.build_user_prompt(oil.spec, oil.analytics, oil.intel, oil.thesis, incremental=True)
+    assert "STRUCTURE" in text
+    assert oil.analytics.structure[0].coin in text
 
 
 def test_build_user_prompt_incremental_states_the_previous_call(oil):
