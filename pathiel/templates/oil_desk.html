@@ -58,7 +58,6 @@
       <div class="onboard-actions">
         <button type="button" id="onb-connect" class="btn go">Connect your Hyperliquid account</button>
         <button type="button" id="onb-watch" class="btn">Watch an address</button>
-        <a href="/demo" id="onb-demo" class="btn">Explore the demo</a>
       </div>
     </section>
 
@@ -127,7 +126,7 @@
     </div>
 
     <div id="call-loading" class="state-block" aria-live="polite">
-      <div class="state-title">Loading the call&hellip;</div>
+      <div class="state-title"><span class="spinner" aria-hidden="true"></span>Loading the call&hellip;</div>
     </div>
     <div id="call-error" class="state-block" hidden role="alert">
       <div class="state-title">Could not load the call</div>
@@ -161,6 +160,9 @@
        account and every watch account. -->
   <section class="section" id="wallets-section">
     <div class="section-head"><h2 class="sec-label">Wallets</h2></div>
+    <div id="wallets-loading" class="state-block" aria-live="polite">
+      <div class="state-title"><span class="spinner" aria-hidden="true"></span>Loading wallets&hellip;</div>
+    </div>
     <div id="wallets-error" class="state-block" hidden role="alert">
       <div class="state-title">Could not load accounts</div>
       <div class="state-sub" id="wallets-error-detail"></div>
@@ -174,6 +176,9 @@
   <!-- 3. LEVELS — candle-derived numbers for the primary instrument. -->
   <section class="section" id="levels-section">
     <div class="section-head"><h2 class="sec-label">Levels</h2></div>
+    <div id="levels-loading" class="state-block" aria-live="polite">
+      <div class="state-title"><span class="spinner" aria-hidden="true"></span>Loading levels&hellip;</div>
+    </div>
     <div id="levels-error" class="state-block" hidden role="alert">
       <div class="state-title">Could not load levels</div>
       <div class="state-sub" id="levels-error-detail"></div>
@@ -183,9 +188,15 @@
 
   <!-- 4. HEADLINES AND CATALYSTS — the intel the thesis already carries.
        A Hormuz/ceasefire headline is the loop's invalidation trigger, so
-       it belongs on this one screen, not only buried in the full thesis. -->
+       it belongs on this one screen, not only buried in the full thesis.
+       Driven by the same fetch loadCall() already makes (no second network
+       call), so this section's own loading state tracks that one — see
+       oil_desk.js's loadCall()/renderIntel(). -->
   <section class="section" id="intel-section">
     <div class="section-head"><h2 class="sec-label">Headlines and catalysts</h2></div>
+    <div id="intel-loading" class="state-block" aria-live="polite">
+      <div class="state-title"><span class="spinner" aria-hidden="true"></span>Loading headlines&hellip;</div>
+    </div>
     <div id="intel-error" class="state-block" hidden role="alert">
       <div class="state-title">Could not load headlines</div>
       <div class="state-sub" id="intel-error-detail"></div>

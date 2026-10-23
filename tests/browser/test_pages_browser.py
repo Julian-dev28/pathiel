@@ -13,7 +13,7 @@ both 1280x800 and 375x812:
 
 /activity, /analytics, /news, /trends were removed 2026-10-23 with the bot
 UI they served. /account itself, and the full first-run-through-save
-onboarding flow, are NOT in this file's PAGES — demo_server boots the real
+onboarding flow, are NOT in this file's PAGES — live_server boots the real
 pathiel.server:app, which does not mount the accounts/risk routers this
 wave (integrator-only, SWARM_RULES section 10), so account.html's own
 fetches would 404 here with no account to show. See tests/browser/
@@ -56,7 +56,7 @@ VIEWPORTS = {"desktop": (1280, 800), "mobile": (375, 812)}
 # element is not above the fold has failed that mandate regardless of
 # whatever else is on it.
 ABOVE_FOLD_ELEMENT = {
-    # demo_server is a fresh deployment with no account ever connected
+    # live_server is a fresh deployment with no account ever connected
     # (services/accounts + services/risk are mounted in pathiel.server:app
     # as of the wave-2 merge) — GET /api/session always answers
     # needs_onboarding=true here, so "/" shows onboarding's welcome card
@@ -81,9 +81,9 @@ def viewport_name(request) -> str:
     return request.param
 
 
-def test_page_loads_clean(browser, demo_server, page_path, viewport_name):
+def test_page_loads_clean(browser, live_server, page_path, viewport_name):
     width, height = VIEWPORTS[viewport_name]
-    result = load_page(browser, demo_server, page_path, width, height)
+    result = load_page(browser, live_server, page_path, width, height)
     try:
         assert not result.console_errors, (
             f"{page_path} @ {viewport_name}: unexpected console errors: {result.console_errors}")
@@ -99,8 +99,8 @@ def test_page_loads_clean(browser, demo_server, page_path, viewport_name):
         result.page.context.close()
 
 
-def test_nav_present_and_consistent_with_desks(browser, demo_server, page_path):
-    result = load_page(browser, demo_server, page_path)
+def test_nav_present_and_consistent_with_desks(browser, live_server, page_path):
+    result = load_page(browser, live_server, page_path)
     try:
         links = [(n["nav"], n["text"]) for n in result.nav_links]
         assert links == EXPECTED_NAV, f"{page_path}: nav = {links}"
@@ -108,9 +108,9 @@ def test_nav_present_and_consistent_with_desks(browser, demo_server, page_path):
         result.page.context.close()
 
 
-def test_key_element_visible_above_the_fold(browser, demo_server, page_path):
+def test_key_element_visible_above_the_fold(browser, live_server, page_path):
     width, height = VIEWPORTS["desktop"]
-    result = load_page(browser, demo_server, page_path, width, height)
+    result = load_page(browser, live_server, page_path, width, height)
     try:
         sel = ABOVE_FOLD_ELEMENT[page_path]
         el = result.page.locator(sel)

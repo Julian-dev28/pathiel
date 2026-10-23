@@ -42,7 +42,7 @@ class PageLoad:
 # In its place: every page now asks GET /api/session on load
 # (PathielSession.get(), used by the onboarding gate on "/" and the
 # "trading is off" banner everywhere else — contracts/accounts/models.py).
-# demo_server (this file) boots the real pathiel.server:app, and that app
+# live_server (this file) boots the real pathiel.server:app, and that app
 # does not mount the accounts router YET in this worktree — the integrator
 # mounts it once every wave-2 agent's work merges (SWARM_RULES section 10) —
 # so the fetch 404s here. A browser logs "Failed to load resource: <status>"

@@ -740,26 +740,34 @@ body.not-operator #funnel-strip,
 body.not-operator #trade-tape,
 body.not-operator #risk-band{ display:none; }
 
-/* ── Live / Demo toggle ──────────────────────────────────────────────────────
-   Two words in the masthead, the current one filled. Deliberately quiet: it is
-   a statement of which dataset you are reading, not a call to action. */
-.mode-toggle {
-  display: inline-flex; align-items: stretch;
-  border: 1px solid var(--rule-2); border-radius: var(--radius);
-  overflow: hidden; margin-right: 10px;
+/* ── loading / empty / error states ──────────────────────────────────────────
+   One look for "this section is still loading", shared by every section on
+   every page (Desk, Thesis, Account) so a reader learns it once. Moved here
+   2026-10-23 (Polish wave) from desks.css, which account.html never loaded —
+   its two sections rendered with no loading signal at all, dashes that read
+   as broken rather than "still fetching" (docs/overhaul/DESK_UI_2026-10-23.md,
+   Polish section). */
+.state-block{ padding:32px 0; text-align:center; color:var(--ink-2); }
+.state-block .state-title{
+  font-size:15px; font-weight:600; color:var(--ink); margin-bottom:6px;
+  display:flex; align-items:center; justify-content:center; gap:8px;
 }
-.mode-opt {
-  padding: 3px 10px; font-size: 12px; line-height: 18px;
-  color: var(--ink-2); text-decoration: none; white-space: nowrap;
-}
-a.mode-opt:hover { background: var(--surface-2); color: var(--ink); }
-.mode-opt.on { background: var(--accent-wash); color: var(--accent-ink); font-weight: 600; }
+.state-block .state-sub{ font-size:13px; color:var(--ink-3); max-width:48ch; margin:0 auto 16px; }
 
-/* A demo page says so in its own right, not only in the toggle: a reader who
-   arrived on a deep link never saw the switch. */
-body.is-demo .page-sub::after {
-  content: " · sample data, generated";
-  color: var(--amber);
+/* A small spinning ring, never decorative motion elsewhere on these pages
+   (CLAUDE.md/the design brief: "no decorative motion") — this one carries
+   information (a fetch is in flight) rather than flourish, the same
+   distinction the brief draws for colour. prefers-reduced-motion turns the
+   spin into a static ring; the loading state is still legible from the
+   text alone. */
+.spinner{
+  display:inline-block; width:14px; height:14px; flex:none;
+  border:2px solid var(--rule-2); border-top-color:var(--accent);
+  border-radius:50%; animation:pathiel-spin .7s linear infinite;
+}
+@keyframes pathiel-spin{ to{ transform:rotate(360deg); } }
+@media (prefers-reduced-motion: reduce){
+  .spinner{ animation:none; }
 }
 
 /* ── onboarding wizard (landing.html) ────────────────────────────────────────

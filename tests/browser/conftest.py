@@ -1,13 +1,24 @@
 """Shared fixtures for the tests/browser/ e2e suite.
 
-One demo-data server per test session, reused by every page's tests, rather
-than each file booting (and ~1s-waiting-on) its own copy. The boot sequence
-mirrors services/wallet_ui/tests/test_wallet_flow_browser.py's `server`
-fixture exactly: materialize synthetic data, open the read APIs, close every
-write, and scrub every live-looking env var out of the child rather than
-trust that none is set (this worktree carries no .env.local, but the check
-costs one dict comprehension and the next worktree that runs this suite might
-not be as clean).
+One server per test session, reused by every page's tests, rather than each
+file booting (and ~1s-waiting-on) its own copy. The boot sequence mirrors
+services/wallet_ui/tests/test_wallet_flow_browser.py's `server` fixture
+exactly: a fresh, empty state dir, the read APIs open, every write closed,
+and every live-looking env var scrubbed out of the child rather than trust
+that none is set (this worktree carries no .env.local, but the check costs
+one dict comprehension and the next worktree that runs this suite might not
+be as clean).
+
+Used to materialize synthetic trading history via services/demo/generator.py
+(a session log full of scan/execute/dsl_exit events, a positions snapshot,
+an agent-memory file) for the retired autonomous-bot dashboard. That whole
+module was removed 2026-10-23 (docs/overhaul/DESK_UI_2026-10-23.md, Polish
+section) along with the bot UI it fed — its own module docstring already
+said the generator "was not extended for the new sections" (the desk/thesis/
+account pages this suite actually tests). An empty state dir is the honest,
+current "fresh install" state those pages are designed to render (see
+api/index.py's own section 3), so this fixture just boots the real server
+against one instead of carrying a second, unmaintained synthetic-data path.
 
 Deliberately NOT api/index.py: that entrypoint refuses to start while a
 .env.local exists on disk anywhere under the repo root, which is correct for
@@ -47,27 +58,30 @@ def _free_port() -> int:
 
 
 @pytest.fixture(scope="session")
-def demo_server() -> Iterator[str]:
-    """Base URL of a pathiel.server:app instance on synthetic data.
+def live_server() -> Iterator[str]:
+    """Base URL of a pathiel.server:app instance on a fresh, empty state dir.
 
     PATHIEL_PUBLIC_DASHBOARD=1: every page under test is a logged-out,
     anonymous visit (the common case, and the one this sweep found broken
     the most), so the house-account panels render instead of 401ing the
     tests out of checking them. PATHIEL_DASHBOARD_READONLY=1: no test here
     may mutate anything, and this is cheap insurance that one accidentally
-    doesn't.
+    doesn't. PATHIEL_DESK_WARMUP/PATHIEL_META_PREWARM/PATHIEL_GRADE_LOOP=0:
+    no background thread in this child reaches a real venue mid-test.
     """
     sys.path.insert(0, str(ROOT))
-    from services.demo.generator import materialize
 
-    data_dir = tempfile.mkdtemp(prefix="pathiel-browser-demo-")
+    state_dir = tempfile.mkdtemp(prefix="pathiel-browser-state-")
     home = tempfile.mkdtemp(prefix="pathiel-browser-home-")
 
     env = {k: v for k, v in os.environ.items() if k not in _FORBIDDEN_ENV}
-    env.update(materialize(data_dir))
     env["HOME"] = home
+    env["PATHIEL_STATE_DIR"] = state_dir
     env["PATHIEL_PUBLIC_DASHBOARD"] = "1"
     env["PATHIEL_DASHBOARD_READONLY"] = "1"
+    env["PATHIEL_DESK_WARMUP"] = "0"
+    env["PATHIEL_META_PREWARM"] = "0"
+    env["PATHIEL_GRADE_LOOP"] = "0"
 
     port = _free_port()
     proc = subprocess.Popen(
