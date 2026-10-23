@@ -45,7 +45,7 @@ def test_get_desks_returns_one_card_per_desk(client):
     r = client.get("/api/desks")
     assert r.status_code == 200
     cards = [DeskCard.model_validate(row) for row in r.json()]
-    assert {c.id for c in cards} == {"oil", "btc", "top5", "ai", "metals", "indices"}
+    assert {c.id for c in cards} == {"oil", "gas", "btc", "top5", "ai", "metals", "indices"}
 
 
 # ── GET /api/desks/{desk_id} ───────────────────────────────────────────────
