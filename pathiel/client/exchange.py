@@ -1236,6 +1236,26 @@ def cancel_open_orders_for_coin(coin: str) -> int:
         return 0
 
 
+def attached_child_oids(orders: List[Dict[str, Any]]) -> set:
+    """Order ids of the stop/take-profit children attached to resting entries.
+    A bracket placed with grouping normalTpsl (place_hl_bracket_order) rests
+    its stop and target as reduce-only rows BEFORE the entry fills, and the
+    venue lists them under the parent's `children`. They are protection, not
+    leftovers: cancelling them would leave the entry naked the moment it
+    fills (caught 2026-10-23 before it happened). Reduce-only rows no parent
+    claims are the stale siblings this module exists to cancel."""
+    out: set = set()
+    for o in orders:
+        if o.get("reduceOnly"):
+            continue
+        for child in o.get("children") or []:
+            try:
+                out.add(int(child.get("oid")))
+            except (TypeError, ValueError, AttributeError):
+                continue
+    return out
+
+
 def cancel_stranded_reduce_only_orders(coin: str) -> int:
     """Cancel the reduce-only orders left on `coin` after its position closed
     outside our own close path: an exchange-side stop or take-profit filled
@@ -1260,9 +1280,13 @@ def cancel_stranded_reduce_only_orders(coin: str) -> int:
             return 0
         if size != 0:
             return 0   # still open: its reduce-only orders are its live stops
+        resting = _resting_orders_for_coin(user, coin)
+        attached = attached_child_oids(resting)
         n = 0
-        for o in _resting_orders_for_coin(user, coin):
-            if o.get("reduceOnly") and cancel_orders(int(o["oid"]), coin).get("ok"):
+        for o in resting:
+            if not o.get("reduceOnly") or int(o["oid"]) in attached:
+                continue   # an entry, or the stop/target attached to a resting entry
+            if cancel_orders(int(o["oid"]), coin).get("ok"):
                 n += 1
         if n:
             logger.info(f"[cancel_stranded_reduce_only_orders] cancelled {n} stranded reduce-only "

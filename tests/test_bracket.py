@@ -38,7 +38,13 @@ class FakeEx:
 
     def cancel_stranded_reduce_only_orders(self, coin):
         self.calls.append(("sweep", coin))
-        return 1
+        from pathiel.client.exchange import attached_child_oids
+        attached = attached_child_oids(self.orders)
+        return sum(1 for o in self.orders if o.get("reduceOnly") and int(o.get("oid") or 0) not in attached)
+
+    def attached_child_oids(self, orders):
+        from pathiel.client.exchange import attached_child_oids
+        return attached_child_oids(orders)
 
     def set_leverage(self, coin, lev, is_cross=None, strict=False):
         self.calls.append(("lev", coin, lev, is_cross))
@@ -293,3 +299,28 @@ def test_handler_passes_the_coin_max_leverage_through(monkeypatch):
     monkeypatch.setattr(br, "place_bracket", lambda coin, **k: seen.update(k) or {"ok": True})
     mcp.handle_place_bracket({"coin": COIN, "entry_px": 107.2, "stop_px": 106.7, "tp_px": 108.45})
     assert seen["coin_max_leverage"] == 20.0
+
+
+# ------------------------------------------- a resting entry's attached children
+def test_sweep_leaves_a_resting_entrys_stop_and_target_alone():
+    """2026-10-23: a bracket placed with grouping normalTpsl rests its stop and
+    target as reduce-only children before the entry fills. On a flat coin the
+    sweep used to read them as leftovers and would have cancelled them, leaving
+    the entry naked on fill."""
+    sl = {"oid": 2, "reduceOnly": True, "orderType": "Stop Market", "triggerPx": "107.4", "sz": "1.35"}
+    tp = {"oid": 3, "reduceOnly": True, "orderType": "Take Profit Market", "triggerPx": "108.95", "sz": "1.35"}
+    entry = {"oid": 1, "reduceOnly": False, "limitPx": "107.95", "sz": "1.35", "orderType": "Limit",
+             "children": [sl, tp]}                              # as the venue returns it
+    stale = {"oid": 9, "reduceOnly": True, "orderType": "Stop Market", "triggerPx": "106.7", "sz": "1.27"}
+    ex = FakeEx(pos=0.0, orders=[entry, sl, tp, stale])
+    out = bracket.sweep(COIN, ex=ex)
+    assert out["ok"] and out["cancelled_stranded"] == 1          # only the stale one
+    assert out["resting_entries"] == [{"oid": 1, "px": "107.95", "sz": "1.35"}]
+    assert [c["px"] for c in out["attached_to_entry"]] == ["107.4", "108.95"]
+
+
+def test_sweep_still_cancels_true_leftovers_when_nothing_rests():
+    sl = {"oid": 2, "reduceOnly": True, "orderType": "Stop Market", "triggerPx": "106.7", "sz": "1.27"}
+    ex = FakeEx(pos=0.0, orders=[sl])
+    out = bracket.sweep(COIN, ex=ex)
+    assert out["cancelled_stranded"] == 1 and ("sweep", COIN) in ex.calls and "attached_to_entry" not in out

@@ -172,11 +172,18 @@ def sweep(coin: str, ex: Any = None) -> Dict[str, Any]:
         return {"coin": coin, "ok": False, "reason": "position read failed"}
     orders = ex._resting_orders_for_coin(user, coin)
     if pos == 0:
-        n = ex.cancel_stranded_reduce_only_orders(coin)
         entries = [o for o in orders if not o.get("reduceOnly")]
+        attached_ids = ex.attached_child_oids(orders)
+        attached = [o for o in orders if o.get("reduceOnly") and int(o.get("oid") or 0) in attached_ids]
+        # The stop/target a resting entry carries (normalTpsl children) are
+        # protection, not leftovers; cancel_stranded_* skips them by oid and
+        # cancels only the reduce-only rows no entry claims.
+        n = ex.cancel_stranded_reduce_only_orders(coin)
         return {"coin": coin, "ok": True, "position": 0.0, "cancelled_stranded": n,
                 "resting_entries": [{"oid": o.get("oid"), "px": o.get("limitPx"), "sz": o.get("sz")}
-                                    for o in entries]}
+                                    for o in entries],
+                **({"attached_to_entry": [{"type": o.get("orderType"), "px": o.get("triggerPx"), "sz": o.get("sz")}
+                                          for o in attached]} if attached else {})}
     stops = [o for o in orders if o.get("reduceOnly") and "Stop" in str(o.get("orderType", ""))]
     tps = [o for o in orders if o.get("reduceOnly") and "Take Profit" in str(o.get("orderType", ""))]
     covered = sum(float(o.get("sz") or 0) for o in stops)
