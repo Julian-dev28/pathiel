@@ -7,7 +7,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 from contracts.strategies.models import DeskSpec, Instrument
-from services.intel import desk_rules, http_client
+from services.intel import calendar_us, desk_rules, http_client
 from services.intel.sources import catalysts
 from services.intel.tests.conftest import fixture_json
 
@@ -65,6 +65,51 @@ def test_calendar_catalysts_respects_window():
     start, end = catalysts.desk_window(spec, NOW)
     assert all(start <= c.at.date() <= end + timedelta(days=1) for c in cats)
     assert all(c.at >= NOW for c in cats)
+
+
+def test_eia_gas_storage_is_registered_as_a_calendar_generator():
+    assert "eia_gas_storage" in catalysts._CALENDAR_GENERATORS
+    gen_fn, title, importance, source = catalysts._CALENDAR_GENERATORS["eia_gas_storage"]
+    assert gen_fn is calendar_us.eia_gas_storage_release
+    assert title == "EIA Weekly Natural Gas Storage Report"
+    assert importance == 3
+    assert source == "EIA"
+
+
+def test_eia_gas_storage_catalyst_lands_on_a_thursday_1430_or_1530_utc():
+    """Not auto-enabled for every desk (unlike fomc/cpi) — must be listed
+    on catalyst_kinds to show up, and when it does, every un-shifted
+    occurrence is Thursday 14:30 UTC (EDT) or 15:30 UTC (EST), i.e.
+    10:30 ET, never any other weekday/time for the standard path."""
+    spec = _spec(catalyst_kinds=["eia_gas_storage"])
+    cats = catalysts.calendar_catalysts(spec, NOW)
+    gas_cats = [c for c in cats if c.kind == "eia_gas_storage"]
+    assert gas_cats, "eia_gas_storage must actually produce catalysts once listed"
+    for c in gas_cats:
+        if c.expected is None:  # standard, unshifted path
+            assert c.at.weekday() == 3  # Thursday UTC == Thursday ET (never crosses midnight)
+            assert (c.at.hour, c.at.minute) in {(14, 30), (15, 30)}
+
+
+def test_eia_gas_storage_not_enabled_unless_listed():
+    """Unlike fomc/cpi (always on), eia_gas_storage is desk-specific — an
+    oil-only desk that doesn't list it must not get it for free."""
+    spec = _spec(catalyst_kinds=["eia_weekly"])  # oil's own kind, not gas's
+    cats = catalysts.calendar_catalysts(spec, NOW)
+    assert "eia_gas_storage" not in {c.kind for c in cats}
+    assert "eia_gas_storage" not in catalysts.active_kinds(spec)
+
+
+def test_real_gas_desk_spec_produces_eia_gas_storage_catalysts():
+    """End-to-end against the actual registered gas DeskSpec, not a
+    hand-built stand-in."""
+    from services.strategies import desks
+    spec = desks.require_spec("gas")
+    assert "eia_gas_storage" in spec.catalyst_kinds
+    cats = catalysts.calendar_catalysts(spec, NOW)
+    assert any(c.kind == "eia_gas_storage" for c in cats)
+    assert any(c.kind == "fomc" for c in cats)
+    assert any(c.kind == "cftc_cot" for c in cats)
 
 
 def test_calendar_catalysts_oil_fixture_kinds_present():

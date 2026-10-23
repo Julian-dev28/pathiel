@@ -45,6 +45,8 @@ MIN_UNLOCK_PCT_CIRC = 1.0  # same floor pathiel/agents/unlock_recorder.py uses
 # kind -> (generator(start,end)->List[Release], title, importance, source)
 _CALENDAR_GENERATORS: Dict[str, Tuple] = {
     "eia_weekly": (calendar_us.eia_weekly_release, "EIA Weekly Petroleum Status Report", 3, "EIA"),
+    "eia_gas_storage": (calendar_us.eia_gas_storage_release, "EIA Weekly Natural Gas Storage Report",
+                       3, "EIA"),
     "api_weekly": (calendar_us.api_weekly_release, "API weekly crude stock report", 2, "API"),
     "baker_hughes": (calendar_us.baker_hughes_release, "Baker Hughes US rig count", 1, "Baker Hughes"),
     "cftc_cot": (calendar_us.cftc_cot_release, "CFTC Commitments of Traders", 2, "CFTC"),

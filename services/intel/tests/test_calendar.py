@@ -16,8 +16,8 @@ from datetime import date, timedelta, timezone
 from services.intel.calendar_us import (
     CPI_RELEASE_DATES, FOMC_DECISION_DATES_2026, OPEC_PLUS_MEETINGS,
     api_weekly_release, baker_hughes_release, cftc_cot_release, cpi_releases,
-    eia_weekly_release, federal_holidays, fomc_releases, is_federal_holiday,
-    opec_plus_releases, steo_release_date, steo_releases,
+    eia_gas_storage_release, eia_weekly_release, federal_holidays, fomc_releases,
+    is_federal_holiday, opec_plus_releases, steo_release_date, steo_releases,
 )
 
 UTC = timezone.utc
@@ -114,6 +114,96 @@ def test_eia_weekly_dst_changes_utc_offset_not_et_wall_time():
 
 def test_eia_weekly_empty_window_returns_empty():
     assert eia_weekly_release(date(2026, 1, 2), date(2026, 1, 2)) == []  # a Friday, no Wed in range
+
+
+# ── EIA Weekly Natural Gas Storage Report ────────────────────────────
+
+def test_eia_gas_storage_standard_thursday_1030_et():
+    """March 2026 has four Thursdays and no federal holiday near any of
+    them, so every release should be the plain, unshifted Thursday 10:30 ET.
+    US DST starts March 8, 2026, mid-month, so the UTC hour itself differs
+    (Mar 5 is still EST, Mar 12/19/26 are EDT) — the DST-specific test below
+    isolates that; this test only pins the ET wall-clock time, which must
+    stay 10:30 regardless."""
+    releases = eia_gas_storage_release(date(2026, 3, 1), date(2026, 3, 31))
+    assert len(releases) == 4
+    for r in releases:
+        et_dt = r.at_utc.astimezone(_et())
+        assert et_dt.weekday() == 3  # Thursday
+        assert (et_dt.hour, et_dt.minute) == (10, 30)
+        assert "standard" in r.note
+
+
+def test_eia_gas_storage_matches_live_page_2026_veterans_day_exception():
+    """ir.eia.gov/ngs/schedule.html (fetched 2026-10-23) lists Nov 13, 2026
+    (Friday, 10:30 a.m.) as the alternate date for Veterans Day — Nov 11,
+    2026 is a Wednesday, the day immediately before that week's normal
+    Thursday (Nov 12) release."""
+    releases = eia_gas_storage_release(date(2026, 11, 1), date(2026, 11, 30))
+    by_date = {r.at_utc.astimezone(_et()).date(): r for r in releases}
+    assert date(2026, 11, 12) not in by_date  # no release on the normal Thursday
+    r = by_date[date(2026, 11, 13)]
+    et_dt = r.at_utc.astimezone(_et())
+    assert et_dt.weekday() == 4 and (et_dt.hour, et_dt.minute) == (10, 30)
+    assert "shifted" in r.note and "Fri" in r.note
+
+
+def test_eia_gas_storage_matches_live_page_2026_thanksgiving_exception():
+    """Same live page: Nov 25, 2026 (Wednesday, 12:00 p.m.) is the alternate
+    date for Thanksgiving (Nov 26, 2026, a Thursday — the release day
+    itself)."""
+    releases = eia_gas_storage_release(date(2026, 11, 1), date(2026, 11, 30))
+    by_date = {r.at_utc.astimezone(_et()).date(): r for r in releases}
+    assert date(2026, 11, 26) not in by_date  # no release on the holiday itself
+    r = by_date[date(2026, 11, 25)]
+    et_dt = r.at_utc.astimezone(_et())
+    assert et_dt.weekday() == 2 and (et_dt.hour, et_dt.minute) == (12, 0)
+    assert "shifted" in r.note and "Wed" in r.note
+
+
+def test_eia_gas_storage_2026_has_exactly_these_two_shifts():
+    """No more, no fewer — the live page's 2026 table lists exactly Veterans
+    Day and Thanksgiving for the year. Window starts Jan 2 (not Jan 1) on
+    purpose: Jan 1, 2026 is itself a Thursday AND New Year's Day, so a scan
+    starting exactly ON it would also surface the real shift the live page
+    lists under ITS 2025 table ("December 31, 2025 (Wednesday, 12:00 p.m.),
+    New Year's Day") — correct behavior (that is the real shifted release
+    for what would have been Jan 1, 2026's slot), but it lands a day before
+    the window technically asked for and is covered by its own holiday-
+    shift test below rather than conflated with the within-2026 count."""
+    releases = eia_gas_storage_release(date(2026, 1, 2), date(2026, 12, 31))
+    shifted = {r.at_utc.astimezone(_et()).date() for r in releases if "shifted" in r.note}
+    assert shifted == {date(2026, 11, 13), date(2026, 11, 25)}
+
+
+def test_eia_gas_storage_new_years_day_2026_shifts_to_the_preceding_wednesday():
+    """Jan 1, 2026 (New Year's Day) is itself a Thursday — the release day —
+    so by the Thursday-holiday rule it shifts EARLIER to Wed Dec 31, 2025
+    noon ET, exactly matching the live page's own 2025-dated exception
+    entry for it ("December 31, 2025 (Wednesday, 12:00 p.m.), New Year's
+    Day")."""
+    releases = eia_gas_storage_release(date(2026, 1, 1), date(2026, 1, 1))
+    assert len(releases) == 1
+    r = releases[0]
+    et_dt = r.at_utc.astimezone(_et())
+    assert et_dt.date() == date(2025, 12, 31)
+    assert et_dt.weekday() == 2 and (et_dt.hour, et_dt.minute) == (12, 0)
+    assert "shifted" in r.note and "Wed" in r.note
+
+
+def test_eia_gas_storage_dst_changes_utc_offset_not_et_wall_time():
+    """Jan 8 and Jul 16, 2026 are both plain Thursdays with no nearby federal
+    holiday (unlike Jan 1, a holiday itself), so both hit the standard,
+    unshifted path and isolate the DST offset change alone."""
+    jan = eia_gas_storage_release(date(2026, 1, 8), date(2026, 1, 8))[0]
+    jul = eia_gas_storage_release(date(2026, 7, 16), date(2026, 7, 16))[0]
+    assert "standard" in jan.note and "standard" in jul.note
+    assert jan.at_utc.hour == 15 and jan.at_utc.minute == 30  # 10:30 EST
+    assert jul.at_utc.hour == 14 and jul.at_utc.minute == 30  # 10:30 EDT
+
+
+def test_eia_gas_storage_empty_window_returns_empty():
+    assert eia_gas_storage_release(date(2026, 1, 2), date(2026, 1, 2)) == []  # a Friday, no Thu in range
 
 
 # ── EIA STEO ─────────────────────────────────────────────────────────

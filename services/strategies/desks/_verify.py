@@ -28,6 +28,7 @@ MIN_VOLUME_USD = 1_000_000.0  # the bar every desk in this registry uses
 # exact-match on the known tickers is the right tool here).
 _CANDIDATES: Dict[str, List[str]] = {
     "oil": ["CL", "BRENTOIL", "NATGAS", "HO", "RBOB", "GASOLINE", "USOIL", "HEATOIL"],
+    "gas": ["NATGAS"],
     "btc": ["BTC"],
     "top5": [],  # top5 ranks ALL native (dex=None) perps by volume instead
     "metals": ["GOLD", "SILVER", "COPPER", "PLATINUM", "PALLADIUM", "XAU", "XAG"],
@@ -83,7 +84,7 @@ def _print_report(desk_id: str, rows: List[Dict[str, Any]]) -> None:
 
 def main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("desk", nargs="?", help="desk id (oil, btc, top5, ai, metals, indices)")
+    parser.add_argument("desk", nargs="?", help="desk id (oil, gas, btc, top5, ai, metals, indices)")
     parser.add_argument("--all", action="store_true", help="check every desk")
     args = parser.parse_args(argv)
 

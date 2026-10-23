@@ -32,6 +32,24 @@ def test_list_cards_reflects_cached_analytics_and_latest_thesis(stub_live_analyt
     assert cards["btc"].mid is None  # untouched desk stays empty
 
 
+def test_get_brief_renders_for_gas(stub_live_analytics):
+    """Fixture-driven brief render for the gas desk, same shape as the oil
+    checks above: a cached analytics snapshot + a saved thesis come back
+    out of get_brief() whole, on gas's own primary coin (xyz:NATGAS)."""
+    stub_live_analytics(minimal_analytics("gas", mid=3.21, coin="xyz:NATGAS", label="Nat Gas"))
+    journal.save_thesis(make_thesis(desk_id="gas", instrument="xyz:NATGAS", side="short",
+                                    created_at=datetime.now(timezone.utc)))
+
+    brief = facade.get_brief("gas")
+    assert brief.spec.id == "gas"
+    assert brief.analytics is not None
+    assert brief.analytics.instruments[0].coin == "xyz:NATGAS"
+    assert brief.thesis is not None
+    assert brief.thesis.call.instrument == "xyz:NATGAS"
+    assert brief.thesis.call.side == "short"
+    assert "intel: never fetched (run refresh)" in brief.stale  # no intel fetched yet, honestly flagged
+
+
 def test_get_brief_unknown_desk_raises():
     with pytest.raises(desks.UnknownDeskError):
         facade.get_brief("not-a-real-desk")
