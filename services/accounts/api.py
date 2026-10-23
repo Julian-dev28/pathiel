@@ -49,7 +49,7 @@ from contracts.accounts.models import (Account as ContractAccount, AccountPatch,
                                        AgentConfirmIn, AgentPrepareIn, AgentPrepareOut,
                                        ApiKeyImportIn, SessionInfo, WatchIn)
 from pathiel.client.hl_client import HLRequestError
-from services.accounts import agent_approval, credentials, hl_verify, pending, registry, summary, vault, view
+from services.accounts import agent_approval, credentials, hl_verify, pending, positions, registry, summary, vault, view
 from services.auth import integration
 
 logger = logging.getLogger(__name__)
@@ -347,3 +347,19 @@ def delete_account(account_id: str, request: Request) -> Dict[str, bool]:
 def active_summary(request: Request) -> ActiveSummary:
     _require_operator_or_local(request)
     return summary.get_active_summary()
+
+
+# ── GET /api/accounts/{account_id}/positions ─────────────────────────────────────
+
+@router.get("/accounts/{account_id}/positions")
+def account_positions(account_id: str, request: Request) -> Dict[str, object]:
+    """Positions + stop coverage for one registered account (the Oil Desk
+    dashboard's Wallets row), across the main dex and every HIP-3 dex it
+    holds margin on. Works for a watch-only account exactly like a trade
+    account — this never places or cancels anything, see
+    services.accounts.positions.fetch_positions_for_account."""
+    account = view.get_account_or_env(account_id)
+    if account is None:
+        raise HTTPException(status_code=404, detail="unknown account")
+    _require_operator_or_local(request)
+    return positions.fetch_positions_for_account(account.main_address)

@@ -10,6 +10,12 @@ the model never eyeballs ranges or does R arithmetic in its head:
 Output is one JSON object: mid, the last CLOSED 1h candle, 8h/24h/48h
 range, ATR14 on 1h, where the mid sits in the 24h range, and the last four
 closed 15m candles' range. Read-only; no key, no account.
+
+This is a thin CLI: the actual math (closed_only/atr/summarize/check) lives
+in services/strategies/levels.py, which the dashboard's
+GET /api/desks/oil/levels route also calls, so the two never drift apart.
+Only the network leg (curl-over-subprocess, needed because the system
+Python here has no CA bundle) stays in this file.
 """
 from __future__ import annotations
 
@@ -23,8 +29,9 @@ from typing import Any, Dict, List, Optional
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from services.strategies.levels import HOUR_MS, check, summarize  # noqa: E402
+
 INFO_URL = "https://api.hyperliquid.xyz/info"
-HOUR_MS = 3_600_000
 
 
 def _post(body: Dict[str, Any]) -> Any:
@@ -46,73 +53,6 @@ def fetch_mid(coin: str) -> float:
     if dex:
         body["dex"] = dex
     return float(_post(body)[coin])
-
-
-# ----------------------------------------------------------------- pure part
-def closed_only(candles: List[Dict[str, Any]], now_ms: int) -> List[Dict[str, Any]]:
-    """Candles whose close time has passed. The open candle's high/low are
-    still moving and must not anchor a stop."""
-    return [c for c in candles if int(c["T"]) <= now_ms]
-
-
-def true_range(prev_close: float, c: Dict[str, Any]) -> float:
-    h, lo = float(c["h"]), float(c["l"])
-    return max(h - lo, abs(h - prev_close), abs(lo - prev_close))
-
-
-def atr(candles: List[Dict[str, Any]], n: int = 14) -> Optional[float]:
-    """Simple-average ATR over the last n closed candles (needs n+1)."""
-    if len(candles) < n + 1:
-        return None
-    window = candles[-(n + 1):]
-    trs = [true_range(float(window[i - 1]["c"]), window[i]) for i in range(1, len(window))]
-    return sum(trs) / n
-
-
-def _range(candles: List[Dict[str, Any]]) -> Optional[Dict[str, float]]:
-    if not candles:
-        return None
-    return {"high": max(float(c["h"]) for c in candles), "low": min(float(c["l"]) for c in candles)}
-
-
-def summarize(c1h: List[Dict[str, Any]], c15: List[Dict[str, Any]], mid: float, now_ms: int) -> Dict[str, Any]:
-    closed = closed_only(c1h, now_ms)
-    last = closed[-1] if closed else None
-    r24 = _range(closed[-24:])
-    out: Dict[str, Any] = {
-        "mid": mid,
-        "last_closed_1h": ({"open": float(last["o"]), "high": float(last["h"]), "low": float(last["l"]),
-                            "close": float(last["c"]), "closed_at_utc": time.strftime(
-                                # HL's T is the last ms of the candle (xx:59:59.999); +1 shows the hour it closed on.
-                                "%Y-%m-%dT%H:%M", time.gmtime((int(last["T"]) + 1) / 1000))} if last else None),
-        "range_8h": _range(closed[-8:]),
-        "range_24h": r24,
-        "range_48h": _range(closed[-48:]),
-        "atr14_1h": atr(closed),
-        "range_15m_last4": _range(closed_only(c15, now_ms)[-4:]),
-        "n_closed_1h": len(closed),
-    }
-    if r24 and r24["high"] > r24["low"]:
-        out["mid_pos_in_24h"] = round((mid - r24["low"]) / (r24["high"] - r24["low"]), 3)
-    if out["atr14_1h"]:
-        out["atr14_pct"] = round(out["atr14_1h"] / mid * 100, 3)
-    return out
-
-
-def check(entry: float, stop: float, tp: float, leverage: Optional[float] = None,
-          max_leverage: float = 20.0) -> Dict[str, Any]:
-    """The R gate, plus the leverage gate when --lev is given: liquidation
-    price, how much of the liquidation distance the stop uses, and the
-    highest leverage this stop allows (the "20x line" for Julien's wallet)."""
-    from pathiel.agents.bracket import check_levels, check_leverage
-    out = {"entry": entry, "stop": stop, "tp": tp, **check_levels(entry, stop, tp)}
-    if leverage:
-        lev = check_leverage(entry, stop, leverage, max_leverage)
-        out["leverage"] = lev
-        out["ok"] = bool(out.get("ok")) and bool(lev.get("ok"))
-        out["verdict"] = (f"{leverage:g}x OK" if lev.get("ok")
-                          else f"no {leverage:g}x: max {lev.get('max_leverage_ok')}x for this stop")
-    return out
 
 
 # ------------------------------------------------------------------ CLI
