@@ -84,6 +84,8 @@
 .call-sentence{
   font-size:19px; font-weight:500; line-height:1.4; letter-spacing:-.012em;
   margin:0 0 14px; max-width:62ch;
+  /* rendered in a <pre>: wrap long lines inside the card instead of overflowing it */
+  white-space:pre-wrap; overflow-wrap:anywhere;
 }
 .call-meta-row{
   display:grid; gap:16px 28px; margin-bottom:14px;
