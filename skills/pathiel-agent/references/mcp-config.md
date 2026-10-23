@@ -62,7 +62,7 @@ well as a funding one. (`get_funding_history` was later cut outright on
 | `place_bracket` | `coin, entry_px?, stop_px, tp_px, leverage?, min_r?` | One entry with an exact stop and target, sized by the risk engine |
 | `bracket_sweep` | `coin: string` | Cancels a stranded sibling order, reports whether the position is covered by a stop |
 | `close_position` | `coin: string` | Delegates to `pathiel.agents.bracket.close_position()` |
-| `set_leverage` | `coin: string, leverage: number` | Sets isolated leverage before an entry |
+| `set_leverage` | `coin: string, leverage: number` | Sets leverage; with an open position it keeps that position's margin type (isolated on HIP-3), flat it uses the market default; a venue refusal is an error |
 | `cancel_order` | `asset: number, order_id: number` | Cancels one resting order |
 | `state` | none | Full agent state |
 | `config` | see SKILL.md | Current or updated config, including `ai_brain` |

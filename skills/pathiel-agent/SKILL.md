@@ -23,8 +23,10 @@ trigger config, TA filter, risk gates, DSL exit loop, and the seven
 strategy books it used to run are all retired. See
 `docs/overhaul/HEADLESS_2026-10-23.md` for the wave-1 (strategy-book)
 retirement and its wave-2 addendum (the engine itself) for the full history,
-and `.claude/skills/oil-tick/SKILL.md` for the 15-minute loop Claude
-actually runs today.
+and `.claude/skills/desk-tick/SKILL.md` for the loop Claude actually runs
+today: `/desk-tick <desk>` on a cron per active desk (oil every 15 min;
+metals, ai and gas every 30 min), one position per account across all
+desks, so a desk whose coin does not hold the slot logs SKIP and stops.
 
 Repo: `/Users/julian_dev/Documents/code/pathiel`. The user may work on
 dirty local branches and switch deploy branches between sessions. **Commit/push
@@ -92,6 +94,35 @@ all; `services.risk.books.main_engine_spec` is the one `BookSpec` the
 feasibility check (`risk_limits`/`risk_size_trade`/`place_bracket`) prices
 against — there is no per-book roster any more.
 
+## Operator rules (2026-10-24)
+
+- The live risk profile (`.agent-config.json` → `risk_profile`) is
+  `risk_per_trade_pct 100`, `daily_loss_limit_pct 100`, `max_leverage 20`,
+  `max_open_positions 1` (contract `contracts/risk/models.py` 1.1.0 allows
+  100). One full-port position per account across every desk
+  (`pathiel.agents.bracket.slot_taken_by`; `scripts/desk_slot.py` is the
+  tick's first step).
+- Never add to an open position. The operator wants the whole stake in one
+  position; the NEXT bracket sizes full-port, a filled one is left to its
+  stop or target. Never widen a stop.
+- `set_leverage {coin, leverage}` on an open position keeps that position's
+  own margin type (isolated on HIP-3; the venue refuses a type switch with
+  a position open) and treats a venue "err" as an error. Hyperliquid keeps
+  the isolated margin in place, so the liquidation price does not move.
+  Confirm with `get_asset_positions`.
+- The Desk page (`/`) is where the operator reads positions: the Wallets
+  card shows entry, mark, P&L, R, leverage, margin in use, liquidation,
+  stop and target for the Active account; a flat watch-only wallet shows
+  no card. `services/accounts/positions.py` reads only dexes holding at
+  least $1 or a position, raises on a venue read that never answered, and
+  serves the last good snapshot through a failed refresh.
+- The dashboard server's venue budget is 200 burst + 8/s
+  (`scripts/restart.sh`); `GET /api/health/system` → `hl_budget` lists
+  weight granted and refused per request type and caller
+  (`pathiel/client/hl_client.py` labels every request `type<module.function`).
+  A page showing dashes or "No open positions" while the venue shows a
+  position starts there, never with the page.
+
 ## Asset-class / dex toggles
 
 `.agent-config.json` carries:
@@ -102,7 +133,7 @@ against — there is no per-book roster any more.
   `get_universe()` fetches at all (a cost control on market/desk reads, not
   a per-trade safety gate — Claude names the coin explicitly on every
   `place_bracket` call, so the discipline that used to be an autonomous
-  allowlist refusal is now the oil-tick skill's own scope).
+  allowlist refusal is now the desk-tick skill's own scope).
 - `coin_allowlist` / `coin_blocklist` — bare-ticker majors restriction
   (`pathiel/agents/universe.py`), matched by bare ticker so one entry
   covers every venue prefix for the same underlying.
@@ -181,4 +212,4 @@ refused, since agent wallets cannot transfer between dexes automatically.
 - `references/hyperliquid-gotchas.md` — order-placement gotchas (decimals, tick size, $10 min, singletons).
 - `../../docs/overhaul/MCP.md` — the generated 59-tool table with safety annotations.
 - `../../docs/overhaul/HEADLESS_2026-10-23.md` — the full headless-desk retirement history (wave 1: the strategy books; wave 2: the autonomous engine itself).
-- `../oil-tick/SKILL.md` — the 15-minute loop Claude actually runs to trade the oil desk.
+- `../../.claude/skills/desk-tick/SKILL.md` — the per-desk tick Claude actually runs (`/desk-tick oil|metals|ai|gas` on crons).

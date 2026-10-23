@@ -7,7 +7,12 @@ description: One tick of a desk's trading loop on pathiel, for the desk id given
 
 One tick for desk `$ARGUMENTS` (default `oil` if empty). One position per
 account until the wallet is funded for more (the risk profile's
-`max_open_positions`). Max 10x. Never chase. Every number comes from a tool
+`max_open_positions`). Leverage up to the risk profile's `max_leverage`
+(20x since 2026-10-24; `place_bracket` caps it and runs the 20x rule: the
+stop must use under half the distance to liquidation). Never chase. Never
+add to an open position: the operator wants the whole stake in ONE
+position, so the NEXT bracket sizes full-port, and a filled position is
+left alone until its stop or target fires. Every number comes from a tool
 or a script, never from mental arithmetic.
 
 ## Steps, in order
@@ -23,8 +28,10 @@ or a script, never from mental arithmetic.
    xyz:GOLD or xyz:SILVER, ai: whichever equity the call names, gas:
    xyz:NATGAS). The card shows "Pays X.XR"; a call under 1.5R never trades.
    Call `desk_refresh` only when the brief says the thesis is stale or
-   expired, or a headline moved the market more than 1.5%; at most once an
-   hour per desk (about $0.35 a rewrite).
+   expired, a headline moved the market more than 1.5%, or the thesis's
+   target has already been hit (the card would otherwise keep describing
+   a trade that is over); at most once an hour per desk (about one dollar
+   a rewrite with the current model).
 2. **Housekeeping.** `bracket_sweep {coin: COIN}`. Cancels the sibling left
    after a stop or target fired; reports a resting entry with its attached
    stop and target; says whether an open position is covered. "NOT FULLY
@@ -57,6 +64,24 @@ or a script, never from mental arithmetic.
      size it. No setup: no trade, one clause why.
 7. **Log.** Append one line to `/tmp/oil-loop/progress.log` and print it:
    `DESK-TICK $ARGUMENTS <utc> coin=<COIN> mid=<mid> pos=<size@entry or flat> action=<HOLD|PLACED|CANCELLED|CLOSED|NONE> <reason, under 15 words>`
+
+## Operator asks between ticks
+
+- **"Set leverage to Nx" on an open position:** `set_leverage {coin,
+  leverage}`. The tool keeps the position's own margin type (isolated on
+  HIP-3) and reports a venue refusal as an error; confirm with
+  `get_asset_positions {coin}` that `leverage.value` changed. Hyperliquid
+  keeps the isolated margin in place, so the liquidation price does not
+  move. Run `--check ENTRY STOP TP --lev N` first: the stop must still
+  clear the 20x line at the new leverage.
+- **"Where is my position":** the Desk page (`http://localhost:8000/`),
+  Wallets card, the account marked Active: entry, mark, P&L, R, leverage,
+  margin in use, stop, target. A flat watch-only wallet shows no card.
+- **Dashes or "No open positions" on the page while the venue shows a
+  position:** read `GET /api/health/system` -> `hl_budget`. It lists the
+  weight granted and refused per request type and caller; a refused
+  `frontendOpenOrders` means the server's venue budget is starved. Fix the
+  spender, never the page.
 
 ## Hard rules
 
