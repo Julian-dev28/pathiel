@@ -207,3 +207,28 @@ def _oil_spec() -> DeskSpec:
     p = (Path(__file__).parent.parent.parent.parent / "contracts" / "strategies"
          / "fixtures" / "oil_spec.json")
     return DeskSpec.model_validate(json.loads(p.read_text()))
+
+
+def test_score_and_dedup_sinks_a_bare_instrument_token_headline(oil_spec):
+    """2026-10-24: a Guardian piece about David Brent (The Office) ranked
+    among the oil desk's headlines on the single token "Brent". With the
+    instrument-only penalty it scores a quarter of a real match and sorts
+    last; the real Brent crude story keeps a full score."""
+    from datetime import datetime, timedelta, timezone
+    now = datetime(2026, 10, 24, 4, 0, tzinfo=timezone.utc)
+    fresh = now - timedelta(hours=2)
+    raw = [
+        {"title": "Is this Prince Harry or David Brent in The Office? Either way, we're watching a masterclass in awkwardness",
+         "url": "https://g/1", "source": "The Guardian", "published_at": fresh},
+        {"title": "Brent crude tops $113, highest level since May, after Trump hints at action on Iran",
+         "url": "https://c/1", "source": "CNBC", "published_at": fresh},
+        {"title": "Brent falls as Iran's president discusses mediation with Pakistani army chief",
+         "url": "https://r/1", "source": "Reuters", "published_at": fresh},
+    ]
+    heads = news.score_and_dedup(raw, oil_spec, now)
+    by_title = {h.title[:20]: h for h in heads}
+    sitcom = by_title["Is this Prince Harry"]
+    assert sitcom.relevance <= 0.25
+    assert by_title["Brent crude tops $11"].relevance >= 0.9
+    assert by_title["Brent falls as Iran'"].relevance >= 0.8
+    assert heads[-1] is sitcom
