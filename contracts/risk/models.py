@@ -27,7 +27,7 @@ from typing import List, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
-CONTRACT_VERSION = "1.0.0"
+CONTRACT_VERSION = "1.1.0"   # 1.1.0 (2026-10-23): risk/daily/bump caps widened to 100 (operator opts out of risk caps)
 
 Preset = Literal["auto", "starter", "small", "standard", "pro", "custom"]
 
@@ -40,14 +40,14 @@ class RiskProfile(_M):
     """The only settings a user has to understand. "auto" picks the preset
     from equity; any explicit field overrides the preset's value."""
     preset: Preset = "auto"
-    risk_per_trade_pct: Optional[float] = Field(default=None, gt=0, le=25)   # % of equity lost if the stop hits
-    daily_loss_limit_pct: Optional[float] = Field(default=None, gt=0, le=50) # trading pauses for the day past this
+    risk_per_trade_pct: Optional[float] = Field(default=None, gt=0, le=100)  # % of equity lost if the stop hits; 100 = no cap
+    daily_loss_limit_pct: Optional[float] = Field(default=None, gt=0, le=100) # trading pauses for the day past this; 100 = never
     max_leverage: Optional[float] = Field(default=None, ge=1, le=50)
     max_open_positions: Optional[int] = Field(default=None, ge=1, le=50)     # None = derived from equity
     # Small accounts: Hyperliquid's $10 minimum can force more risk than
     # risk_per_trade_pct allows. Allowed only up to max_bumped_risk_pct.
     allow_min_order_bump: Optional[bool] = None
-    max_bumped_risk_pct: Optional[float] = Field(default=None, gt=0, le=25)
+    max_bumped_risk_pct: Optional[float] = Field(default=None, gt=0, le=100)
 
 
 class BookFeasibility(_M):

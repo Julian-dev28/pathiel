@@ -64,7 +64,7 @@ from typing import Dict, Optional, Tuple
 
 from contracts.risk.models import RiskProfile
 
-CONTRACT_VERSION = "1.0.0"
+CONTRACT_VERSION = "1.1.0"
 
 
 @dataclass(frozen=True)

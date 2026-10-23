@@ -50,7 +50,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/risk", tags=["risk"])
 
-CONTRACT_VERSION = "1.0.0"
+CONTRACT_VERSION = "1.1.0"
 
 # The real, padded exchange minimum — see services/risk/derive.py's
 # VenueRules docstring for why the API uses the padded constant rather than
