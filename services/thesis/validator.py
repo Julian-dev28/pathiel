@@ -27,6 +27,15 @@ Rule inventory, and why each one is the shape it is:
 - stop side, entry-near-mid, targets-consistent, leverage-not-avoid,
   instrument-known: structural sanity on the Call the LLM is authoring as
   the actual trade idea.
+- r-multiple, stop-within-ladder: the call must pay at least 1.5R to its
+  first target (pathiel.agents.bracket.check_levels, the same gate
+  place_bracket runs before a live order), and the stop may never sit wider
+  than the matching leverage ladder rung's own stop_px - that rung's stop is
+  the leverage's LIMIT (60% of the distance to liquidation), not a
+  suggestion to copy. Added 2026-10-23 after the live Brent desk shipped a
+  call whose stop WAS the ladder's liquidation-derived stop (~10% away at
+  5x) with a best target paying 0.47R - sizing correctly refused it, and
+  the validator had nothing that would have caught it first.
 - cited ids exist: every bull/bear source id must resolve inside the given
   IntelPacket.
 - lessons count (exactly 1), leverage_reasons count (exactly
@@ -413,6 +422,60 @@ def check_targets_consistent(call: Call, analytics: DeskAnalytics) -> List[str]:
     return errors
 
 
+DEFAULT_MIN_R = 1.5
+
+
+def check_r_multiple(call: Call, min_r: float = DEFAULT_MIN_R) -> List[str]:
+    """The call must pay at least ``min_r`` to its first target, R being the
+    distance from entry to stop. Uses pathiel.agents.bracket.check_levels -
+    the exact function place_bracket runs before it will place a live order
+    - so the desk's own gate and the executor's gate can never disagree
+    about what counts as a tradable R. Root cause this exists for (2026-10-23,
+    live Brent desk): a thesis copying the leverage ladder's liquidation-
+    derived stop pays well under 1R to its nearest target, so sizing refuses
+    the call outright. Skipped (not an error) for a flat/pair call or one
+    missing entry, stop, or any target - those have nothing to compute an R
+    from yet; check_stop_side / check_targets_consistent cover their own
+    shape separately."""
+    if call.side not in ("long", "short") or call.entry_px is None or call.stop_px is None or not call.targets:
+        return []
+    from pathiel.agents.bracket import check_levels
+
+    first_tp = call.targets[0]
+    gate = check_levels(call.entry_px, call.stop_px, first_tp, min_r=min_r)
+    if not gate.get("ok"):
+        r = gate.get("r_multiple")
+        if r is not None:
+            return [f"call pays {r:g}R to its first target ({first_tp:g}), "
+                    f"under the {min_r:g}R minimum"]
+        return [f"call cannot be R-gated: {gate.get('reason', 'invalid entry/stop/target')}"]
+    return []
+
+
+def check_stop_within_ladder(call: Call, analytics: DeskAnalytics) -> List[str]:
+    """The stop may not sit wider (as a fraction of entry) than the matching
+    leverage ladder rung's own stop_px - the ladder stop is that leverage's
+    LIMIT, derived from 60% of the distance to liquidation
+    (services/strategies/analytics.py's STOP_FRACTION_OF_LIQ), never a
+    suggestion the call is free to widen past. Skipped when there is no
+    leverage, no entry/stop, or no matching rung - check_leverage_not_avoid
+    already reports an unmatched leverage."""
+    if call.side not in ("long", "short") or call.entry_px is None or call.stop_px is None or call.leverage is None:
+        return []
+    rung = desk_lookup.find_ladder_rung(call.leverage, analytics, coin=call.instrument, side=call.side)
+    if rung is None:
+        rung = desk_lookup.find_ladder_rung(call.leverage, analytics, side=call.side)
+    if rung is None or rung.stop_px is None or not rung.entry_px:
+        return []
+    call_dist = abs(call.entry_px - call.stop_px) / call.entry_px
+    ladder_dist = abs(rung.entry_px - rung.stop_px) / rung.entry_px
+    if call_dist > ladder_dist + 1e-9:
+        return [f"call.stop_px ({call.stop_px}) is {call_dist * 100:.2f}% from entry, wider than the "
+                f"{call.leverage:g}x ladder rung's own stop ({ladder_dist * 100:.2f}%) - the ladder "
+                f"stop is that leverage's limit, not a suggestion"]
+    return []
+
+
 def check_leverage_not_avoid(call: Call, analytics: DeskAnalytics) -> List[str]:
     if call.side not in ("long", "short") or call.leverage is None:
         return []
@@ -547,6 +610,8 @@ def _run_all_rules(
     errors += check_instrument_known(call, analytics)
     errors += check_entry_near_mid(call, analytics)
     errors += check_targets_consistent(call, analytics)
+    errors += check_r_multiple(call)
+    errors += check_stop_within_ladder(call, analytics)
     errors += check_leverage_not_avoid(call, analytics)
     errors += check_cited_ids_exist(bull, bear, intel)
     errors += check_lessons_count(lessons)

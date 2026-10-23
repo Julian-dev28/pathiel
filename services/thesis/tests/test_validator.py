@@ -7,6 +7,8 @@ against the target shape would show up immediately.
 """
 from __future__ import annotations
 
+import pytest
+
 from contracts.strategies.models import Call, Lesson, Point, Scenario
 from services.thesis import validator
 from services.thesis.llm_schema import LeverageReason
@@ -232,6 +234,97 @@ def test_leverage_not_on_the_ladder_fails(oil):
 def test_leverage_check_skipped_for_flat_call(oil):
     call = Call(side="flat", instrument="xyz:CL", one_liner="x", confidence=0.0, invalidation="i")
     assert validator.check_leverage_not_avoid(call, oil.analytics) == []
+
+
+# -- r-multiple gate (2026-10-23) ----------------------------------------------
+
+
+def test_r_multiple_below_minimum_fails():
+    call = Call(side="long", instrument="xyz:CL", one_liner="x", entry_px=100.0, stop_px=98.0,
+                targets=[100.5], confidence=0.5, invalidation="i")
+    errors = validator.check_r_multiple(call)
+    assert len(errors) == 1 and "0.25R" in errors[0] and "1.5R minimum" in errors[0]
+
+
+def test_r_multiple_at_exactly_the_minimum_passes():
+    call = Call(side="long", instrument="xyz:CL", one_liner="x", entry_px=100.0, stop_px=98.0,
+                targets=[103.0], confidence=0.5, invalidation="i")   # R = 3/2 = 1.5 exactly
+    assert validator.check_r_multiple(call) == []
+
+
+def test_r_multiple_well_above_the_minimum_passes():
+    call = Call(side="short", instrument="xyz:CL", one_liner="x", entry_px=100.0, stop_px=102.0,
+                targets=[94.0], confidence=0.5, invalidation="i")   # R = 6/2 = 3.0
+    assert validator.check_r_multiple(call) == []
+
+
+@pytest.mark.parametrize("call", [
+    Call(side="flat", instrument="xyz:CL", one_liner="x", confidence=0.0, invalidation="i"),
+    Call(side="long", instrument="xyz:CL", one_liner="x", entry_px=100.0, confidence=0.5, invalidation="i"),
+    Call(side="long", instrument="xyz:CL", one_liner="x", entry_px=100.0, stop_px=98.0, targets=[],
+         confidence=0.5, invalidation="i"),
+])
+def test_r_multiple_skipped_without_enough_to_compute_it(call):
+    assert validator.check_r_multiple(call) == []
+
+
+def test_r_multiple_golden_oil_fixture_passes(oil):
+    assert validator.check_r_multiple(oil.thesis.call) == []
+
+
+def test_r_multiple_uses_the_same_gate_place_bracket_runs():
+    """check_r_multiple must not duplicate the R math - pathiel.agents.
+    bracket.check_levels is the single source of truth place_bracket itself
+    refuses orders against."""
+    from pathiel.agents.bracket import check_levels
+
+    call = Call(side="long", instrument="xyz:CL", one_liner="x", entry_px=100.0, stop_px=99.0,
+                targets=[100.8], confidence=0.5, invalidation="i")   # R = 0.8, under 1.5
+    want = check_levels(100.0, 99.0, 100.8)
+    errors = validator.check_r_multiple(call)
+    assert len(errors) == 1 and f"{want['r_multiple']:g}R" in errors[0]
+
+
+# -- stop-within-ladder gate (2026-10-23) --------------------------------------
+
+
+def test_stop_wider_than_the_ladder_rung_fails(oil):
+    """The fixture's 5x rung has entry 99.339, stop 88.64 (~10.77% away).
+    A call stop farther than that at the same leverage must fail."""
+    call = Call(side="long", instrument="xyz:CL", one_liner="x", entry_px=99.339, stop_px=80.0,
+                leverage=5, confidence=0.5, invalidation="i")
+    errors = validator.check_stop_within_ladder(call, oil.analytics)
+    assert len(errors) == 1 and "wider than" in errors[0] and "5x ladder rung" in errors[0]
+
+
+def test_stop_inside_the_ladder_rung_passes(oil):
+    call = Call(side="long", instrument="xyz:CL", one_liner="x", entry_px=99.339, stop_px=95.0,
+                leverage=5, confidence=0.5, invalidation="i")
+    assert validator.check_stop_within_ladder(call, oil.analytics) == []
+
+
+def test_stop_exactly_at_the_ladder_rung_passes(oil):
+    """The ladder rung's OWN stop_px, verbatim, is the limit - exactly
+    matching it must not fail on float noise."""
+    rung = next(r for r in oil.analytics.ladder if r.leverage == 5.0 and r.side == "long")
+    call = Call(side="long", instrument="xyz:CL", one_liner="x", entry_px=rung.entry_px,
+                stop_px=rung.stop_px, leverage=5, confidence=0.5, invalidation="i")
+    assert validator.check_stop_within_ladder(call, oil.analytics) == []
+
+
+def test_stop_within_ladder_golden_oil_fixture_passes(oil):
+    assert validator.check_stop_within_ladder(oil.thesis.call, oil.analytics) == []
+
+
+@pytest.mark.parametrize("call", [
+    Call(side="flat", instrument="xyz:CL", one_liner="x", confidence=0.0, invalidation="i"),
+    Call(side="long", instrument="xyz:CL", one_liner="x", entry_px=99.339, stop_px=95.0,
+         confidence=0.5, invalidation="i"),   # no leverage
+    Call(side="long", instrument="xyz:CL", one_liner="x", entry_px=99.339, stop_px=95.0,
+         leverage=7.0, confidence=0.5, invalidation="i"),   # not a ladder rung
+])
+def test_stop_within_ladder_skipped_without_a_matching_rung(oil, call):
+    assert validator.check_stop_within_ladder(call, oil.analytics) == []
 
 
 # -- one_liner length ----------------------------------------------------------
