@@ -77,19 +77,12 @@ class TestIsolation:
 
 
 class TestDemoServesGeneratedData:
-    def test_summary_is_populated(self, demo_app):
-        body = TestClient(demo_app).get("/api/dashboard/summary").json()
-        assert body["equity"] > 0
-        assert body["status"] == "scanning"
-
-    def test_there_is_a_trade_history(self, demo_app):
-        """The reason someone clicks Demo at all."""
-        trades = TestClient(demo_app).get("/api/dashboard/closed-trades").json()
-        assert len(trades) >= 5
-        assert all("pnl_pct" in t for t in trades)
-
-    def test_positions_are_populated(self, demo_app):
-        assert TestClient(demo_app).get("/api/dashboard/positions").json()
+    """/api/dashboard/summary, /closed-trades and /positions (and the
+    /activity, /news, /trends, /analytics pages that showed them) were
+    removed 2026-10-23 (Oil Desk UI overhaul) — the bot-watching dashboard
+    those routes served no longer exists, in demo mode or otherwise. The
+    demo app still reuses pathiel.dashboard.register_routes verbatim
+    (services/demo/router.py), so it lost the same routes the live app did."""
 
     def test_it_says_what_it_is_when_asked(self, demo_app):
         body = TestClient(demo_app).get("/api/demo/whoami").json()
@@ -97,7 +90,7 @@ class TestDemoServesGeneratedData:
 
     def test_every_page_renders(self, demo_app):
         client = TestClient(demo_app)
-        for path in ("/", "/activity", "/news", "/trends", "/analytics"):
+        for path in ("/",):
             assert client.get(path).status_code == 200, path
 
 
@@ -168,14 +161,11 @@ class TestToggleIsNavigationNotState:
                 f"{path.name} defers pathiel.js; the inline scripts below it will "
                 f"fetch before the wrapper exists")
 
-    def test_the_event_stream_is_prefixed_too(self):
-        """EventSource is not fetch, so the wrapper cannot reach it. An
-        absolute path here tails the live feed from a demo page."""
-        from pathlib import Path
-        html = (Path(__file__).resolve().parents[3] / "pathiel" / "templates"
-                / "landing.html").read_text()
-        assert "new EventSource('/api/feed/stream')" not in html
-        assert "PathielMode.prefix() + '/api/feed/stream'" in html
+    # test_the_event_stream_is_prefixed_too removed 2026-10-23: it read
+    # pathiel/templates/landing.html directly, and both that template and
+    # /api/feed/stream (the SSE route it guarded) are gone (Oil Desk UI
+    # overhaul) — there is no event stream left for a demo page to
+    # mis-target.
 
     def test_the_toggle_renders_on_load(self):
         from pathlib import Path

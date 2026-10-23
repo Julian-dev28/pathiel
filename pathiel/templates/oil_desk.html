@@ -1,0 +1,260 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Desk · pathiel</title>
+<link rel="stylesheet" href="/static/app.css" />
+<link rel="stylesheet" href="/static/pathiel.css" />
+<link rel="stylesheet" href="/static/desks.css?v=20261023" />
+<!-- pathiel.js installs the window.fetch wrapper this page's own script
+     depends on, so it loads first and un-deferred. desks.js carries the
+     shared formatters/badges this page reuses (pctSigned, fmtMoney,
+     fmtPrice, fmtCountdown, VERDICT_CLASS, SIDE_CLASS, wireDiscreetToggle,
+     buildSourceMap, ...); its own page-init calls at the bottom are no-ops
+     here since #desk-root does not exist on this page. -->
+<script src="/static/pathiel.js"></script>
+</head>
+<body>
+<script type="speculationrules">
+{"prerender":[{"where":{"and":[{"href_matches":"/*"},{"not":{"href_matches":"/api/*"}}]},"eagerness":"moderate"}]}
+</script>
+
+<div class="masthead">
+  <div class="masthead-inner">
+    <a href="/" class="brand">Pathiel</a>
+    <nav class="tabs-main">
+      <a href="/" data-nav="/" class="nav-link">Desk</a>
+      <a href="/desk/oil" data-nav="/desk/oil" class="nav-link" id="nav-thesis-link">Thesis</a>
+      <a href="/account" data-nav="/account" class="nav-link">Account</a>
+    </nav>
+    <div class="masthead-right">
+      <div id="wallet-connect-root"></div>
+      <button id="discreet-toggle" type="button" class="icon-btn"
+              title="Blur all cash amounts. Percentages stay visible.">Hide amounts</button>
+      <button id="op-token-btn" type="button" popovertarget="token-pop" class="icon-btn">Operator token</button>
+      <span id="status-pill" class="pill offline">Offline</span>
+    </div>
+  </div>
+</div>
+
+<div class="shell">
+
+  <!-- Onboarding: one step visible at a time (Julien's ADHD-first brief —
+       one decision per screen, the call first). Hidden by default so a slow
+       or not-yet-mounted /api/session never flashes the wizard over a
+       working Desk page — pathiel.js's PathielSession decides which of this
+       and #oil-desk-root to reveal, as soon as the session fetch settles.
+       Ported from the old landing.html verbatim (2026-10-23): connect
+       account -> how much risk -> done; after this the SAME page is the
+       Desk, no navigation needed. -->
+  <div id="onboarding-root" class="onboard" hidden>
+
+    <section id="onboard-welcome" class="onboard-step card" data-step="1">
+      <div class="sec-label">Get started</div>
+      <h1 class="page-title">Connect your Hyperliquid account</h1>
+      <p class="page-sub">pathiel trades through an agent key it generates for you.
+        Your main wallet key never leaves your wallet and can never withdraw.</p>
+      <div class="onboard-actions">
+        <button type="button" id="onb-connect" class="btn go">Connect your Hyperliquid account</button>
+        <button type="button" id="onb-watch" class="btn">Watch an address</button>
+        <a href="/demo" id="onb-demo" class="btn">Explore the demo</a>
+      </div>
+    </section>
+
+    <section id="onboard-risk" class="onboard-step card" data-step="2" hidden>
+      <div class="sec-label">Step 2 of 3</div>
+      <h1 class="page-title">How much risk?</h1>
+      <p class="page-sub" id="onb-risk-equity">&nbsp;</p>
+
+      <div id="onb-preset-cards" class="preset-grid" role="radiogroup" aria-label="Risk preset"></div>
+      <div id="onb-custom-note" class="chip chip-amber" hidden></div>
+
+      <div id="onb-low-equity" class="callout callout-amber" hidden></div>
+
+      <div id="onb-preview" class="onboard-preview">
+        <div class="kv" id="onb-headline">&mdash;</div>
+        <div id="onb-notes" class="preview-notes"></div>
+        <div class="stat-row">
+          <div><div class="sec-label">Risk per trade</div><div class="kv" id="onb-risk-usd">&mdash;</div></div>
+          <div><div class="sec-label">Daily pause</div><div class="kv" id="onb-daily-pause">&mdash;</div></div>
+          <div><div class="sec-label">Max positions</div><div class="kv" id="onb-max-positions">&mdash;</div></div>
+        </div>
+      </div>
+
+      <div class="onboard-actions">
+        <button type="button" id="onb-save" class="btn go">Save and continue</button>
+      </div>
+    </section>
+
+    <section id="onboard-done" class="onboard-step card" data-step="3" hidden>
+      <div class="sec-label">Step 3 of 3</div>
+      <h1 class="page-title">You&rsquo;re set</h1>
+      <p class="page-sub">Your risk profile is saved. This page is the Desk.</p>
+      <div class="onboard-actions">
+        <button type="button" id="onb-done" class="btn go">View the Desk</button>
+      </div>
+    </section>
+
+  </div>
+
+  <!-- Hidden by default too, alongside #onboarding-root above: without
+       this, a brand-new visitor would see one frame of the (all-empty)
+       Desk page before the session fetch resolves and swaps it for the
+       wizard. -->
+  <main id="oil-desk-root" hidden>
+
+  <div class="page-head">
+    <h1 class="page-title" id="desk-page-title">Desk</h1>
+    <div class="page-sub">
+      Claude trades a small pathiel wallet from this desk's call every 15 minutes.
+      You trade your own wallet by hand at your own chosen leverage from the same thesis.
+    </div>
+    <!-- Only one entry when a single desk is active (the default: just
+         "oil") — no switcher shown. Several active desks (agent config
+         active_desks) fill this with a small tab row; desk switching code
+         stays wired either way, per the product brief. -->
+    <div id="desk-switcher" class="lev-seg" role="tablist" aria-label="Active desk" hidden></div>
+  </div>
+
+  <!-- 1. THE CALL — the desk's current thesis plus the 20x line computed
+       from its own entry/stop/first target. Nothing above this competes
+       for the fold. -->
+  <section class="section" id="call-section">
+    <div class="section-head">
+      <h2 class="sec-label">The call</h2>
+      <span class="section-meta" id="call-stale-note"></span>
+    </div>
+
+    <div id="call-loading" class="state-block" aria-live="polite">
+      <div class="state-title">Loading the call&hellip;</div>
+    </div>
+    <div id="call-error" class="state-block" hidden role="alert">
+      <div class="state-title">Could not load the call</div>
+      <div class="state-sub" id="call-error-detail"></div>
+    </div>
+
+    <div id="call-card" class="card call-card" hidden>
+      <pre class="call-sentence mono" id="call-markdown"></pre>
+      <a href="/desk/oil" class="note" id="full-thesis-link">Full thesis &rarr;</a>
+    </div>
+
+    <div id="line-card" class="card lev-card" hidden>
+      <div class="lev-seg" id="line-seg" role="radiogroup" aria-label="Leverage"></div>
+      <div class="lev-stats">
+        <div><div class="sec-label">Liquidation</div><div class="kv" id="line-liq-px">&mdash;</div></div>
+        <div><div class="sec-label">Stop / liq distance</div><div class="kv" id="line-stop-frac">&mdash;</div></div>
+        <div><div class="sec-label">Entry / Stop</div><div class="kv call-num"><span id="line-entry">&mdash;</span> / <span id="line-stop">&mdash;</span></div></div>
+        <div><div class="sec-label">R to targets</div><div class="kv" id="line-r-targets">&mdash;</div></div>
+      </div>
+      <div class="lev-verdict-row">
+        <span id="line-verdict-badge"></span>
+        <span class="lev-reason" id="line-reason"></span>
+      </div>
+    </div>
+    <div id="line-empty" class="state-block" hidden>
+      <div class="state-sub" id="line-empty-detail">No 20x line to show.</div>
+    </div>
+  </section>
+
+  <!-- 2. WALLETS — one row per registered account: the active trade
+       account and every watch account. -->
+  <section class="section" id="wallets-section">
+    <div class="section-head"><h2 class="sec-label">Wallets</h2></div>
+    <div id="wallets-error" class="state-block" hidden role="alert">
+      <div class="state-title">Could not load accounts</div>
+      <div class="state-sub" id="wallets-error-detail"></div>
+    </div>
+    <div id="wallets-empty" class="state-block" hidden>
+      <div class="state-sub">No accounts connected yet.</div>
+    </div>
+    <div id="wallets-list"></div>
+  </section>
+
+  <!-- 3. LEVELS — candle-derived numbers for the primary instrument. -->
+  <section class="section" id="levels-section">
+    <div class="section-head"><h2 class="sec-label">Levels</h2></div>
+    <div id="levels-error" class="state-block" hidden role="alert">
+      <div class="state-title">Could not load levels</div>
+      <div class="state-sub" id="levels-error-detail"></div>
+    </div>
+    <div class="lev-stats" id="levels-stats" hidden></div>
+  </section>
+
+  <!-- 4. HEADLINES AND CATALYSTS — the intel the thesis already carries.
+       A Hormuz/ceasefire headline is the loop's invalidation trigger, so
+       it belongs on this one screen, not only buried in the full thesis. -->
+  <section class="section" id="intel-section">
+    <div class="section-head"><h2 class="sec-label">Headlines and catalysts</h2></div>
+    <div id="intel-error" class="state-block" hidden role="alert">
+      <div class="state-title">Could not load headlines</div>
+      <div class="state-sub" id="intel-error-detail"></div>
+    </div>
+    <div id="intel-empty" class="state-block" hidden>
+      <div class="state-sub">No intel recorded yet &mdash; refresh the desk from the Thesis tab.</div>
+    </div>
+    <div id="catalyst-chips" class="catalyst-chips"></div>
+    <div id="headlines-list"></div>
+    <div id="odds-list"></div>
+  </section>
+
+  <!-- 5. LOOP LOG — the last 30 lines of this desk's loop. -->
+  <section class="section" id="log-section">
+    <div class="section-head"><h2 class="sec-label">Loop log</h2></div>
+    <pre class="mono log-body" id="log-body">no ticks yet</pre>
+  </section>
+
+  <!-- 6. TRACK RECORD -->
+  <section class="section" id="track-section">
+    <div class="section-head"><h2 class="sec-label">Track record</h2></div>
+    <div id="track-empty" class="state-block" hidden>
+      <div class="state-sub">No calls graded yet.</div>
+    </div>
+    <div class="track-cols" id="track-cols"></div>
+  </section>
+
+  <!-- STOP TRADING — the old auto-trader's kill switch (sets agent config
+       mode: OFF). Does not touch this desk's loop (place_bracket/
+       bracket_sweep) or your own hand trades; labelled accordingly so
+       nobody mistakes this for a full stop. -->
+  <section class="section" id="stop-section">
+    <div class="section-head"><h2 class="sec-label">Old auto-trader kill switch</h2></div>
+    <div class="refresh-row">
+      <button type="button" id="stop-trading-btn" class="btn btn-danger">Turn off old auto-trader</button>
+      <span id="stop-trading-status" class="note"></span>
+    </div>
+    <p class="note">
+      This only disables the retired bot's own execute path (agent config
+      <code class="mono">mode: OFF</code>). It does not stop this desk's loop,
+      and it does not touch your own trades.
+    </p>
+  </section>
+
+  </main>
+
+  <footer class="site-foot">
+    <span>Desk &middot; live</span>
+    <span>Not financial advice</span>
+  </footer>
+
+</div>
+
+<!-- operator token entry — native popover in the top layer; the value lives
+     in localStorage ONLY and is sent as X-Operator-Token by the kill-switch
+     call above and by any tooling that calls the token-gated /api/agent +
+     /api/hl endpoints. -->
+<div id="token-pop" popover class="pop">
+  <div class="sec-label mb-2">Operator token</div>
+  <input id="token-input" type="password" autocomplete="off" spellcheck="false" placeholder="PATHIEL_OPERATOR_TOKEN" />
+  <p class="note" style="margin-top:8px">Stored only in this browser. This page never transmits it.</p>
+  <div class="flex gap-2 mt-3">
+    <button id="token-save" type="button" class="icon-btn">Save</button>
+    <button id="token-clear" type="button" class="icon-btn">Clear</button>
+    <button type="button" class="icon-btn ml-auto" popovertarget="token-pop" popovertargetaction="hide">Close</button>
+  </div>
+</div>
+
+<script src="/static/desks.js?v=20261019"></script>
+<script src="/static/oil_desk.js?v=20261023"></script>
+</body>
+</html>

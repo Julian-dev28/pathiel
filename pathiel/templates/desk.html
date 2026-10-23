@@ -15,12 +15,8 @@
   <div class="masthead-inner">
     <a href="/" class="brand">Pathiel</a>
     <nav class="tabs-main">
-      <a href="/" data-nav="/" class="nav-link">Dashboard</a>
-      <a href="/desks" data-nav="/desks" class="nav-link nav-active">Desks</a>
-      <a href="/activity" data-nav="/activity" class="nav-link">Activity</a>
-      <a href="/news" data-nav="/news" class="nav-link">News</a>
-      <a href="/analytics" data-nav="/analytics" class="nav-link">Markets</a>
-      <a href="/trends" data-nav="/trends" class="nav-link">Trends</a>
+      <a href="/" data-nav="/" class="nav-link">Desk</a>
+      <a href="/desk/oil" data-nav="/desk/oil" class="nav-link" id="nav-thesis-link">Thesis</a>
       <a href="/account" data-nav="/account" class="nav-link">Account</a>
     </nav>
     <div class="masthead-right">
@@ -38,7 +34,7 @@
 <main class="shell" id="desk-root" data-desk-id="">
 
   <div class="page-head">
-    <a href="/desks" class="note">&larr; All desks</a>
+    <a href="/" class="note">&larr; Desk</a>
     <h1 class="page-title" id="desk-name">&nbsp;</h1>
     <div class="page-sub" id="desk-tagline">&nbsp;</div>
     <div id="desk-updating" class="note desk-updating" hidden role="status">Updating prices&hellip;</div>
@@ -136,6 +132,17 @@
         <div class="lev-verdict-row">
           <span id="lev-verdict"></span>
           <span class="lev-reason" id="lev-reason"></span>
+        </div>
+        <!-- The call's OWN 20x line (pathiel/agents/bracket.py check_leverage,
+             GET /api/desks/{id}/line) — the same check the Oil Desk page
+             shows for this desk's call, priced off the call's actual entry/
+             stop/targets rather than this ladder's full-equity simulation
+             above. Async; desks.js fetches it after paintLeverage's
+             synchronous ladder paint. -->
+        <div class="lev-call-line" id="lev-call-line" hidden>
+          <span class="sec-label">This call's own line</span>
+          <span id="lev-call-line-badge"></span>
+          <span class="lev-reason" id="lev-call-line-reason"></span>
         </div>
       </div>
     </section>

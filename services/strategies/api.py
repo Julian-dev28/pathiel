@@ -6,10 +6,10 @@ runs facade.refresh() (synchronous, potentially several seconds) on a
 background thread, updating an in-process job registry the client polls via
 GET .../jobs/{job_id}.
 
-HTML routes (/desks, /desks/{desk_id}) read pathiel/templates/desks.html and
-desk.html AT REQUEST TIME, not at import time — those files are the desk-ui
-agent's to write and may not exist yet in this worktree. Missing -> a
-minimal inline placeholder, never a 500.
+HTML route (/desks/{desk_id}) reads pathiel/templates/desk.html AT REQUEST
+TIME, not at import time. Missing -> a minimal inline placeholder, never a
+500. The /desks grid list page (desks.html) was removed 2026-10-23 — see
+desk_page()'s docstring.
 """
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ from pydantic import BaseModel
 import pathiel
 from contracts.strategies.models import DeskBrief, DeskCard, RefreshJob, Thesis, UserThesisIn
 
-from services.strategies import desks, facade, journal, levels, oil_log
+from services.strategies import desk_log, desks, facade, journal, levels
 from services.strategies.call_line import call_line
 
 logger = logging.getLogger(__name__)
@@ -86,13 +86,49 @@ def get_desks() -> List[DeskCard]:
     return facade.list_cards()
 
 
+# Registered BEFORE the "/api/desks/{desk_id}" route below: FastAPI matches
+# routes in registration order, and {desk_id} is a wildcard that would
+# otherwise swallow the literal path "active" as a desk id (404ing it).
+@router.get("/api/desks/active")
+def get_active_desks() -> Dict[str, object]:
+    """Which desk(s) the landing page should render, from agent config's
+    `active_desks` (default `["oil"]`). Filters out any id that isn't a
+    real registered desk (a stale/typo'd config entry must not 404 the
+    page); falls back to `["oil"]` if that leaves nothing. One entry -> no
+    switcher; more than one -> the page shows a small tab row."""
+    from pathiel.agents.config_store import read_agent_config
+    try:
+        configured = list(read_agent_config().get("active_desks") or [])
+    except Exception as e:  # noqa: BLE001 - a config read miss must not 500 the page
+        logger.warning(f"[strategies.api] read_agent_config() failed: {e}")
+        configured = []
+    known = set(desks.list_desk_ids())
+    active = [d for d in configured if d in known] or ["oil"]
+    return {"active_desks": active, "default_desk": active[0]}
+
+
+def _quick_markdown(brief: DeskBrief) -> Optional[str]:
+    """render_markdown(thesis, analytics, "quick") when there is a thesis to
+    render, else None (a desk with no call yet has nothing to render; the
+    page shows its own empty state for that, same as /desks/{id})."""
+    if brief.thesis is None or brief.analytics is None:
+        return None
+    try:
+        from services.thesis.render import render_markdown
+        return render_markdown(brief.thesis, brief.analytics, "quick")
+    except Exception as e:  # noqa: BLE001 - a render miss must not 500 the whole brief
+        logger.warning(f"[strategies.api] quick markdown render failed for {brief.spec.id}: {e}")
+        return None
+
+
 @router.get("/api/desks/{desk_id}", response_model=DeskBrief)
 def get_desk_brief(desk_id: str) -> DeskBrief:
     try:
         brief = facade.get_brief(desk_id)
     except desks.UnknownDeskError:
         raise _unknown_desk(desk_id)
-    return brief.model_copy(update={"refresh_job": running_job(desk_id)})
+    return brief.model_copy(update={"refresh_job": running_job(desk_id),
+                                    "quick_markdown": _quick_markdown(brief)})
 
 
 @router.post("/api/desks/{desk_id}/refresh", response_model=RefreshJob)
@@ -167,12 +203,13 @@ def post_thesis(desk_id: str, body: UserThesisIn) -> Thesis:
         raise _unknown_desk(desk_id)
 
 
-# ── Oil Desk dashboard: 20x line, candle levels, loop log ───────────────────
+# ── Desk dashboard: 20x line, candle levels, loop log ───────────────────────
 #
-# The first of these is generic (any desk's current call); the other two are
-# deliberately hardwired to desk "oil" — the dashboard this wave builds is
-# oil-only (docs/overhaul/OIL_DESK_UI_2026-10-23.md), and there is exactly
-# one oil-tick loop and one log file to show.
+# docs/overhaul/DESK_UI_2026-10-23.md: the product is a generic desk UI that
+# expands to other desks once oil is mastered; oil is the only ACTIVE desk
+# today (agent config `active_desks`, default ["oil"], see
+# get_active_desks() above), not the identity. Every route below is
+# desk_id-parameterized, never oil-hardcoded.
 
 @router.get("/api/desks/{desk_id}/line")
 def get_call_line(desk_id: str, leverage: float = Query(20, gt=0, le=100)) -> Dict[str, object]:
@@ -198,31 +235,37 @@ def get_call_line(desk_id: str, leverage: float = Query(20, gt=0, le=100)) -> Di
     return call_line(brief.thesis.call, coin_max_leverage, leverage)
 
 
-def _oil_primary_coin() -> str:
-    spec = desks.require_spec("oil")
+def _primary_coin(desk_id: str) -> str:
+    spec = desks.require_spec(desk_id)
     primary = next((i for i in spec.instruments if i.role == "primary"), spec.instruments[0])
     return primary.coin
 
 
-@router.get("/api/desks/oil/levels")
-def get_oil_levels() -> Dict[str, object]:
-    """Candle-derived levels for the oil desk's primary instrument: mid,
-    last closed 1h candle, 8h/24h/48h range, ATR14, where the mid sits in
-    the 24h range. See services/strategies/levels.py::summarize_coin."""
-    coin = _oil_primary_coin()
+@router.get("/api/desks/{desk_id}/levels")
+def get_desk_levels(desk_id: str) -> Dict[str, object]:
+    """Candle-derived levels for this desk's primary instrument: mid, last
+    closed 1h candle, 8h/24h/48h range, ATR14, where the mid sits in the
+    24h range. See services/strategies/levels.py::summarize_coin."""
+    try:
+        coin = _primary_coin(desk_id)
+    except desks.UnknownDeskError:
+        raise _unknown_desk(desk_id)
     try:
         return levels.summarize_coin(coin)
     except Exception as e:  # noqa: BLE001 - report the failure, never a 500 with no detail
         raise HTTPException(status_code=502, detail=f"could not read live levels for {coin}: {e}")
 
 
-@router.get("/api/desks/oil/log")
-def get_oil_log(n: int = Query(30, ge=1, le=500)) -> Dict[str, object]:
-    """The last `n` lines of the oil-tick loop's plain-text progress log
-    (env PATHIEL_OIL_LOG, default /tmp/oil-loop/progress.log). An empty
-    `lines` list — including when the file does not exist yet — means "no
-    ticks yet", not an error."""
-    return {"lines": oil_log.read_oil_log(n)}
+@router.get("/api/desks/{desk_id}/log")
+def get_desk_log(desk_id: str, n: int = Query(30, ge=1, le=500)) -> Dict[str, object]:
+    """The last `n` lines of this desk's loop progress log (env
+    PATHIEL_<DESK>_LOG, e.g. PATHIEL_OIL_LOG, default /tmp/oil-loop/progress.log
+    for desk_id "oil" and /tmp/<desk>-loop/progress.log otherwise). An empty
+    `lines` list — including when the file does not exist yet, or this desk
+    has no loop at all — means "no ticks yet", not an error."""
+    if desks.get_spec(desk_id) is None:
+        raise _unknown_desk(desk_id)
+    return {"lines": desk_log.read_desk_log(desk_id, n)}
 
 
 # ── HTML routes ────────────────────────────────────────────────────────────
@@ -244,14 +287,16 @@ def _render_or_placeholder(filename: str, title: str, body: str) -> HTMLResponse
     return HTMLResponse(placeholder, headers=_NO_CACHE)
 
 
-@router.get("/desks", response_class=HTMLResponse)
-def desks_page() -> HTMLResponse:
-    return _render_or_placeholder(
-        "desks.html", "Desks",
-        "UI pending (owned by the desk-ui agent). Overview data is live at /api/desks.")
-
-
-@router.get("/desks/{desk_id}", response_class=HTMLResponse)
+# The /desks grid list page (desks.html) was removed 2026-10-23 — the Desk
+# UI overhaul made the active desk's own thesis page ("Thesis" in the
+# 3-tab nav: Desk / Thesis / Account, singular /desk/{id} to read
+# distinctly from the /api/desks/... collection routes) the only desk page
+# the UI ever links to; the other desk specs (btc, top5, ai, metals,
+# indices) stay registered in services/strategies/desks/*.py and still
+# answer at /desk/{desk_id} and /api/desks/{desk_id} for a direct link or a
+# script, they are just not reachable from any nav unless marked active
+# (agent config active_desks).
+@router.get("/desk/{desk_id}", response_class=HTMLResponse)
 def desk_page(desk_id: str) -> HTMLResponse:
     if desks.get_spec(desk_id) is None:
         raise _unknown_desk(desk_id)

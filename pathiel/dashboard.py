@@ -2,28 +2,29 @@
 
 Pages (markup in pathiel/templates/*.html, assets vendored in /static):
 
-  GET /                          — landing one-pager: how it works, equity +
-                                   today's PnL, equity curve, live-books table
-  GET /activity                  — the trading-desk journal: tiered flowing
-                                   stream + 6h session strip
-  GET /news                      — news-catalyst reads + research news context
+  GET /                          — the Desk landing page: the active desk's
+                                   call + 20x line, wallets, levels,
+                                   headlines/catalysts, loop log, track
+                                   record. Parameterized by desk id (agent
+                                   config active_desks, default ["oil"]) —
+                                   see docs/overhaul/DESK_UI_2026-10-23.md.
+                                   Shows an onboarding wizard first for a
+                                   brand-new visitor.
   GET /account                   — Account & Risk: active Hyperliquid account,
-                                   risk preset, per-book feasibility
+                                   risk preset
 
-JSON APIs:
+The desk data itself (thesis, levels, candle log, track record) is served by
+services/strategies/api.py (GET /api/desks/...), not this module. This
+module's own JSON APIs are what's left of the retired bot UI plus the
+house/customer account split:
 
-  GET /api/dashboard/summary     — hero numbers + status
-  GET /api/dashboard/books       — live-books table rows
-  GET /api/dashboard/activity    — classified session-log events (tiered,
-                                   filterable, incremental via ?since=)
-  GET /api/dashboard/news        — news ledger reads, newest first
+  GET /api/dashboard/account     — the SIGNED-IN WALLET's own Hyperliquid
+                                   account (not the house's)
   GET /api/dashboard/positions   — open positions + DSL tracker state
-  GET /api/dashboard/equity-curve?range=24h|7d|30d
-  GET /api/feed/stream           — Server-Sent Events tailing the session log
-
-All data flows from the same JSONL session log + in-memory DSL registry the
-trading loop already maintains, so the UI is read-only by default and there
-is no second source of truth to keep in sync.
+                                   (operator-gated; no page calls this any
+                                   more, kept for
+                                   tests/test_account_reads_shared.py's
+                                   shared-account-read-cache contract)
 
 Operator routes require `PATHIEL_OPERATOR_TOKEN`; missing/wrong token → 401.
 The variable is checked at request time, not import time, so rotating it
@@ -38,14 +39,13 @@ import logging
 import collections
 import hmac
 import os
-import re
 import threading
 import time
 from pathlib import Path
-from typing import Any, AsyncIterator, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 
 from pathiel import session_log
 from pathiel.agents import dsl_exit
@@ -55,7 +55,6 @@ from pathiel.agents.executor import min_tradable_equity as _min_tradable_equity
 from pathiel.client.account_snapshot import account_state
 from pathiel.client.hl_client import resolve_user_address
 from pathiel.positions_snapshot import read_snapshot as read_position_snapshot
-from pathiel.agents.rebalancer_owned import state_file
 
 _LOG_PATH = Path(session_log.SESSION_LOG_FILE)
 
@@ -780,43 +779,6 @@ def _equity_curve_payload(range_s: int) -> List[Dict[str, Any]]:
 # ── SSE feed ─────────────────────────────────────────────────────────────────
 
 
-async def _tail_log_sse() -> AsyncIterator[str]:
-    """Stream new session-log lines as SSE events. Replays the last 50 first."""
-    # Replay buffer so a fresh connection sees the recent past, not just future events.
-    for e in session_log.tail(50):
-        yield f"data: {json.dumps(e)}\n\n"
-
-    last_size = _LOG_PATH.stat().st_size if _LOG_PATH.exists() else 0
-    # Heartbeat every 15s keeps proxies (nginx, Cloudflare) from closing idle SSE.
-    last_heartbeat = time.time()
-
-    while True:
-        await asyncio.sleep(1.0)
-        if not _LOG_PATH.exists():
-            continue
-        size = _LOG_PATH.stat().st_size
-        if size < last_size:
-            # File rotated; start over.
-            last_size = 0
-        if size > last_size:
-            with _LOG_PATH.open() as f:
-                f.seek(last_size)
-                for line in f:
-                    line = line.strip()
-                    if not line:
-                        continue
-                    try:
-                        json.loads(line)  # validate before sending
-                    except json.JSONDecodeError:
-                        continue
-                    yield f"data: {line}\n\n"
-            last_size = size
-
-        if time.time() - last_heartbeat > 15:
-            yield ": keepalive\n\n"
-            last_heartbeat = time.time()
-
-
 # ── operator gate ────────────────────────────────────────────────────────────
 
 
@@ -1000,51 +962,6 @@ _KNOWN_BOOK_NAMES = frozenset(name for name, _, _ in _BOOKS)
 # classifier has to recognise these names or that history renders as untyped
 # `other` rows. Deliberately NOT part of _BOOKS: the books panel shows what can
 # trade today, the activity feed shows what happened.
-_HISTORICAL_BOOK_NAMES = frozenset({
-    "xs_momentum", "xs_xyz_equities", "extreme_fade", "rally_exhaustion",
-    "crash_continue_div_short", "engulf_short", "funding_spike_short",
-    "unlock_short_runin", "news_surge_short", "news_surge_multi",
-    "uw_flow_xs", "ai_only", "numerology_eth", "social_trending",
-})
-_RENDERABLE_BOOK_NAMES = _KNOWN_BOOK_NAMES | _HISTORICAL_BOOK_NAMES
-
-
-def _book_size_str(cfg: Dict[str, Any]) -> str:
-    """Human sizing line from a book's config block. Deterministic — no guessing."""
-    lev = cfg.get("leverage")
-    if cfg.get("notional_usd"):
-        base = f"${float(cfg['notional_usd']):g}"
-    elif cfg.get("equity_fraction"):
-        base = f"{float(cfg['equity_fraction']):g}x eq"
-    elif cfg.get("k_per_leg"):
-        return f"{int(cfg['k_per_leg'])}/leg basket"
-    else:
-        return "—"
-    try:
-        return f"{base} @ {int(lev)}x" if lev else base
-    except (TypeError, ValueError):
-        return base
-
-
-def _books_payload() -> List[Dict[str, Any]]:
-    """Rows for the landing-page live-books table: name, status, size, thesis."""
-    try:
-        config = read_agent_config() or {}
-    except Exception:
-        config = {}
-    out: List[Dict[str, Any]] = []
-    for name, cfg_key, thesis in _BOOKS:
-        cfg = config.get(cfg_key) or {}
-        if not isinstance(cfg, dict) or not cfg or not cfg.get("enabled", False):
-            status = "off"
-        elif cfg.get("shadow_only"):
-            status = "shadow"
-        else:
-            status = "live"
-        out.append({"name": name, "status": status,
-                    "size": _book_size_str(cfg if isinstance(cfg, dict) else {}),
-                    "thesis": thesis})
-    return out
 
 
 # ── activity feed ────────────────────────────────────────────────────────────
@@ -1058,92 +975,17 @@ def _books_payload() -> List[Dict[str, Any]]:
 # written into the session log and the /activity page still has to render that
 # history correctly. Deleting a live code path is not a licence to misrender the
 # past, so this map stays even though nothing writes these events any more.
-_EVENT_BOOK_ALIASES = {
-    "extreme_fade_candidates": "extreme_fade",
-    "xs_rebalance": "xs_momentum",
-    "xs_xyz_rebalance": "xs_xyz_equities",
-}
 
-_ACTIVITY_TYPES = ["book", "research", "execute", "close", "scan",
-                   "gate", "error", "heartbeat", "system", "other"]
 
 # Classify at most the newest N events per cache miss. The deque holds up to
 # 250k events; walking all of them for a rare filter would block the event
 # loop for ~0.25s. 20k ≈ a day of activity — plenty for a feed page.
-_ACTIVITY_SCAN_CAP = 20_000
 
 
 # ── flight-log translation: machine reason -> human sentence ────────────────
 # Ordered (regex, template) pairs; the first match wins and interpolates its
 # captured numbers. Vocabulary mined from the real loop log 2026-07-12.
 # Unknown reasons fall back to the raw string — never drop information.
-_REASON_TRANSLATIONS: List[Tuple[re.Pattern, str]] = [
-    (re.compile(r"history_floor_preflight \((\d+)d < (\d+)d"),
-     "too young to trade ({0}d listed, needs {1}d)"),
-    (re.compile(r"liquidity_floor_preflight \(\$([\d.]+)M < \$([\d.]+)M"),
-     "too thin (${0}M daily volume, floor ${1}M)"),
-    (re.compile(r"daily_loss_gate \(PnL \$(-?[\d.]+) <= \$(-?\d+)"),
-     "daily loss floor hit (${0} of ${1} today)"),
-    (re.compile(r"runner_gate_blocked \(needs volume\+breakout.*?score=(\d+)"),
-     "no fresh breakout structure (score {0})"),
-    (re.compile(r"runner_gate_blocked \(late trend-only chase"),
-     "late chase refused — no fresh breakout"),
-    (re.compile(r"notional_room_full \(\$(\d+) >= \$(\d+)"),
-     "exposure cap full (${0} of ${1})"),
-    (re.compile(r"sidestep_bearish_blocked \((\w+): 24h move (-?[\d.]+)%"),
-     "would buy a selloff ({1}% day, no uptrend)"),
-    (re.compile(r"hip3_dex_underfunded \((\w+): \$([\d.]+)\)"),
-     "{0} dex unfunded (${1}) — transfer USDC to trade equities"),
-    (re.compile(r"trend_filter \(long fights the daily (\d+)d-MA downtrend"),
-     "long against the daily downtrend ({0}MA)"),
-    (re.compile(r"sidestep_extension_blocked.*?([\d.+-]+)% >= ([\d.]+)%"),
-     "already extended ({0}% day, ceiling {1}%)"),
-    # services/risk (wave-2, 2026-10-17) replaced the old flat
-    # below_min_tradable_equity ($X < $Y) refusal with a per-book one that
-    # already carries its own plain-English reason (contracts/risk/models.py's
-    # BookFeasibility.reason) — shown as-is rather than re-derived, so this
-    # humanizer never drifts from what the preview on "/" and "/account"
-    # already says about the same book. See services/risk/README.md's
-    # "for the integrator" note.
-    (re.compile(r"book_not_feasible \(([\w_]+) @ \$([\d.]+) equity: (.+)\)"),
-     "{0}: {2}"),
-    (re.compile(r"below_min_order_notional|min_order_notional"),
-     "order below the exchange minimum"),
-    (re.compile(r"short_liquidity"), "volume below the short floor"),
-    (re.compile(r"counter_regime|market_regime"), "against the market regime"),
-    (re.compile(r"cooldown"), "in cooldown after a recent trade"),
-    (re.compile(r"equity_risk.*?\$(\d+).*?\$(\d+)"),
-     "total notional cap (${0} would exceed ${1})"),
-    (re.compile(r"max_concurrent"), "max concurrent positions reached"),
-    (re.compile(r"correlation"), "too many correlated positions"),
-    (re.compile(r"opposite_guard"), "opposite position already held"),
-    (re.compile(r"reentry_cap"), "re-entry cap for this coin today"),
-    (re.compile(r"daily_giveback"), "giveback halt — protecting today's peak"),
-    (re.compile(r"confidence"), "AI confidence below the floor"),
-    # DSL close reasons
-    (re.compile(r"floor_breach"), "profit floor"),
-    (re.compile(r"max_loss"), "stop — max loss"),
-    (re.compile(r"hard_timeout|timeout"), "time exit"),
-    (re.compile(r"stale_flat"), "stale position cut"),
-    (re.compile(r"manual_close"), "closed externally"),
-    (re.compile(r"breakeven"), "breakeven lock"),
-]
-
-
-def humanize_reason(reason: object) -> str:
-    """Flight-log copy: translate a machine gate/close reason into a terse
-    human sentence, interpolating the numbers. Falls back to the raw string."""
-    raw = str(reason or "").strip()
-    if not raw:
-        return ""
-    for pat, tmpl in _REASON_TRANSLATIONS:
-        m = pat.search(raw)
-        if m:
-            try:
-                return tmpl.format(*m.groups())
-            except (IndexError, KeyError):
-                return tmpl
-    return _readable_fallback(raw)
 
 
 # Machine text must never reach a page verbatim. The old fallback returned the
@@ -1151,17 +993,6 @@ def humanize_reason(reason: object) -> str:
 # config key `min_tradable_equity_usd` ended up as headline copy on the
 # dashboard. Untranslated identifiers still have to say something useful, so
 # they are turned into a sentence rather than replaced with "blocked".
-_MACHINE_TAIL = re.compile(r"\s*\([^)]*\)\s*$")
-
-
-def _readable_fallback(raw: str) -> str:
-    text = _MACHINE_TAIL.sub("", raw).strip()          # drop internal detail
-    text = text.split(" — ")[0].strip()
-    if not text:
-        return ""
-    if re.fullmatch(r"[A-Za-z0-9_]+", text):           # a bare identifier
-        text = text.replace("_", " ").strip().lower()
-    return text[:1].upper() + text[1:] if text else ""
 
 
 # ── citation parsing ─────────────────────────────────────────────────────────
@@ -1171,307 +1002,11 @@ def _readable_fallback(raw: str) -> str:
 # in the address bar — operator screenshot 2026-07-13). Parse once here so
 # both /activity and /news render {url, title} objects.
 
-_CITE_URL_RE = re.compile(r"https?://\S+")
-
-
-def _short_url(u: str) -> str:
-    """Compact display text for a titleless citation: host + trimmed path."""
-    m = re.match(r"https?://([^/\s?#]+)([^\s?#]*)", u)
-    if not m:
-        return u[:40]
-    host, path = m.group(1), m.group(2) or ""
-    if len(path) > 25:
-        path = path[:24] + "…"
-    return host + path
-
-
-def _parse_citation(c: object) -> Optional[Dict[str, str]]:
-    """One citation → {url, title} or None. href = the LAST http(s) URL in
-    the string; title = the part before the trailing ' — url' separator, or
-    a shortened URL when there is no real title."""
-    if isinstance(c, dict):
-        url = str(c.get("url") or c.get("link") or "").strip()
-        if not url:
-            return None
-        title = str(c.get("title") or "").strip() or _short_url(url)
-        return {"url": url, "title": title}
-    s = str(c or "").strip()
-    urls = _CITE_URL_RE.findall(s)
-    if not urls:
-        return None
-    url = urls[-1]
-    # strip only the TRAILING " — url" — em-dashes inside the title survive
-    text = re.sub(r"\s+—\s+https?://\S+$", "", s).strip()
-    if not text or _CITE_URL_RE.fullmatch(text):
-        text = _short_url(url)
-    return {"url": url, "title": text}
-
-
-def _parse_citations(raw: object) -> List[Dict[str, str]]:
-    out = []
-    for c in (raw or []):
-        p = _parse_citation(c)
-        if p:
-            out.append(p)
-    return out
-
-
-def _classify_event(e: Dict[str, Any]) -> Dict[str, Any]:
-    """Map one raw session-log event to a typed activity view model. Pure.
-
-    Every model carries a `tier` (the editorial hierarchy the /activity page
-    renders) and — for tier 3 — a `gkey` the client coalesces on:
-
-      tier 1: full card, always — executes, closes, book opens, actionable
-              research verdicts (LONG/SHORT/CLOSE), errors.
-      tier 2: compact one-liner — research PASS, book cycles with signals,
-              loop start/stop, unknown shapes.
-      tier 3: never an individual row — gate skips group by (coin, reason),
-              scans fold into hourly buckets, quiet book cycles per book,
-              heartbeats resolve client-side (changed → line, steady → run).
-    """
-    ev = str(e.get("event") or "?")
-    ts = e.get("ts")
-
-    if ev == "research":
-        verdict = e.get("verdict")
-        return {
-            "type": "research", "ts": ts, "coin": e.get("coin"),
-            "verdict": verdict, "confidence": e.get("confidence"),
-            "reasoning": e.get("reasoning"),
-            "provider": e.get("ai_brain_provider"),
-            "web_search_used": bool(e.get("web_search_used")),
-            "citations": _parse_citations(e.get("web_search_citations")),
-            "news_risk": e.get("news_risk"),
-            "entry_px": e.get("entry_px"), "stop_px": e.get("stop_px"),
-            "tp_px": e.get("tp_px"),
-            "tier": 1 if verdict in ("LONG", "SHORT", "CLOSE") else 2,
-        }
-
-    if ev == "execute":
-        blocked = e.get("blocked_by")
-        if isinstance(blocked, str):
-            blocked = [blocked]
-        detail = e.get("detail")
-        if isinstance(detail, list):
-            detail = " · ".join(str(d) for d in detail)
-        return {
-            "type": "execute", "ts": ts, "coin": e.get("coin"),
-            "side": e.get("side"), "executed": bool(e.get("executed")),
-            "book": e.get("book"), "entry_via": e.get("entry_via"),
-            "ai_verdict": e.get("ai_verdict"),
-            "size_usd": e.get("size_usd"), "entry_px": e.get("entry_px"),
-            "stop_px": e.get("stop_px"), "tp_px": e.get("tp_px"),
-            "gates": [str(b) for b in (blocked or [])],
-            "gates_human": [humanize_reason(b) for b in (blocked or [])],
-            "detail": detail if isinstance(detail, str) else None,
-            # blocked executes sometimes carry the reason in `detail` instead
-            # of blocked_by (runner gate) — translate that path too
-            "detail_human": (humanize_reason(detail)
-                             if isinstance(detail, str) and not e.get("executed") else None),
-            "regime": e.get("regime"),
-            "tier": 1,
-        }
-
-    if ev == "dsl_exit":
-        pnl = e.get("realized_pnl_pct")
-        if pnl is None:
-            pnl = e.get("leveraged_pct")
-        if pnl is None:
-            pnl = e.get("unrealized_pct")
-        return {
-            "type": "close", "ts": ts, "coin": e.get("coin"),
-            "side": e.get("side"), "leverage": e.get("leverage"),
-            "reason": e.get("reason"), "reason_human": humanize_reason(e.get("reason")),
-            "pnl_pct": pnl,
-            "spot_pct": e.get("realized_spot_pct", e.get("unrealized_pct")),
-            "fill_px": e.get("fill_px"), "entry_px": e.get("entry_px"),
-            "executed": bool(e.get("executed")), "source": "dsl",
-            "tier": 1,
-        }
-
-    if ev == "ai_close":
-        return {
-            "type": "close", "ts": ts, "coin": e.get("coin"),
-            "side": e.get("side"), "leverage": None,
-            "reason": e.get("reasoning") or "ai close",
-            "pnl_pct": None, "spot_pct": None,
-            "fill_px": None, "entry_px": None,
-            "executed": bool(e.get("executed")), "source": "ai_close",
-            "tier": 1,
-        }
-
-    if ev == "book_open":
-        extra = {k: v for k, v in e.items()
-                 if k not in ("ts", "event", "book", "coin", "side")}
-        return {"type": "book", "subtype": "open", "ts": ts,
-                "book": e.get("book"), "coin": e.get("coin"),
-                "side": e.get("side"), "extra": extra, "tier": 1}
-
-    book = _EVENT_BOOK_ALIASES.get(ev, ev)
-    if (book in _RENDERABLE_BOOK_NAMES or isinstance(e.get("skipped"), dict)
-            or "candidates" in e or ("signals" in e and "opened" in e)):
-        core = {"ts", "event", "shadow", "signals", "opened", "skipped", "candidates"}
-        extra = {k: v for k, v in e.items() if k not in core}
-        signals = e.get("signals")
-        # A cycle earns a row only when it produced something: signals, opens,
-        # candidates — or a signal-less shape that still carries content
-        # (xs_rebalance's longs/shorts land in extra with signals=None).
-        meaningful = bool((signals or 0) or (e.get("opened") or 0)
-                          or e.get("candidates") or (signals is None and extra))
-        out = {
-            "type": "book", "ts": ts, "book": book,
-            "shadow": e.get("shadow"),
-            "signals": signals, "opened": e.get("opened"),
-            "skipped": e.get("skipped") or {},
-            "candidates": e.get("candidates") or [],
-            "extra": extra,
-            "tier": 2 if meaningful else 3,
-        }
-        if out["tier"] == 3:
-            out["gkey"] = f"quiet|{book}"
-        return out
-
-    if ev == "scan":
-        coins = e.get("coin_scores") or e.get("coins") or []
-        return {"type": "scan", "ts": ts,
-                "triggers": e.get("triggers", e.get("perceptions", 0)),
-                "coins": coins,
-                "tier": 3, "gkey": f"scan|{int((ts or 0) // 3_600_000)}"}
-
-    if ev in ("ta_skip", "entry_preflight"):
-        reason = e.get("reason") or e.get("signal")
-        # Group key normalizes digits away: "runner_gate_blocked (score=57)"
-        # and "(score=61)" are the SAME editorial fact — without this, one
-        # coin's repeated skips shatter into per-score groups.
-        gkey_reason = re.sub(r"[\d.]+", "", str(reason or ""))
-        return {"type": "gate", "ts": ts, "kind": ev, "coin": e.get("coin"),
-                "reason": reason, "human": humanize_reason(reason),
-                "score": e.get("score"), "trigger_score": e.get("trigger_score"),
-                "tier": 3, "gkey": f"gate|{e.get('coin')}|{gkey_reason}"}
-
-    if ev == "error":
-        return {"type": "error", "ts": ts,
-                "scope": e.get("coin") or e.get("scope"),
-                "error": str(e.get("error") or "")[:300], "tier": 1}
-
-    if ev == "loop_heartbeat":
-        # tier 3, no server gkey: the client's state machine renders a line
-        # only when equity moves >$0.05 or the open count changes; unchanged
-        # runs collapse into a "steady" divider.
-        return {"type": "heartbeat", "ts": ts,
-                "equity": e.get("equity"), "daily_pnl": e.get("daily_pnl"),
-                "open_positions": e.get("open_positions"), "tier": 3}
-
-    if ev in ("loop_start", "loop_stop"):
-        # ONE line. The raw event embeds the entire agent config — that dump
-        # must never render inline (operator order 2026-07-12), so only the
-        # three facts that matter survive classification.
-        cfg = e.get("config") or {}
-        fields = {k: v for k, v in {
-            "mode": cfg.get("mode"),
-            "scan_interval": e.get("scan_interval"),
-            "min_score": e.get("min_score"),
-        }.items() if v is not None}
-        return {"type": "system", "ts": ts, "name": ev, "fields": fields,
-                "tier": 2}
-
-    # Unknown shape → graceful key-value rendering, never raw JSON.
-    fields = {k: v for k, v in e.items() if k not in ("ts", "event")}
-    return {"type": "other", "ts": ts, "name": ev, "fields": fields, "tier": 2}
-
 
 # Time-decay coalescing (operator order 2026-07-12): events younger than this
 # window render as INDIVIDUAL slim rows — the constant-flow feel of the old
 # terminal — and only fold into coalesced groups once they age out. The server
 # stamps `fresh` at classification time; the client re-sweeps on its own clock.
-_FRESH_WINDOW_S = 15 * 60
-
-
-def _activity_payload(limit: int = 150, book: str = "", etype: str = "",
-                      since_ts: int = 0,
-                      now_ms: Optional[int] = None) -> Dict[str, Any]:
-    """Newest-first classified events, optionally filtered by book / type.
-
-    `since_ts` > 0 returns only events strictly newer — the incremental-poll
-    path the /activity page uses to PREPEND fresh rows instead of re-rendering
-    the whole stream. Log ts stamps are wall-clock at append time, so once the
-    reversed walk reaches an event at/older than since_ts it stops:
-    incremental polls cost O(new events), not O(window).
-
-    `now_ms` exists for deterministic tests of the fresh boundary.
-    """
-    now = int(now_ms if now_ms is not None else time.time() * 1000)
-    fresh_cutoff = now - _FRESH_WINDOW_S * 1000
-    events = _read_log_lines()
-    if len(events) > _ACTIVITY_SCAN_CAP:
-        events = events[-_ACTIVITY_SCAN_CAP:]
-    out: List[Dict[str, Any]] = []
-    for e in reversed(events):
-        if since_ts and (e.get("ts") or 0) <= since_ts:
-            break
-        c = _classify_event(e)
-        if etype and c.get("type") != etype:
-            continue
-        if book and c.get("book") != book:
-            continue
-        c["fresh"] = (c.get("ts") or 0) >= fresh_cutoff
-        out.append(c)
-        if len(out) >= limit:
-            break
-    return {"events": out,
-            "books": sorted(_RENDERABLE_BOOK_NAMES),
-            "types": _ACTIVITY_TYPES,
-            "fresh_window_s": _FRESH_WINDOW_S}
-
-
-_SESSION_WINDOW_S = 6 * 3600
-
-
-def _session_strip(window_s: int = _SESSION_WINDOW_S) -> Dict[str, Any]:
-    """Rolled-up tape stats for the strip pinned above the /activity stream:
-    what happened in the last N hours, at a glance. Pure log walk, no network."""
-    cutoff = int(time.time() * 1000) - window_s * 1000
-    events = _read_log_lines()
-    if len(events) > _ACTIVITY_SCAN_CAP:
-        events = events[-_ACTIVITY_SCAN_CAP:]
-    scans = triggers = researched = opened = closed = blocks = 0
-    realized = 0.0
-    equity = open_positions = None
-    for e in reversed(events):
-        if (e.get("ts") or 0) < cutoff:
-            break
-        ev = e.get("event")
-        if ev == "scan":
-            scans += 1
-            triggers += int(e.get("triggers") or 0)
-        elif ev == "research":
-            researched += 1
-        elif ev == "execute":
-            if e.get("executed"):
-                opened += 1
-            else:
-                blocks += 1
-        elif ev in ("ta_skip", "entry_preflight"):
-            blocks += 1
-        elif ev == "dsl_exit":
-            closed += 1
-        elif ev == "loop_heartbeat" and equity is None:
-            equity = e.get("equity")
-            open_positions = e.get("open_positions")
-            # EXCHANGE TRUTH for the strip: heartbeat daily PnL (equity vs
-            # start-of-day), never summed DSL close estimates — the tracker's
-            # believed PnL can be wrong on manually-added positions (SKHY
-            # 2026-07-13 showed +6.44% on a -$0.29 realized close; P0 in
-            # ALPHA-QUEUE.md).
-            _dp = float(e.get("daily_pnl", 0) or 0)
-            _sod = (float(equity or 0)) - _dp
-            realized = (_dp / _sod * 100) if _sod > 0 else 0.0
-    return {"window_h": window_s // 3600, "since_ts": cutoff,
-            "scans": scans, "candidates": triggers, "researched": researched,
-            "opened": opened, "closed": closed,
-            "realized_pnl_pct": round(realized, 2), "blocks": blocks,
-            "equity": equity, "open_positions": open_positions}
 
 
 # ── analytics: funnel, book league, funding heat, tapes, coin chart ─────────
@@ -1482,13 +1017,11 @@ def _session_strip(window_s: int = _SESSION_WINDOW_S) -> Dict[str, Any]:
 # further capped by this route's own TTL).
 
 _DAY_MS = 86_400_000
-_FUNDING_OI_LOG = state_file(".data_funding_oi.jsonl")
 
 
 # Reason codes that name something no longer in the system. They are dropped
 # from the funnel rather than translated: there is no discretionary entry path,
 # so "no book claimed this coin" is normal operation, not a refusal.
-_DEAD_SUBSYSTEM_REASONS = ("MAIN_ENGINE_DELETED",)
 
 
 # ── the viewer's own account ─────────────────────────────────────────────────
@@ -1590,473 +1123,14 @@ def _viewer_account_payload(address: str, now: Optional[float] = None) -> Dict[s
     return out
 
 
-def _funnel_payload(window_s: int = 86400, now_ms: Optional[int] = None) -> Dict[str, Any]:
-    """scans -> candidates -> researched -> executed, plus the top-5 humanized
-    reasons trades didn't happen (blocked executes + pre-research skips).
-    Also harvests a recent-coins list for the coin-chart selector — free,
-    it's the same walk. Pure log walk, no network.
-
-    Opens are counted from BOTH paths: the legacy `execute` event
-    (executed=True) and every book's `book_open` event — the two are disjoint
-    (a book trade never emits `execute`). An execute-only count silently
-    zeroed out every book fill."""
-    now = int(now_ms if now_ms is not None else time.time() * 1000)
-    cutoff = now - window_s * 1000
-    events = _read_log_lines()
-    if len(events) > _ACTIVITY_SCAN_CAP:
-        events = events[-_ACTIVITY_SCAN_CAP:]
-
-    scans = candidates = researched = executed = blocked_exec = 0
-    reason_counts: Dict[str, int] = {}
-    coins_seen: Dict[str, int] = {}
-
-    for e in reversed(events):
-        ts = e.get("ts") or 0
-        if ts < cutoff:
-            break
-        ev = e.get("event")
-        if ev == "scan":
-            scans += 1
-            candidates += int(e.get("triggers") or 0)
-        elif ev == "research":
-            researched += 1
-            coin = e.get("coin")
-            if coin and coin not in coins_seen:
-                coins_seen[coin] = ts
-        elif ev == "book_open":
-            executed += 1
-            coin = e.get("coin")
-            if coin and coin not in coins_seen:
-                coins_seen[coin] = ts
-        elif ev == "execute":
-            coin = e.get("coin")
-            if coin and coin not in coins_seen:
-                coins_seen[coin] = ts
-            if e.get("executed"):
-                executed += 1
-                continue
-            blocked_exec += 1
-            blocked = e.get("blocked_by")
-            if isinstance(blocked, str):
-                blocked = [blocked]
-            hits = [humanize_reason(b) for b in (blocked or [])]
-            hits = [h for h in hits if h]
-            if not hits:
-                detail = e.get("detail")
-                if isinstance(detail, list):
-                    detail = " · ".join(str(d) for d in detail)
-                h = humanize_reason(detail)
-                if h:
-                    hits = [h]
-            for h in hits:
-                reason_counts[h] = reason_counts.get(h, 0) + 1
-        elif ev in ("ta_skip", "entry_preflight"):
-            code = str(e.get("reason") or e.get("signal") or "")
-            # A removed subsystem is not a reason a trade did not happen. The
-            # loop stopped emitting these 2026-08-31, but the funnel walks a
-            # 24h window, so historical rows kept "Main engine deleted" at the
-            # top of the list — naming a feature that does not exist and
-            # burying the gates that actually stopped something.
-            if any(dead in code for dead in _DEAD_SUBSYSTEM_REASONS):
-                continue
-            h = humanize_reason(code)
-            if h:
-                reason_counts[h] = reason_counts.get(h, 0) + 1
-
-    top_reasons = sorted(reason_counts.items(), key=lambda kv: -kv[1])[:5]
-    coins = sorted(coins_seen, key=lambda c: -coins_seen[c])[:40]
-    # Four zero bars and "nothing blocked" read exactly like a quiet market,
-    # which is the one thing they must never be confused with: they are also
-    # what a dead trading loop looks like. The age of the last scan is the
-    # difference, and it is free — the walk already has every event.
-    last_scan = _last_event(events, "scan")
-    last_scan_age_s = (int((now - int(last_scan.get("ts") or 0)) / 1000)
-                       if last_scan else None)
-
-    return {
-        "window_s": window_s, "since_ts": cutoff,
-        # Truthful stage names. "researched" implied a research-then-enter
-        # pipeline that no longer exists: discretionary entries were removed
-        # (W-ME1), so an AI pass now only reviews a position that is already
-        # open. Entries come from the books.
-        "funnel": [
-            {"stage": "Scan cycles", "n": scans},
-            {"stage": "Triggers", "n": candidates},
-            {"stage": "Position reviews", "n": researched},
-            {"stage": "Positions opened", "n": executed},
-        ],
-        "blocked_executions": blocked_exec,
-        "top_reasons": [{"reason": r, "n": n} for r, n in top_reasons],
-        "coins": coins,
-        # None = the loop has never scanned in the log we can see.
-        "last_scan_age_s": last_scan_age_s,
-    }
-
-
 # Ripped-out, fully-graded books (operator order 2026-07-17): premium_fade_short
 # (REFUTED f967e6b) and neg_funding_fade (REFUTED 6916b85) no longer render
 # ANYWHERE in the UI. Their ledger .jsonl files stay on disk as the refutation
 # evidence, and pnl_by_book.py keeps their names for historical attribution
 # only — but the league skips them entirely instead of showing a DEAD row.
-_REMOVED_BOOKS = frozenset({"premium_fade_short", "neg_funding_fade",
-                            "whale_flow", "mover_pass", "mover_b15_up",
-                            "majors_swing", "news_catalyst", "young_listings"})
-
-
-def _book_league_payload(now_ms: Optional[int] = None) -> List[Dict[str, Any]]:
-    """Every shadow-ledger book's signal inventory (shadow_ledger.summary —
-    pure local-file read, no network) merged with live/shadow/off status and
-    sizing from the live-books config. A book NOT in the live-books table is
-    OMITTED entirely: nothing grades it any more, the doctrine is that a book
-    either trades or does not exist, and its ledger file is the evidence
-    behind the refutation. Ripped-and-refuted books (_REMOVED_BOOKS) are
-    skipped for the same reason. Full EV grading needs forward candle fetches
-    (scripts/shadow_status.py, too slow for a page load) — this table
-    reports honest signal/resolved/pending counts only."""
-    from pathiel.agents import shadow_ledger
-
-    now = int(now_ms if now_ms is not None else time.time() * 1000)
-    known = {r["name"]: r for r in _books_payload()}
-    rows: List[Dict[str, Any]] = []
-    for stat in shadow_ledger.summary(now):
-        name = stat["book"]
-        if name in _REMOVED_BOOKS:
-            continue
-        info = known.get(name)
-        if not info:
-            # A book with no config block no longer exists. Its ledger stays on
-            # disk as the evidence behind the refutation, but it is not a row:
-            # sixteen dead names above the four that trade is the table's whole
-            # length and none of it is actionable. Filtered HERE rather than in
-            # a template, because this payload has two consumers and fixing one
-            # of them left the other showing every retired book.
-            continue
-        status, size, thesis = info["status"], info["size"], info["thesis"]
-        rows.append({
-            "book": name, "n": stat.get("n", 0),
-            "coins": stat.get("coins", 0),
-            "last_age_h": stat.get("last_age_h"),
-            "gradeable": stat.get("gradeable", 0),
-            "resolved": stat.get("resolved", 0),
-            "pending": stat.get("pending", 0),
-            "status": status, "size": size, "thesis": thesis,
-        })
-    return rows
-
-
-def _funding_heat_payload(now_ms: Optional[int] = None) -> Dict[str, Any]:
-    """Per-coin funding-rate percentile vs its own 30d distribution + 24h OI
-    delta, ranked by how extreme the funding read is (top 10). Reads the
-    data_logger's accrual file directly — the snapshots are already paid
-    for (ZERO added API load, see data_logger.py). Honest 'accruing' state
-    below 20 snapshots rather than fabricated stats."""
-    now = int(now_ms if now_ms is not None else time.time() * 1000)
-    try:
-        with open(_FUNDING_OI_LOG) as fh:
-            lines = [json.loads(ln) for ln in fh if ln.strip()]
-    except Exception:
-        lines = []
-
-    if len(lines) < 20:
-        return {"status": "accruing", "since": (lines[0].get("ts") if lines else None),
-                "count": len(lines)}
-
-    cutoff = now - 30 * _DAY_MS
-    window = [ln for ln in lines if (ln.get("ts") or 0) >= cutoff] or lines
-    latest = window[-1]
-    latest_ts = latest.get("ts", now)
-    latest_by_coin = {r.get("c"): r for r in (latest.get("rows") or []) if r.get("c")}
-
-    hist: Dict[str, List[Tuple[int, float, float]]] = {}
-    for snap in window:
-        ts = snap.get("ts") or 0
-        for row in snap.get("rows") or []:
-            c = row.get("c")
-            if not c:
-                continue
-            try:
-                f = float(row.get("f") or 0.0)
-                oi = float(row.get("oi") or 0.0)
-            except (TypeError, ValueError):
-                continue
-            hist.setdefault(c, []).append((ts, f, oi))
-
-    day_ago = latest_ts - _DAY_MS
-    out: List[Dict[str, Any]] = []
-    for coin, rows in hist.items():
-        cur = latest_by_coin.get(coin)
-        if not cur or len(rows) < 5:
-            continue
-        try:
-            cur_f = float(cur.get("f") or 0.0)
-            oi_now = float(cur.get("oi") or 0.0)
-            px = float(cur.get("px") or 0.0)
-        except (TypeError, ValueError):
-            continue
-        fs = sorted(f for _, f, _ in rows)
-        # Midrank, not "how many readings are <= this one". Hyperliquid funding
-        # sits pinned at its 1.25e-05 baseline for long stretches, so counting
-        # ties as below put EVERY coin at the 100th percentile whenever its
-        # series was flat there — measured 2026-09-01, BTC/ETH/SOL/XRP/TRUMP all
-        # read exactly 100%ile at once, which is noise dressed as a signal.
-        # Splitting ties gives a coin sitting where it usually sits a 50, and the
-        # same five spread to 67/65/78/84/91.
-        below = sum(1 for x in fs if x < cur_f)
-        tied = sum(1 for x in fs if x == cur_f)
-        pctile = round((below + tied / 2) / len(fs) * 100, 1)
-        prior = min(rows, key=lambda r: abs(r[0] - day_ago))
-        oi_chg = round((oi_now / prior[2] - 1) * 100, 2) if prior[2] > 0 else None
-        out.append({"coin": coin, "funding_now": cur_f, "funding_pctile": pctile,
-                    "oi_now": oi_now, "oi_change_24h_pct": oi_chg, "px": px})
-    out.sort(key=lambda r: -abs(r["funding_pctile"] - 50))
-    return {"status": "ok", "count": len(lines), "latest_ts": latest_ts, "rows": out[:10]}
-
-
-def _tapes_payload(now_ms: Optional[int] = None) -> Dict[str, Any]:
-    """Last 24h of news-surge reads, per coin, from the books that can trade
-    today.
-
-    The sources are derived from `_KNOWN_BOOK_NAMES`, never named inline. This
-    payload spent six weeks reading `news_catalyst`, a book demolished
-    2026-07-18 and listed in `_REMOVED_BOOKS` seventy lines above — so the panel
-    rendered "accruing, no reads yet" about a ledger nothing had written since
-    July, while `news_surge_multi` and `news_surge_short` were writing all day.
-    Deriving the list means a book that is removed stops being read the moment
-    it leaves `_BOOKS`, instead of the next time somebody notices.
-
-    A book joins the tape by recording `meta.surge_x`; nothing else has to be
-    registered. Local shadow-ledger reads only, no network.
-
-    The whale tape is gone rather than empty: `whale_flow` was REFUTED and
-    removed 2026-07-22, so its half of the panel could never fill, and the page
-    described a permanently dead lane as "accruing".
-    """
-    from pathiel.agents import shadow_ledger
-
-    now = int(now_ms if now_ms is not None else time.time() * 1000)
-    cutoff = now - _DAY_MS
-
-    news_by_coin: Dict[str, Dict[str, Any]] = {}
-    for book in sorted(_KNOWN_BOOK_NAMES):
-        try:
-            records = shadow_ledger.load(book)
-        except Exception:
-            continue
-        for r in sorted(records, key=lambda r: int(r.get("ts") or 0)):
-            if int(r.get("ts") or 0) < cutoff:
-                continue
-            meta = r.get("meta") or {}
-            coin = r.get("coin")
-            if not coin or "surge_x" not in meta:
-                continue
-            agg = news_by_coin.setdefault(coin, {"points": [], "breaking": False,
-                                                 "books": set()})
-            agg["points"].append(round(float(meta.get("surge_x") or 0.0), 2))
-            agg["books"].add(book)
-            if meta.get("breaking"):
-                agg["breaking"] = True
-
-    # Ranked by the biggest surge seen, NOT by how many times a coin was read.
-    # Read count measures how often the poller looked at a coin, so ranking on
-    # it put SKR (80 reads, every one of them surge 0.0) above coins with a
-    # genuine spike — the panel led with the most-polled coin instead of the
-    # most newsworthy one. Peak surge is the number the tape exists to show, so
-    # it also rides along on the row rather than hiding inside the sparkline.
-    news = sorted(
-        ({"coin": c, "surge_series": v["points"][-20:], "breaking": v["breaking"],
-          "reads": len(v["points"]), "books": sorted(v["books"]),
-          "peak_surge": round(max(v["points"]), 2) if v["points"] else 0.0}
-         for c, v in news_by_coin.items()),
-        key=lambda r: (not r["breaking"], -r["peak_surge"], -r["reads"]))[:15]
-
-    return {"news": {"rows": news, "since": cutoff,
-                     "status": "ok" if news else "quiet"}}
-
-
-def _coin_chart_payload(coin: str, interval: str = "1h") -> Dict[str, Any]:
-    """TradingView-lite candles for one coin with OUR trade markers overlaid
-    (fills, closes, verdicts). One coin at a time, capped at 100 bars —
-    fetch_hl_candles already caches 90s per coin+interval+count; this
-    route's own TTL bounds it further."""
-    from pathiel.client.hl_client import fetch_hl_candles
-
-    coin = (coin or "").strip()
-    if not coin:
-        return {"coin": "", "interval": interval, "candles": [], "markers": [], "status": "no_coin"}
-    try:
-        candles = fetch_hl_candles(coin, interval, 100)
-    except Exception:
-        candles = []
-    if not candles:
-        return {"coin": coin, "interval": interval, "candles": [], "markers": [], "status": "no_data"}
-
-    c_out = [{"t": c.t, "o": c.o, "h": c.h, "l": c.l, "c": c.c, "v": c.v} for c in candles]
-    t0 = candles[0].t
-
-    markers: List[Dict[str, Any]] = []
-    events = _read_log_lines()
-    if len(events) > _ACTIVITY_SCAN_CAP:
-        events = events[-_ACTIVITY_SCAN_CAP:]
-    for e in events:
-        if e.get("coin") != coin:
-            continue
-        ts = e.get("ts") or 0
-        if ts < t0:
-            continue
-        ev = e.get("event")
-        if ev == "execute" and e.get("executed"):
-            markers.append({"t": ts, "kind": "entry", "side": e.get("side"),
-                            "px": e.get("entry_px")})
-        elif ev == "dsl_exit":
-            markers.append({"t": ts, "kind": "close",
-                            "px": e.get("fill_px") or e.get("entry_px"),
-                            "pnl_pct": e.get("realized_pnl_pct")})
-        elif ev == "ai_close":
-            markers.append({"t": ts, "kind": "close", "px": None, "pnl_pct": None})
-        elif ev == "research" and e.get("verdict") in ("LONG", "SHORT", "CLOSE"):
-            markers.append({"t": ts, "kind": "verdict", "verdict": e.get("verdict"),
-                            "confidence": e.get("confidence")})
-
-    return {"coin": coin, "interval": interval, "candles": c_out,
-            "markers": markers, "status": "ok"}
 
 
 # ── news feed ────────────────────────────────────────────────────────────────
-
-
-def _news_payload(limit: int = 50, now_ms: Optional[int] = None) -> Dict[str, Any]:
-    """News-catalyst shadow-ledger reads (newest first, breaking flagged) plus
-    recent research events that carried news context (citations / news_risk).
-
-    Each item carries `fresh` (read within the activity fresh window — drives
-    the WATCHER pane's time-decay flow) and passes through `title_ages_h`
-    (per-headline article age in hours, parallel to `titles`) and `title_urls`
-    (per-headline source link, parallel to `titles`) when the recorder
-    persisted them — older rows recorded before `top3_urls` existed have
-    `title_urls=None` and the UI falls back to plain (unlinked) text for
-    those. `stats` feeds the header strip: reads/breaking since local
-    midnight + the newest read's ts. `now_ms` is for tests."""
-    from pathiel.agents import shadow_ledger
-
-    now = int(now_ms if now_ms is not None else time.time() * 1000)
-    fresh_cutoff = now - _FRESH_WINDOW_S * 1000
-    lt = time.localtime(now / 1000)
-    midnight_ms = int(time.mktime(
-        (lt.tm_year, lt.tm_mon, lt.tm_mday, 0, 0, 0,
-         lt.tm_wday, lt.tm_yday, -1)) * 1000)
-
-    # Sourced from the books that can trade today, never a name written inline.
-    # This read `shadow_ledger.load("news_catalyst")` until 2026-09-01. That book
-    # was demolished 2026-07-18 and sits in _REMOVED_BOOKS, so the whole /news
-    # tab had been serving 46-day-old July rows under a "reads today: 0" header
-    # while news_surge_short and news_surge_multi wrote every day.
-    rows = []
-    for book in sorted(_KNOWN_BOOK_NAMES):
-        try:
-            loaded = shadow_ledger.load(book)
-        except Exception:
-            continue
-        for r in loaded:
-            # A news read is any record carrying news fields. Keying on surge_x
-            # alone dropped rows that recorded headlines without it.
-            meta = r.get("meta") or {}
-            if any(k in meta for k in ("surge_x", "n_recent", "top3_titles")):
-                rows.append({**r, "book": book})
-    rows.sort(key=lambda r: int(r.get("ts") or 0))
-
-    reads_today = breaking_today = 0
-    last_read_ts: Optional[int] = None
-    for r in rows:
-        ts = int(r.get("ts") or 0)
-        if last_read_ts is None or ts > last_read_ts:
-            last_read_ts = ts
-        if ts >= midnight_ms:
-            reads_today += 1
-            if (r.get("meta") or {}).get("breaking"):
-                breaking_today += 1
-
-    def _is_event(meta: Dict[str, Any]) -> bool:
-        """Did this read actually find something?
-
-        A read that saw a coverage spike, or captured headlines, is an event
-        even when `breaking` is False — `breaking` is a threshold on top of the
-        surge, not the whole of it. The page routed on `breaking` alone, so a
-        4.2x surge with headlines was filed under "coverage checked, nothing
-        new" beside the routine polls.
-        """
-        try:
-            surge = float(meta.get("surge_x") or 0.0)
-        except (TypeError, ValueError):
-            surge = 0.0
-        return bool(meta.get("breaking") or (meta.get("top3_titles") or [])
-                    or surge > 1.0)
-
-    items: List[Dict[str, Any]] = []
-    for r in reversed(rows):
-        meta = r.get("meta") or {}
-        ts = r.get("ts")
-        ages = meta.get("top3_ages_h")
-        urls = meta.get("top3_urls")
-        items.append({
-            "ts": ts, "coin": r.get("coin"), "side": r.get("side"),
-            # Which live book saw it — two books now feed this feed, and a row
-            # with no headlines is a different thing depending on which.
-            "book": r.get("book"),
-            "entry_ref_px": r.get("entry_ref_px"),
-            "n_recent": meta.get("n_recent"), "surge_x": meta.get("surge_x"),
-            "breaking": bool(meta.get("breaking")),
-            "titles": meta.get("top3_titles") or [],
-            "title_ages_h": ages if isinstance(ages, list) else None,
-            "title_urls": urls if isinstance(urls, list) else None,
-            "shadow": meta.get("shadow"),
-            "fresh": int(ts or 0) >= fresh_cutoff,
-            "event": _is_event(meta),
-        })
-
-    # Budget events and routine polls separately, then re-merge newest-first.
-    #
-    # A flat `limit` over one chronological list let volume decide what the
-    # operator sees. The books write ~200 routine polls a day against a handful
-    # of catalysts, so the newest 50 rows could hold no event at all: measured
-    # 2026-09-01, 48 of 50 were polls that found nothing and the catalysts pane
-    # rendered empty while real surges sat just below the cut.
-    #
-    # Each pane gets its own floor rather than one shared budget. Quiet reads
-    # still need a floor of their own — the watcher pane is how an operator sees
-    # the poller is alive at all, and a page with an empty watcher looks like a
-    # stopped recorder. They coalesce per coin per hour on the client, so a
-    # short tail is enough to show the heartbeat.
-    quiet_cap = max(10, limit // 4)
-    hits = [i for i in items if i["event"]][:limit]
-    quiet = [i for i in items if not i["event"]][:quiet_cap]
-    items = sorted(hits + quiet, key=lambda i: -(i["ts"] or 0))
-
-    ctx: List[Dict[str, Any]] = []
-    events = _read_log_lines()
-    if len(events) > _ACTIVITY_SCAN_CAP:
-        events = events[-_ACTIVITY_SCAN_CAP:]
-    for e in reversed(events):
-        if e.get("event") != "research":
-            continue
-        cites = e.get("web_search_citations") or []
-        risk = e.get("news_risk")
-        if not cites and (not risk or risk == "none"):
-            continue
-        ctx.append({
-            "ts": e.get("ts"), "coin": e.get("coin"),
-            "verdict": e.get("verdict"), "confidence": e.get("confidence"),
-            "news_risk": risk, "citations": _parse_citations(cites),
-            "reasoning": e.get("reasoning"),
-            "provider": e.get("ai_brain_provider"),
-        })
-        if len(ctx) >= 20:
-            break
-
-    return {"items": items, "research_context": ctx,
-            "stats": {"reads_today": reads_today,
-                      "breaking_today": breaking_today,
-                      "last_read_ts": last_read_ts},
-            "fresh_window_s": _FRESH_WINDOW_S}
 
 
 # ── prediction markets ───────────────────────────────────────────────────────
@@ -2214,11 +1288,7 @@ def _load_template(name: str) -> str:
     return (_TEMPLATE_DIR / name).read_text(encoding="utf-8")
 
 
-_PUBLIC_HTML = _load_template("landing.html")
-_ACTIVITY_HTML = _load_template("activity.html")
-_NEWS_HTML = _load_template("news.html")
-_ANALYTICS_HTML = _load_template("analytics.html")
-_TRENDS_HTML = _load_template("trends.html")
+_PUBLIC_HTML = _load_template("oil_desk.html")
 _ACCOUNT_HTML = _load_template("account.html")
 
 
@@ -2226,12 +1296,17 @@ _ACCOUNT_HTML = _load_template("account.html")
 
 
 def register_routes(app: FastAPI) -> None:
-    """Mount the dashboard pages, JSON APIs, and SSE feed onto an existing
-    FastAPI app. Pages: / (landing), /activity, /news, /analytics, /trends,
-    /account. The former /config and
-    /operator pages were deleted by operator order 2026-07-12 — those paths
-    404 by design; token-gated actions live in server.py's /api/agent + /api/hl
-    endpoints, with the token entered via the landing footer (localStorage).
+    """Mount the dashboard pages and JSON APIs onto an existing FastAPI app.
+    Pages: / (the Desk landing page, parameterized by desk id, default
+    "oil" — docs/overhaul/DESK_UI_2026-10-23.md), /account. /activity,
+    /news, /analytics, /trends and their JSON routes were removed
+    2026-10-23 along with the bot UI they served; /api/dashboard/positions
+    stays (tests/test_account_reads_shared.py exercises it directly as part
+    of the shared-account-read contract, independent of any page). The
+    former /config and /operator pages were deleted by operator order
+    2026-07-12 — those paths 404 by design; token-gated actions live in
+    server.py's /api/agent + /api/hl endpoints, with the token entered via
+    the Desk page's header (localStorage).
 
     /account (wave-2 onboarding, 2026-10-17) is a static shell like every
     other page here: it reads contracts/accounts/models.py's
@@ -2248,33 +1323,11 @@ def register_routes(app: FastAPI) -> None:
 
     @app.get("/", response_class=HTMLResponse)
     async def public_dashboard() -> HTMLResponse:
+        """The Oil Desk — the one screen, per docs/overhaul/OIL_DESK_UI_2026-10-23.md.
+        Shows the onboarding wizard first for a brand-new visitor (client-side,
+        on /api/session's needs_onboarding); the same page becomes the Oil
+        Desk once an account is connected."""
         return HTMLResponse(content=_PUBLIC_HTML, headers=_NO_CACHE_HEADERS)
-
-    @app.get("/activity", response_class=HTMLResponse)
-    async def activity_page() -> HTMLResponse:
-        """Live activity feed — research verdicts, executions with gate
-        results, book events, DSL closes. Filterable by book and event type."""
-        return HTMLResponse(content=_ACTIVITY_HTML, headers=_NO_CACHE_HEADERS)
-
-    @app.get("/news", response_class=HTMLResponse)
-    async def news_page() -> HTMLResponse:
-        """News-catalyst reads (shadow ledger) + research events with news context."""
-        return HTMLResponse(content=_NEWS_HTML, headers=_NO_CACHE_HEADERS)
-
-    @app.get("/trends", response_class=HTMLResponse)
-    async def trends_page() -> HTMLResponse:
-        """Trend analysis: 7d Hyperliquid regime + per-coin trend + next-week
-        forecast. Every number is computed in services/trend_engine; the AI
-        pass is optional and additive."""
-        return HTMLResponse(content=_TRENDS_HTML, headers=_NO_CACHE_HEADERS)
-
-    @app.get("/analytics", response_class=HTMLResponse)
-    async def analytics_page() -> HTMLResponse:
-        """Data product: funnel, book league table, coin chart with our own
-        trade markers, funding/OI heat, whale + news tapes. Everything here
-        is derived from data already collected — read-only, no new network
-        load beyond one coin's candles at a time."""
-        return HTMLResponse(content=_ANALYTICS_HTML, headers=_NO_CACHE_HEADERS)
 
     @app.get("/account", response_class=HTMLResponse)
     async def account_page() -> HTMLResponse:
@@ -2284,83 +1337,6 @@ def register_routes(app: FastAPI) -> None:
         needs_onboarding — there is nothing to manage yet, and "/" is where
         that starts."""
         return HTMLResponse(content=_ACCOUNT_HTML, headers=_NO_CACHE_HEADERS)
-
-    @app.get("/api/dashboard/books")
-    async def dashboard_books() -> JSONResponse:
-        """Live-books table rows: name, live/shadow/off status, size, thesis."""
-        return JSONResponse(await _run_off_loop(_ttl_cached, "books", 30.0, _books_payload))
-
-    @app.get("/api/dashboard/activity")
-    async def dashboard_activity(
-        limit: int = Query(150, ge=1, le=500),
-        book: str = Query("", max_length=64),
-        etype: str = Query("", alias="type", max_length=32),
-        since: int = Query(0, ge=0),
-    ) -> JSONResponse:
-        session = await _run_off_loop(_ttl_cached, "session-strip", 30.0, _session_strip)
-        if since:
-            # Incremental poll: the reversed walk breaks at the first event
-            # <= since, so cost is O(new events). NOT TTL-cached on purpose —
-            # every poll carries a fresh `since`, so caching would only grow
-            # _TTL_CACHE with dead one-shot keys.
-            payload = await _run_off_loop(_activity_payload, limit, book, etype, since)
-        else:
-            # Full-window load: TTL (8s) >= the page's poll interval (8s).
-            payload = await _run_off_loop(
-                _ttl_cached, f"activity:{limit}:{book}:{etype}", 8.0,
-                lambda: _activity_payload(limit, book, etype))
-        return JSONResponse({**payload, "session": session})
-
-    @app.get("/api/dashboard/news")
-    async def dashboard_news(limit: int = Query(50, ge=1, le=200)) -> JSONResponse:
-        # TTL (30s) >= the page's poll interval (30s).
-        return JSONResponse(await _run_off_loop(
-            _ttl_cached, f"news:{limit}", 30.0, lambda: _news_payload(limit)))
-
-    @app.get("/api/dashboard/trends/{lane}")
-    async def dashboard_trends(lane: str) -> JSONResponse:
-        """One trend lane from cache. TTL 15s over a file read is plenty — the
-        file only changes when a refresh job runs."""
-        if lane not in _TREND_LANES:
-            raise HTTPException(status_code=404, detail="unknown lane")
-        return JSONResponse(await _run_off_loop(
-            _ttl_cached, f"trends:{lane}", 15.0, lambda: _trends_payload(lane)))
-
-    @app.post("/api/dashboard/trends/{lane}/refresh",
-              dependencies=[Depends(_require_operator)])
-    async def dashboard_trends_refresh(lane: str) -> JSONResponse:
-        """Recompute one lane now (background job). Operator-gated: an HL scan
-        is ~40 HL info calls and this repo has burned that rate budget before."""
-        if lane not in _TREND_LANES:
-            raise HTTPException(status_code=404, detail="unknown lane")
-        return JSONResponse({"job_id": _start_trend_job("refresh", lane),
-                             "status": "running"})
-
-    @app.post("/api/dashboard/trends/{lane}/ai",
-              dependencies=[Depends(_require_operator)])
-    async def dashboard_trends_ai(
-        lane: str,
-        web_search: bool = Query(False),
-    ) -> JSONResponse:
-        """Run the optional AI pass over the cached lane (background job).
-
-        Operator-gated because it spends a model call. The model only reads the
-        numbers already on the tab — it never produces one."""
-        if lane not in _TREND_LANES:
-            raise HTTPException(status_code=404, detail="unknown lane")
-        return JSONResponse({"job_id": _start_trend_job("ai", lane, web_search=web_search),
-                             "status": "running"})
-
-    @app.get("/api/dashboard/trends/job/result",
-             dependencies=[Depends(_require_operator)])
-    async def dashboard_trends_job(
-        job_id: str = Query(..., min_length=1, max_length=64),
-    ) -> JSONResponse:
-        """Poll a trend refresh/AI job: running | done | error."""
-        job = _analyze_job(job_id)
-        if job is None:
-            raise HTTPException(status_code=404, detail="unknown or expired job")
-        return JSONResponse(job)
 
     @app.get("/api/dashboard/account")
     async def dashboard_account(request: Request) -> JSONResponse:
@@ -2377,92 +1353,25 @@ def register_routes(app: FastAPI) -> None:
                                 status_code=401)
         return JSONResponse(await _run_off_loop(_viewer_account_payload, user.address))
 
-    # ── the house account ────────────────────────────────────────────────────
-    #
-    # Everything from here to book_league describes the DEPLOYMENT's own
-    # trading: its equity, its positions, its P&L, its decision funnel. A
-    # session was never the right gate for these. Any signed-in wallet saw the
-    # operator's $12.94 and read it as their own balance, which is both a
-    # privacy leak and, worse, a number a user will act on.
-    #
-    # Operator role, not merely authenticated. A customer's own account is
-    # /api/dashboard/account above.
-    @app.get("/api/dashboard/summary",
-             dependencies=[Depends(_require_operator_role)])
-    async def dashboard_summary() -> JSONResponse:
-        return JSONResponse(await _run_off_loop(_ttl_cached, "summary", 6.0, _summary_payload))
-
-    @app.get("/api/dashboard/positions",
-             dependencies=[Depends(_require_operator_role)])
+    @app.get("/api/dashboard/positions", dependencies=[Depends(_require_operator_role)])
     async def dashboard_positions() -> JSONResponse:
+        """Open positions + DSL tracker state, operator-gated. No page calls
+        this any more (the Desk page's Wallets section reads
+        /api/accounts/{id}/positions instead) — kept because
+        tests/test_account_reads_shared.py exercises it directly as the
+        second leg of the shared-account-read-cache contract
+        (pathiel.client.account_snapshot), a capability independent of any
+        one page."""
         return JSONResponse(await _run_off_loop(_positions_payload))  # already 5s-cached internally
 
-    @app.get("/api/dashboard/equity-curve",
-             dependencies=[Depends(_require_operator_role)])
-    async def dashboard_equity_curve(range_s: int = Query(86400, ge=60, le=2_592_000)) -> JSONResponse:
-        return JSONResponse(await _run_off_loop(
-            _ttl_cached, f"equity-curve:{range_s}", 65.0,
-            lambda: _equity_curve_payload(range_s)))
-
-    @app.get("/api/dashboard/risk",
-             dependencies=[Depends(_require_operator_role)])
+    @app.get("/api/dashboard/risk", dependencies=[Depends(_require_operator_role)])
     async def dashboard_risk(range_s: int = Query(7_776_000, ge=86_400,
                                                   le=31_536_000)) -> JSONResponse:
-        """Drawdown, fee drag, win rate, and distance to the hard kill.
-
-        Cached for a minute: it walks the whole session log twice and the
-        numbers move on a heartbeat cadence, not a request cadence."""
+        """Drawdown, fee drag, win rate, distance to the hard kill, feed
+        health. Operator-gated; no page renders this any more (it was the
+        old landing page's risk band) — kept because pathiel/metrics.py's
+        /metrics endpoint reads it (CAN_TRADE/DRAWDOWN_PCT/MAX_DRAWDOWN_PCT
+        gauges) and tests/test_risk_panel.py tests its payload shape
+        directly over HTTP, both independent of any page."""
         return JSONResponse(await _run_off_loop(
             _ttl_cached, f"risk:{range_s}", 60.0, lambda: _risk_payload(range_s)))
-
-    @app.get("/api/dashboard/closed-trades",
-             dependencies=[Depends(_require_operator_role)])
-    async def dashboard_closed_trades(limit: int = Query(20, ge=1, le=200)) -> JSONResponse:
-        return JSONResponse(await _run_off_loop(
-            _ttl_cached, f"closed-trades:{limit}", 25.0,
-            lambda: _closed_trades_payload(limit)))
-
-    @app.get("/api/dashboard/funnel",
-             dependencies=[Depends(_require_operator_role)])
-    async def dashboard_funnel(window_s: int = Query(86400, ge=3600, le=2_592_000)) -> JSONResponse:
-        return JSONResponse(await _run_off_loop(
-            _ttl_cached, f"funnel:{window_s}", 30.0, lambda: _funnel_payload(window_s)))
-
-    @app.get("/api/dashboard/book_league",
-             dependencies=[Depends(_require_operator_role)])
-    async def dashboard_book_league() -> JSONResponse:
-        return JSONResponse(await _run_off_loop(
-            _ttl_cached, "book_league", 30.0, _book_league_payload))
-
-    @app.get("/api/dashboard/funding_heat")
-    async def dashboard_funding_heat() -> JSONResponse:
-        return JSONResponse(await _run_off_loop(
-            _ttl_cached, "funding_heat", 60.0, _funding_heat_payload))
-
-    @app.get("/api/dashboard/tapes")
-    async def dashboard_tapes() -> JSONResponse:
-        return JSONResponse(await _run_off_loop(_ttl_cached, "tapes", 30.0, _tapes_payload))
-
-    @app.get("/api/dashboard/coin_chart")
-    async def dashboard_coin_chart(
-        coin: str = Query(..., min_length=1, max_length=24),
-        interval: str = Query("1h", max_length=4),
-    ) -> JSONResponse:
-        # The one handler with a real, unbounded network call in it
-        # (fetch_hl_candles via _coin_chart_payload) — see _run_off_loop's
-        # docstring for the head-of-line-blocking bug this closes.
-        return JSONResponse(await _run_off_loop(
-            _ttl_cached, f"coin_chart:{coin}:{interval}", 60.0,
-            lambda: _coin_chart_payload(coin, interval)))
-
-    @app.get("/api/feed/stream")
-    async def feed_stream() -> StreamingResponse:
-        return StreamingResponse(
-            _tail_log_sse(),
-            media_type="text/event-stream",
-            headers={
-                "Cache-Control": "no-cache",
-                "X-Accel-Buffering": "no",  # disable nginx buffering
-                "Connection": "keep-alive",
-            },
-        )

@@ -1,8 +1,9 @@
 """Fixture-backed stand-in for the real services/strategies router.
 
-Serves pathiel/templates/desks.html + desk.html, pathiel/static/*, and every
-route contracts/strategies/models.py defines at the bottom of that file,
-against FOUR desks:
+Serves pathiel/templates/desk.html (the /desks grid list page, desks.html,
+was removed 2026-10-23 — see docs/overhaul/OIL_DESK_UI_2026-10-23.md),
+pathiel/static/*, and every route contracts/strategies/models.py defines at
+the bottom of that file, against FOUR desks:
 
   oil   real fixtures (contracts/strategies/fixtures/oil_*.json) via the
         pydantic contract models — a fresh, fully-populated desk with a
@@ -439,7 +440,8 @@ def create_app() -> FastAPI:
     history = _seed_history(desks)
     jobs: dict[str, RefreshJob] = {}
 
-    desks_html = (TEMPLATES / "desks.html").read_text(encoding="utf-8")
+    # The /desks grid list page (desks.html) was removed 2026-10-23 (Oil
+    # Desk UI overhaul) — only /desks/{desk_id} (desk.html) survives.
     desk_html = (TEMPLATES / "desk.html").read_text(encoding="utf-8")
 
     app = FastAPI(title="desks-fixture")
@@ -540,11 +542,7 @@ def create_app() -> FastAPI:
                           coin_max_leverage=20.0, targets=body.targets,
                           venue=VenueRules(min_order_notional_usd=10.5), sz_decimals=3)
 
-    @app.get("/desks", response_class=HTMLResponse)
-    async def desks_page() -> HTMLResponse:
-        return HTMLResponse(desks_html)
-
-    @app.get("/desks/{desk_id}", response_class=HTMLResponse)
+    @app.get("/desk/{desk_id}", response_class=HTMLResponse)
     async def desk_page(desk_id: str) -> HTMLResponse:
         return HTMLResponse(desk_html)
 

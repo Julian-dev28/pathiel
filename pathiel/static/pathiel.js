@@ -106,7 +106,7 @@ function matchesPresetDefaults(presetApplied, profile) {
 /** `g` then a key hops tabs, the way a desk application would. Inert while
  *  typing in a field or holding a modifier. */
 (function () {
-  const map = { d: '/', a: '/activity', n: '/news', y: '/analytics', t: '/trends' };
+  const map = { d: '/', t: '/desk/oil', a: '/account' };
   let armed = 0;
   addEventListener('keydown', e => {
     if (e.target.closest('input,textarea,select') || e.metaKey || e.ctrlKey || e.altKey) return;
@@ -366,10 +366,10 @@ const PathielSession = (function () {
 
   /* ── "everywhere else": why trading is off, in dollars ──────────────────
    *
-   * landing.html's onboarding wizard and account.html own this story in
+   * oil_desk.html's onboarding wizard and account.html own this story in
    * full on their own pages, so this banner stays out of their way (it is a
-   * no-op on "/" and "/account") and only speaks up on every OTHER page —
-   * activity, news, analytics, trends, desks — where nothing else would.
+   * no-op on "/" and "/account") and only speaks up on the one other page
+   * that's left — /desks/{id}, the Thesis tab — where nothing else would.
    * Never a silent "nothing happens when you'd expect a trade": the reason
    * and the dollar shortfall come straight off ActiveSummary / DerivedLimits,
    * never invented here.
