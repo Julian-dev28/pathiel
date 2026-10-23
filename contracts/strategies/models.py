@@ -383,11 +383,19 @@ class Thesis(_M):
 #                                           query: leverage (default 20)
 #                                           the 20x line for the desk's current
 #                                           call (services/strategies/call_line.py)
-#   GET  /api/desks/oil/levels          -> candle-derived levels, oil's primary
-#                                           instrument (services/strategies/levels.py)
-#   GET  /api/desks/oil/log             -> {"lines": [...]}  query: n (default 30)
-#                                           tail of the oil-tick loop's progress log
-#   GET  /desks, /desks/{desk_id}       -> HTML pages
+#   GET  /api/desks/{desk_id}/levels     -> candle-derived levels, this desk's
+#                                           primary instrument (services/strategies/levels.py);
+#                                           only "oil" has a live loop today
+#   GET  /api/desks/{desk_id}/log        -> {"lines": [...]}  query: n (default 30)
+#                                           tail of that desk's loop progress log
+#   GET  /api/desks/active              -> {"active_desks": [...], "default_desk"}
+#                                           which desk(s) the dashboard renders
+#                                           (agent config active_desks, default ["oil"])
+#   GET  /desk/{desk_id}                 -> HTML page (singular, distinct from the
+#                                           /api/desks/... collection routes; the
+#                                           /desks grid list page was removed
+#                                           2026-10-23 — the UI only ever links to
+#                                           /desk/oil today)
 
 class TrackRecord(_M):
     n_graded: int = 0
@@ -464,6 +472,12 @@ class DeskBrief(_M):
     # progress instead of a Refresh button that seems to do nothing. Set by
     # services/strategies/api.py; None everywhere else (CLI, MCP).
     refresh_job: Optional["RefreshJob"] = None
+    # services/thesis/render.py::render_markdown(thesis, analytics, "quick")
+    # — the same ~5-line call-first text the MCP desk_brief tool renders in
+    # quick mode. None when there is no thesis yet (nothing to render) or the
+    # render itself failed; set by services/strategies/api.py only, so every
+    # other producer of a DeskBrief (CLI, MCP, tests) leaves it None.
+    quick_markdown: Optional[str] = None
 
 
 class RefreshJob(_M):

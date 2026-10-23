@@ -338,6 +338,33 @@ function paintLeverage(brief, rows, leverage) {
   document.getElementById('lev-verdict').innerHTML =
     `<span class="badge ${VERDICT_CLASS[r.verdict] || ''}">${esc(VERDICT_LABEL[r.verdict] || r.verdict)}</span>`;
   document.getElementById('lev-reason').textContent = reasonForLeverage(brief, leverage);
+  paintCallLine(brief.spec.id, leverage);
+}
+
+/** The same 20x line the Oil Desk page shows (pathiel/agents/bracket.py's
+ *  check_leverage via GET /api/desks/{id}/line), priced off the call's own
+ *  entry/stop/targets rather than this ladder's full-equity simulation.
+ *  The one network call the leverage switch makes — fire-and-forget, never
+ *  blocks the synchronous ladder paint above. */
+async function paintCallLine(deskId, leverage) {
+  const box = document.getElementById('lev-call-line');
+  if (!box) return;
+  try {
+    const r = await fetch(`/api/desks/${encodeURIComponent(deskId)}/line?leverage=${encodeURIComponent(leverage)}`);
+    const line = await r.json();
+    if (!r.ok || (!line.ok && !line.verdict)) {
+      box.hidden = true;
+      return;
+    }
+    box.hidden = false;
+    document.getElementById('lev-call-line-badge').innerHTML =
+      `<span class="badge ${line.ok ? 'b-hold' : 'b-avoid'}">${esc(line.verdict || (line.ok ? 'OK' : 'NOT OK'))}</span>`;
+    const gate = line.r_gate;
+    document.getElementById('lev-call-line-reason').textContent = gate && !gate.ok ? (gate.reason || '') : '';
+  } catch (e) {
+    reportRefreshFailure('call line', e, box);
+    box.hidden = true;
+  }
 }
 
 function renderLeverageCard(brief) {

@@ -14,13 +14,9 @@
   <div class="masthead-inner">
     <a href="/" class="brand">Pathiel</a>
     <nav class="tabs-main">
-      <a href="/" data-nav="/" class="nav-link">Dashboard</a>
-      <a href="/desks" data-nav="/desks" class="nav-link">Desks</a>
-      <a href="/activity" data-nav="/activity" class="nav-link">Activity</a>
-      <a href="/news" data-nav="/news" class="nav-link">News</a>
-      <a href="/analytics" data-nav="/analytics" class="nav-link">Markets</a>
-      <a href="/trends" data-nav="/trends" class="nav-link">Trends</a>
-      <a href="/account" data-nav="/account" class="nav-link nav-active">Account</a>
+      <a href="/" data-nav="/" class="nav-link">Desk</a>
+      <a href="/desk/oil" data-nav="/desk/oil" class="nav-link" id="nav-thesis-link">Thesis</a>
+      <a href="/account" data-nav="/account" class="nav-link">Account</a>
     </nav>
     <div class="masthead-right">
       <!-- services/wallet_ui mounts its connect/account UI here. -->
@@ -129,28 +125,6 @@
     </div>
   </section>
 
-  <section class="section" id="feasibility-section">
-    <div class="section-head">
-      <h2 class="sec-label">Can each book trade?</h2>
-    </div>
-    <div class="scroll-x">
-      <table>
-        <thead>
-          <tr>
-            <th>Book</th>
-            <th>Status</th>
-            <th class="num">Notional</th>
-            <th class="num">Leverage</th>
-            <th class="num">Risk</th>
-            <th>Reason</th>
-          </tr>
-        </thead>
-        <tbody id="feasibility-body">
-          <tr><td colspan="6" class="mut">Loading&hellip;</td></tr>
-        </tbody>
-      </table>
-    </div>
-  </section>
 
 </div>
 
@@ -206,23 +180,6 @@ function renderPresetSeg() {
   note.hidden = !isCustom;
 }
 
-function renderFeasibilityTable(books) {
-  const body = document.getElementById('feasibility-body');
-  if (!books || !books.length) {
-    body.innerHTML = '<tr><td colspan="6" class="mut">No books configured.</td></tr>';
-    return;
-  }
-  body.innerHTML = books.map(b => `
-    <tr>
-      <td class="mono">${esc(b.book)}</td>
-      <td><span class="badge ${b.can_trade ? 'b-live' : 'b-off'}">${b.can_trade ? 'can trade' : 'blocked'}</span></td>
-      <td class="num mono">${b.notional_usd != null ? fmtUsd(b.notional_usd) : '—'}</td>
-      <td class="num mono">${b.leverage != null ? b.leverage + 'x' : '—'}</td>
-      <td class="num mono">${b.risk_usd != null ? fmtUsd(b.risk_usd) : '—'}</td>
-      <td class="mut">${esc(b.reason || '')}</td>
-    </tr>`).join('');
-}
-
 function applyLimits(d) {
   document.getElementById('risk-headline').textContent = d.headline || '—';
   // Plainly, right under the headline: the exchange-minimum bump-risk note
@@ -233,7 +190,6 @@ function applyLimits(d) {
   document.getElementById('risk-risk-usd').textContent = fmtUsd(d.risk_per_trade_usd);
   document.getElementById('risk-daily-pause').textContent = fmtUsd(d.daily_loss_limit_usd);
   document.getElementById('risk-max-positions').textContent = d.max_open_positions ?? '—';
-  renderFeasibilityTable(d.books);
   const low = document.getElementById('risk-low-equity');
   // Never silent zeros: a non-tradable account always says the exact dollar
   // amount that would fix it, built from min_equity_to_trade_usd.

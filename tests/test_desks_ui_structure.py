@@ -45,7 +45,9 @@ _desks_fixture_app = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_desks_fixture_app)
 create_app = _desks_fixture_app.create_app
 
-DESKS_HTML = (TEMPLATES / "desks.html").read_text(encoding="utf-8")
+# The /desks grid list page (desks.html) was removed 2026-10-23 (Desk UI
+# overhaul, docs/overhaul/DESK_UI_2026-10-23.md) — only desk.html (the
+# Thesis tab, reached at /desk/{id}, default oil) survives.
 DESK_HTML = (TEMPLATES / "desk.html").read_text(encoding="utf-8")
 
 
@@ -55,38 +57,15 @@ def _ids(html: str) -> set[str]:
 
 # ── 1. HTML structure ────────────────────────────────────────────────────────
 
-def test_desks_html_has_no_duplicate_ids():
-    found = re.findall(r'id="([^"]+)"', DESKS_HTML)
-    dupes = {i for i in found if found.count(i) > 1}
-    assert not dupes, dupes
-
-
 def test_desk_html_has_no_duplicate_ids():
     found = re.findall(r'id="([^"]+)"', DESK_HTML)
     dupes = {i for i in found if found.count(i) > 1}
     assert not dupes, dupes
 
 
-def test_desks_grid_required_ids():
-    required = {
-        "desks-loading", "desks-empty", "desks-error", "desks-retry", "desks-grid",
-        "discreet-toggle", "status-pill", "wallet-connect-root",
-    }
-    missing = required - _ids(DESKS_HTML)
-    assert not missing, missing
-
-
-def test_desks_grid_links_shared_assets_and_own_css_js():
-    # desks.css/js may carry a ?v= cache-buster (see pathiel/server.py
-    # _RevalidatedStatic for why one was needed once), so match the prefix.
-    assert '"/static/pathiel.css"' in DESKS_HTML
-    assert '"/static/desks.css' in DESKS_HTML
-    assert '"/static/pathiel.js"' in DESKS_HTML
-    assert '"/static/desks.js' in DESKS_HTML
-
-
-def test_desks_grid_has_desks_nav_link():
-    assert re.search(r'<a href="/desks"[^>]*class="nav-link[^"]*">\s*Desks\s*</a>', DESKS_HTML)
+def test_desk_page_has_desk_and_thesis_nav_links():
+    assert re.search(r'<a href="/"[^>]*class="nav-link[^"]*"[^>]*>\s*Desk\s*</a>', DESK_HTML)
+    assert re.search(r'<a href="/desk/oil"[^>]*class="nav-link[^"]*"[^>]*>\s*Thesis\s*</a>', DESK_HTML)
 
 
 def test_desk_page_required_ids_call_card():
@@ -180,7 +159,6 @@ def test_one_liner_input_caps_at_160_matching_the_contract():
 
 def test_neither_template_uses_a_cdn():
     for banned in ("unpkg.com", "fonts.googleapis", "fonts.gstatic", "https://cdn"):
-        assert banned not in DESKS_HTML, banned
         assert banned not in DESK_HTML, banned
 
 
@@ -190,26 +168,24 @@ def test_neither_template_defines_tailwind_shaped_classes(tmp_path):
     (test_dashboard_pages.py::test_v4_compiled_css_replaces_tailwind_runtime,
     test_trend_engine.py::test_css_build_is_current) assert the committed
     app.css is byte-exact with what that scanner emits for ALL templates,
-    these two included now that they exist. Reproduce its own scan here so a
-    future edit to these templates fails fast, in this file, with a clear
-    reason, instead of as a confusing unrelated-looking failure over in
-    someone else's test file."""
+    desk.html included. Reproduce its own scan here so a future edit to this
+    template fails fast, in this file, with a clear reason, instead of as a
+    confusing unrelated-looking failure over in someone else's test file."""
     sys.path.insert(0, str(ROOT / "scripts"))
     import build_static_css as gen
 
     unknown = []
-    for html in (DESKS_HTML, DESK_HTML):
-        for m in re.findall(r'class="([^"]+)"', html):
-            for tok in m.split():
-                if gen.rule_for(tok) is None and gen.UTILITY_SHAPE.match(tok):
-                    unknown.append(tok)
+    for m in re.findall(r'class="([^"]+)"', DESK_HTML):
+        for tok in m.split():
+            if gen.rule_for(tok) is None and gen.UTILITY_SHAPE.match(tok):
+                unknown.append(tok)
     assert not unknown, f"utility-shaped class with no mapping: {unknown}"
 
 
 def test_app_css_is_unaffected_by_the_new_templates():
     """The stronger, end-to-end version of the check above: actually run the
-    generator against the real templates directory (desks.html/desk.html
-    included) and diff against the committed file byte for byte."""
+    generator against the real templates directory (desk.html included) and
+    diff against the committed file byte for byte."""
     sys.path.insert(0, str(ROOT / "scripts"))
     import build_static_css as gen
 
@@ -370,7 +346,7 @@ def test_track_record_by_author_has_both_machine_and_user_columns_for_btc(client
 
 
 def test_desk_pages_render_and_are_self_contained(client):
-    for path in ("/desks", "/desks/oil", "/desks/btc", "/desks/ai", "/desks/gas", "/desks/err500"):
+    for path in ("/desk/oil", "/desk/btc", "/desk/ai", "/desk/gas", "/desk/err500"):
         r = client.get(path)
         assert r.status_code == 200, path
         for banned in ("unpkg.com", "fonts.googleapis", "fonts.gstatic", "https://cdn"):

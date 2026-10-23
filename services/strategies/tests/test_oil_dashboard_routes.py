@@ -1,7 +1,9 @@
-"""E2E tests for the three Oil Desk dashboard routes added to
-services/strategies/api.py: GET /api/desks/{id}/line, GET /api/desks/oil/levels,
-GET /api/desks/oil/log. Every other /api/desks/* route is covered by
-test_api.py; this file is scoped to the three new ones."""
+"""E2E tests for the Desk dashboard routes added to services/strategies/api.py:
+GET /api/desks/active, GET /api/desks/{id}/line, GET /api/desks/{id}/levels,
+GET /api/desks/{id}/log. Every other /api/desks/* route is covered by
+test_api.py; this file is scoped to these new ones, mostly exercised against
+the "oil" desk id (today's only active one) plus a couple of genericity
+checks against another desk id."""
 from __future__ import annotations
 
 import pytest
@@ -125,3 +127,89 @@ def test_oil_log_route_respects_n(client, monkeypatch, tmp_path):
     monkeypatch.setenv("PATHIEL_OIL_LOG", str(p))
     r = client.get("/api/desks/oil/log", params={"n": 2})
     assert r.json()["lines"] == ["OIL-TICK line 3", "OIL-TICK line 4"]
+
+
+# ── GET /api/desks/{desk_id} quick_markdown ──────────────────────────────────
+
+def test_desk_brief_carries_quick_markdown_once_there_is_a_thesis(client):
+    journal.save_thesis(make_thesis(desk_id="oil", entry_px=107.16, stop_px=106.70, targets=[108.45]))
+    r = client.get("/api/desks/oil")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["quick_markdown"] is not None
+    assert "test thesis" in body["quick_markdown"]
+    assert "Decision:" in body["quick_markdown"]
+
+
+def test_desk_brief_quick_markdown_is_none_with_no_thesis(client):
+    r = client.get("/api/desks/oil")
+    assert r.status_code == 200
+    assert r.json()["quick_markdown"] is None
+
+
+# ── genericity: /levels and /log are desk_id-parameterized, not oil-only ────
+
+def test_levels_route_works_for_a_non_oil_desk_id(client, monkeypatch):
+    import services.strategies.api as api_mod
+
+    def fake_summarize_coin(coin):
+        assert coin == "BTC"
+        return {"coin": coin, "mid": 90000.0}
+
+    monkeypatch.setattr(api_mod.levels, "summarize_coin", fake_summarize_coin)
+    r = client.get("/api/desks/btc/levels")
+    assert r.status_code == 200 and r.json()["coin"] == "BTC"
+
+
+def test_levels_route_404s_for_an_unknown_desk(client):
+    r = client.get("/api/desks/not-a-real-desk/levels")
+    assert r.status_code == 404
+
+
+def test_log_route_resolves_the_desk_specific_env_var(client, monkeypatch, tmp_path):
+    p = tmp_path / "btc.log"
+    p.write_text("BTC-TICK one\n")
+    monkeypatch.setenv("PATHIEL_BTC_LOG", str(p))
+    r = client.get("/api/desks/btc/log")
+    assert r.status_code == 200 and r.json()["lines"] == ["BTC-TICK one"]
+
+
+def test_log_route_404s_for_an_unknown_desk(client):
+    r = client.get("/api/desks/not-a-real-desk/log")
+    assert r.status_code == 404
+
+
+# ── GET /api/desks/active ────────────────────────────────────────────────────
+
+def test_active_desks_defaults_to_oil_with_no_config(client, monkeypatch):
+    from pathiel.agents import config_store
+    monkeypatch.setattr(config_store, "read_agent_config", lambda: {})
+    r = client.get("/api/desks/active")
+    assert r.status_code == 200
+    assert r.json() == {"active_desks": ["oil"], "default_desk": "oil"}
+
+
+def test_active_desks_reads_the_configured_list(client, monkeypatch):
+    from pathiel.agents import config_store
+    monkeypatch.setattr(config_store, "read_agent_config", lambda: {"active_desks": ["btc", "oil"]})
+    r = client.get("/api/desks/active")
+    assert r.json() == {"active_desks": ["btc", "oil"], "default_desk": "btc"}
+
+
+def test_active_desks_drops_unknown_ids_and_falls_back_to_oil(client, monkeypatch):
+    from pathiel.agents import config_store
+    monkeypatch.setattr(config_store, "read_agent_config", lambda: {"active_desks": ["not-a-real-desk"]})
+    r = client.get("/api/desks/active")
+    assert r.json() == {"active_desks": ["oil"], "default_desk": "oil"}
+
+
+def test_active_desks_degrades_plainly_on_a_config_read_failure(client, monkeypatch):
+    from pathiel.agents import config_store
+
+    def boom():
+        raise RuntimeError("config file corrupt")
+
+    monkeypatch.setattr(config_store, "read_agent_config", boom)
+    r = client.get("/api/desks/active")
+    assert r.status_code == 200
+    assert r.json() == {"active_desks": ["oil"], "default_desk": "oil"}
