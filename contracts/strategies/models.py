@@ -544,6 +544,10 @@ class DeskBrief(_M):
     # render itself failed; set by services/strategies/api.py only, so every
     # other producer of a DeskBrief (CLI, MCP, tests) leaves it None.
     quick_markdown: Optional[str] = None
+    # services/thesis/render.py::quick_fields(thesis): the same content as
+    # quick_markdown, as fields, for the Desk page's call card (2026-10-24).
+    # Additive, so no version bump: every consumer tolerates None.
+    quick_fields: Optional[dict] = None
 
 
 class RefreshJob(_M):

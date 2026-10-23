@@ -8,8 +8,4 @@ button{background:transparent;cursor:pointer;text-transform:none;-webkit-appeara
 table{border-collapse:collapse;border-color:inherit;text-indent:0}
 a{color:inherit;text-decoration:inherit}
 canvas,svg{display:block}
-.flex{display:flex}
-.gap-2{gap:.5rem}
-.mb-2{margin-bottom:.5rem}
-.ml-auto{margin-left:auto}
-.mt-3{margin-top:.75rem}
+

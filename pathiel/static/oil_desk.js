@@ -66,16 +66,12 @@ async function loadCall() {
     const deskName = (brief.spec && brief.spec.name) || activeDesk;
     const titleEl = document.getElementById('desk-page-title');
     if (titleEl) titleEl.textContent = deskName;
-    if (brief.quick_markdown) {
-      document.getElementById('call-markdown').textContent = brief.quick_markdown;
-    } else {
-      document.getElementById('call-markdown').textContent =
-        `No call yet on the ${deskName} desk. Its loop writes one on its next tick.`;
-    }
+    renderCallCard(brief, deskName);
     show('call-card', true);
-    const stale = (brief.stale || []).length;
-    document.getElementById('call-stale-note').textContent =
-      stale ? `stale: ${brief.stale.join(', ')}` : '';
+    // The stale note is for the parts of the brief that are older than their
+    // TTL; an intel source that failed is noted as such, not as "stale: ...".
+    const stale = (brief.stale || []).map(s => s.replace(/^intel: (\d+) source\(s\) failed this refresh.*$/, 'intel: $1 source(s) down'));
+    document.getElementById('call-stale-note').textContent = stale.join(' · ');
     renderTrackRecord(brief.track_record);
     renderIntel(brief);
   } catch (e) {
@@ -89,6 +85,44 @@ async function loadCall() {
 function fmtR(entries) {
   if (!entries || !entries.length) return '—';
   return entries.map(t => `${Number(t.r_multiple).toFixed(2)}R`).join(', ');
+}
+
+const DECISION_CLASS = { HOLD: 'b-hold', DIP: 'b-dip-only', 'DIP_ONLY': 'b-dip-only', WAIT: 'b-flat',
+                         WATCH: 'b-flat', AVOID: 'b-avoid', 'INTRADAY_ONLY': 'b-intraday-only' };
+
+/** The call as a card: sentence, side and decision badges, a key/value row,
+ *  and the invalidation. Falls back to the quick text when a brief carries
+ *  no structured fields (an old server, or no thesis yet). */
+function renderCallCard(brief, deskName) {
+  const f = brief.quick_fields;
+  const structured = document.getElementById('call-meta');
+  const pre = document.getElementById('call-markdown');
+  const set = (id, text) => { document.getElementById(id).textContent = text; };
+  if (!f) {
+    structured.hidden = true;
+    document.getElementById('call-sentence').hidden = true;
+    document.querySelector('#call-card .call-top').hidden = true;
+    document.querySelector('#call-card .call-invalidation').hidden = true;
+    pre.hidden = false;
+    pre.textContent = brief.quick_markdown || `No call yet on the ${deskName} desk. Its loop writes one on its next tick.`;
+    return;
+  }
+  pre.hidden = true;
+  structured.hidden = false;
+  document.getElementById('call-sentence').hidden = false;
+  document.querySelector('#call-card .call-top').hidden = false;
+  document.querySelector('#call-card .call-invalidation').hidden = false;
+  set('call-sentence', f.call || '');
+  document.getElementById('call-side-badge').innerHTML =
+    f.side ? `<span class="badge ${SIDE_CLASS[f.side] || 'b-flat'}">${esc(f.side)}</span>` : '';
+  document.getElementById('call-decision-badge').innerHTML =
+    f.decision ? `<span class="badge ${DECISION_CLASS[f.decision] || 'b-flat'}">${esc(f.decision)}</span>` : '';
+  set('call-instrument', f.instrument || '');
+  set('call-leverage', f.leverage_text || '—');
+  set('call-pays', f.pays ? `${Number(f.pays.r).toFixed(1)}R to ${f.pays.target}` : '—');
+  set('call-risk', f.biggest_risk ? f.biggest_risk.text : 'none named');
+  set('call-catalyst', f.next_catalyst ? `${f.next_catalyst.title} · ${fmtCountdown(f.next_catalyst.at)}` : 'none scheduled');
+  set('call-out-if', f.out_if || '—');
 }
 
 let currentLeverage = DEFAULT_LEVERAGE;
@@ -119,17 +153,24 @@ async function loadLine() {
       return;
     }
     show('line-empty', false); show('line-card', true);
+    const lev = Number(line.leverage || currentLeverage);
+    document.getElementById('line-liq-label').textContent = `Liquidation at ${lev}x`;
     document.getElementById('line-liq-px').textContent = fmtPrice(line.liq_px);
     document.getElementById('line-stop-frac').textContent = pctUnsigned(line.stop_frac_of_liq);
     document.getElementById('line-entry').textContent = fmtPrice(line.entry_px);
     document.getElementById('line-stop').textContent = fmtPrice(line.stop_px);
     document.getElementById('line-r-targets').textContent = fmtR(line.r_to_targets);
+    // The verdict in words a trader reads at a glance: "20x OK" from the
+    // server means the stop fires well before the exchange would liquidate.
     const badgeClass = line.ok ? 'b-hold' : 'b-avoid';
-    document.getElementById('line-verdict-badge').innerHTML =
-      `<span class="badge ${badgeClass}">${esc(line.verdict || (line.ok ? 'OK' : 'NOT OK'))}</span>`;
+    const badgeText = line.ok ? `Stop clears ${lev}x liquidation` : `Stop too close for ${lev}x`;
+    document.getElementById('line-verdict-badge').innerHTML = `<span class="badge ${badgeClass}">${esc(badgeText)}</span>`;
     const gate = line.r_gate;
-    document.getElementById('line-reason').textContent = gate && !gate.ok
-      ? (gate.reason || '') : '';
+    const explain = (line.liq_px != null && line.stop_frac_of_liq != null)
+      ? `At ${lev}x the exchange liquidates at ${fmtPrice(line.liq_px)}; the stop at ${fmtPrice(line.stop_px)} uses ${pctUnsigned(line.stop_frac_of_liq)} of that distance (limit 50%).`
+      : '';
+    document.getElementById('line-reason').textContent =
+      [explain, gate && !gate.ok ? (gate.reason || '') : ''].filter(Boolean).join(' ');
   } catch (e) {
     show('line-card', false); show('line-empty', true);
     document.getElementById('line-empty-detail').textContent = 'Could not load the leverage line: ' + e.message;
@@ -347,69 +388,9 @@ function renderTrackRecord(tr) {
     <div class="track-col"><div class="sec-label">Mean Brier</div><div class="kv">${tr.mean_brier != null ? Number(tr.mean_brier).toFixed(3) : '—'}</div></div>`;
 }
 
-// ── STOP TRADING (old auto-trader kill switch) ───────────────────────────────
-
-function wireStopTrading() {
-  const btn = document.getElementById('stop-trading-btn');
-  const out = document.getElementById('stop-trading-status');
-  if (!btn) return;
-  let armed = false;
-
-  btn.addEventListener('click', async () => {
-    const token = localStorage.getItem('pathiel-op-token');
-    if (!token) {
-      out.textContent = 'set an operator token first (the button in the header).';
-      return;
-    }
-    if (!armed) {
-      armed = true;
-      btn.textContent = 'Confirm';
-      out.textContent = 'sets the old bot’s mode to OFF. Does not stop the oil-tick loop or your own trades.';
-      setTimeout(() => {
-        if (!armed) return;
-        armed = false; btn.textContent = 'Turn off old auto-trader'; out.textContent = '';
-      }, 8000);
-      return;
-    }
-    armed = false; btn.disabled = true; btn.textContent = 'stopping…';
-    try {
-      const r = await fetch('/api/agent/config', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Operator-Token': token },
-        body: JSON.stringify({ mode: 'OFF' }),
-      });
-      out.textContent = r.ok ? 'old auto-trader mode set to OFF.' : ('failed: http ' + r.status);
-    } catch (e) {
-      out.textContent = 'failed: ' + String(e);
-    }
-    btn.disabled = false; btn.textContent = 'Turn off old auto-trader';
-  });
-}
-
-// ── operator token popover (same localStorage key as ever) ──────────────────
-
-function wireOperatorToken() {
-  const btn = document.getElementById('op-token-btn');
-  const pop = document.getElementById('token-pop');
-  const input = document.getElementById('token-input');
-  if (!btn || !pop) return;
-  const sync = () => {
-    btn.textContent = localStorage.getItem('pathiel-op-token') ? 'Clear token' : 'Operator token';
-  };
-  sync();
-  pop.addEventListener('toggle', e => {
-    if (e.newState === 'open') { input.value = localStorage.getItem('pathiel-op-token') || ''; input.focus(); }
-  });
-  document.getElementById('token-save').addEventListener('click', () => {
-    const t = input.value.trim();
-    if (t) localStorage.setItem('pathiel-op-token', t);
-    sync(); pop.hidePopover();
-  });
-  document.getElementById('token-clear').addEventListener('click', () => {
-    localStorage.removeItem('pathiel-op-token');
-    input.value = ''; sync(); pop.hidePopover();
-  });
-}
+// The old auto-trader kill switch and the operator-token popover left with
+// the retired bot (2026-10-24): the page has no token-gated action any more,
+// and local reads need no token (services/auth/integration.is_local_mode).
 
 // ── the Desk page itself ─────────────────────────────────────────────────────
 
@@ -633,5 +614,3 @@ async function startOilDesk() {
 })();
 
 renderLevSeg();
-wireStopTrading();
-wireOperatorToken();
