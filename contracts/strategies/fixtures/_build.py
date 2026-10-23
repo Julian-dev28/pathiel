@@ -4,11 +4,11 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from contracts.strategies.models import (
-    Call, CandleBar, Catalyst, ConditionalStats, DeskAnalytics, DeskSpec, ForwardStats, Headline,
-    InstrumentSnapshot, Instrument, InstrumentStructure, IntelPacket, LadderRung, Lesson,
-    LeverageView, MarketOdds, PairSnapshot, PairSpec, PayloadRef, Point, PolicyItem,
-    PositioningItem, PriceRange, Quantiles, Scenario, SourceRef, Thesis, TokenBudget, Usage,
-    AccountSnapshot,
+    Call, CandleBar, Catalyst, ConditionalStats, DataPoint, DeskAnalytics, DeskSpec,
+    ForwardStats, Headline, InstrumentSnapshot, Instrument, InstrumentStructure, IntelPacket,
+    LadderRung, Lesson, LeverageView, MarketOdds, PairSnapshot, PairSpec, PayloadRef, Point,
+    PolicyItem, PositioningItem, PriceRange, Quantiles, Scenario, SourceRef, Thesis,
+    TokenBudget, Usage, AccountSnapshot,
 )
 
 HERE = Path(__file__).parent
@@ -128,6 +128,14 @@ intel = IntelPacket(
     positioning=[PositioningItem(id="cot1", source="cftc_cot", label="WTI non-commercial net long",
                                  value=99060, change=-10403,
                                  as_of=datetime(2026, 10, 6, tzinfo=timezone.utc))],
+    datapoints=[
+        DataPoint(id="dp1", source="eia", label="EIA weekly crude stocks change",
+                  value=-8.6, prior=-2.1, change=-8.6, unit="mm_bbl", as_of=T0,
+                  note="surprise -6.9mm bbl vs 4wk avg draw of -1.7mm bbl", relevance=0.9),
+        DataPoint(id="dp2", source="venue_hl", label="Brent funding rate (hourly)",
+                  value=-2.5462e-06, prior=1.1e-06, change=-3.6462e-06, unit="rate_per_hr",
+                  as_of=T0, note="pct30d=0.41 (not crowded)", relevance=0.6),
+    ],
     token_estimate=900,
 )
 

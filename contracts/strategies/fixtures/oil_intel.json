@@ -1,5 +1,5 @@
 {
-  "contract_version": "1.1.0",
+  "contract_version": "1.2.0",
   "desk_id": "oil",
   "as_of": "2026-10-17T02:10:00Z",
   "headlines": [
@@ -94,6 +94,32 @@
       "value": 99060.0,
       "change": -10403.0,
       "as_of": "2026-10-06T00:00:00Z"
+    }
+  ],
+  "datapoints": [
+    {
+      "id": "dp1",
+      "source": "eia",
+      "label": "EIA weekly crude stocks change",
+      "value": -8.6,
+      "prior": -2.1,
+      "change": -8.6,
+      "unit": "mm_bbl",
+      "as_of": "2026-10-17T02:10:00Z",
+      "note": "surprise -6.9mm bbl vs 4wk avg draw of -1.7mm bbl",
+      "relevance": 0.9
+    },
+    {
+      "id": "dp2",
+      "source": "venue_hl",
+      "label": "Brent funding rate (hourly)",
+      "value": -2.5462e-6,
+      "prior": 1.1e-6,
+      "change": -3.6462e-6,
+      "unit": "rate_per_hr",
+      "as_of": "2026-10-17T02:10:00Z",
+      "note": "pct30d=0.41 (not crowded)",
+      "relevance": 0.6
     }
   ],
   "token_estimate": 900,
