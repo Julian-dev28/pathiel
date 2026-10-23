@@ -55,9 +55,11 @@ agent key places trades and can never withdraw.
   (naming the exact risk and mitigation) whenever `HYPERLIQUID_MASTER_PRIVATE_KEY`
   is present.
 
-## Not mounted here
+## Mounted in pathiel/server.py
 
-`pathiel/server.py` is integrator-only this wave. Mount with:
+`pathiel/server.py` mounts the router (`app.include_router(_accounts_router)`),
+so every `/api/accounts/*` and `/api/session` route above is live on the
+dashboard server. Another integrator mounts it the same way:
 
 ```python
 from services.accounts.api import router as _accounts_router

@@ -13,7 +13,7 @@ what a client model reads first):
 Headless oil desk (2026-10-23): the autonomous bot's brain path (scan /
 research / submit_verdict / execute) is retired. Claude places trades through
 place_bracket / bracket_sweep; the operator trades his own wallet by hand from
-Claude's thesis. See .claude/skills/oil-tick/SKILL.md.
+Claude's thesis. See .claude/skills/desk-tick/SKILL.md.
 
 Transport (run()): the main thread reads stdin; every tools/call runs on a
 worker thread with a deadline, so a slow call never blocks the others and

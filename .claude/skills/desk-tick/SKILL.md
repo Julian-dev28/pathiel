@@ -41,13 +41,12 @@ or a script, never from mental arithmetic.
    1h candle, 8h/24h/48h range, ATR14, 15m micro range.
    `python3 scripts/oil_levels.py --check ENTRY STOP TP --lev 20` judges a
    level: the R gate and the 20x line.
-4. **Julien's own wallet** (oil tick only, read only):
-   `python3 scripts/watch_wallet.py 0x8debbedbdc603769549a6277fed38dae65185019`.
-   If `any_naked` is true, tell him once per position, then only if the
-   liquidation distance shrinks under 1.5%.
-5. **Account slot.** Step 0 already answered it: a free slot or ours.
-   (`place_bracket` refuses a taken slot on its own as well.)
-6. **Decide.** Exactly one of:
+4. **Account slot.** Step 0 already answered it: a free slot or ours.
+   (`place_bracket` refuses a taken slot on its own as well.) The only
+   wallet this loop tracks is pathiel's own,
+   `0x2c2e4efF574B3Fd9879AdeF9c5CAC6fD7C916985` (operator, 2026-10-24:
+   his hand-traded wallet is no longer watched).
+5. **Decide.** Exactly one of:
    - **In a position on COIN:** HOLD. `close_position` only if the thesis
      invalidation triggered on a CLOSED hourly candle, or a headline from
      the brief's `what_changes_my_mind` landed. After any close, sweep again.
@@ -62,7 +61,7 @@ or a script, never from mental arithmetic.
      next structure, `--check` must say ok. `place_bracket {coin, entry_px,
      stop_px, tp_px}` with `entry_px` set (resting limit). Let the tool
      size it. No setup: no trade, one clause why.
-7. **Log.** Append one line to `/tmp/oil-loop/progress.log` and print it:
+6. **Log.** Append one line to `/tmp/oil-loop/progress.log` and print it:
    `DESK-TICK $ARGUMENTS <utc> coin=<COIN> mid=<mid> pos=<size@entry or flat> action=<HOLD|PLACED|CANCELLED|CLOSED|NONE> <reason, under 15 words>`
 
 ## Operator asks between ticks
