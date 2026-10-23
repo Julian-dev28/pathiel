@@ -56,40 +56,31 @@ COPY services/thesis/ services/thesis/
 # Account registry, vault and credentials (the connect flow). server.py mounts
 # services.accounts.api, so it must ship: same reasoning as auth above.
 COPY services/accounts/ services/accounts/
-# pathiel.agents.executor imports this on every entry attempt (the per-trade
-# feasibility gate), and server.py mounts services.risk.api.
+# server.py mounts services.risk.api (risk_limits/risk_size_trade and the
+# place_bracket feasibility check both derive through it).
 COPY services/risk/ services/risk/
 COPY conftest.py ./
 
 # ── Runtime state ────────────────────────────────────────────────────────────
 # State lives on a persistent volume mounted at /data (fly.toml [[mounts]] /
-# k8s volumeClaimTemplates) so the loop, server, scheduler, and rotator all
-# share one source of truth across restarts and redeploys.
+# k8s volumeClaimTemplates) so `web` and `rotator` share one source of truth
+# across restarts and redeploys.
 #
 # Almost every state path in this app routes through PATHIEL_STATE_DIR (see
-# pathiel/agents/rebalancer_owned.py:state_file — the claims registry,
-# per-strategy timers, and pathiel/agents/shadow_ledger.py's
-# <state>/shadow_ledger/<book>.jsonl all resolve relative to it; also
-# services/trend_engine/env.py).
+# pathiel/state.py:state_file — backup receipts and other process-local
+# state files all resolve relative to it; also services/trend_engine/env.py).
 # Pointing that ONE var at /data/.state redirects all of them together.
+# docker-entrypoint.sh creates the real /data/.state directory at container
+# start (the volume is empty/fresh at that point, not at image-build time).
 #
-# scripts/scheduler.py's own job-run bookkeeping (.state/scheduler.json —
-# last_run per job, so a restart doesn't refire every job's catch-up logic
-# and burn its LLM/API budget) is the one holdout: it hardcodes
-# `<repo root>/.state` at import time and does not read PATHIEL_STATE_DIR.
-# scripts/scheduler.py is out of this workstream's ownership (belongs to the
-# supervision workstream), so the fix lives here instead: a symlink that
-# makes its hardcoded path resolve onto the same volume. docker-entrypoint.sh
-# creates the real /data/.state directory at container start (the volume is
-# empty/fresh at that point, not at image-build time, so it can't be created
-# here). If scheduler.py is ever made PATHIEL_STATE_DIR-aware, this symlink
-# becomes a no-op and can be deleted.
-RUN mkdir -p /data && ln -s /data/.state /app/.state
+# 2026-10-23 (wave 2): PATHIEL_DSL_STATE_FILE and PATHIEL_AGENT_MEMORY_FILE
+# are dropped — pathiel.agents.dsl_exit and pathiel.agents.memory, their only
+# readers, are retired with the rest of the autonomous engine. The
+# scripts/scheduler.py symlink workaround this section used to carry is
+# dropped the same wave: scheduler.py itself is deleted.
 
 ENV SESSION_LOG_PATH=/data/session-log.jsonl \
-    PATHIEL_DSL_STATE_FILE=/data/.dsl-state.json \
     PATHIEL_AGENT_CONFIG_FILE=/data/.agent-config.json \
-    PATHIEL_AGENT_MEMORY_FILE=/data/.agent-memory.json \
     PATHIEL_STATE_DIR=/data/.state \
     PATHIEL_POSITIONS_SNAPSHOT_FILE=/data/.positions-snapshot.json
 

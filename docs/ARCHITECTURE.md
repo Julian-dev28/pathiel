@@ -15,32 +15,33 @@ recover later.
 ## TL;DR for a new contributor
 
 ```
-HL market data ──▶ Scanner ──▶ TA filter ──▶ AI research ──▶ Risk gates ──▶ Executor ──▶ HL orders
-                                                                              │
-                                                                              ▼
-                                                                          DSL exit
-                                                                          (per-tick)
-                                                                              │
-                                                                              ▼
-                                                                       Auto-close on
-                                                                       floor/stop/timeout
+Claude ──(MCP: place_bracket / bracket_sweep / close_position)──▶ HL orders
 
-Persistent state on disk:  .agent-memory.json  .agent-config.json  .dsl-state.json  session-log.jsonl
+Persistent state on disk:  .agent-config.json  session-log.jsonl  desk journals
 
 Two entry processes:
-  scripts/trading_loop.py     — exit-management loop: scans, reviews open positions, manages exits, repeats. No entries of its own (headless desk, 2026-10-23).
-  pathiel/server.py     — FastAPI: public dashboard (the Desk page, 2026-10-23) + token-gated operator + JSON API
+  pathiel/server.py             — FastAPI: public dashboard (the Desk page, 2026-10-23) + token-gated operator + JSON API
   scripts/pathiel-mcp-server.py — MCP stdio server: exposes 59 tools to Pathiel Agent / Claude — the one trading surface
 ```
 
-All three share the same on-disk state and the same Python modules under
-`pathiel/`. The trading loop owns exits and housekeeping only; the MCP
-server owns every trade decision (Claude places orders through
-`place_bracket` / `bracket_sweep`); the dashboard server owns the
-human-visible surface. Pathiel used to run seven autonomous strategy books
-that placed entries unattended through the trading loop — retired
-2026-10-23, operator decision, so there is exactly one trader on the
-wallet. See `docs/overhaul/HEADLESS_2026-10-23.md`.
+Both share the same on-disk state and the same Python modules under
+`pathiel/`. The MCP server owns every trade decision (Claude places orders
+through `place_bracket` / `bracket_sweep`, sized against the operator's
+saved risk profile); the dashboard server owns the human-visible surface.
+There is no scanner, no AI research pass, no risk-gate pipeline and no DSL
+exit loop any more — both were retired across two waves:
+
+- **Wave 1 (headless desk, 2026-10-23):** the seven autonomous strategy
+  books that placed entries unattended through a trading loop are deleted,
+  down to one trader on the wallet.
+- **Wave 2 (2026-10-23):** the trading loop itself — the scan → TA-filter →
+  AI-research → risk-gates → executor pipeline and its per-tick DSL exit
+  engine, diagrammed above in earlier versions of this file — has no caller
+  left and is deleted. Claude is the only trader, full stop; there is no
+  standing process that scans a market, researches a signal, or manages an
+  exit on its own.
+
+See `docs/overhaul/HEADLESS_2026-10-23.md`.
 
 ---
 
@@ -58,14 +59,13 @@ Two things follow from this design choice:
    plain Python process. The MCP boundary is the only contact surface — that's
    what lets you also operate it through Claude Desktop, Cursor, or any
    MCP-aware client without changing a line of trading code.
-2. **Pathiel Agent (or Claude, directly) is the operator; the engine manages
-   risk and exits.** `scripts/trading_loop.py` runs forever managing DSL
-   exits and housekeeping, but places no entries of its own — every trade
-   decision runs through the MCP server. Pathiel Agent / Claude is what
+2. **Pathiel Agent (or Claude, directly) is the operator and the only
+   trader.** There is no standing engine process managing risk or exits any
+   more (2026-10-23, wave 2) — every trade decision, entry and exit alike,
+   runs through an explicit MCP tool call. Pathiel Agent / Claude is what
    you (a human, through it) use to inspect, configure, and direct the
-   engine, and the surface through which it actually trades: start the
-   loop, stop it, ask "what did you just do," set the mode, scan, research,
-   place a bracket, etc.
+   system: read a desk brief, place a bracket, sweep stranded orders, close
+   a position, ask "what's open," set the mode, etc.
 
 ---
 
@@ -588,23 +588,22 @@ require team. The 90-day plan (in your conversation, not this doc) prioritizes
 - **Don't rewrite in TypeScript.** The engine has no business in a JS runtime;
   see "Why pure Python" above.
 - **Don't add Kafka / message queue.** The session log is the message queue.
-- **Don't add a worker farm.** One process per role (loop, server, MCP) has
+- **Don't add a worker farm.** One process per role (server, MCP) has
   been enough; horizontal scaling means an ops surface you don't want yet.
 
 ---
 
 ## Operating the engine
 
-Three roles, three entry points:
+Two roles, two entry points (the autonomous trading loop this section used
+to list as a third is deleted, 2026-10-23, wave 2 — there is no process
+left to scan a market or research a signal on its own):
 
 ```bash
-# 1. The trading loop — autonomous
-python3 scripts/trading_loop.py
-
-# 2. The web dashboard + JSON API (port 8000)
+# 1. The web dashboard + JSON API (port 8000)
 python3 -m pathiel.server
 
-# 3. The MCP stdio server (driven by Pathiel Agent / Claude Desktop / Cursor)
+# 2. The MCP stdio server (driven by Pathiel Agent / Claude Desktop / Cursor)
 python3 scripts/pathiel-mcp-server.py
 ```
 
@@ -612,14 +611,12 @@ Each loads `.env.local` and reads/writes the same on-disk state. On Fly they
 run as two separate `processes` in `fly.toml` sharing a mounted volume; the
 MCP server is local-only (stdio doesn't deploy).
 
-Tail what the engine is doing:
+Tail what's happening:
 
 ```bash
-# Live feed in terminal
-python3 skills/pathiel-agent/scripts/feed.py --follow
-
-# Last 50 events with stats
-python3 skills/pathiel-agent/scripts/status.py
+# Last 50 session-log events
+curl -s -H "X-Operator-Token: $PATHIEL_OPERATOR_TOKEN" \
+  http://localhost:8000/api/agent/session-log
 
 # Browser dashboard
 open http://localhost:8000
@@ -670,18 +667,18 @@ cp .env.local.example .env.local
 # Edit: OPENROUTER_API_KEY, HYPERLIQUID_WALLET_ADDRESS, HYPERLIQUID_PRIVATE_KEY
 # Optional: PATHIEL_OPERATOR_TOKEN (for the operator console), BRAVE_API_KEY (news)
 
-# 3. Start in OFF mode first — verify the engine reads market data without trading
-echo '{"mode":"OFF","minAiConfidence":0.8,"max_concurrent":3}' > .agent-config.json
+# 3. Start in OFF mode first
+echo '{"mode":"OFF"}' > .agent-config.json
 
-# 4. Run the trading loop and the dashboard
-python3 scripts/trading_loop.py &     # scans every 60s
+# 4. Run the dashboard
 python3 -m pathiel.server &      # dashboard at http://localhost:8000
 
-# 5. Watch one cycle — the dashboard's live feed shows scans + research verdicts
+# 5. Watch the desk page — equity, open positions, the active desk's thesis
 open http://localhost:8000
 
 # 6. When you're satisfied, flip mode to LIVE
 #    Either edit .agent-config.json directly, or use /operator?token=… and click "set mode LIVE"
+#    Then trade through the MCP server (place_bracket / bracket_sweep) — see README.md
 ```
 
 The config is read **fresh on every trade** — no restart needed for changes.
@@ -743,128 +740,71 @@ on every request; missing env var → 503, wrong token → 401.
 ### Tailing from the terminal (no browser)
 
 ```bash
-# Live feed, same format as the dashboard
-python3 skills/pathiel-agent/scripts/feed.py --follow
-
-# Last hour of activity (one-shot, for cron / piping to Slack)
-python3 skills/pathiel-agent/scripts/feed.py --since 1h
-
-# Compact status block — equity, positions, recent closes, win rate
-python3 skills/pathiel-agent/scripts/status.py
+# Last 50 session-log events
+curl -s -H "X-Operator-Token: $PATHIEL_OPERATOR_TOKEN" \
+  http://localhost:8000/api/agent/session-log
 ```
 
 ---
 
-## The skill scaffolding + cron for hands-off monitoring
+## The skill scaffolding
 
-`skills/pathiel-agent/` is a self-contained Pathiel-Agent skill: a
-folder that Pathiel loads as a *capability* for an agent session. The
-layout intentionally mirrors Senpi's skill format so the directory pattern is
-portable, even though the runtime semantics differ.
+`skills/pathiel-agent/` is a self-contained Claude Code skill covering how
+to operate the MCP server and the Hyperliquid order-placement gotchas.
+2026-10-23 (wave 2): the scan/research/execute engine and its cron-based
+hourly status report are retired along with it (`feed.py`, `status.py`,
+and the reference docs that were specific to that engine —
+`cron-jobs.md`, `restart-sequence.md`, `signal-vs-action-gap.md`,
+`trading-mode.md`, `daemon-investigation.md`, `exit-engine.md`,
+`short-regime-bias.md`, `hip3-tokenized-equity-handoff.md`).
 
 ```
 skills/pathiel-agent/
-├── SKILL.md                       # the system prompt — what this agent IS,
-│                                    what tools it has, how to phrase
-│                                    decisions, what to ask the user before
-│                                    risky actions
+├── SKILL.md                       # how to operate the headless desk:
+│                                    place_bracket/bracket_sweep/
+│                                    close_position, risk sizing, the
+│                                    state files that still exist
 ├── scripts/
-│   ├── feed.py                    # live activity tail (CLI + cron-friendly)
-│   ├── status.py                  # compact status block
 │   └── audit_mcp_server.py        # verifies the MCP server is healthy
 └── references/
-    ├── cron-jobs.md               # how to wire the hourly status job
     ├── hyperliquid-gotchas.md     # tick-size / sig-fig / IOC fill quirks
-    ├── mcp-config.md              # Pathiel ~/.pathiel/config.yaml block
-    ├── mcp-server.md              # the 100-tool surface
-    ├── restart-sequence.md        # the canonical pkill+restart ritual
-    ├── signal-vs-action-gap.md    # debugging "scanner fires, no trade"
-    ├── trading-mode.md            # execute-first reporting contract
-    └── daemon-investigation.md    # the --daemon flag is informational only
+    ├── mcp-config.md              # ~/.pathiel/config.yaml block
+    └── mcp-server.md              # the 59-tool surface
 ```
 
-### Hands-off monitoring via Pathiel cron
-
-Pathiel Agent supports scheduled jobs (`pathiel cron list/create/resume/pause`).
-The skill includes a recommended **hourly status report** job that runs
-`status.py` and posts the output to whichever channel you have configured
-(Telegram, Slack, email, or just stdout in your terminal).
-
-```bash
-# One-time setup
-pathiel cron create pathiel-hourly \
-  --interval "0 * * * *" \
-  --command "python3 /path/to/pathiel/skills/pathiel-agent/scripts/status.py"
-
-# Status of all jobs
-pathiel cron list
-
-# Pause / resume
-pathiel cron pause  <job-id>
-pathiel cron resume <job-id>
-```
-
-The status report is **zero AI cost** — it's a pure CLI script reading the
-session log + memory file. The whole point is to give you ambient awareness
-without paying for an LLM call.
-
-For full AI-summarized reports (Pathiel-driven "tell me what changed in the
-last hour and flag anomalies"), set up a separate Pathiel cron that prompts
-the agent — that does cost OpenRouter tokens but produces a much richer
-report.
+The real-time "what is Claude doing" view now is `.claude/skills/
+oil-tick/SKILL.md`'s own per-tick log line
+(`/tmp/oil-loop/progress.log`) and the dashboard at `http://localhost:8000`
+— there is no separate cron-driven status report to wire up.
 
 ---
 
 ## Backtesting methodology
 
-`scripts/backtest.py` runs the current strategy against historical HL candles.
-The point is to make tuning empirical rather than vibes-driven.
-
-```bash
-# Basic run — last 30 days of BTC + ETH 4h candles
-python3 scripts/backtest.py --coins BTC,ETH --interval 4h --days 30
-
-# Walk-forward: optimize on first half, validate on second
-python3 scripts/backtest.py --walk-forward 0.5
-
-# Test a specific config (overrides .agent-config.json for the run only)
-PATHIEL_BACKTEST_CONFIG='{"min_ai_confidence":0.7,"counter_regime_min_conf":0.85}' \
-  python3 scripts/backtest.py --coins BTC --days 60
-```
-
-### What the backtest does and doesn't model
-
-| Modeled | Approximated | Not modeled |
-|---|---|---|
-| Trigger detection (same code as live) | Slippage (configurable bps drag) | Order-book depth |
-| TA filter (same code) | HL taker fees | Funding payments mid-trade |
-| Risk gates (same code, sees historical equity) | LLM verdicts (replayed from memory if available, else mocked) | News-blackout (no historical news index) |
-| DSL exit logic (same code) | Fill probability for IOC orders | Liquidations |
-| Sizing math (same code) | | Cross-margin interactions |
-
-The biggest gap: **the AI research call** doesn't replay historically (the LLM
-might give a different verdict today than the day-of). The backtest defaults
-to "all verdicts pass" or "use cached verdicts from memory", which over-states
-results. Treat backtest numbers as an **upper bound**, not a forecast.
-
-### Walk-forward validation
-
-To avoid overfitting parameters to a specific window, split the period in
-half: optimize the config on the first half, then run the optimized config
-**unchanged** on the second half. A strategy that wins the in-sample period
-but loses out-of-sample is overfit; ditch the change.
-
-Three params worth walk-forwarding:
-- `counter_regime_min_conf` (0.5 / 0.7 / 0.85 / 1.0)
-- `min_ai_confidence` (0.3 / 0.5 / 0.7)
-- `dsl_exit.max_loss_pct` (1.5 / 2.5 / 4.0)
-
-Don't walk-forward more than 3 params simultaneously — combinatorial
-explosion, and most "wins" become noise.
+Deleted 2026-10-23 (wave 2) along with the autonomous AI-verdict pipeline it
+replayed: the backtest CLI ran the scan/TA-filter/risk-gates pipeline (all
+deleted the same wave) against historical candles. There is no equivalent
+for the MCP-submitted path — Claude's calls are one-off tool invocations, not
+a replayable strategy function — so there is nothing left to drive a
+backtest with. The desk-grading service (`desk_grade` / `services/
+strategies/facade.py`) grades what actually happened, not a replayed
+what-if.
 
 ---
 
-## Risk modeling — Kelly, retrace tiers, daily killswitch
+## Risk modeling — Kelly, retrace tiers, daily killswitch (historical)
+
+**This whole section describes `pathiel/agents/executor.py` and `dsl_exit.py`
+internals, both deleted 2026-10-23 (wave 2) with the rest of the autonomous
+executor.** Left as a record of the design reasoning (half-Kelly sizing, the
+retrace-tier trailing-stop schedule, the daily killswitch and its known
+equity-spike bug) rather than rewritten — it documents a mechanism that
+existed, and that doesn't change retroactively. It does NOT describe how the
+live system sizes or exits a trade today: that is `services/risk`
+(`risk_size_trade`, a fixed risk-per-trade percent of equity against the
+operator's saved profile) and an exact stop/target Claude names on every
+`place_bracket` call — there is no Kelly fraction, no retrace tier, and no
+daily-PnL killswitch in the current build.
 
 ### Half-Kelly sizing (in `executor.kelly_size`)
 

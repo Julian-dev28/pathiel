@@ -741,19 +741,11 @@ def test_no_page_animates_for_decoration(client):
 # ── nothing on screen may describe something that no longer exists ──────────
 
 
-def test_a_scanned_coin_no_book_claimed_is_not_a_refusal():
-    """There is no discretionary entry path: entries come from books, so a
-    scanned coin that no book claimed is normal operation. Logging it as a
-    refusal put a deleted feature's name at the top of the decision funnel
-    ~3,900 times a day and buried the gates that actually stopped a trade."""
-    src = (pathlib.Path(__file__).resolve().parent.parent
-           / "scripts" / "trading_loop.py").read_text()
-    body = src[src.index("main_engine ENTRIES DELETED"):]
-    body = body[:body.index("# TA filter")]
-    assert "_unclaimed += 1" in body
-    assert "log_event" not in body, "still emits an event per scanned coin"
-    assert "MAIN_ENGINE_DELETED" not in src, (
-        "a deleted feature's name is still emitted into the session log")
+# test_a_scanned_coin_no_book_claimed_is_not_a_refusal was removed
+# 2026-10-23 (wave 2): it checked scripts/trading_loop.py's own source for
+# a decision-funnel wording regression. trading_loop.py is deleted with the
+# rest of the autonomous scan/research/execute engine — there is no funnel
+# left to mislabel.
 
 
 def test_no_template_hard_codes_a_colour():
@@ -1208,7 +1200,7 @@ def test_the_equity_floor_has_a_documented_operator_override():
     #1 by design. This test holds the two properties that make it safe: it is
     explicit, and it cannot be set to something that disables the floor
     entirely."""
-    from pathiel.agents.executor import min_tradable_equity, MIN_TRADABLE_EQUITY_USD
+    from pathiel.agents.bracket import min_tradable_equity, MIN_TRADABLE_EQUITY_USD
     assert min_tradable_equity({"min_tradable_equity_usd": 12.0}) == 12.0
     # A typo or a negative must fall back to the backstop, never open the gate.
     for bad in (-1, "twelve", None, float("nan")):
@@ -1221,7 +1213,7 @@ def test_lifting_the_floor_does_not_by_itself_let_a_small_account_trade():
     margin check: a $20 notional at 1x needs $20 of margin regardless of what
     the floor says. Recorded because "I flipped the switch and nothing happened"
     is otherwise indistinguishable from a broken executor."""
-    from pathiel.agents.executor import min_tradable_equity
+    from pathiel.agents.bracket import min_tradable_equity
     cfg = {"min_tradable_equity_usd": 12.0,
            "somebook": {"enabled": True, "shadow_only": False,
                         "notional_usd": 20.0, "leverage": 1}}

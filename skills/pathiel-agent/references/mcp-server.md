@@ -140,10 +140,10 @@ def handle_get_xxx(params: Dict[str, Any]) -> str:
   not file load — a `python -c 'import ...'` smoke test will not catch it. Check
   the import against the actual module.
 - `close_position` is a thin adapter over
-  `pathiel.agents.executor.close_position_market(coin)`. Do not call
-  `place_hl_order` inline from the MCP server; the executor helper owns
-  reduce-only handling, DSL deregistration, trigger-order cleanup, realized PnL
-  capture, and loss-cooldown arming.
+  `pathiel.agents.bracket.close_position(coin)` (moved here from the retired
+  `executor.close_position_market` 2026-10-23, wave 2). Do not call
+  `place_hl_order` inline from the MCP server; the bracket helper owns
+  reduce-only handling, trigger-order cleanup, and realized PnL capture.
 - `place_bracket` is the MCP-native entry adapter. It sizes with
   `services.risk.size.size_trade`, then calls `pathiel.agents.bracket.place_bracket`,
   which refuses under the R-multiple minimum or when the stop sits too close

@@ -16,4 +16,3 @@ metadata:
 # in the pod and can't vary per-container.
 data:
   PATHIEL_PORT: "8000"
-  PATHIEL_SCAN_INTERVAL: "60"

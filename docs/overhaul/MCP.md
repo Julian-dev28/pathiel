@@ -31,7 +31,7 @@ Every tool carries MCP annotations (readOnlyHint / destructiveHint). Live smoke 
 | `set_leverage` | LIVE MONEY |  | LIVE MONEY: acts on the real account. Set leverage for a coin (cross margin). |
 | `cancel_order` | LIVE MONEY |  | LIVE MONEY: acts on the real account. Cancel an open order by order ID and coin. |
 | `state` | read-only |  | Get full agent state: mode, config, positions, recent trades, and account equity. |
-| `config` | writes live config |  | Read the agent config (no arguments), or change it: passing ANY field rewrites the live config the trading loop reads. Every top-level key in .agent-config.json is accepted (read first to see them); nested blocks (dsl_exit, ai_brain) are deep-merged. Sizing is the risk profile now (risk_limits), not the legacy sizing keys. |
+| `config` | writes live config |  | Read the agent config (no arguments), or change it: passing ANY field rewrites the live config. Every top-level key in .agent-config.json is accepted (read first to see them); the ai_brain block is deep-merged. Sizing is the risk profile now (risk_limits), not a config knob. |
 
 ## Wallet / dashboard (read-only)
 

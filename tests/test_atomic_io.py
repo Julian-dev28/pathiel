@@ -133,14 +133,16 @@ def test_the_state_writers_no_longer_truncate_before_writing():
     """Guard against a future edit reintroducing open(path,'w') in the files
     where a torn write has a named, specific consequence.
 
-    pathiel/agents/rebalancer_owned.py dropped out of this list 2026-10-23:
-    the headless-desk cleanup cut it down to state_file() alone (OwnedPositions
-    and ClaimsRegistry, its only writers, were book-only and are deleted), so
-    it has no writer left to guard."""
+    pathiel/agents/rebalancer_owned.py dropped out of this list 2026-10-23
+    (wave 1): the headless-desk cleanup cut it down to state_file() alone
+    (OwnedPositions and ClaimsRegistry, its only writers, were book-only and
+    are deleted), so it had no writer left to guard. pathiel/agents/
+    shadow_ledger.py dropped out the same way in wave 2: its only writer
+    (executor.py's thin_short_relax block) is gone with the rest of the
+    retired autonomous executor, and the module itself is deleted."""
     import pathlib
     root = pathlib.Path(__file__).resolve().parents[1]
-    for rel in ("pathiel/agents/shadow_ledger.py",
-                "pathiel/agents/capital_flows.py"):
+    for rel in ("pathiel/agents/capital_flows.py",):
         src = (root / rel).read_text()
         assert 'open(self._path, "w")' not in src, rel
         assert 'atomic_io' in src, f"{rel} stopped using the safe writer"
