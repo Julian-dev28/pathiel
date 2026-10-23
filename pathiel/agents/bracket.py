@@ -177,7 +177,7 @@ def place_bracket(coin: str, *, entry_px: Optional[float], stop_px: float, tp_px
                   size: float, leverage: int, min_r: float = DEFAULT_MIN_R,
                   coin_max_leverage: Optional[float] = None,
                   max_stop_frac: float = DEFAULT_MAX_STOP_FRAC_OF_LIQ,
-                  dry_run: bool = False, ex: Any = None) -> Dict[str, Any]:
+                  dry_run: bool = False, add: bool = False, ex: Any = None) -> Dict[str, Any]:
     """Place one bracket. entry_px None = market now (IOC), checked against
     the live mid; otherwise a resting limit with stop and target attached.
 
@@ -185,6 +185,14 @@ def place_bracket(coin: str, *, entry_px: Optional[float], stop_px: float, tp_px
     for this leverage (check_leverage; needs coin_max_leverage), and refuses
     when the coin already has a position or a resting entry, so a repeated
     call (a loop tick, a retry) can never stack a second trade.
+
+    `add=True` (operator, 2026-10-24: "add to position when possible") is the
+    one sanctioned way to stack: with a position already open on the coin it
+    places a top-up on the SAME side whose stop is no wider than the
+    protection already resting, and it leaves that protection alone (the
+    normal path cancels the coin's reduce-only orders first, which here
+    would strip the live position's stop). A resting entry still blocks, so
+    two top-ups never queue. Flat, `add` behaves like a normal entry.
     """
     if ex is None:
         from pathiel.client import exchange as ex   # noqa: N813
@@ -208,16 +216,33 @@ def place_bracket(coin: str, *, entry_px: Optional[float], stop_px: float, tp_px
     pos = ex._position_size_on_coin(user, coin)
     if pos is None:
         return {**base, "ok": False, "placed": False, "reason": "position read failed; not trading blind"}
-    if pos != 0:
+    orders = ex._resting_orders_for_coin(user, coin)
+    adding = bool(add) and pos != 0
+    if pos != 0 and not add:
         return {**base, "ok": False, "placed": False, "reason": f"already in a position ({pos}) on {coin}"}
-    entries = [o for o in ex._resting_orders_for_coin(user, coin) if not o.get("reduceOnly")]
+    if adding:
+        base["add"] = True
+        base["position_before"] = pos
+        if (pos > 0) != (gate["side"] == "long"):
+            return {**base, "ok": False, "placed": False,
+                    "reason": f"add refused: position is {'long' if pos > 0 else 'short'} {abs(pos)}, call is {gate['side']}"}
+        existing = [float(o.get("triggerPx") or 0) for o in orders
+                    if o.get("reduceOnly") and "Stop" in str(o.get("orderType", ""))]
+        if existing:
+            tightest = max(existing) if pos > 0 else min(existing)
+            wider = stop_px < tightest if pos > 0 else stop_px > tightest
+            if wider:
+                return {**base, "ok": False, "placed": False,
+                        "reason": f"add refused: stop {stop_px:g} is wider than the resting stop {tightest:g}; never widen"}
+    entries = [o for o in orders if not o.get("reduceOnly")]
     if entries:
         return {**base, "ok": False, "placed": False,
                 "reason": f"{len(entries)} entry order(s) already resting on {coin}; cancel first"}
     if dry_run:
         return {**base, "placed": False, "dry_run": True}
 
-    ex.cancel_stranded_reduce_only_orders(coin)   # old triggers must not hit the new trade
+    if not adding:
+        ex.cancel_stranded_reduce_only_orders(coin)   # old triggers must not hit the new trade
     lev = ex.set_leverage(coin, int(leverage), is_cross=False, strict=True)
     if not lev.get("ok"):
         return {**base, "ok": False, "placed": False, "reason": f"set_leverage failed: {lev.get('error')}"}

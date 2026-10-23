@@ -244,7 +244,52 @@ def test_handler_sizes_then_places(monkeypatch):
         {"coin": "xyz:BRENTOIL", "entry_px": 107.2, "stop_px": 106.7, "tp_px": 108.45}))
     assert out["ok"] and out["sizing"]["risk_usd"] == 0.64
     assert seen == {"coin": COIN, "entry_px": 107.2, "stop_px": 106.7, "tp_px": 108.45,
-                    "size": 1.27, "leverage": 10, "min_r": 1.5, "coin_max_leverage": 20.0, "dry_run": False}
+                    "size": 1.27, "leverage": 10, "min_r": 1.5, "coin_max_leverage": 20.0, "dry_run": False,
+                    "add": False}
+
+
+def test_handler_add_sizes_the_top_up_as_full_port_minus_what_is_held(monkeypatch):
+    """Operator, 2026-10-24: "add to position when possible". Long 1.62 held,
+    full-port size 10.4 -> the top-up is 8.78 (sz_decimals 2), passed with
+    add=True; a position already at full size places nothing and says so."""
+    mcp = _mcp()
+    from pathiel.agents import bracket as br
+    import pathiel.client.exchange as ex
+    monkeypatch.setattr(ex, "resolve_user_address", lambda: "0xu")
+    monkeypatch.setattr(ex, "_position_size_on_coin", lambda user, coin: 1.62)
+    monkeypatch.setattr(br, "slot_taken_by", lambda user, coin, n: None)
+    monkeypatch.setattr(mcp, "_risk_inputs", lambda: (SimpleNamespace(max_leverage=20.0), [], None))
+    monkeypatch.setattr(mcp, "_coin_specs", lambda c: (20.0, 2))
+    monkeypatch.setattr(mcp, "_live_equity", lambda: 64.5)
+    import services.risk.size as size_mod
+    monkeypatch.setattr(size_mod, "size_trade", lambda *a, **k: SimpleNamespace(
+        can_trade=True, size=10.4, leverage=20.0, reason="", notional_usd=1158.6,
+        margin_usd=57.9, risk_usd=7.3, risk_pct=11.3))
+    # free margin on xyz: $46.30 of $64.50 equity; the 10% floor ($6.45) stays
+    # free, so $39.85 x 20 / 111.4 = 7.15 contracts is all the venue can carry
+    import pathiel.client.account_snapshot as snap
+    monkeypatch.setattr(snap, "account_state", lambda user, include_hip3=True, **kw: {
+        "equity": 64.5, "dex_available": {"": 0.0, "xyz": 46.3}})
+    seen = {}
+    monkeypatch.setattr(br, "place_bracket", lambda coin, **k: seen.update(coin=coin, **k) or {"ok": True, "placed": True})
+    out = json.loads(mcp.handle_place_bracket(
+        {"coin": COIN, "entry_px": 111.4, "stop_px": 110.9, "tp_px": 114.0, "add": True}))
+    assert out["placed"] and out["topup"] == {"held": 1.62, "full_size": 10.4, "free_margin_usd": 46.3,
+                                              "topup_cap_size": 7.15, "topup_size": 7.15}
+    assert seen["size"] == 7.15 and seen["add"] is True and seen["leverage"] == 20
+    # with plenty of free margin the top-up is simply full-port minus held
+    monkeypatch.setattr(snap, "account_state", lambda user, include_hip3=True, **kw: {
+        "equity": 64.5, "dex_available": {"xyz": 500.0}})
+    out = json.loads(mcp.handle_place_bracket(
+        {"coin": COIN, "entry_px": 111.4, "stop_px": 110.9, "tp_px": 114.0, "add": True}))
+    assert out["topup"]["topup_size"] == 8.78 and seen["size"] == 8.78
+
+    monkeypatch.setattr(ex, "_position_size_on_coin", lambda user, coin: 10.4)
+    seen.clear()
+    out = json.loads(mcp.handle_place_bracket(
+        {"coin": COIN, "entry_px": 111.4, "stop_px": 110.9, "tp_px": 114.0, "add": "true"}))
+    assert out["ok"] and not out["placed"] and "already at or above the full-port size" in out["reason"]
+    assert not seen, "nothing is placed when the position is already full"
 
 
 # ------------------------------------------------- the 20x rule (leverage gate)
@@ -387,3 +432,59 @@ def test_handler_refuses_when_another_desk_holds_the_slot(monkeypatch):
     monkeypatch.setattr(br, "place_bracket", lambda *a, **k: (_ for _ in ()).throw(AssertionError("must not place")))
     out = json.loads(mcp.handle_place_bracket({"coin": COIN, "entry_px": 107.2, "stop_px": 106.7, "tp_px": 108.45}))
     assert out["placed"] is False and "slot taken by xyz:GOLD" in out["error"]
+
+
+# ── add=True: the one sanctioned way to stack (operator, 2026-10-24) ─────────
+
+STOP_ROW = {"coin": COIN, "reduceOnly": True, "orderType": "Stop Market", "triggerPx": "110.9", "sz": "1.62", "oid": 5}
+TP_ROW = {"coin": COIN, "reduceOnly": True, "orderType": "Take Profit Market", "triggerPx": "114.0", "sz": "1.62", "oid": 6}
+
+
+def test_add_tops_up_a_same_side_position_and_leaves_its_protection_alone():
+    ex = FakeEx(pos=1.62, orders=[STOP_ROW, TP_ROW])
+    out = bracket.place_bracket(COIN, entry_px=111.40, stop_px=110.90, tp_px=114.0, size=8.8,
+                                leverage=20, coin_max_leverage=20, add=True, ex=ex)
+    assert out["placed"] and out["add"] is True and out["position_before"] == 1.62
+    assert ("sweep", COIN) not in ex.calls, "a top-up must never cancel the live position's stop and target"
+    assert ("bracket", COIN, True, 8.8, 111.40, 110.90, 114.0) in ex.calls
+
+
+def test_add_refuses_the_opposite_side():
+    ex = FakeEx(pos=1.62, orders=[STOP_ROW])
+    out = bracket.place_bracket(COIN, entry_px=112.5, stop_px=113.2, tp_px=110.0, size=2,
+                                leverage=20, coin_max_leverage=20, add=True, ex=ex)
+    assert not out["placed"] and "call is short" in out["reason"] and not ex.calls
+
+
+def test_add_never_widens_the_resting_stop():
+    ex = FakeEx(pos=1.62, orders=[STOP_ROW, TP_ROW])
+    out = bracket.place_bracket(COIN, entry_px=111.40, stop_px=110.50, tp_px=114.0, size=8.8,
+                                leverage=20, coin_max_leverage=20, add=True, ex=ex)
+    assert not out["placed"] and "never widen" in out["reason"] and not ex.calls
+    # a tighter stop is fine
+    out = bracket.place_bracket(COIN, entry_px=111.40, stop_px=111.00, tp_px=114.0, size=8.8,
+                                leverage=20, coin_max_leverage=20, add=True, ex=ex)
+    assert out["placed"]
+
+
+def test_add_still_refuses_while_a_top_up_already_rests():
+    resting = {"coin": COIN, "reduceOnly": False, "limitPx": "111.4", "sz": "8.8", "oid": 7}
+    ex = FakeEx(pos=1.62, orders=[STOP_ROW, resting])
+    out = bracket.place_bracket(COIN, entry_px=111.40, stop_px=110.90, tp_px=114.0, size=8.8,
+                                leverage=20, coin_max_leverage=20, add=True, ex=ex)
+    assert not out["placed"] and "already resting" in out["reason"]
+
+
+def test_add_on_a_flat_coin_is_a_normal_entry():
+    ex = FakeEx(pos=0.0, orders=[{"coin": COIN, "reduceOnly": True, "orderType": "Stop Market", "triggerPx": "100", "sz": "1", "oid": 9}])
+    out = bracket.place_bracket(COIN, entry_px=111.40, stop_px=110.90, tp_px=114.0, size=10.4,
+                                leverage=20, coin_max_leverage=20, add=True, ex=ex)
+    assert out["placed"] and "add" not in out
+    assert ("sweep", COIN) in ex.calls, "flat: the stale leftover IS cancelled, as always"
+
+
+def test_without_add_a_position_still_blocks_a_second_trade():
+    ex = FakeEx(pos=1.62, orders=[STOP_ROW])
+    out = bracket.place_bracket(COIN, entry_px=111.40, stop_px=110.90, tp_px=114.0, size=8.8,
+                                leverage=20, coin_max_leverage=20, ex=ex)
+    assert not out["placed"] and "already in a position" in out["reason"]
