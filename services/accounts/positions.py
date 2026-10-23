@@ -84,6 +84,7 @@ def assess(state: Dict[str, Any], orders: List[Dict[str, Any]], dex: str = "",
             "leverage": lev.get("value") if isinstance(lev, dict) else lev,
             "margin_type": lev.get("type") if isinstance(lev, dict) else None,
             "notional_usd": round(abs(float(p.get("positionValue") or 0)), 2),
+            "margin_usd": round(float(p.get("marginUsed") or 0), 2),
             "upnl_usd": round(float(p.get("unrealizedPnl") or 0), 2),
             "liq_px": liq_f,
             "liq_dist_pct": (round(abs(entry - liq_f) / entry * 100, 3) if liq_f and entry else None),
@@ -92,8 +93,14 @@ def assess(state: Dict[str, Any], orders: List[Dict[str, Any]], dex: str = "",
             **_mark_fields("long" if szi > 0 else "short", entry, _f((mids or {}).get(coin)),
                            [o.get("triggerPx") for o in stops], [o.get("triggerPx") for o in tps]),
         })
-    return {"dex": dex or "main", "equity_usd": float(ms.get("accountValue") or 0),
+    equity = float(ms.get("accountValue") or 0)
+    margin_used = round(sum(p["margin_usd"] for p in positions), 2)
+    return {"dex": dex or "main", "equity_usd": equity,
             "notional_usd": float(ms.get("totalNtlPos") or 0), "positions": positions,
+            # how much of this dex's equity the open positions tie up (2026-10-24:
+            # the operator wants the whole stake in the position and asked to see it)
+            "margin_used_usd": margin_used,
+            "margin_used_pct": round(margin_used / equity * 100, 1) if equity > 0 else None,
             "any_naked": any(p["naked"] for p in positions)}
 
 
