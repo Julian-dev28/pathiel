@@ -97,7 +97,18 @@ def fetch_mid(coin: str) -> Optional[float]:
 
 
 _LEVELS_CACHE: Dict[str, Any] = {}
-LEVELS_TTL_S = 20.0
+# oil_desk.js polls GET /api/desks/{id}/levels every REFRESH_MS (60s,
+# pathiel/static/oil_desk.js) — see tests/test_page_polling's sibling check
+# in services/strategies/tests/test_levels.py,
+# test_levels_ttl_covers_one_full_desk_poll_interval, which fails the build
+# if the two drift apart again. At the old 20s TTL every single 60s poll
+# was a cache MISS (20s < 60s), so the Levels card paid the full two
+# candleSnapshot reads (weight 20 each) on every refresh forever — the
+# budget fix (af82adf) stopped those reads from being REFUSED, it never
+# made them free. 1h/15m candles do not change meaningfully inside one
+# minute, so caching across the page's own poll cycle costs no real
+# freshness; 75s gives one poll's worth of margin for request jitter.
+LEVELS_TTL_S = 75.0
 _mono = time.monotonic
 
 

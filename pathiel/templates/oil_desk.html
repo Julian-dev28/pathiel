@@ -135,6 +135,16 @@
 
     <div id="call-card" class="card call-card" hidden>
       <pre class="call-sentence mono" id="call-markdown"></pre>
+      <!-- This card's numbers come from the thesis, written at most once an
+           hour; the open position below (Wallets) is the venue's own truth
+           right now. The two drift apart whenever a hand trade, a
+           bracket_sweep, or a stop move happens between refreshes, and
+           reading the thesis's stop/entry/leverage as if they were the
+           order on the book is how a trader gets hurt. oil_desk.js's
+           renderPositionMismatch() fills this in only when the two actually
+           disagree, by comparing against the same position data the
+           Wallets card already fetched (no extra request). -->
+      <div id="call-position-mismatch" class="note warn" hidden></div>
       <a href="/desk/oil" class="note" id="full-thesis-link">Full thesis &rarr;</a>
     </div>
 
