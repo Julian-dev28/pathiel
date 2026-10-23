@@ -1,13 +1,9 @@
-"""scripts/watch_wallet.py: the pure assessment, on the shapes Hyperliquid returns."""
+"""services/accounts/positions.py: the pure assessment, on the shapes
+Hyperliquid returns. (Moved out of scripts/watch_wallet.py 2026-10-23; that
+script is now a thin CLI importing this module.)"""
 from __future__ import annotations
 
-import importlib.util
-from pathlib import Path
-
-ROOT = Path(__file__).resolve().parents[1]
-_spec = importlib.util.spec_from_file_location("watch_wallet", ROOT / "scripts" / "watch_wallet.py")
-W = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(W)
+from services.accounts.positions import assess
 
 # Julien's wallet on 2026-10-23 16:40 UTC, as the venue returned it.
 STATE = {"marginSummary": {"accountValue": "34.581292", "totalNtlPos": "627.1632"},
@@ -20,7 +16,7 @@ TP = {"coin": "xyz:BRENTOIL", "reduceOnly": True, "orderType": "Take Profit Mark
 
 
 def test_the_real_naked_20x_position_is_flagged():
-    out = W.assess(STATE, [], "xyz")
+    out = assess(STATE, [], "xyz")
     assert out["any_naked"] is True
     p = out["positions"][0]
     assert p["coin"] == "xyz:BRENTOIL" and p["side"] == "long" and p["size"] == 5.82
@@ -30,22 +26,22 @@ def test_the_real_naked_20x_position_is_flagged():
 
 
 def test_a_full_stop_clears_the_flag_and_a_partial_does_not():
-    assert W.assess(STATE, [STOP, TP], "xyz")["any_naked"] is False
+    assert assess(STATE, [STOP, TP], "xyz")["any_naked"] is False
     half = {**STOP, "sz": "2.9"}
-    out = W.assess(STATE, [half], "xyz")
+    out = assess(STATE, [half], "xyz")
     assert out["positions"][0]["naked"] and out["positions"][0]["stop_covers"] == 2.9
 
 
 def test_only_reduce_only_stops_count_and_other_coins_are_ignored():
     entry_order = {**STOP, "reduceOnly": False}                 # a resting entry is not protection
     other = {**STOP, "coin": "xyz:CL"}
-    assert W.assess(STATE, [entry_order, other], "xyz")["any_naked"] is True
+    assert assess(STATE, [entry_order, other], "xyz")["any_naked"] is True
 
 
 def test_flat_account_and_short_side():
-    assert W.assess({"marginSummary": {}, "assetPositions": []}, []) == {
+    assert assess({"marginSummary": {}, "assetPositions": []}, []) == {
         "dex": "main", "equity_usd": 0.0, "notional_usd": 0.0, "positions": [], "any_naked": False}
     short = {"marginSummary": {}, "assetPositions": [{"position": {
         "coin": "BTC", "szi": "-0.01", "entryPx": "80000", "liquidationPx": None, "leverage": 5}}]}
-    p = W.assess(short, [])["positions"][0]
+    p = assess(short, [])["positions"][0]
     assert p["side"] == "short" and p["liq_px"] is None and p["liq_dist_pct"] is None and p["leverage"] == 5

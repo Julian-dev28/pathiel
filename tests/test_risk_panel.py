@@ -195,27 +195,26 @@ def test_risk_endpoint_serves(client, curve, monkeypatch):
                          "fee_drag_pct", "kill_used_frac", "mode"}
 
 
-def test_the_landing_page_actually_renders_the_risk_numbers(client):
-    """The panel has to be ON the page, not merely available at an endpoint —
-    an endpoint nobody renders is exactly the gap this work closed."""
+def test_the_desk_page_carries_an_off_switch_that_says_what_it_does(client):
+    """The old landing page's risk band (drawdown/win-rate/fee-drag numbers,
+    /api/agent/stop kill switch) is gone with it (docs/overhaul/
+    DESK_UI_2026-10-23.md) — the Desk page keeps a narrower off switch for
+    the retired auto-trader only, wired to /api/agent/config {mode: OFF},
+    not /api/agent/stop (which killed a PID-based bot process that no
+    longer exists). The button markup is static HTML; its two-step confirm
+    and the actual fetch call live in the external oil_desk.js (this page
+    uses an external script, unlike the old landing.html's inline one)."""
+    from pathlib import Path
     body = client.get("/").text
-    for marker in ("risk-band", "risk-dd", "risk-maxdd", "risk-win",
-                   "risk-fees", "risk-kill", "risk-caveat", "refreshRisk"):
-        assert marker in body, f"landing page lost {marker}"
+    assert 'id="stop-trading-btn"' in body
+    assert "does not stop this desk's loop" in body, (
+        "the button's own caption must say what it does NOT touch — an off "
+        "switch people misread is worse than no off switch")
+    assert "mode: OFF" in body
 
-
-def test_the_page_carries_an_off_switch_that_says_what_it_does(client):
-    body = client.get("/").text
-    assert "kill-btn" in body and "/api/agent/stop" in body
-    # Asserted on the exact string "CONFIRM STOP" until 2026-09-02, which pinned
-    # the shouting rather than the safeguard. The button is sentence case like
-    # every other control on the page; what must not change is that a live kill
-    # takes two presses.
-    assert "Confirm stop" in body, "a live kill needs a confirm step"
-    assert "CONFIRM STOP" not in body, "controls are sentence case, not shouted"
-    assert "does not flatten" in body, (
-        "the button must say it leaves positions open — an off switch people "
-        "misread is worse than no off switch")
+    js = (Path(__file__).resolve().parents[1] / "pathiel" / "static" / "oil_desk.js").read_text()
+    assert "/api/agent/config" in js and "mode: 'OFF'" in js
+    assert "Confirm" in js, "a live kill needs a confirm step"
 
 
 def test_the_stop_endpoint_is_closed_in_both_configurations(monkeypatch):
@@ -346,11 +345,6 @@ def test_above_the_floor_means_it_can_trade(monkeypatch):
     assert r["can_trade"] is True
 
 
-def test_the_page_shows_the_blocked_state(client):
-    body = client.get("/").text
-    assert "BLOCKED" in body and "can_trade" in body
-
-
 # ── a degraded feed is not a quiet market ────────────────────────────────────
 
 def test_a_blind_scan_is_not_trustworthy(monkeypatch):
@@ -397,8 +391,3 @@ def test_feed_health_reaches_the_risk_payload(monkeypatch, curve):
     assert feed["trustworthy"] is False and feed["gaps"] == 30
 
 
-def test_the_page_renders_the_degraded_feed_state(client):
-    body = client.get("/").text
-    assert "risk-feed" in body
-    assert "not a quiet market" in body, (
-        "the page must name the failure mode, not just show a number")

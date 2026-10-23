@@ -1,7 +1,10 @@
-"""Playwright e2e for the Desks pages (/desks, /desks/{id}), against the
-fixture-backed app in tests/browser/desks_fixture_app.py — the real contract
-models, oil's real fixtures, three synthesized desks covering empty/stale/
-short-side, and a dedicated err500 path. Chromium only, boots its own server
+"""Playwright e2e for the desk Thesis page (/desk/{id}; singular, distinct
+from the /api/desks/... collection routes), against the fixture-backed app
+in tests/browser/desks_fixture_app.py — the real contract models, oil's
+real fixtures, three synthesized desks covering empty/stale/short-side, and
+a dedicated err500 path. The /desks grid list page was removed 2026-10-23
+(docs/overhaul/DESK_UI_2026-10-23.md) along with its own tests here;
+desk.html is the only desk page left. Chromium only, boots its own server
 on this agent's assigned port band (8710-8719, per SWARM_RULES section 1/2).
 
 Deselected from the default commit gate (too slow for <2s); run with:
@@ -102,28 +105,6 @@ def assert_above_fold(page: Page, viewport_height: int, selectors=FOLD_SELECTORS
 
 # ── grid ──────────────────────────────────────────────────────────────────────
 
-def test_grid_renders_all_cards(server, browser):
-    page, issues = open_page(browser, DESKTOP_VP)
-    page.goto(server + "/desks", wait_until="networkidle")
-    page.wait_for_selector("#desks-grid:not([hidden])", timeout=5000)
-    cards = page.locator(".desk-card")
-    assert cards.count() == 4
-    ids = {page.locator(".desk-card").nth(i).get_attribute("data-desk-id") for i in range(4)}
-    assert ids == {"oil", "btc", "ai", "gas"}
-    # oil's card must show its real fixture call, not a placeholder
-    oil_card = page.locator('.desk-card[data-desk-id="oil"]')
-    assert "Long WTI at 5x" in oil_card.locator(".dc-call").inner_text()
-    assert not issues, issues
-    page.close()
-
-
-def test_grid_empty_desk_card_says_no_call_yet(server, browser):
-    page, issues = open_page(browser, DESKTOP_VP)
-    page.goto(server + "/desks", wait_until="networkidle")
-    ai_card = page.locator('.desk-card[data-desk-id="ai"]')
-    assert "No call yet" in ai_card.locator(".dc-call").inner_text()
-    assert not issues, issues
-    page.close()
 
 
 # ── the fold ──────────────────────────────────────────────────────────────────
@@ -131,7 +112,7 @@ def test_grid_empty_desk_card_says_no_call_yet(server, browser):
 @pytest.mark.parametrize("viewport", [DESKTOP_VP, MOBILE_VP], ids=["1280x800", "375x812"])
 def test_oil_call_is_above_the_fold(server, browser, viewport):
     page, issues = open_page(browser, viewport)
-    page.goto(server + "/desks/oil", wait_until="networkidle")
+    page.goto(server + "/desk/oil", wait_until="networkidle")
     page.wait_for_selector("#call-card:not([hidden])", timeout=5000)
     assert_above_fold(page, viewport["height"])
     assert not issues, issues
@@ -144,7 +125,7 @@ def test_gas_call_is_above_the_fold_even_while_stale(server, browser, viewport):
     chrome most likely to push content past the fold, so this is the sharper
     version of the check above."""
     page, _ = open_page(browser, viewport)
-    page.goto(server + "/desks/gas", wait_until="networkidle")
+    page.goto(server + "/desk/gas", wait_until="networkidle")
     page.wait_for_selector("#call-card:not([hidden])", timeout=5000)
     assert page.locator("#stale-banner").is_visible()
     assert_above_fold(page, viewport["height"])
@@ -159,7 +140,7 @@ def test_no_horizontal_scroll_at_375(server, browser):
     and test_zero_console_errors_across_every_state (neither of which visits
     err500 while asserting a clean console)."""
     page, _ = open_page(browser, MOBILE_VP)
-    for path in ("/desks", "/desks/oil", "/desks/ai", "/desks/gas", "/desks/err500"):
+    for path in ("/desk/oil", "/desk/ai", "/desk/gas", "/desk/err500"):
         page.goto(server + path, wait_until="networkidle")
         page.wait_for_timeout(150)
         scroll_w = page.evaluate("document.documentElement.scrollWidth")
@@ -173,7 +154,7 @@ def test_no_horizontal_scroll_at_375(server, browser):
 def test_leverage_switch_shows_fixture_numbers_long(server, browser):
     """oil's long ladder, straight from contracts/strategies/fixtures/oil_analytics.json."""
     page, issues = open_page(browser, DESKTOP_VP)
-    page.goto(server + "/desks/oil", wait_until="networkidle")
+    page.goto(server + "/desk/oil", wait_until="networkidle")
     page.wait_for_selector("#lev-card:not([hidden])", timeout=5000)
 
     page.check("#lev-opt-5")
@@ -200,7 +181,7 @@ def test_leverage_switch_shows_fixture_numbers_short(server, browser):
     """gas is the only desk with a short call — proves the ladder's side-
     matching filter picks short rungs, not just defaulting to long."""
     page, issues = open_page(browser, DESKTOP_VP)
-    page.goto(server + "/desks/gas", wait_until="networkidle")
+    page.goto(server + "/desk/gas", wait_until="networkidle")
     page.wait_for_selector("#lev-card:not([hidden])", timeout=5000)
 
     page.check("#lev-opt-5")
@@ -215,7 +196,7 @@ def test_leverage_switch_shows_fixture_numbers_short(server, browser):
 
 def test_leverage_switch_is_keyboard_operable(server, browser):
     page, issues = open_page(browser, DESKTOP_VP)
-    page.goto(server + "/desks/oil", wait_until="networkidle")
+    page.goto(server + "/desk/oil", wait_until="networkidle")
     page.wait_for_selector("#lev-card:not([hidden])", timeout=5000)
     assert page.is_checked("#lev-opt-5")
 
@@ -242,7 +223,7 @@ def test_leverage_switch_makes_no_network_call(server, browser):
     pure DOM write against data already in memory has no realistic way to
     miss a wall-clock budget measured in tens of milliseconds)."""
     page, _ = open_page(browser, DESKTOP_VP)
-    page.goto(server + "/desks/oil", wait_until="networkidle")
+    page.goto(server + "/desk/oil", wait_until="networkidle")
     page.wait_for_selector("#lev-card:not([hidden])", timeout=5000)
 
     requests: list[str] = []
@@ -259,7 +240,7 @@ def test_leverage_switch_makes_no_network_call(server, browser):
 def test_leverage_switch_works_before_any_thesis_exists(server, browser):
     """ai has no call yet — the switch must still work as a practice tool."""
     page, issues = open_page(browser, DESKTOP_VP)
-    page.goto(server + "/desks/ai", wait_until="networkidle")
+    page.goto(server + "/desk/ai", wait_until="networkidle")
     page.wait_for_selector("#call-empty:not([hidden])", timeout=5000)
     page.wait_for_selector("#lev-card:not([hidden])", timeout=5000)
     page.check("#lev-opt-10")
@@ -272,7 +253,7 @@ def test_leverage_switch_works_before_any_thesis_exists(server, browser):
 
 def test_scenarios_render_with_bar_and_list(server, browser):
     page, issues = open_page(browser, DESKTOP_VP)
-    page.goto(server + "/desks/oil", wait_until="networkidle")
+    page.goto(server + "/desk/oil", wait_until="networkidle")
     page.wait_for_selector("#scenario-list .scenario-row", timeout=5000)
     assert page.locator("#scenario-bar .scenario-seg").count() == 4
     assert page.locator("#scenario-list .scenario-row").count() == 4
@@ -283,7 +264,7 @@ def test_scenarios_render_with_bar_and_list(server, browser):
 
 def test_catalyst_chips_show_countdown_and_both_times_on_hover(server, browser):
     page, issues = open_page(browser, DESKTOP_VP)
-    page.goto(server + "/desks/oil", wait_until="networkidle")
+    page.goto(server + "/desk/oil", wait_until="networkidle")
     page.wait_for_selector("#catalyst-chips .catalyst-chip", timeout=5000)
     chip = page.locator("#catalyst-chips .catalyst-chip").first
     assert "in " in chip.locator(".catalyst-when").inner_text()
@@ -295,7 +276,7 @@ def test_catalyst_chips_show_countdown_and_both_times_on_hover(server, browser):
 
 def test_bull_bear_points_link_to_sources(server, browser):
     page, issues = open_page(browser, DESKTOP_VP)
-    page.goto(server + "/desks/oil", wait_until="networkidle")
+    page.goto(server + "/desk/oil", wait_until="networkidle")
     page.wait_for_selector("#bull-col .bb-point", timeout=5000)
     assert page.locator("#bull-col .bb-sources a").count() >= 1
     # the bear point cites h3+p1, neither of which is in thesis.sources —
@@ -309,7 +290,7 @@ def test_bull_bear_points_link_to_sources(server, browser):
 
 def test_bad_input_shows_inline_errors_and_never_posts(server, browser):
     page, issues = open_page(browser, DESKTOP_VP)
-    page.goto(server + "/desks/oil", wait_until="networkidle")
+    page.goto(server + "/desk/oil", wait_until="networkidle")
     page.wait_for_selector("#user-thesis-form", timeout=5000)
 
     posted = []
@@ -341,7 +322,7 @@ def test_bad_input_shows_inline_errors_and_never_posts(server, browser):
 
 def test_user_thesis_submit_appears_in_history(server, browser):
     page, issues = open_page(browser, DESKTOP_VP)
-    page.goto(server + "/desks/oil", wait_until="networkidle")
+    page.goto(server + "/desk/oil", wait_until="networkidle")
     page.wait_for_selector("#user-thesis-form", timeout=5000)
 
     marker = "E2E drill call — unique marker 7f3a"
@@ -367,7 +348,7 @@ def test_refresh_shows_skipped_state(server, browser):
     """oil's 1d move is tiny — deterministically below its own
     material_move_pct threshold, so this always skips."""
     page, issues = open_page(browser, DESKTOP_VP)
-    page.goto(server + "/desks/oil", wait_until="networkidle")
+    page.goto(server + "/desk/oil", wait_until="networkidle")
     page.click("#refresh-btn")
     page.wait_for_selector("#refresh-status.is-skipped", timeout=5000)
     assert "skipped: no material move" in page.inner_text("#refresh-status")
@@ -379,7 +360,7 @@ def test_refresh_shows_done_state_with_new_thesis(server, browser):
     """btc's 1d move is large — deterministically exceeds its
     material_move_pct threshold, so this always runs through to done."""
     page, issues = open_page(browser, DESKTOP_VP)
-    page.goto(server + "/desks/btc", wait_until="networkidle")
+    page.goto(server + "/desk/btc", wait_until="networkidle")
 
     # btc's thesis was built moments before this test runs, so "Called <1m
     # ago" reads identically before and after a refresh — too coarse to prove
@@ -402,7 +383,7 @@ def test_refresh_shows_done_state_with_new_thesis(server, browser):
 
 def test_api_500_shows_the_error_state(server, browser):
     page, _ = open_page(browser, DESKTOP_VP)   # a 500 legitimately logs a console error; not asserted here
-    page.goto(server + "/desks/err500", wait_until="networkidle")
+    page.goto(server + "/desk/err500", wait_until="networkidle")
     page.wait_for_selector("#desk-error:not([hidden])", timeout=5000)
     assert page.locator("#desk-content").is_hidden()
     assert page.locator("#desk-retry").is_visible()
@@ -411,7 +392,7 @@ def test_api_500_shows_the_error_state(server, browser):
 
 def test_empty_desk_shows_the_empty_state(server, browser):
     page, issues = open_page(browser, DESKTOP_VP)
-    page.goto(server + "/desks/ai", wait_until="networkidle")
+    page.goto(server + "/desk/ai", wait_until="networkidle")
     page.wait_for_selector("#call-empty:not([hidden])", timeout=5000)
     assert page.locator("#call-card").is_hidden()
     assert "No call yet" in page.inner_text("#call-empty")
@@ -421,7 +402,7 @@ def test_empty_desk_shows_the_empty_state(server, browser):
 
 def test_stale_state_shows_the_banner_with_a_reason(server, browser):
     page, issues = open_page(browser, DESKTOP_VP)
-    page.goto(server + "/desks/gas", wait_until="networkidle")
+    page.goto(server + "/desk/gas", wait_until="networkidle")
     page.wait_for_selector("#stale-banner:not([hidden])", timeout=5000)
     text = page.inner_text("#stale-banner")
     assert "Stale" in text
@@ -446,7 +427,7 @@ def test_a_call_from_before_a_primary_change_says_why_it_is_stale(server, browse
 
     page, issues = open_page(browser, DESKTOP_VP)
     page.route("**/api/desks/oil", add_note)
-    page.goto(server + "/desks/oil", wait_until="networkidle")
+    page.goto(server + "/desk/oil", wait_until="networkidle")
     page.wait_for_selector("#stale-banner:not([hidden])", timeout=5000)
     text = page.inner_text("#stale-banner")
     assert "written for xyz:CL" in text and "xyz:BRENTOIL" in text
@@ -456,23 +437,12 @@ def test_a_call_from_before_a_primary_change_says_why_it_is_stale(server, browse
     page.close()
 
 
-def test_grid_loading_then_error_state_on_a_dead_backend(server, browser):
-    """A request to an unreachable API must land on the grid's own error
-    state with a retry — not a blank page or an uncaught exception."""
-    page, _ = open_page(browser, DESKTOP_VP)
-    page.route("**/api/desks", lambda route: route.abort())
-    page.goto(server + "/desks", wait_until="domcontentloaded")
-    page.wait_for_selector("#desks-error:not([hidden])", timeout=5000)
-    assert page.locator("#desks-grid").is_hidden()
-    assert page.locator("#desks-retry").is_visible()
-    page.close()
-
 
 # ── details ───────────────────────────────────────────────────────────────────
 
 def test_details_section_is_collapsed_by_default_and_opens(server, browser):
     page, issues = open_page(browser, DESKTOP_VP)
-    page.goto(server + "/desks/oil", wait_until="networkidle")
+    page.goto(server + "/desk/oil", wait_until="networkidle")
     page.wait_for_selector("#desk-details", timeout=5000)
     assert page.evaluate("document.getElementById('desk-details').open") is False
     page.click("#desk-details summary")
@@ -486,11 +456,11 @@ def test_details_section_is_collapsed_by_default_and_opens(server, browser):
 
 def test_zero_console_errors_across_every_state(server, browser):
     page, issues = open_page(browser, DESKTOP_VP)
-    for path in ("/desks", "/desks/oil", "/desks/btc", "/desks/ai", "/desks/gas"):
+    for path in ("/desk/oil", "/desk/btc", "/desk/ai", "/desk/gas"):
         page.goto(server + path, wait_until="networkidle")
         page.wait_for_timeout(200)
     # interact a little: leverage switch, open details, add a scenario row
-    page.goto(server + "/desks/oil", wait_until="networkidle")
+    page.goto(server + "/desk/oil", wait_until="networkidle")
     page.check("#lev-opt-20")
     page.click("#desk-details summary")
     page.click("#ut-add-scenario")
@@ -508,7 +478,7 @@ def test_your_size_line_sizes_the_call_and_hides_with_amounts(server, browser):
     figure. The fixture app answers /api/risk/size with the real size_trade
     at a $15.21 starter account."""
     page, issues = open_page(browser, DESKTOP_VP)
-    page.goto(server + "/desks/oil", wait_until="networkidle")
+    page.goto(server + "/desk/oil", wait_until="networkidle")
     line = page.locator("#call-size")
     line.wait_for(state="visible", timeout=5000)
     text = line.inner_text()
@@ -522,7 +492,7 @@ def test_your_size_line_sizes_the_call_and_hides_with_amounts(server, browser):
 
 def test_no_size_line_without_a_call(server, browser):
     page, _ = open_page(browser, DESKTOP_VP)
-    page.goto(server + "/desks/ai", wait_until="networkidle")
+    page.goto(server + "/desk/ai", wait_until="networkidle")
     assert page.locator("#call-size").is_hidden()
     page.close()
 
@@ -577,7 +547,7 @@ def test_a_page_opened_mid_refresh_follows_the_running_job(server, browser):
     page, issues = open_page(browser, DESKTOP_VP)
     page.route("**/api/desks/btc", brief)
     page.route("**/api/desks/jobs/live-1", job)
-    page.goto(server + "/desks/btc", wait_until="domcontentloaded")
+    page.goto(server + "/desk/btc", wait_until="domcontentloaded")
     page.wait_for_selector("#refresh-progress:not([hidden])", timeout=5000)
     assert "reading market data" in page.inner_text("#refresh-progress")
     assert page.is_disabled("#refresh-btn")
@@ -607,7 +577,7 @@ def test_a_desk_with_no_call_offers_the_first_call_not_a_stale_banner(server, br
     page.route("**/api/desks/jobs/first-1", _json_route(
         {"id": "first-1", "desk_id": "btc", "state": "running", "started_at": started,
          "message": "writing the thesis (about a minute)"}))
-    page.goto(server + "/desks/btc", wait_until="networkidle")
+    page.goto(server + "/desk/btc", wait_until="networkidle")
     assert page.is_hidden("#stale-banner"), "missing parts are not stale"
     assert page.is_visible("#call-empty-refresh")
     assert "1 to 2 minutes" in page.inner_text("#call-empty")
@@ -627,7 +597,7 @@ def test_a_skipped_refresh_says_why_in_plain_english(server, browser):
     page.route("**/api/desks/oil/refresh", _json_route(
         {"id": "skip-1", "desk_id": "oil", "state": "skipped", "started_at": _now_iso(),
          "finished_at": _now_iso(), "message": "no_trigger"}))
-    page.goto(server + "/desks/oil", wait_until="networkidle")
+    page.goto(server + "/desk/oil", wait_until="networkidle")
     page.click("#refresh-btn")
     page.wait_for_selector("#refresh-status.is-skipped", timeout=5000)
     assert page.inner_text("#refresh-status") == \
@@ -642,7 +612,7 @@ def test_polls_never_stack_and_stop_in_a_hidden_tab(server, browser):
     (the dashboard's 6 s summary poll stacking up behind 6-12 s account reads
     held the browser's connections and stalled the Desks click)."""
     page, issues = open_page(browser, DESKTOP_VP)
-    page.goto(server + "/desks", wait_until="networkidle")
+    page.goto(server + "/desk/oil", wait_until="networkidle")
     r = page.evaluate("""async () => {
       const sleep = ms => new Promise(res => setTimeout(res, ms));
       let running = 0, maxRunning = 0, runs = 0, hidden = false;

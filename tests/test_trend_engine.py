@@ -15,20 +15,21 @@ klines, and injected `getter` / `runner` callables. What is covered:
   politics     : probability-space read, the drift null test and its
                  shared-endpoint guard, the expired-market drop
   cache        : atomic write, staleness, AI carry-forward
-  dashboard    : /trends renders, the lane APIs are pure cache reads, and the
-                 operator-gated routes exist
+
+The /trends dashboard page and its /api/dashboard/trends/* routes were
+removed 2026-10-23 (the Oil Desk UI overhaul; the operator's instruction was
+explicit: "leave services/trend_engine itself alone", so only that page's
+own tests went with it — everything above still runs against the service
+directly, with no FastAPI client in the loop).
 """
 from __future__ import annotations
 
 import json
 import os
 import pathlib
-import re
 import time
 
 import pytest
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
 
 from services.trend_engine import ai as tai
 from services.trend_engine import cache as tcache
@@ -700,49 +701,6 @@ def test_ai_rejects_an_unknown_lane():
 # ── dashboard wiring ─────────────────────────────────────────────────────────
 
 
-@pytest.fixture()
-def client(tmp_path, monkeypatch):
-    from pathiel import dashboard as db
-    monkeypatch.setattr(tcache, "DIR", str(tmp_path))
-    db._TTL_CACHE.clear()
-    app = FastAPI()
-    db.register_routes(app)
-    return TestClient(app)
-
-
-def test_trends_page_renders_self_contained(client):
-    r = client.get("/trends")
-    assert r.status_code == 200
-    body = r.text
-    assert "Trends" in body and "HYPERLIQUID" in body
-    assert 'id="lane-hl"' in body
-    # The lanes that are gone must not creep back as markup or dead script.
-    assert "recorders" not in body.lower()
-    # no third-party asset may be pulled at render time
-    assert "http://" not in body and "https://" not in body
-    assert 'href="/static/app.css"' in body
-
-
-def test_lane_apis_are_pure_cache_reads(client):
-    for lane in ("hl",):
-        r = client.get(f"/api/dashboard/trends/{lane}")
-        assert r.status_code == 200
-        body = r.json()
-        assert body["status"] == "empty"          # tmp cache dir, nothing written
-        assert body["stale"] is True
-
-
-def test_lane_api_serves_what_the_refresher_wrote(client, tmp_path):
-    tcache.save("hl", {"status": "ok", "generated_at": int(time.time()),
-                       "scanned": 3, "regime": {"label": "RISK_ON_TRENDING"}})
-    r = client.get("/api/dashboard/trends/hl")
-    assert r.json()["regime"]["label"] == "RISK_ON_TRENDING"
-
-
-def test_unknown_lane_is_a_404(client):
-    assert client.get("/api/dashboard/trends/bogus").status_code == 404
-
-
 class _Proc:
     def __init__(self, returncode=0, stdout="", stderr=""):
         self.returncode, self.stdout, self.stderr = returncode, stdout, stderr
@@ -799,86 +757,6 @@ def test_refresh_reports_a_timeout_instead_of_hanging_the_job(monkeypatch):
     assert out["status"] == "error" and "exceeded 5s" in out["error"]
 
 
-def test_a_gated_control_says_why_instead_of_alerting(client):
-    """`alert()` is a button that does nothing whenever the browser suppresses
-    it — which is exactly how the refresh button read from the operator's side
-    with no token stored. Every failure path now writes next to the control."""
-    body = client.get("/trends").text
-    assert "alert('" not in body and 'alert("' not in body
-    assert "needs the operator token — paste it above and press save" in body
-    assert "operator token rejected (" in body
-    assert "openTokenRow(" in body and 'id="token-why"' in body
-    # and the gate is visible BEFORE the click, not only after it
-    assert "needs the operator token to refresh" in body
-
-
-def test_the_refresh_button_surfaces_a_failed_job(client):
-    """A refresh that errored used to land in a callback that ignored the
-    result, so failure looked exactly like success."""
-    body = client.get("/trends").text
-    assert "refresh failed: " in body
-    assert "setRefreshNote" in body and "refreshing… ' +" in body
-
-
-def test_the_action_card_folds_the_named_setups(client):
-    """HL alone emits 21 actions. A 21-item wall under a header that says
-    'read this first' is not a briefing — the rules and the refusals stay
-    open, the per-coin WATCH list folds behind a count."""
-    body = client.get("/trends").text
-    assert "named setups</span>" in body
-    assert "const sorted = acts.slice();" in body        # source order, not by kind
-    assert "PB_ORDER" not in body                        # the sort is gone, not bypassed
-
-
-def test_the_action_card_shows_which_sector_each_line_belongs_to(client):
-    """crypto and xyz actions are interleaved; without the tag the reader
-    cannot tell which tape a line is about."""
-    body = client.get("/trends").text
-    assert "a.tag && a.tag !== 'method'" in body
-
-
-def test_stale_data_says_so_on_the_page(client):
-    """Stale numbers that look fresh are the ones that mislead. With a single
-    lane there is no other tab to carry an amber dot, so the masthead meta is
-    the only place left that can say it — it must actually say it."""
-    body = client.get("/trends").text
-    assert 'id="lane-meta"' in body
-    assert "STALE" in body
-
-
-def test_every_element_the_page_scripts_reach_for_exists(client):
-    """A renamed id fails silently in the browser — `$('#gone')` is null and the
-    block it feeds just never renders. Catch it here instead of on the tab."""
-    import re
-    body = client.get("/trends").text
-    defined = set(re.findall(r'id="([\w-]+)"', body))
-    used = (set(re.findall(r"\$\('#([\w-]+)'\)", body))
-            | set(re.findall(r"getElementById\('([\w-]+)'\)", body)))
-    assert not (used - defined), f"script reaches for missing ids: {sorted(used - defined)}"
-    # ids built at runtime from the lane map must resolve too
-    lanes = re.search(r"const REFRESH_BTN = \{(.*?)\};", body, re.S).group(1)
-    for btn in re.findall(r"'([\w-]+)'", lanes):
-        assert btn in defined, f"REFRESH_BTN points at a missing button: {btn}"
-
-
-def test_every_endpoint_the_page_calls_is_registered(client):
-    """The page is a static shell over the JSON API. A route renamed on the
-    server and not in the template is a button that 404s."""
-    import re
-    body = client.get("/trends").text
-    called = set(re.findall(r"'(/api/dashboard/trends/[\w/{}?=-]*)'", body))
-    registered = {r.path for r in client.app.routes if hasattr(r, "path")}
-    for raw in called:
-        path = raw.split("?")[0].rstrip("/")
-        if not path:
-            continue                                  # the lane-prefix literal
-        # the template concatenates the lane, so match on the templated route
-        candidates = {path, path.replace("/hl", "/{lane}"),
-                      re.sub(r"/trends/[\w-]+/", "/trends/{lane}/", path)}
-        assert candidates & registered or any(
-            p.startswith(path) for p in registered), f"page calls unregistered {raw}"
-
-
 def test_the_smoke_script_contract_matches_the_lanes_the_tab_serves():
     """`scripts/smoke_trends.py` asserts a field contract per lane. If a lane is
     added or renamed, the smoke must know about it or it silently checks less."""
@@ -912,50 +790,6 @@ def test_css_build_is_current():
 # arb crossed 2 of 276 sampled windows). These are the tests that keep it gone —
 # a half-removal that leaves a dead route or a dangling import is worse than
 # either state, because the tab still looks alive.
-
-
-def test_every_page_links_only_the_tabs_that_exist(client):
-    """A nav link to a deleted page renders as a 404 the operator only finds by
-    clicking. Every data-nav target on every served page must resolve.
-
-    /desks is a deliberate, temporary exception (overhaul 2026-10-17): the
-    ux-qa sweep added the nav link across every template per its brief
-    ("add a Desks link... another agent is building desks.html/desk.html"),
-    in a worktree that branches in parallel with the one registering that
-    route. The link existing and being consistent is what ux-qa's own worktree
-    can prove; the route resolving is proven once the desk-ui branch merges.
-    Drop this exception then — a 404 on /desks after that merge is real."""
-    pages = ("/", "/activity", "/news", "/analytics", "/trends")
-    for path in pages:
-        body = client.get(path).text
-        for target in set(re.findall(r'data-nav="([^"]+)"', body)):
-            if target == "/desks":
-                continue
-            assert client.get(target).status_code == 200, (
-                f"{path} links data-nav={target!r}, which does not resolve")
-
-
-def test_mutating_trend_routes_are_operator_gated(client):
-    """The surviving write surface still refuses an unauthenticated caller."""
-    for path, method in (("/api/dashboard/trends/hl/refresh", "POST"),
-                         ("/api/dashboard/trends/hl/ai", "POST")):
-        r = client.post(path) if method == "POST" else client.get(path)
-        assert r.status_code in (401, 403, 503), f"{path} answered {r.status_code}"
-
-
-def test_no_polymarket_route_survives(client):
-    """Every route the prediction-market side owned must be gone, not merely
-    unlinked — a live endpoint is a live code path."""
-    for path in ("/predictions", "/api/dashboard/predictions",
-                 "/api/dashboard/predictions/trades", "/api/dashboard/updown",
-                 "/api/dashboard/updown/live", "/api/dashboard/trends/updown",
-                 "/api/dashboard/trends/updown/live",
-                 "/api/dashboard/trends/arb/preflight"):
-        assert client.get(path).status_code == 404, f"{path} still answers"
-    for path in ("/api/dashboard/trends/arb/fire",
-                 "/api/dashboard/updown/analyze",
-                 "/api/dashboard/predictions/analyze"):
-        assert client.post(path).status_code == 404, f"{path} still answers"
 
 
 def test_no_module_imports_the_deleted_polymarket_package():
@@ -994,14 +828,6 @@ def test_no_playbook_line_interpolates_a_raw_label():
            / "services" / "trend_engine" / "playbook.py").read_text()
     assert not _re.search(r"\{r\.get\(['\"]label['\"]\)\}", src), (
         "a raw trend constant is interpolated into narrative copy")
-
-
-def test_the_trends_table_labels_its_flags(client):
-    """Flag chips shipped their raw codes — EMA_STACK_BULL, BREAKOUT_7D — and
-    as adjacent chips they ran together when the page was copied."""
-    page = client.get("/trends").text
-    assert "FLAG_LABEL" in page and "flagLabel(fl.code)" in page
-    assert "esc(fl.code)}</span>" not in page, "still renders the raw code"
 
 
 def test_no_module_interpolates_a_raw_trend_label_into_prose():

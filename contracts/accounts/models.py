@@ -28,6 +28,10 @@ Routes (services/accounts/api.py):
   PATCH  /api/accounts/{account_id}         -> Account           body: AccountPatch
   DELETE /api/accounts/{account_id}         -> {"ok": true}
   GET    /api/accounts/active/summary       -> ActiveSummary
+  GET    /api/accounts/{account_id}/positions -> {"user", "accounts": [...], "any_naked"}
+                                                (services/accounts/positions.py; not modeled
+                                                here since it mirrors scripts/watch_wallet.py's
+                                                CLI shape, not a strict contract type)
 
 Private keys are never returned by any route, never logged, never written
 unencrypted. Bump CONTRACT_VERSION on a breaking change.

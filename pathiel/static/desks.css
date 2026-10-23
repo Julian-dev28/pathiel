@@ -145,6 +145,7 @@
   padding-top:14px; border-top:1px solid var(--rule);
 }
 .lev-reason{ font-size:13px; color:var(--ink-2); }
+.lev-call-line{ display:flex; align-items:baseline; gap:10px; margin-top:10px; padding-top:10px; border-top:1px solid var(--rule); flex-wrap:wrap; }
 
 .badge.b-hold{ color:var(--up); background:var(--up-wash); border-color:transparent; }
 .badge.b-dip-only{ color:var(--amber); background:var(--amber-wash); border-color:transparent; }
@@ -315,6 +316,24 @@
 /* "Updating prices…": the brief on screen came from cache while the server
    rebuilds it. Quiet on purpose, it is the normal case, not a warning. */
 .desk-updating{ margin-top:6px; font-size:12px; color:var(--ink-3); }
+
+/* ── Oil Desk page (/, pathiel/templates/oil_desk.html) ─────────────────── */
+
+.log-body{
+  max-height:280px; overflow-y:auto; white-space:pre-wrap; word-break:break-word;
+  background:var(--surface-2); padding:12px 14px; border-radius:6px;
+  font-size:12px; line-height:1.6;
+}
+.headline-row{
+  display:flex; gap:10px; align-items:baseline; flex-wrap:wrap;
+  font-size:13px; padding:8px 0; border-bottom:1px solid var(--rule);
+}
+.headline-row:last-child{ border-bottom:0; }
+.headline-title{ flex:1 1 320px; color:var(--ink); }
+.headline-meta{ color:var(--ink-3); font-size:11.5px; white-space:nowrap; }
+.odds-row{ display:flex; gap:10px; align-items:baseline; font-size:13px; padding:6px 0; }
+.odds-q{ flex:1 1 320px; color:var(--ink-2); }
+.odds-p{ font-variant-numeric:tabular-nums; font-weight:600; }
 
 /* "Your size": the call sized for the active account (POST /api/risk/size). */
 .call-size{ margin-top:8px; font-size:13px; color:var(--ink-2); }

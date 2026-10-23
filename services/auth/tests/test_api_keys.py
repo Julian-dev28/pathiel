@@ -215,10 +215,12 @@ def test_a_signed_in_customer_never_sees_the_house_balance(client, monkeypatch, 
         sig = acct.sign_message(encode_defunct(text=msg)).signature.hex()
         c.post("/auth/verify", json={"message": msg, "signature": sig})
 
-    for house in ("/api/dashboard/summary", "/api/dashboard/risk",
-                  "/api/dashboard/positions", "/api/dashboard/closed-trades",
-                  "/api/dashboard/equity-curve", "/api/dashboard/funnel",
-                  "/api/dashboard/book_league"):
+    # /api/dashboard/summary, /closed-trades, /equity-curve, /funnel and
+    # /book_league were removed 2026-10-23 with the bot UI that served them
+    # (docs/overhaul/DESK_UI_2026-10-23.md); /risk and /positions stay —
+    # pathiel/metrics.py and their own dedicated test suites read them
+    # independent of any page — so they are the routes still worth gating here.
+    for house in ("/api/dashboard/risk", "/api/dashboard/positions"):
         r = c.get(house)
         assert r.status_code == 403, f"{house} showed the house book to a customer"
         assert "equity" not in r.json(), f"{house} leaked a balance inside its 403"
