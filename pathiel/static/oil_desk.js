@@ -547,7 +547,23 @@ async function startOilDesk() {
   await loadActiveDesks();
   loadAll();                     // once immediately — pollEvery's own first
   pollEvery(loadAll, REFRESH_MS); // tick fires only after the first REFRESH_MS
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) loadAll(); });
+  // This page's own <script type="speculationrules"> prerenders same-origin
+  // links at "moderate" eagerness, so a visit here often starts life as a
+  // prerendered, hidden document: that first loadAll() call above (and the
+  // guard inside loadAll() itself) correctly does nothing rather than spend
+  // the venue budget on a page nobody may ever look at. Reproduced live,
+  // 2026-10-24: a background tab never fired a single /api request and
+  // every section sat on "Loading..." forever. The reason: a prerendered
+  // page's activation does not reliably fire 'visibilitychange' (a
+  // documented Chrome/Speculation-Rules gotcha — see
+  // web.dev/articles/speculation-rules#prerenderingchange) so the listener
+  // below, on its own, never ran for that page. 'prerenderingchange' is the
+  // event the spec actually guarantees on activation; listening for both
+  // covers a normal hidden-tab resume (visibilitychange) and a prerender
+  // activation (prerenderingchange) the same way.
+  const resumeIfVisible = () => { if (!document.hidden) loadAll(); };
+  document.addEventListener('visibilitychange', resumeIfVisible);
+  document.addEventListener('prerenderingchange', resumeIfVisible);
 }
 
 // ── Onboarding: first run + the "how much risk" wizard ──────────────────────
