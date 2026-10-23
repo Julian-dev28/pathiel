@@ -76,14 +76,11 @@ def test_equity_curve_accepts_sustained_drop(monkeypatch):
     assert eqs[:5] == [150.0] * 5
 
 
-def test_state_readonly_gates_memory_flush(tmp_path, monkeypatch):
-    from pathiel.agents.memory import memory
-    monkeypatch.setenv("PATHIEL_STATE_READONLY", "1")
-    # flush must be a no-op: point the file somewhere and verify nothing is written
-    target = tmp_path / "mem.json"
-    monkeypatch.setattr(memory, "_path", str(target), raising=False)
-    memory.flush()
-    assert not target.exists() or target.read_text() == ""
+# test_state_readonly_gates_memory_flush (PATHIEL_STATE_READONLY gating
+# pathiel.agents.memory's flush) was removed 2026-10-23, wave 2: memory.py
+# is deleted with the rest of the retired autonomous engine, and nothing
+# else in the surviving codebase writes a state file PATHIEL_STATE_READONLY
+# is meant to gate.
 
 
 def test_run_off_loop_does_not_block_the_event_loop():

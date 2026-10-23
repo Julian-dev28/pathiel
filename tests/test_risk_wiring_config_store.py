@@ -129,22 +129,36 @@ def test_migration_report_defaults_to_read_agent_config_when_omitted(monkeypatch
 
 
 def test_regression_the_real_config_migrates_through_the_real_read_agent_config(monkeypatch, tmp_path):
-    """THE regression test for the bug this fix caught: a COPY of Julien's
-    real .agent-config.json (0.35 equity-fraction, 3x leverage, no
-    "risk_profile" key), read through the ACTUAL
+    """THE regression test for the bug this fix caught: a config carrying
+    Julien's real pre-2026-10-23 legacy sizing keys (0.35 equity-fraction,
+    3x leverage, no "risk_profile" key), read through the ACTUAL
     pathiel.agents.config_store.read_agent_config() -- DEFAULT_CONFIG merge
     included, not a hand-built dict skipping it -- must still migrate to
     the account's OWN aggressive numbers (~15.75% risk per trade from its
     real settings), not silently fall back to the plain "starter" preset's
     generic 3%. Caught manually via `scripts/config_preset.py derive`
     before this test existed; this is what would have caught it in the gate
-    suite instead."""
+    suite instead.
+
+    2026-10-23 (wave 2): the live .agent-config.json no longer carries these
+    keys at all (removed along with the autonomous engine that was their
+    only reader) — services/risk/migrate.py still has to read them out of
+    an OLD config that still has them, so this is now a frozen snapshot of
+    the real file's legacy block as it stood before that wave, not a live
+    read of the current one."""
     cfg_path = tmp_path / "agent-config.json"
-    real = json.loads((REPO_ROOT / ".agent-config.json").read_text())
-    # The operator may since have SAVED an explicit profile (2026-10-23: max
-    # leverage 10x). This test is about migrating the legacy keys, so drop it.
-    real.pop("risk_profile", None)
-    cfg_path.write_text(json.dumps(real))
+    legacy = {
+        "mode": "LIVE",
+        "equity_fraction_per_trade": 0.35,
+        "leverage": 3,
+        "max_concurrent": 3,
+        "max_daily_loss_usd": -3.15,
+        "max_daily_loss_pct": 0.121,
+        "min_order_bump_max_mult": 2.0,
+        "min_tradable_equity_usd": 26.0,
+        "default_stop_pct": 15.0,
+    }
+    cfg_path.write_text(json.dumps(legacy))
     monkeypatch.setattr(cs, "CONFIG_PATH", str(cfg_path))
 
     merged = cs.read_agent_config()

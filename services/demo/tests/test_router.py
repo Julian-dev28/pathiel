@@ -60,9 +60,9 @@ class TestIsolation:
         """
         import pathiel.session_log
         import pathiel.positions_snapshot
-        from pathiel.agents import config_store, memory
+        from pathiel.agents import config_store
         for module in (pathiel.session_log, pathiel.positions_snapshot,
-                       config_store, memory):
+                       config_store):
             assert module is sys.modules[module.__name__]
 
     def test_the_live_session_log_is_not_the_demo_one(self, live_dashboard):

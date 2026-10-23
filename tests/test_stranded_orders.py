@@ -3,27 +3,24 @@
 Two leaks, both fixed 2026-10-19:
 
 1. cancel_open_orders_for_coin read `openOrders` with no `dex`. Hyperliquid
-   answers that for the main dex only, so after the bot closed xyz:CL its
+   answers that for the main dex only, so after closing xyz:CL its
    SL/TP bracket on xyz was never seen and never cancelled.
 2. When one half of a bracket filled on the exchange (or the operator closed
-   by hand), the bot recorded the vanished position and dropped its tracker,
-   but nothing cancelled the other half. A reduce-only trigger left on a flat
-   coin closes the NEXT position opened on that coin at a stale price.
+   by hand), the position vanished but nothing cancelled the other half. A
+   reduce-only trigger left on a flat coin closes the NEXT position opened on
+   that coin at a stale price.
 
 Every read here is faked at pathiel.client.exchange._http_post: no network.
 """
 from __future__ import annotations
 
-import ast
-from pathlib import Path
 from typing import Any, Dict, List
 
 import pytest
 
-import pathiel.agents.executor as ex
+import pathiel.agents.bracket as br
 import pathiel.client.exchange as xc
 
-ROOT = Path(__file__).resolve().parents[1]
 USER = "0xUSER"
 
 
@@ -172,93 +169,6 @@ def test_no_trading_account_means_no_reads(monkeypatch, info, cancels):
     assert info.calls == [] and cancels == []
 
 
-# ── 3. the executor: flat closes sweep, vanished positions are settled ──────
-
-@pytest.fixture
-def executor_env(monkeypatch):
-    swept: List[str] = []
-    cleared: List[str] = []
-    dropped: List[tuple] = []
-    monkeypatch.setattr(ex, "resolve_user_address", lambda: USER)
-    monkeypatch.setattr(ex, "deregister_position", lambda coin, side: dropped.append((coin, side)))
-    monkeypatch.setattr(ex, "cancel_stranded_reduce_only_orders", lambda coin: swept.append(coin) or 1)
-    monkeypatch.setattr(ex, "cancel_open_orders_for_coin", lambda coin: cleared.append(coin) or 0)
-    return {"swept": swept, "cleared": cleared, "dropped": dropped}
-
-
-def test_closing_an_already_flat_coin_sweeps_its_bracket(monkeypatch, executor_env):
-    monkeypatch.setattr(ex, "fetch_account_state", lambda u, **kw: {"asset_positions": []})
-    res = ex.close_position_market("xyz:CL")
-    assert res == {"ok": True, "coin": "xyz:CL", "noop": "already_flat"}
-    assert executor_env["swept"] == ["xyz:CL"] and executor_env["cleared"] == []
-    assert ("xyz:CL", "long") in executor_env["dropped"]
-
-
-def test_closing_a_zero_size_position_sweeps_its_bracket(monkeypatch, executor_env):
-    monkeypatch.setattr(ex, "fetch_account_state", lambda u, **kw: {
-        "asset_positions": [{"position": {"coin": "xyz:CL", "szi": "0", "entryPx": "98.8"}}]})
-    assert ex.close_position_market("xyz:CL")["noop"] == "zero_szi"
-    assert executor_env["swept"] == ["xyz:CL"]
-
-
-def test_a_filled_close_cancels_every_order_on_the_coin(monkeypatch, executor_env, tmp_path):
-    from pathiel.agents import dsl_exit
-    monkeypatch.setattr(dsl_exit, "_active_positions", {})
-    monkeypatch.setattr(ex, "fetch_account_state", lambda u, **kw: {
-        "asset_positions": [{"position": {"coin": "xyz:CL", "szi": "0.12", "entryPx": "98.8"}}]})
-    monkeypatch.setattr(ex, "get_hl_price", lambda c: 99.0)
-    monkeypatch.setattr(ex, "place_hl_order", lambda *a, **kw: {"ok": True, "order_id": "c1"})
-    assert ex.close_position_market("xyz:CL")["ok"] is True
-    assert executor_env["cleared"] == ["xyz:CL"] and executor_env["swept"] == []
-
-
-def test_settle_vanished_positions_records_then_sweeps(monkeypatch, executor_env):
-    recorded: List[str] = []
-
-    def record(stale, user=None):
-        recorded.append(stale["coin"])
-        if stale["coin"] == "BAD":
-            raise RuntimeError("fills read failed")
-        return {"ok": True}
-
-    monkeypatch.setattr(ex, "record_external_position_close", record)
-    rows = ex.settle_vanished_positions(
-        [{"coin": "xyz:CL", "side": "long"}, {"coin": "BAD", "side": "short"},
-         {"coin": "xyz:LADDER", "side": "long"}],
-        exempt_coins={"xyz:LADDER"}, user=USER)
-
-    assert recorded == ["xyz:CL", "BAD", "xyz:LADDER"]
-    assert executor_env["swept"] == ["xyz:CL", "BAD"]       # a failed record still sweeps
-    assert rows == [{"coin": "xyz:CL", "recorded": True, "cancelled": 1},
-                    {"coin": "BAD", "recorded": False, "cancelled": 1},
-                    {"coin": "xyz:LADDER", "recorded": True, "cancelled": 0}]
-
-
-def test_settle_vanished_positions_handles_nothing(executor_env):
-    assert ex.settle_vanished_positions([], user=USER) == []
-    assert executor_env["swept"] == []
-
-
-# ── 4. the trading loop wires it in ─────────────────────────────────────────
-
-def test_the_loop_settles_vanished_positions_with_no_exemptions():
-    """drawdown_ladder and copy_trade (the two books whose positions used to
-    be exempt from this settle pass) are retired 2026-10-23 — there is
-    nothing left to exempt, so exempt_coins is an empty set literal, not a
-    name referencing a book-ownership computation."""
-    tree = ast.parse((ROOT / "scripts" / "trading_loop.py").read_text())
-    calls = [n for n in ast.walk(tree) if isinstance(n, ast.Call)
-             and getattr(n.func, "id", None) == "settle_vanished_positions"]
-    assert len(calls) == 1
-    (call,) = calls
-    assert isinstance(call.args[0], ast.Name) and call.args[0].id == "stale_trackers"
-    kw = {k.arg: k.value for k in call.keywords}
-    exempt = kw["exempt_coins"]
-    assert isinstance(exempt, ast.Call) and getattr(exempt.func, "id", None) == "set" and not exempt.args
-    names = {getattr(n.func, "id", None) for n in ast.walk(tree) if isinstance(n, ast.Call)}
-    assert "record_external_position_close" not in names   # only through settle_vanished_positions
-
-
 def test_sweep_keeps_the_children_of_a_resting_bracket_entry(info, cancels):
     """2026-10-23: a normalTpsl bracket rests its stop and target as
     reduce-only rows before the entry fills; the venue lists them under the
@@ -271,3 +181,51 @@ def test_sweep_keeps_the_children_of_a_resting_bracket_entry(info, cancels):
     info.orders["xyz"] = [tp, sl, entry, stale]
     assert xc.cancel_stranded_reduce_only_orders("xyz:BRENTOIL") == 1
     assert cancels == [(40, "xyz:BRENTOIL")]
+
+
+# ── 3. pathiel.agents.bracket.close_position sweeps on every exit path ─────
+# Moved from pathiel.agents.executor 2026-10-23 (wave 2): close_position_market
+# -> bracket.close_position. settle_vanished_positions and
+# record_external_position_close (tested here before this wave) had no
+# caller left once scripts/trading_loop.py — their only caller — was deleted
+# in the same wave, so both went with it; this section now covers only what
+# close_position itself still does.
+
+@pytest.fixture
+def close_env(monkeypatch):
+    """close_position does its exchange/hl_client imports lazily (inside the
+    function, not at module scope), so a fake must be patched onto the
+    SOURCE module it imports from at call time, not onto `br` or `xc`."""
+    import pathiel.client.hl_client as hlc
+    swept: List[str] = []
+    cleared: List[str] = []
+    monkeypatch.setattr(hlc, "resolve_user_address", lambda: USER)
+    monkeypatch.setattr(xc, "cancel_stranded_reduce_only_orders", lambda coin: swept.append(coin) or 1)
+    monkeypatch.setattr(xc, "cancel_open_orders_for_coin", lambda coin: cleared.append(coin) or 0)
+    return {"swept": swept, "cleared": cleared, "hlc": hlc}
+
+
+def test_closing_an_already_flat_coin_sweeps_its_bracket(monkeypatch, close_env):
+    monkeypatch.setattr(close_env["hlc"], "fetch_account_state", lambda u, **kw: {"asset_positions": []})
+    res = br.close_position("xyz:CL")
+    assert res == {"ok": True, "coin": "xyz:CL", "noop": "already_flat"}
+    assert close_env["swept"] == ["xyz:CL"] and close_env["cleared"] == []
+
+
+def test_closing_a_zero_size_position_sweeps_its_bracket(monkeypatch, close_env):
+    monkeypatch.setattr(close_env["hlc"], "fetch_account_state", lambda u, **kw: {
+        "asset_positions": [{"position": {"coin": "xyz:CL", "szi": "0", "entryPx": "98.8"}}]})
+    assert br.close_position("xyz:CL")["noop"] == "zero_szi"
+    assert close_env["swept"] == ["xyz:CL"]
+
+
+def test_a_filled_close_cancels_every_order_on_the_coin(monkeypatch, close_env):
+    monkeypatch.setattr(close_env["hlc"], "fetch_account_state", lambda u, **kw: {
+        "asset_positions": [{"position": {"coin": "xyz:CL", "szi": "0.12", "entryPx": "98.8",
+                                           "leverage": {"value": 10}}}]})
+    monkeypatch.setattr(xc, "get_hl_price", lambda c: 99.0)
+    monkeypatch.setattr(xc, "place_hl_order", lambda *a, **kw: {"ok": True, "avg_px": 99.0})
+    res = br.close_position("xyz:CL")
+    assert res["ok"] is True
+    assert res["leverage"] == 10
+    assert close_env["cleared"] == ["xyz:CL"] and close_env["swept"] == []

@@ -1,13 +1,22 @@
 # Logging & log rotation — Reference
 
 Before this existed: `logs/` grew unbounded. On 2026-08-29, before rotation
-shipped, it was 84 MB and climbing — `trading_loop.log` 36 MB,
+shipped, it was 84 MB and climbing — the trading loop's log 36 MB,
 `updown_sampler.log` 25 MB, `server.log` 15 MB — with zero cap anywhere. On a
 small deployed box that fills the disk and takes the bot down silently (a
 full disk breaks `.state/` writes, order placement, everything). This doc is
 the reference for what rotates, how, and how to check or force it.
 
 ## Where each process logs
+
+> **2026-10-23 (wave 2):** the trading loop, the scheduler and every job it
+> fired (`autonomous-cycle`, `supervisor`, `alerts`, `backup-state`, ...) are
+> retired — the loop script, the scheduler script, the process-supervisor
+> script and the alert-evaluator script are all deleted. The table below is
+> historical; `scripts/restart.sh` and `fly.toml` still try to launch
+> `loop`/`sched` as process groups and have not been updated for this yet
+> (see the known-gap note in README.md). Two things actually log today: the
+> dashboard server and the log rotator.
 
 Every pathiel process is started by `scripts/restart.sh` with shell
 append redirection — `nohup "$PY" ... >> logs/<name>.log 2>&1 &`. That `>>`
@@ -18,24 +27,8 @@ outside every process" below for why that fact drives the whole design.
 
 | File | Written by | Started via |
 |---|---|---|
-| `logs/trading_loop.log` | `scripts/trading_loop.py` | `restart.sh loop` / `restart.sh restart` |
 | `logs/server.log` | `python -m pathiel.server` | `restart.sh server` / `restart.sh restart` |
-| `logs/scheduler.log` | `scripts/scheduler.py`'s own stdout/stderr | `restart.sh sched` / `restart.sh restart` |
 | `logs/log_rotate.log` | the log-rotator daemon itself | `restart.sh rotate` / `restart.sh restart` |
-| `logs/autonomous_cycle.log` | `scheduler.py` job `autonomous-cycle` | fired by the scheduler |
-| `logs/trend_engine.log` | `scheduler.py` job `trends-price` | fired by the scheduler |
-| `logs/desks_refresh.log` | `scheduler.py` job `desks-refresh` | fired by the scheduler |
-| `logs/desks_grade.log` | `scheduler.py` job `desks-grade` | fired by the scheduler |
-| `logs/capital_flows.log` | `scheduler.py` job `capital-flows` | fired by the scheduler |
-| `logs/supervisor.log` | `scheduler.py` job `supervisor` — restarts dead processes | fired by the scheduler |
-| `logs/alerts_eval.log` | `scheduler.py` job `alerts` — each evaluation pass | fired by the scheduler |
-| `logs/alerts.log` | `scripts/alert_eval.py` — one line per alert that FIRED or resolved, not per pass | written by the `alerts` job |
-| `logs/backup_state.log` | `scheduler.py` job `backup-state` | fired by the scheduler |
-
-`scheduler.py` opens each job's log fresh, in append mode, for the duration
-of that one `subprocess.run()` call (see `scripts/scheduler.py:run_job`) —
-it does not hold the fd open between runs the way the four `nohup`-started
-processes above do.
 
 Any **new** log file works automatically as long as its name ends in
 `.log` and it lives directly under `logs/` — the rotator globs `logs/*.log`,
@@ -136,25 +129,26 @@ hasn't been captured anywhere.
 action. Two things can happen:
 
 - **free disk < `PATHIEL_DISK_FREE_CRITICAL_MB`**: `restart.sh` refuses to
-  start any process (`loop`, `server`, `sched`, `sampler`, or plain
-  `restart`) and exits 1. Override for a deliberate emergency start with
-  `PATHIEL_SKIP_DISK_GUARD=1`. This never blocks an action that doesn't start
-  a process (`status`, `stop`, `stoploop`, `stopsampler`, `stoprotate`).
+  start any process (`server`, `rotator`, or plain `restart`) and exits 1.
+  Override for a deliberate emergency start with `PATHIEL_SKIP_DISK_GUARD=1`.
+  This never blocks an action that doesn't start a process (`status`,
+  `stop`, `stoprotate`).
 - **free disk < `PATHIEL_DISK_FREE_WARN_MB`, or `logs/` over its cap**: prints
   a loud warning but does not block anything.
 
 Every action **except `status`** also runs one immediate rotation pass
 (`log_rotate.py --once`) as part of the guard step — restart.sh is the one
 reliably-invoked touchpoint on this box (cron and launchd are TCC-blocked
-here, see `scripts/scheduler.py`'s module docstring), so every time the
-operator touches it is also a chance to sweep `logs/` without waiting for
-the daemon's next tick. `status` stays a pure read with no side effect.
+here — the now-deleted scheduler script existed because of this), so
+every time the operator touches it is also a chance to sweep `logs/` without
+waiting for the daemon's next tick. `status` stays a pure read with no side
+effect.
 
 ## The rotator daemon
 
 Because every managed process can run for days between `restart.sh`
 invocations, an immediate sweep at startup isn't enough — rotation needs to
-run continuously while the box is up. `restart.sh` manages a fifth
+run continuously while the box is up. `restart.sh` manages a second
 long-lived process for exactly that:
 
 ```
@@ -164,7 +158,7 @@ scripts/log_rotate.py --daemon     # loops forever, sweeps logs/ every PATHIEL_L
 Started/stopped the same way as the other managed processes:
 
 ```bash
-scripts/restart.sh restart      # stops+starts loop, server, scheduler, AND the rotator
+scripts/restart.sh restart      # stops+starts the server AND the rotator
 scripts/restart.sh rotate       # restart the rotator only
 scripts/restart.sh stoprotate   # stop the rotator only
 scripts/restart.sh status       # shows whether it's running, plus a live disk-guard readout
@@ -184,13 +178,13 @@ logged; the daemon loop keeps running rather than exiting.
 .venv/bin/python scripts/log_rotate.py --once
 
 # Force-rotate one specific file even if it's under the size threshold
-.venv/bin/python scripts/log_rotate.py --file logs/trading_loop.log --force
+.venv/bin/python scripts/log_rotate.py --file logs/server.log --force
 
 # Point at a different directory (e.g. to dry-run against a copy)
 .venv/bin/python scripts/log_rotate.py --dir /path/to/some/logs --once
 
 # Decompress a backup to read it
-gzip -dc logs/trading_loop.log.1.gz | less
+gzip -dc logs/server.log.1.gz | less
 ```
 
 ## What still logs unbounded
@@ -200,12 +194,11 @@ things worth knowing:
 
 - **`pathiel/log_setup.py`'s `configure_logging()` (in-process
   `RotatingFileHandler`) is not wired into any current entrypoint.**
-  `scripts/trading_loop.py` and `pathiel/server.py` both call
-  `logging.basicConfig()` with no `filename=`, i.e. they log to
-  stdout/stderr — which is exactly the fd `restart.sh`'s `nohup >>`
-  redirection owns, so the external rotator (not this helper) is what
-  actually bounds their log files today. The helper exists, tested
-  (`test_configure_logging_rotates_and_gzips`), and ready for the day either
+  `pathiel/server.py` calls `logging.basicConfig()` with no `filename=`,
+  i.e. it logs to stdout/stderr — which is exactly the fd `restart.sh`'s
+  `nohup >>` redirection owns, so the external rotator (not this helper) is
+  what actually bounds its log file today. The helper exists, tested
+  (`test_configure_logging_rotates_and_gzips`), and ready for the day the
   entrypoint is changed to own its fd directly instead of relying on shell
   redirection — at that point it should call `configure_logging()` instead
   of `logging.basicConfig()`, and stop needing the external rotator for that

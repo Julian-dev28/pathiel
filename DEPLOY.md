@@ -1,5 +1,20 @@
 # Deploy pathiel to Fly.io
 
+> **Known gap (2026-10-23, wave 2):** the autonomous `loop` and `sched`
+> processes this doc describes below are retired — the scan/research/execute
+> trading loop script and the cron-replacement scheduler script they ran are
+> both deleted. Claude trades through the MCP server now, not a standing
+> loop, and there is no scheduler left to run the capital-flows/
+> autonomous-cycle/trends-price jobs. `fly.toml`, the k8s manifests, and the
+> local restart script still declare both processes and have not been
+> updated for this yet — deploying from this repo today will try to launch
+> two process groups with no script to run. The process table,
+> health-check and runbook sections below are accurate for the deploy
+> config as it stands, not for the code; fixing the deploy config to drop
+> `loop`/`sched` (down to two Fly processes — `web` and `rotator` — plus the
+> MCP server run locally, not containerized) is a follow-up this doc update
+> did not do.
+
 A single image, five Fly processes, one persistent volume. This is
 `scripts/restart.sh`'s process list translated to Fly process groups — the
 container never runs `restart.sh` itself; Fly launches each process directly
@@ -8,8 +23,8 @@ and supervises it:
 | Process   | Command                                                | What it is |
 |-----------|---------------------------------------------------------|------------|
 | `web`     | `python3 -m pathiel.server`                        | Dashboard + JSON API + SSE feed + `/metrics`, public |
-| `loop`    | `python3 scripts/trading_loop.py`                        | Autonomous scan → research → execute → DSL monitor, private |
-| `sched`   | `python3 scripts/scheduler.py`                           | Cron replacement — fires `capital-flows` (6h), `autonomous-cycle` (daily), `trends-price` (30min) |
+| `loop`    | *(script deleted — see the known-gap note above)*       | Was: autonomous scan → research → execute → DSL monitor, private |
+| `sched`   | *(script deleted — see the known-gap note above)*       | Was: cron replacement — fired `capital-flows` (6h), `autonomous-cycle` (daily), `trends-price` (30min) |
 | `rotator` | `python3 scripts/log_rotate.py --daemon`                 | Bounds `logs/` growth — `sched`'s fired jobs write real log files regardless of how `sched` itself was launched |
 
 All four run from one image. `web`, `loop`, and `sched` share the
@@ -110,7 +125,7 @@ shared by `web`, `loop`, and `sched`:
 | `/data/.agent-memory.json` | Perception/analysis memory (`PATHIEL_AGENT_MEMORY_FILE`) |
 | `/data/session-log.jsonl` | Trade/action session log (`SESSION_LOG_PATH`) |
 | `/data/.positions-snapshot.json` | Cross-process position snapshot the loop writes and the dashboard reads (`PATHIEL_POSITIONS_SNAPSHOT_FILE`) — also what `loop`'s k8s `startupProbe` checks |
-| `/data/.state/` | Everything routed through `PATHIEL_STATE_DIR`: shadow ledgers (`.state/shadow_ledger/<book>.jsonl`), the cross-book claims registry, the capital-flow record the drawdown is computed from (`.state/capital_flows.jsonl`), per-strategy throttle timers, `services/trend_engine`'s cached lanes, and `scripts/scheduler.py`'s own job-run bookkeeping (via a symlink — see the Dockerfile) |
+| `/data/.state/` | Everything routed through `PATHIEL_STATE_DIR`: shadow ledgers (`.state/shadow_ledger/<book>.jsonl`), the cross-book claims registry, the capital-flow record the drawdown is computed from (`.state/capital_flows.jsonl`), per-strategy throttle timers, `services/trend_engine`'s cached lanes, and the (now-deleted) scheduler's own job-run bookkeeping (via a symlink — see the Dockerfile) |
 
 `logs/` is deliberately **not** on the volume — see the Dockerfile and
 `k8s/statefulset.yaml`'s `rotator` container comment for why.
@@ -155,7 +170,7 @@ docker build -t pathiel-test .
 # Dockerfile.
 docker run --rm pathiel-test python3 -c "
 import pathiel.server, pathiel.dashboard, pathiel.metrics
-from pathiel.agents import executor, perception, risk_gates, ta_filter
+from pathiel.agents import bracket, hyperfeed, config_store
 import services.trend_engine.run"
 
 # The server boots and every page renders inside the container.
@@ -230,10 +245,9 @@ flyctl deploy     # builds image + rolls all five processes
 ```
 
 Fly does a rolling restart for `web` for free (zero-downtime). `loop`,
-`sched` and `rotator` briefly drop and restart; the loop's next
-scan tick (~60s later) resumes, and `sched`'s catch-up logic
-(`scripts/scheduler.py:is_due`) means a job due during the restart window
-fires on the next tick instead of being silently skipped.
+`sched` and `rotator` briefly drop and restart — or did, while those first
+two processes still had a script to run; see the known-gap note at the top
+of this file.
 
 ## Rollback
 
@@ -310,7 +324,7 @@ docker build -t pathiel:local .
 
 # Prove the image actually contains every package it imports:
 docker run --rm pathiel:local python3 -c \
-  "import pathiel.server, pathiel.dashboard, scripts.trading_loop, \
+  "import pathiel.server, pathiel.dashboard, \
    services.trend_engine.run; print('ok')"
 
 # Prove the server actually binds reachably and serves /api/health:
@@ -406,13 +420,9 @@ dashboard's HL polling to ~1/4 budget so it yields to the loop's fetches
   needs is an interactively-authenticated desktop session, not a bakeable
   secret, so installing the binary alone would not make the feature work.
   Left out rather than shipped half-working.
-- **One-off scripts under `scripts/`** not named in `scripts/restart.sh` or
-  `scripts/scheduler.py` — run by hand (`flyctl ssh console`) when needed, not
-  continuously supervised processes. One worth naming specifically, since it
-  is not referenced anywhere else in the repo and is easy to mistake for dead
-  code on a `grep`:
-  - **`scripts/phase3_replay.py COIN ENTRY LEV [SPOT_MOVE%]`** — read-only,
-    no-lookahead post-mortem replay of the real exit engine
-    (`pathiel.agents.dsl_exit.DSLTracker`) against real historical 15m
-    candles, for answering "what would have happened to this specific trade"
-    after the fact.
+- **One-off scripts under `scripts/`** not named in `scripts/restart.sh` —
+  run by hand (`flyctl ssh console`) when needed, not continuously
+  supervised processes (`scripts/backup_state.py`, `scripts/treasury.py`,
+  `scripts/preflight_live.py`, ...). The post-mortem DSL exit replay script
+  that used to be called out here specifically is deleted 2026-10-23
+  (wave 2) along with the exit engine it replayed.

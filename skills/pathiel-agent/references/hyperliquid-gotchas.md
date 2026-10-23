@@ -27,10 +27,11 @@ mid (`mid_price * (1.001 if is_buy else 0.999)`) so they cross and fill.
 
 ## $10 minimum order value
 
-Hyperliquid rejects orders below $10 notional. `executor.py` floors the size:
-`size_in_coin = max(size_in_coin, 10.0 / mid_price)`. For integer-size coins
-(`sz_decimals == 0`, e.g. XRP) a floor-rounded size can still land under $10 —
-round those up.
+Hyperliquid rejects orders below $10 notional. `services/risk/size.py`'s
+`size_trade()` (the one sizer `place_bracket`/`risk_size_trade` both use)
+floors the size against `MIN_ORDER_USD` (`pathiel/client/exchange.py`). For
+integer-size coins (`sz_decimals == 0`, e.g. XRP) a floor-rounded size can
+still land under $10 — round those up.
 
 ## Client singletons (WebSocket connection limit)
 
@@ -51,13 +52,13 @@ not add `spot_usdc` on top, or equity double-counts.
 
 ## Sizing
 
-`executor.py`'s current live path is ATR equal-risk: `notional = (equity ×
-risk_per_trade_pct) / primary_stop_distance`, clamped by `max_trade_notional_usd`
-and the leverage caps. The explicit fallback (ATR sizing off) is
-`equity × equity_fraction_per_trade × leverage`. Either way, **leverage is already
-baked into the notional** — `position_notional = trade_notional`, never
-`trade_notional × leverage` again. (Older docs showed `equity × 0.01 × 5×`; that
-fixed-fraction default is superseded.)
+2026-10-23 (wave 2): the autonomous executor's ATR equal-risk sizing is
+retired. Every trade sizes through `services/risk/size.py`'s `size_trade()`
+now: `notional = (equity × risk_per_trade_pct) / stop_distance`, clamped by
+the operator's risk profile (`risk_limits`/`risk_size_trade`) and the coin's
+max leverage. **Leverage is already baked into the notional** —
+`position_notional = trade_notional`, never `trade_notional × leverage`
+again.
 
 ## Info endpoint payloads
 

@@ -60,39 +60,10 @@ def test_server_request_raises_on_client_error(monkeypatch):
         MOD._server_request("sampling/createMessage", {})
 
 
-# ── research seam: injected brain wins, empty result falls back ────────────────
-# pathiel.agents.research itself stays on this branch (trading_loop.py and
-# pathiel/server.py still import it; its deletion is wave 2 on headless-desk),
-# so its own brain-injection contract is still worth gating here even though
-# the MCP server no longer has a `research` tool to inject into.
-def test_call_ai_prefers_injected_brain(monkeypatch):
-    from pathiel.agents import research as rm
-
-    class FakeBrain:
-        provider = "fake"
-
-        def complete(self, s, u):
-            return "INJECTED_TEXT"
-
-    def boom(*a, **k):
-        raise AssertionError("get_brain must not be called when injected brain works")
-
-    monkeypatch.setattr(rm, "get_brain", boom)
-    assert rm._call_ai("sys", "user", brain=FakeBrain()) == "INJECTED_TEXT"
-
-
-def test_call_ai_falls_back_when_injected_brain_empty(monkeypatch):
-    from pathiel.agents import research as rm
-
-    class EmptyBrain:
-        provider = "empty"
-
-        def complete(self, s, u):
-            return ""
-
-    class Configured:
-        def complete(self, s, u):
-            return "FALLBACK_TEXT"
-
-    monkeypatch.setattr(rm, "get_brain", lambda *a, **k: Configured())
-    assert rm._call_ai("sys", "user", brain=EmptyBrain()) == "FALLBACK_TEXT"
+# The "research seam: injected brain wins, empty result falls back" tests
+# that used to live here covered pathiel.agents.research._call_ai, deleted
+# 2026-10-23 (wave 2) with the rest of the autonomous scan/research/execute
+# engine. No surviving caller of pathiel.agents.ai_brain.get_brain()
+# (services/trend_engine/ai.py, the MCP server's desk_refresh path) uses the
+# same brain-injection parameter — each calls get_brain() directly — so there
+# is no equivalent seam left to test.

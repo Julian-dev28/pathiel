@@ -141,24 +141,6 @@ def _offline():
         pytest.fail(_leak_report(attempts), pytrace=False)
 
 
-@pytest.fixture(autouse=True)
-def _no_market_regime(request, monkeypatch):
-    """The regime gate (pathiel.agents.market_regime) reads live 1h candles and
-    caches its answer per proxy for the process. In the gate lane there is no
-    market: the candle read returns nothing, so the regime is "neutral" (what a
-    failed fetch gives in production too), and the cache starts empty for every
-    test, so one test's stubbed "up" is never the next test's regime. Tests
-    about the regime patch detect_regime, _detect_for_proxy or this read."""
-    if any(request.node.get_closest_marker(m) for m in _NETWORK_LANES):
-        yield
-        return
-    from pathiel.agents import market_regime
-    market_regime._regime_cache.clear()
-    monkeypatch.setattr(market_regime, "fetch_hl_candles", lambda *a, **kw: [])
-    yield
-    market_regime._regime_cache.clear()
-
-
 @pytest.fixture
 def offline_attempts():
     """The refused lookups so far in this test, for tests of the guard itself.

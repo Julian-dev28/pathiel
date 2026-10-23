@@ -78,10 +78,13 @@ def test_force_refresh_bypasses_a_live_cache_entry(monkeypatch):
     assert EX._cached_universe(dex="xyz", force_refresh=True)[0]["maxLeverage"] == 5
 
 
-def test_the_executor_refuses_when_leverage_cannot_be_resolved():
-    """Opening at a guessed leverage is worse than not opening."""
-    src = (EX.__file__.replace("client/exchange.py", "agents/executor.py"))
-    body = open(src).read()
-    assert "leverage_unresolved" in body
-    i = body.index("leverage_unresolved")
-    assert "executed\": False" in body[i - 300:i]
+# The 2026-10-23 (wave 2) regression-guard this file used to carry for the
+# retired executor's "leverage_unresolved" refusal does not have a direct
+# analog in the place_bracket path: scripts/pathiel-mcp-server.py's
+# `_coin_specs` swallows a `get_max_leverage` failure into `coin_max=None`
+# rather than refusing, and services.risk.size.size_trade falls back to the
+# operator's risk-profile leverage cap when no coin max is known (Hyperliquid
+# itself still enforces the real per-coin cap server-side on `set_leverage`).
+# That is a materially different risk posture from "refuse outright," not
+# audited as part of this cleanup — flagged for Julien, not silently carried
+# forward as if it were still tested.

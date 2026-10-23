@@ -7,10 +7,15 @@ metadata:
     app: pathiel
 spec:
   serviceName: pathiel
-  # replicas is 1 ON PURPOSE — the `loop` writes .dsl-state.json / .agent-memory
-  # / the positions snapshot to the shared volume and is a singleton by design.
-  # Running two loops would double-trade and corrupt the ratchet state. This is
-  # why it's a StatefulSet (stable identity + its own PVC), not a Deployment.
+  # replicas is 1 ON PURPOSE — `web` writes state files to the shared volume
+  # and is a singleton by design. This is why it's a StatefulSet (stable
+  # identity + its own PVC), not a Deployment.
+  #
+  # 2026-10-23 (wave 2): the `loop` (scripts/trading_loop.py) and `sched`
+  # (scripts/scheduler.py) containers this manifest used to run are retired
+  # with the rest of the autonomous scan/research/execute engine — Claude is
+  # the only trader now, through the MCP server (a transient stdio process
+  # Claude Code respawns per tool call, not a container in this StatefulSet).
   replicas: 1
   selector:
     matchLabels:
@@ -42,12 +47,8 @@ spec:
           # `args`. See Dockerfile "Runtime state" for why that step exists.
           args: ["python3", "-m", "pathiel.server"]
           env:
-            # Dashboard shares the account with `loop`; HL rate-limits per
-            # source IP-ish identity, not per process, so give the server a
-            # HARD-throttled token bucket (~1/4 budget) and readonly state
-            # mode — mirrors scripts/restart.sh's start_server(). `loop`
-            # keeps the full code-default budget (300 cap / 15 refill); it's
-            # the money path.
+            # Mirrors scripts/restart.sh's start_server(): a throttled HL
+            # token bucket and readonly state mode for the dashboard process.
             - name: PATHIEL_STATE_READONLY
               value: "1"
             - name: PATHIEL_HL_RATE_REFILL_PER_SEC
@@ -66,8 +67,8 @@ spec:
             - name: data
               mountPath: /data
           # Readiness answers "should traffic go here", so it uses the DEEP
-          # check: a pod whose trading loop is dead or whose market feed is
-          # degraded should not be presented as a working system.
+          # check: a pod whose AI brain is unusable or whose disk is low
+          # should not be presented as a working system.
           readinessProbe:
             httpGet:
               path: /api/health/system
@@ -76,9 +77,8 @@ spec:
             periodSeconds: 10
             failureThreshold: 3
           # Liveness answers "is THIS process wedged", and must stay on the
-          # shallow check. Restarting the web container because the trading loop
-          # died fixes nothing and destroys the dashboard that is the only way
-          # to see what happened.
+          # shallow check — a deep-check failure elsewhere must not restart
+          # the one process that can show what happened.
           livenessProbe:
             httpGet:
               path: /api/health
@@ -93,82 +93,15 @@ spec:
             limits:
               cpu: "500m"
               memory: "512Mi"
-        # ── loop: autonomous scan → research → execute → DSL monitor ──────────
-        - name: loop
-          image: pathiel:local
-          imagePullPolicy: IfNotPresent
-          args: ["python3", "scripts/trading_loop.py"]
-          envFrom:
-            - configMapRef:
-                name: pathiel-config
-            - secretRef:
-                name: pathiel-secrets
-          volumeMounts:
-            - name: data
-              mountPath: /data
-          # No HTTP to probe — this is a worker. A startupProbe waits for the
-          # first positions snapshot (proves it booted AND reached Hyperliquid);
-          # after that, a process crash is the failure signal (restartPolicy
-          # Always restarts it). No liveness flapping on transient API blips.
-          # PATHIEL_POSITIONS_SNAPSHOT_FILE is baked to /data/.positions-snapshot.json
-          # in the Dockerfile — this probe path must stay in sync with that.
-          startupProbe:
-            exec:
-              command:
-                - python3
-                - -c
-                - "import os,sys,time; f='/data/.positions-snapshot.json'; sys.exit(0 if os.path.exists(f) and (time.time()-os.path.getmtime(f))<300 else 1)"
-            initialDelaySeconds: 20
-            periodSeconds: 15
-            failureThreshold: 20
-          resources:
-            requests:
-              cpu: "50m"
-              memory: "128Mi"
-            limits:
-              cpu: "500m"
-              memory: "512Mi"
-        # ── sched: scripts/scheduler.py — cron replacement, fires the below ────
-        # (poly-board hourly, poly-judgment 4h, autonomous-cycle daily,
-        # trends-price 30min, trends-recorders 6h — see scripts/scheduler.py:JOBS)
-        - name: sched
-          image: pathiel:local
-          imagePullPolicy: IfNotPresent
-          args: ["python3", "scripts/scheduler.py"]
-          envFrom:
-            - configMapRef:
-                name: pathiel-config
-            - secretRef:
-                name: pathiel-secrets
-          volumeMounts:
-            - name: data
-              mountPath: /data
-          # No HTTP, and no reliable file-freshness signal either — jobs run
-          # on independent clocks from 30min to 6h, so a "last write" check
-          # would false-positive on the longest-interval job for hours after
-          # a clean boot. Same precedent as `loop`: a process crash IS the
-          # failure signal: restartPolicy Always restarts it, and each job's
-          # own last_run timestamp makes a restart catch up rather than skip
-          # (scripts/scheduler.py:is_due).
-          resources:
-            requests:
-              cpu: "50m"
-              memory: "128Mi"
-            limits:
-              cpu: "500m"
-              memory: "512Mi"
         # ── rotator: scripts/log_rotate.py --daemon ─────────────────────────────
-        # `sched` writes its fired jobs' stdout/stderr to real files under
-        # logs/ (scripts/scheduler.py:run_job opens them directly — this is
-        # independent of shell `nohup >>` wrapping, so it happens whether or
-        # not restart.sh is involved). This container truncates them in
-        # place on an interval so a long-lived pod's logs/ doesn't grow
-        # unbounded; see pathiel/log_setup.py for the policy. Logs live
-        # in the container's own writable layer, deliberately NOT on the
-        # shared /data volume — log history isn't state that needs the same
-        # backup/rollback guarantees as .state/ or shadow_ledger/, and
-        # keeping it off the volume keeps the one singleton-sensitive PVC
-        # smaller. No probe: same "process crash is the signal" precedent.
+        # Truncates logs/*.log in place on an interval so a long-lived pod's
+        # logs/ doesn't grow unbounded; see pathiel/log_setup.py for the
+        # policy. Logs live in the container's own writable layer,
+        # deliberately NOT on the shared /data volume — log history isn't
+        # state that needs the same backup/rollback guarantees as .state/,
+        # and keeping it off the volume keeps the one singleton-sensitive
+        # PVC smaller. No probe: a process crash is the failure signal
+        # (restartPolicy Always restarts it).
         - name: rotator
           image: pathiel:local
           imagePullPolicy: IfNotPresent

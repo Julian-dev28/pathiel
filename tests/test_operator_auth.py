@@ -31,9 +31,17 @@ def client(monkeypatch):
     return TestClient(app)
 
 
+# The mutating, operator-gated endpoint these tests exercise generically.
+# 2026-10-23 (wave 2): /api/agent/stop (the retired autonomous loop's stop
+# control) is gone; the STOP TRADING button's actual endpoint, same auth
+# path, is POST /api/agent/config.
+_MUTATING_PATH = "/api/agent/config"
+_MUTATING_BODY = {"mode": "OFF"}
+
+
 def _wrong(c, n=1):
     for _ in range(n):
-        r = c.post("/api/agent/stop", headers={"X-Operator-Token": "nope"})
+        r = c.post(_MUTATING_PATH, json=_MUTATING_BODY, headers={"X-Operator-Token": "nope"})
     return r
 
 
@@ -45,7 +53,7 @@ def test_a_wrong_token_is_rejected(client):
 
 def test_a_missing_token_fails_closed(client, monkeypatch):
     monkeypatch.delenv("PATHIEL_OPERATOR_TOKEN", raising=False)
-    assert client.post("/api/agent/stop").status_code == 503
+    assert client.post(_MUTATING_PATH, json=_MUTATING_BODY).status_code == 503
 
 
 def test_the_comparison_is_constant_time():
@@ -67,7 +75,7 @@ def test_a_correct_token_still_works_during_a_lockout(client):
     """The property that keeps a brute-force defence from becoming a denial of
     service on the kill switch."""
     _wrong(client, db._AUTH_MAX_FAILURES + 2)
-    r = client.post("/api/agent/stop", headers={"X-Operator-Token": TOKEN})
+    r = client.post(_MUTATING_PATH, json=_MUTATING_BODY, headers={"X-Operator-Token": TOKEN})
     assert r.status_code != 429, (
         "a valid token was refused during lockout — anyone spraying guesses "
         "from a shared IP could lock the operator out of their own kill switch")
@@ -75,7 +83,7 @@ def test_a_correct_token_still_works_during_a_lockout(client):
 
 def test_a_successful_auth_clears_the_counter(client):
     _wrong(client, db._AUTH_MAX_FAILURES - 1)
-    client.post("/api/agent/stop", headers={"X-Operator-Token": TOKEN})
+    client.post(_MUTATING_PATH, json=_MUTATING_BODY, headers={"X-Operator-Token": TOKEN})
     assert _wrong(client).status_code == 401, "the counter was not cleared"
 
 
@@ -99,10 +107,10 @@ def test_old_failures_stop_counting(client):
 def test_a_mutating_action_is_audited(client, monkeypatch):
     seen = []
     monkeypatch.setattr(db.session_log, "append", lambda e: seen.append(e))
-    client.post("/api/agent/stop", headers={"X-Operator-Token": TOKEN})
+    client.post(_MUTATING_PATH, json=_MUTATING_BODY, headers={"X-Operator-Token": TOKEN})
     actions = [e for e in seen if e.get("event") == "operator_action"]
     assert any(e["action"] == "authorized" for e in actions)
-    assert actions[0]["path"] == "/api/agent/stop"
+    assert actions[0]["path"] == _MUTATING_PATH
 
 
 def test_a_failed_attempt_is_audited(client, monkeypatch):
@@ -128,14 +136,14 @@ def test_the_audit_never_blocks_the_action(client, monkeypatch):
         raise OSError("disk full")
 
     monkeypatch.setattr(db.session_log, "append", boom)
-    r = client.post("/api/agent/stop", headers={"X-Operator-Token": TOKEN})
+    r = client.post(_MUTATING_PATH, json=_MUTATING_BODY, headers={"X-Operator-Token": TOKEN})
     assert r.status_code != 500
 
 
 def test_the_audit_records_no_token(client, monkeypatch):
     seen = []
     monkeypatch.setattr(db.session_log, "append", lambda e: seen.append(e))
-    client.post("/api/agent/stop", headers={"X-Operator-Token": TOKEN})
+    client.post(_MUTATING_PATH, json=_MUTATING_BODY, headers={"X-Operator-Token": TOKEN})
     assert TOKEN not in str(seen)
 
 

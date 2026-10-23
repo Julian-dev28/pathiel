@@ -61,7 +61,7 @@ well as a funding one. (`get_funding_history` was later cut outright on
 |------|------|---------|
 | `place_bracket` | `coin, entry_px?, stop_px, tp_px, leverage?, min_r?` | One entry with an exact stop and target, sized by the risk engine |
 | `bracket_sweep` | `coin: string` | Cancels a stranded sibling order, reports whether the position is covered by a stop |
-| `close_position` | `coin: string` | Delegates to `executor.close_position_market()` |
+| `close_position` | `coin: string` | Delegates to `pathiel.agents.bracket.close_position()` |
 | `set_leverage` | `coin: string, leverage: number` | Sets isolated leverage before an entry |
 | `cancel_order` | `asset: number, order_id: number` | Cancels one resting order |
 | `state` | none | Full agent state |

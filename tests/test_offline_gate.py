@@ -55,8 +55,7 @@ def test_loopback_stays_open(offline_attempts):
 def test_a_test_that_reaches_out_fails_and_a_network_lane_does_not(tmp_path):
     """The whole mechanism, end to end: the root conftest in a fresh pytest
     process, one test leaking from the main thread, one from a background
-    thread, one in the online lane, one on loopback, and a regime one test
-    leaves behind that the next must not see."""
+    thread, one in the online lane, and one on loopback."""
     shutil.copy(ROOT / "conftest.py", tmp_path / "conftest.py")
     (tmp_path / "pytest.ini").write_text("[pytest]\nmarkers =\n    online: network lane\n")
     (tmp_path / "test_leaky.py").write_text('''
@@ -91,18 +90,6 @@ def test_the_online_lane_keeps_the_network():
 
 def test_loopback():
     assert socket.getaddrinfo("127.0.0.1", 80)
-
-
-def test_a_regime_left_behind():
-    import time
-    from pathiel.agents import market_regime
-    market_regime._regime_cache["BTC"] = ("up", time.time())
-
-
-def test_the_next_test_starts_with_no_regime_and_no_market():
-    from pathiel.agents import market_regime
-    assert market_regime._regime_cache == {}
-    assert market_regime.detect_regime("BTC") == "neutral"
 ''')
     env = {**os.environ, "PYTHONPATH": str(ROOT)}
     out = subprocess.run([sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider",
@@ -110,7 +97,7 @@ def test_the_next_test_starts_with_no_regime_and_no_market():
                          cwd=tmp_path, env=env, capture_output=True, text=True, timeout=60)
     text = out.stdout + out.stderr
     assert out.returncode == 1, text
-    assert "6 passed, 2 errors" in text, text
+    assert "4 passed, 2 errors" in text, text
     assert text.count("ERROR at teardown of test_reaches_out") == 2, text
     assert "api.hyperliquid.xyz (thread MainThread) via test_leaky.py" in text, text
     assert "api.hyperliquid.xyz (thread bg-feed)" in text, text

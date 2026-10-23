@@ -7,10 +7,15 @@ to pin (an allowlist silently blocking a book's signals) went with the books
 themselves — headless desk, 2026-10-23: Claude trades through the MCP
 server, and there is no book roster left for an allowlist to silence.
 `book_margin_requirement`'s derived-floor mechanism stays load-bearing
-(`pathiel.agents.executor.min_tradable_equity` still calls it, and the main
+(`pathiel.agents.bracket.min_tradable_equity` still calls it, and the main
 engine / MCP path is exactly the kind of "enabled position-opening block"
 the function sums) — the tests below that exercise it on synthetic config
-still apply unmodified.
+still apply unmodified. Both functions moved from `pathiel.agents.executor`
+to `pathiel.agents.bracket` 2026-10-23 (wave 2): the rest of executor.py
+(the autonomous scan/research/execute engine) has no caller left and is
+deleted; `close_position`/`book_margin_requirement`/`min_tradable_equity`
+are the surviving pieces `pathiel/dashboard.py` and the MCP server's
+`close_position` tool still call.
 """
 from __future__ import annotations
 
@@ -26,7 +31,7 @@ def test_a_gate_relaxation_is_not_counted_as_a_book():
     `notional_usd` alone also matches gate relaxations like thin_short_relax,
     which carries a notional it applies to but opens no position. Counting it
     inflated the requirement from $88.89 to $111.11."""
-    from pathiel.agents.executor import book_margin_requirement
+    from pathiel.agents.bracket import book_margin_requirement
     base = {"min_available_margin_pct": 0.0,
             "a_book": {"enabled": True, "notional_usd": 20.0, "leverage": 1,
                        "shadow_only": False}}
@@ -37,7 +42,7 @@ def test_a_gate_relaxation_is_not_counted_as_a_book():
 
 
 def test_a_disabled_book_costs_nothing():
-    from pathiel.agents.executor import book_margin_requirement
+    from pathiel.agents.bracket import book_margin_requirement
     cfg = {"min_available_margin_pct": 0.0,
            "off": {"enabled": False, "notional_usd": 20.0, "leverage": 1,
                    "shadow_only": False}}
@@ -45,7 +50,7 @@ def test_a_disabled_book_costs_nothing():
 
 
 def test_leverage_reduces_the_requirement():
-    from pathiel.agents.executor import book_margin_requirement
+    from pathiel.agents.bracket import book_margin_requirement
     cfg = {"min_available_margin_pct": 0.0,
            "b": {"enabled": True, "notional_usd": 20.0, "leverage": 4,
                  "shadow_only": False}}
@@ -54,7 +59,7 @@ def test_leverage_reduces_the_requirement():
 
 def test_an_explicit_override_still_wins():
     """Deliberate small-account testing must stay possible."""
-    from pathiel.agents.executor import min_tradable_equity
+    from pathiel.agents.bracket import min_tradable_equity
     cfg = dict(read_agent_config(), min_tradable_equity_usd=5.0)
     assert min_tradable_equity(cfg) == 5.0
 
@@ -62,8 +67,8 @@ def test_an_explicit_override_still_wins():
 def test_the_exchange_minimum_is_the_backstop():
     """With no books configured the floor falls back to the exchange minimum,
     never to zero."""
-    from pathiel.agents.executor import (MIN_TRADABLE_EQUITY_USD,
-                                               min_tradable_equity)
+    from pathiel.agents.bracket import (MIN_TRADABLE_EQUITY_USD,
+                                        min_tradable_equity)
     assert min_tradable_equity({}) == MIN_TRADABLE_EQUITY_USD
 
 

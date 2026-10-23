@@ -1,29 +1,27 @@
 #!/usr/bin/env bash
-# Restart the trading loop + FastAPI server cleanly.
+# Restart the FastAPI server + log rotator cleanly.
 #
 # Usage:
 #   scripts/restart.sh                # stop both, start both
-#   scripts/restart.sh loop           # restart trading loop only
 #   scripts/restart.sh server         # restart FastAPI server only
-#   scripts/restart.sh stoploop       # STOP the trading loop, keep server + scheduler up
-#   scripts/restart.sh sched          # restart the job scheduler only
 #   scripts/restart.sh rotate         # restart the log rotator daemon only
 #   scripts/restart.sh stoprotate     # stop the log rotator daemon only
 #   scripts/restart.sh stop           # stop both, don't start
 #   scripts/restart.sh status         # show what's running
 #
-# Four processes are managed:
-#   1. Trading loop  — scripts/trading_loop.py        (continuous scan→trade)
-#   2. API server    — python -m pathiel.server (FastAPI dashboard on PATHIEL_PORT, default 8000)
-#   3. Scheduler     — scripts/scheduler.py            (cron replacement; cron+launchd are TCC-blocked)
-#   4. Log rotator   — scripts/log_rotate.py --daemon  (see docs/LOGGING.md — every process here
+# Two processes are managed:
+#   1. API server    — python -m pathiel.server (FastAPI dashboard on PATHIEL_PORT, default 8000)
+#   2. Log rotator   — scripts/log_rotate.py --daemon  (see docs/LOGGING.md — every process here
 #                       logs via `nohup ... >> file 2>&1`, an append fd the process never reopens,
 #                       so rotation has to run externally, on an interval, for the whole time the
 #                       box is up — not just at restart.sh invocation time)
 #
 # The MCP server (scripts/pathiel-mcp-server.py) is intentionally NOT managed
-# here — it's a transient stdio process respawned by Pathiel Agent on each
-# tool call.
+# here — it's a transient stdio process respawned by Claude Code on each
+# tool call. Claude is the only trader now (place_bracket/bracket_sweep
+# through that MCP server); there is no autonomous trading loop or
+# scheduler process any more (2026-10-23, wave 2) — both were retired with
+# the rest of the autonomous scan/research/execute engine.
 
 set -euo pipefail
 
@@ -47,12 +45,8 @@ fi
 LOG_DIR="$ROOT/logs"
 mkdir -p "$LOG_DIR"
 
-LOOP_LOG="$LOG_DIR/trading_loop.log"
 SERVER_LOG="$LOG_DIR/server.log"
-SCHED_LOG="$LOG_DIR/scheduler.log"
-LOOP_PATTERN="scripts/trading_loop.py"
 SERVER_PATTERN="pathiel.server"
-SCHED_PATTERN="scripts/scheduler.py"
 ROTATOR_LOG="$LOG_DIR/log_rotate.log"
 ROTATOR_PATTERN="log_rotate\.py --daemon"
 
@@ -72,18 +66,12 @@ warn()  { printf "%s!%s %s\n" "$C_YEL" "$C_OFF" "$*"; }
 err()   { printf "%s✗%s %s\n" "$C_RED" "$C_OFF" "$*" >&2; }
 
 # ── deliberate-halt marker ───────────────────────────────────────────────────
-# A supervisor restarts anything it finds dead. Without this marker it would
-# also restart what the OPERATOR just stopped, which would quietly break
-# `stoploop` as a kill switch — the one control that has to work. So every
-# stop-and-stay-stopped action records its component here, and every start
-# clears it. The marker is the operator's intent; the supervisor obeys it.
-# Must match STATE_DIR in scripts/supervise_processes.py — PATHIEL_STATE_DIR,
-# else the project root. A halt marker written where the supervisor does not
-# look is a kill switch that silently does nothing, which is exactly what
-# happened: .env.local carries PATHIEL_STATE_DIR and this script never read it,
-# so `stoploop` wrote the marker to the repo root while the supervisor — run by
-# the scheduler, which does load the env — looked in .state/ and restarted the
-# loop two minutes later.
+# Kept for `stoprotate` as a kill switch the operator's intent survives a
+# restart: without this marker a future supervisor would restart whatever
+# the operator just stopped. There is no automated supervisor reading this
+# file today (scripts/supervise_processes.py is retired, 2026-10-23); it is
+# kept so `stoprotate` then `rotate` (or vice versa) composes predictably by
+# hand, and so the marker format stays stable if supervision is reintroduced.
 if [[ -z "${PATHIEL_STATE_DIR:-}" && -f "$ROOT/.env.local" ]]; then
   PATHIEL_STATE_DIR="$(grep -E '^PATHIEL_STATE_DIR=' "$ROOT/.env.local" | tail -1 | cut -d= -f2-)"
   export PATHIEL_STATE_DIR
@@ -132,7 +120,7 @@ pids_for() {
   local pids=""
   # -f matches the full command line. On some managed macOS shells pgrep can
   # temporarily fail when sysmond is unavailable; fall back to ps so orphaned
-  # screen/nohup loops are still found before starting another trader.
+  # screen/nohup loops are still found before starting another server.
   if command -v pgrep >/dev/null 2>&1; then
     pids="$(pgrep -f "$pattern" 2>/dev/null || true)"
   fi
@@ -180,47 +168,6 @@ stop_proc() {
   ok "$label: killed"
 }
 
-start_loop() {
-  local pids
-  pids="$(pids_for "$LOOP_PATTERN")"
-  if [[ -n "$pids" ]]; then
-    warn "trading loop already running (pids: $pids) — skipping"
-    return 0
-  fi
-  info "starting trading loop (log: $LOOP_LOG)"
-  PATHIEL_STARTUP_GRACE_S="${PATHIEL_STARTUP_GRACE_S:-12}" \
-  PATHIEL_META_PREWARM_TIMEOUT_S="${PATHIEL_META_PREWARM_TIMEOUT_S:-3}" \
-    nohup "$PY" "$ROOT/scripts/trading_loop.py" >> "$LOOP_LOG" 2>&1 &
-  local pid=$!
-  disown "$pid" 2>/dev/null || true
-  sleep 1
-  if kill -0 "$pid" 2>/dev/null; then
-    ok "trading loop: pid $pid"
-    # Keep the host awake while the loop runs. On a laptop the trading process
-    # otherwise freezes on idle/maintenance sleep (multi-minute-to-hour scan
-    # blackouts; only the server-side SL/TP brackets protect positions then).
-    # `-w $pid` ties the assertion to the loop's lifetime; the watchdog re-execs
-    # in place (same pid), so this survives a self-heal. Best-effort — a missing
-    # caffeinate (non-macOS) just means no keep-awake. Tip: stay on AC power, as
-    # battery + closed lid can still clamshell-sleep despite this.
-    if command -v caffeinate >/dev/null 2>&1; then
-      # `-s` is the one that matters and was missing until 2026-09-08. `-i`
-      # blocks only IDLE sleep; macOS still ran "Maintenance Sleep" on AC at
-      # 100% charge, freezing the loop for 4-20 minutes at a time (observed
-      # repeatedly on 09-07/09-08 — every "watchdog HUNG, no progress for
-      # NNNNs" that day was the machine being off, not code). `-s` asserts
-      # system-sleep prevention and is honoured while on AC power.
-      nohup caffeinate -i -m -s -w "$pid" >/dev/null 2>&1 &
-      disown 2>/dev/null || true
-      info "caffeinate: holding system awake while loop $pid runs"
-    fi
-  else
-    err "trading loop died immediately — see $LOOP_LOG"
-    tail -n 20 "$LOOP_LOG" >&2 || true
-    return 1
-  fi
-}
-
 start_server() {
   local pids
   pids="$(pids_for "$SERVER_PATTERN")"
@@ -230,10 +177,6 @@ start_server() {
   fi
   local port="${PATHIEL_PORT:-8000}"
   info "starting FastAPI server on port $port (log: $SERVER_LOG)"
-  # Dashboard shares the IP with the trading loop; HL rate-limits per-IP. Give the
-  # server a HARD-throttled token bucket (~1/4 budget) so its background polls yield
-  # to the loop's fetches — cuts the chronic ~24% /info 429 collisions. The loop keeps
-  # its full budget (it's the money path). Tunable: bump if the dashboard feels sluggish.
   nohup env PATHIEL_STATE_READONLY=1 \
     PATHIEL_HL_RATE_REFILL_PER_SEC="${PATHIEL_SERVER_RATE_REFILL:-2}" \
     PATHIEL_HL_RATE_CAPACITY="${PATHIEL_SERVER_RATE_CAPACITY:-60}" \
@@ -250,54 +193,15 @@ start_server() {
   fi
 }
 
-start_sched() {
-  local pids
-  pids="$(pids_for "$SCHED_PATTERN")"
-  if [[ -n "$pids" ]]; then
-    warn "scheduler already running (pids: $pids) — skipping"
-    return 0
-  fi
-  # Scheduled jobs MUST be launched from here, not from cron or launchd. macOS
-  # TCC gates ~/Documents on the responsible process; neither cron nor launchd
-  # holds that grant, so both die with "Operation not permitted" before Python
-  # boots (measured 2026-07-25: the autonomous evidence loop never ran once in
-  # five days). This shell runs in the operator's session, which does hold it,
-  # and the child inherits it.
-  info "starting scheduler (log: $SCHED_LOG)"
-  nohup "$PY" "$ROOT/scripts/scheduler.py" >> "$SCHED_LOG" 2>&1 &
-  local pid=$!
-  disown "$pid" 2>/dev/null || true
-  sleep 1
-  if kill -0 "$pid" 2>/dev/null; then
-    ok "scheduler: pid $pid"
-  else
-    err "scheduler died immediately — see $SCHED_LOG"
-    tail -n 20 "$SCHED_LOG" >&2 || true
-    return 1
-  fi
-}
-
 show_status() {
   printf "\n%sStatus%s\n" "$C_DIM" "$C_OFF"
-  local loop_pids server_pids sched_pids rotator_pids
-  loop_pids="$(pids_for "$LOOP_PATTERN")"
+  local server_pids rotator_pids
   server_pids="$(pids_for "$SERVER_PATTERN")"
-  sched_pids="$(pids_for "$SCHED_PATTERN")"
   rotator_pids="$(pids_for "$ROTATOR_PATTERN")"
-  if [[ -n "$loop_pids" ]]; then
-    ok "trading loop: pids $loop_pids"
-  else
-    warn "trading loop: stopped"
-  fi
   if [[ -n "$server_pids" ]]; then
     ok "server:       pids $server_pids"
   else
     warn "server:       stopped"
-  fi
-  if [[ -n "$sched_pids" ]]; then
-    ok "scheduler:    pids $sched_pids"
-  else
-    warn "scheduler:    stopped"
   fi
   if [[ -n "$rotator_pids" ]]; then
     ok "log rotator:  pids $rotator_pids"
@@ -318,12 +222,12 @@ start_rotator() {
     return 0
   fi
   info "starting log rotator (log: $ROTATOR_LOG)"
-  # Every process above logs via shell `>>` append redirection — an fd none
-  # of them ever reopens (see pathiel/log_setup.py). Rotation has to
-  # run externally, on its own clock, for as long as the box is up; it
-  # cannot be a one-shot step at restart.sh invocation time, since a process
-  # can run for days between restarts. This mirrors the caffeinate
-  # pattern above: its own long-lived nohup'd process, managed the same way.
+  # The server above logs via shell `>>` append redirection — an fd it never
+  # reopens (see pathiel/log_setup.py). Rotation has to run externally, on
+  # its own clock, for as long as the box is up; it cannot be a one-shot
+  # step at restart.sh invocation time, since a process can run for days
+  # between restarts. Its own long-lived nohup'd process, managed the same
+  # way as the server above.
   nohup "$PY" "$ROOT/scripts/log_rotate.py" --daemon >> "$ROTATOR_LOG" 2>&1 &
   local pid=$!
   disown "$pid" 2>/dev/null || true
@@ -370,19 +274,18 @@ run_disk_guard() {
   fi
 }
 
-# Disk-guard enforcement: block only actions that (re)start a trading/serving
+# Disk-guard enforcement: block only actions that (re)start a serving
 # process. Actions that merely stop things, check status, or manage the
 # rotator itself must never be blocked by the guard they exist to unblock.
 #
 # Rotation sweep: run on every action that actually manages a process —
 # every one of them represents the operator touching the box, and this is
-# the only reliable periodic touchpoint outside the rotator daemon itself
-# (cron/launchd are TCC-blocked here, see scripts/scheduler.py). `status` is
-# the one exception, kept a pure read with no side effect.
+# the only reliable periodic touchpoint outside the rotator daemon itself.
+# `status` is the one exception, kept a pure read with no side effect.
 DISK_GUARD_ENFORCE=0
 DISK_GUARD_ROTATE=1
 case "$action" in
-  restart|""|loop|server|sched|scheduler) DISK_GUARD_ENFORCE=1 ;;
+  restart|""|server) DISK_GUARD_ENFORCE=1 ;;
 esac
 case "$action" in
   status) DISK_GUARD_ROTATE=0 ;;
@@ -391,39 +294,16 @@ run_disk_guard "$DISK_GUARD_ENFORCE" "$DISK_GUARD_ROTATE"
 
 case "$action" in
   restart|"")
-    stop_proc "trading loop" "$LOOP_PATTERN"
     stop_proc "server" "$SERVER_PATTERN"
-    stop_proc "scheduler" "$SCHED_PATTERN"
-    halt_clear loop; halt_clear server; halt_clear rotator; halt_clear scheduler
+    halt_clear server; halt_clear rotator
     start_server
-    start_loop
-    start_sched
     start_rotator
-    show_status
-    ;;
-  loop)
-    stop_proc "trading loop" "$LOOP_PATTERN"
-    halt_clear loop
-    start_loop
-    show_status
-    ;;
-  stoploop)
-    # stop ONLY the trading loop (no scans/trades); leave the dashboard +
-    # scheduler running so the /trends cache refresh stays up.
-    halt_mark loop
-    stop_proc "trading loop" "$LOOP_PATTERN"
     show_status
     ;;
   server)
     stop_proc "server" "$SERVER_PATTERN"
     halt_clear server
     start_server
-    show_status
-    ;;
-  sched|scheduler)
-    stop_proc "scheduler" "$SCHED_PATTERN"
-    halt_clear scheduler
-    start_sched
     show_status
     ;;
   rotate|rotator)
@@ -438,10 +318,8 @@ case "$action" in
     show_status
     ;;
   stop)
-    halt_mark loop; halt_mark server; halt_mark rotator; halt_mark scheduler
-    stop_proc "trading loop" "$LOOP_PATTERN"
+    halt_mark server; halt_mark rotator
     stop_proc "server" "$SERVER_PATTERN"
-    stop_proc "scheduler" "$SCHED_PATTERN"
     stop_proc "log rotator" "$ROTATOR_PATTERN"
     show_status
     ;;
@@ -450,7 +328,7 @@ case "$action" in
     ;;
   *)
     err "unknown action: $action"
-    err "usage: $0 [restart|loop|server|sched|stoploop|rotate|stoprotate|stop|status]"
+    err "usage: $0 [restart|server|rotate|stoprotate|stop|status]"
     exit 2
     ;;
 esac

@@ -14,10 +14,10 @@ _tmp = tempfile.mkdtemp(prefix="pathiel-test-state-")
 os.environ["PATHIEL_AGENT_MEMORY_FILE"] = os.path.join(_tmp, ".agent-memory.json")
 os.environ["PATHIEL_AGENT_CONFIG_FILE"] = os.path.join(_tmp, ".agent-config.json")
 os.environ["PATHIEL_DSL_STATE_FILE"] = os.path.join(_tmp, ".dsl-state.json")
-# Rebalancer state files (timers, owned-position sets, the claims registry, vol-managed history,
-# pairs state) all route through rebalancer_owned.state_file(), which honors PATHIEL_STATE_DIR.
-# Point it at the temp dir so the suite never pollutes the live .rebalancer_claims.json /
-# .*_positions.json / *_ts / .xs_volmgd_history (builder tests wrote fake coins to these 2026-06-24).
+# Every process-local state file (backup receipts, supervisor/alert-evaluator
+# timestamps, ...) routes through pathiel.state.state_file(), which honors
+# PATHIEL_STATE_DIR. Point it at the temp dir so the suite never touches the
+# live state directory.
 os.environ["PATHIEL_STATE_DIR"] = _tmp
 # Session log too: session_log.py freezes SESSION_LOG_PATH at import. This was the ONE
 # state file not redirected — pytest wrote fabricated C1/C2/C3 book events into the LIVE
@@ -25,25 +25,9 @@ os.environ["PATHIEL_STATE_DIR"] = _tmp
 os.environ["SESSION_LOG_PATH"] = os.path.join(_tmp, "session-log.jsonl")
 
 
-import pytest
-
-
-@pytest.fixture(autouse=True)
-def _reset_claims_registry():
-    """Each test starts with an EMPTY claims registry. The strategy-book test files share
-    the temp claims file and several use the same coin ("ALT"), so without this one book's
-    successful open leaves a persisted claim that blocks another book's claim in a later
-    file (engulf/premium failed only when run after vol_breakout/neg_funding). Resets the
-    in-memory singleton AND the temp claims file before and after every test."""
-    import pathiel.agents.rebalancer_owned as ro
-
-    def _clear():
-        ro._claims_registry = None
-        try:
-            os.remove(ro.state_file(".rebalancer_claims.json"))
-        except Exception:
-            pass
-
-    _clear()
-    yield
-    _clear()
+# `_reset_claims_registry` (a claims-registry reset between the strategy-book
+# test files) was removed 2026-10-23 (wave 2): `ClaimsRegistry` itself went in
+# wave 1 (headless desk) when the seven strategy books were retired, and the
+# test files it protected against cross-contaminating went with it — the
+# fixture had been a no-op (clearing an attribute and a file nothing sets any
+# more) since that wave.
