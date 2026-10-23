@@ -173,16 +173,14 @@ TOOLS = [
         "name": "config",
         "description": (
             "Read the agent config (no arguments), or change it: passing ANY field "
-            "rewrites the live config the trading loop reads. Every top-level key in "
-            ".agent-config.json is accepted (read first to see them); nested blocks "
-            "(dsl_exit, ai_brain) are deep-merged. Sizing is the risk profile now "
-            "(risk_limits), not the legacy sizing keys."
+            "rewrites the live config. Every top-level key in .agent-config.json is "
+            "accepted (read first to see them); the ai_brain block is deep-merged. "
+            "Sizing is the risk profile now (risk_limits), not a config knob."
         ),
         "inputSchema": {
             "type": "object",
             "properties": {
                 "mode": {"type": "string", "enum": ["OFF", "LIVE"]},
-                "enable_crypto": {"type": "boolean"},
                 "enable_hip3": {"type": "boolean"},
                 "hip3_dex_allowlist": {"type": "array", "items": {"type": "string"}},
                 "hip3_dex_blocklist": {"type": "array", "items": {"type": "string"}},
@@ -1111,29 +1109,22 @@ def handle_config(params: Dict[str, Any]) -> str:
     # Snake_case scalar/bool/list keys that map 1:1 to .agent-config.json. Writing
     # snake_case (not the old camelCase) keeps a single canonical key per setting —
     # the previous handler wrote camelCase and silently created duplicate keys.
+    #
+    # 2026-10-23 (wave 2): every sizing/gating key the retired autonomous
+    # executor read (leverage, equity_fraction_per_trade, the per-trade caps,
+    # the confidence/volume/regime gates, dsl_exit, runner_entry_gate,
+    # runner_mover_surface, ...) is dropped from this allowlist along with
+    # DEFAULT_CONFIG — Claude sizes every trade through place_bracket /
+    # risk_size_trade against the operator's risk profile now, not a global
+    # config knob. See pathiel/agents/config_store.py's DEFAULT_CONFIG for
+    # the full list of what left and why.
     _DIRECT_KEYS = [
-        "mode", "enable_crypto", "enable_hip3",
+        "mode", "enable_hip3",
         "hip3_dex_allowlist", "hip3_dex_blocklist",
-        "leverage", "equity_fraction_per_trade", "max_trade_notional_usd",
-        "asset_notional_multiplier",
-        "tp_scale_fraction", "max_concurrent", "max_total_notional_pct",
-        "min_available_margin_pct", "max_daily_loss_usd",
-        "daily_giveback_halt_pct", "daily_giveback_min_peak_usd",
-        "crowded_with_min_conf", "min_ai_confidence",
-        "counter_regime_min_conf", "aligned_min_conf", "block_counter_trend_bypass",
-        "trend_surface_enabled",
-        "min_market_volume_usd", "min_hip3_volume_usd", "min_short_volume_usd",
-        "max_crypto_long_correlated", "cooldown_min", "held_research_interval_min",
-        "loss_cooldown_min", "min_ai_close_hold_min",
-        "override_max_daily_extension_pct", "sl_atr_mult",
-        "backup_sl_max_frac_of_liq", "short_notional_usd",
         "coin_allowlist", "coin_blocklist",
     ]
     _NESTED_KEYS = [
-        "dsl_exit", "runner_entry_gate", "runner_mover_surface",
-        "trend_filter_200ma", "override_volume_confirm",
-        "reentry_cap",
-        "data_logger", "ai_brain",
+        "ai_brain",
     ]
 
     updates: Dict[str, Any] = {}
@@ -1162,7 +1153,7 @@ def handle_config(params: Dict[str, Any]) -> str:
     # experiment block, ...) is accepted too, as the tool contract promises.
     # Before this, those keys were dropped silently and the call still
     # returned the unchanged config, which read as success.
-    _handled = set(_DIRECT_KEYS) | set(_NESTED_KEYS) | {"runner_mover_surface_enabled"}
+    _handled = set(_DIRECT_KEYS) | set(_NESTED_KEYS)
     unknown = []
     for key, val in params.items():
         if key in _handled or val is None:
@@ -1179,12 +1170,6 @@ def handle_config(params: Dict[str, Any]) -> str:
         # Fail loud and write nothing: a typo must never look like a saved change.
         return json.dumps({"status": "error",
                            "error": f"unknown config key(s): {', '.join(sorted(unknown))}"})
-
-    # Save only if a setting was actually passed (a bare read must not rewrite).
-    if params.get("runner_mover_surface_enabled") is not None:
-        updates.setdefault("runner_mover_surface", {})["enabled"] = bool(
-            params["runner_mover_surface_enabled"]
-        )
 
     if updates:
         try:
@@ -1739,10 +1724,10 @@ def handle_get_candles(params: Dict[str, Any]) -> str:
 
 def handle_close_position(params: Dict[str, Any]) -> str:
     """Handle close_position tool call."""
-    from pathiel.agents.executor import close_position_market
-    
+    from pathiel.agents.bracket import close_position as close_position_market
+
     coin = _norm_coin(params.get('coin', 'BTC'))
-    
+
     try:
         result = close_position_market(coin)
         closed = bool(result.get('ok')) and not bool(result.get('noop'))

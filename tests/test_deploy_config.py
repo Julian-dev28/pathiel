@@ -304,13 +304,18 @@ def test_dockerignore_does_not_exclude_runtime_source():
 RESTART_SH_PATTERNS = _restart_sh_process_patterns()
 
 
-def test_restart_sh_defines_the_four_known_processes():
+def test_restart_sh_defines_the_two_known_processes():
     """Sanity check on the parser — if restart.sh's own process list changes
     shape, this fails loudly instead of the real checks below silently
-    passing on an empty set."""
+    passing on an empty set.
+
+    2026-10-23 (wave 2): LOOP and SCHED (scripts/trading_loop.py,
+    scripts/scheduler.py) are retired with the rest of the autonomous
+    engine — restart.sh now manages only the server and the log rotator."""
     assert set(RESTART_SH_PATTERNS) >= {
-        "LOOP", "SERVER", "SCHED", "ROTATOR",
+        "SERVER", "ROTATOR",
     }
+    assert "LOOP" not in RESTART_SH_PATTERNS and "SCHED" not in RESTART_SH_PATTERNS
 
 
 def test_every_restart_sh_process_is_in_fly_toml():

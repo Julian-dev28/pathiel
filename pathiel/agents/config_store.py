@@ -55,31 +55,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
             "command": "codex",
         },
     },
-    "enable_crypto": True,
     "enable_hip3": True,
-    "equity_fraction_per_trade": 0.2,
-    "leverage": 12,
-    "max_trade_notional_usd": 350,
-    "asset_notional_multiplier": {
-        "crypto": 1.0,
-        "hip3": 1.0,
-    },
-    "tp_scale_fraction": 0.5,
-    "max_concurrent": 10,
-    "max_total_notional_pct": 10.0,
-    "max_daily_loss_usd": -100,
-    "daily_giveback_halt_pct": 0.35,
-    "daily_giveback_min_peak_usd": 25.0,
-    "crowded_with_min_conf": 0.8,
-    "min_available_margin_pct": 0.1,
-    "cooldown_min": 30,
-    "held_research_interval_min": 10,
-    "min_ai_confidence": 0.7,
-    "counter_regime_min_conf": 0.8,
-    "max_crypto_long_correlated": 3,
-    "min_market_volume_usd": 5_000_000,
-    "min_hip3_volume_usd": 5_000_000,
-    "min_short_volume_usd": 50_000_000,
     # 2026-08-29: restricted to majors. Bare tickers — the HIP-3 dex prefix is
     # stripped when matching, so "GOLD" covers xyz:GOLD and km:GOLD. Empty list
     # restores the unrestricted behaviour. See pathiel/agents/universe.py
@@ -88,48 +64,32 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "coin_blocklist": ["TON", "TRX"],
     "hip3_dex_allowlist": ["xyz"],
     "hip3_dex_blocklist": [],
-    "dsl_exit": {
-        "max_loss_pct": 0.4,
-        "max_loss_roe_pct": 3.0,
-        "protect_pct": 1.25,
-        "retrace_threshold": 0.2,
-        "hard_timeout_minutes": 1800.0,
-        "breakeven_trigger_pct": 0.0,
-        "breakeven_lock_pct": 0.0,
-        "phase2_tiers": [
-            {"pct_above_entry": 8.0, "retrace_threshold": 0.35},
-            {"pct_above_entry": 15.0, "retrace_threshold": 0.4},
-        ],
-        "stale_flat_timeout_minutes": 480,
-    },
-    "ta_sidestep_force_execute": True,
-    "override_max_daily_extension_pct": 30.0,
-    "block_counter_trend_bypass": True,
-    "trend_surface_enabled": True,
-    "runner_entry_gate": {
-        "enabled": True,
-        "allow_shorts": False,
-        "require_daily_mover_longs": False,
-        "min_confidence": 0.7,
-        "min_composite": 30.0,
-        "min_crypto_composite": 20.0,
-        "min_hip3_composite": 45.0,
-        "min_short_confidence": 0.72,
-        "min_short_composite": 25.0,
-        "mover_min_confidence": 0.72,
-        "mover_min_composite": 40.0,
-    },
-    "loss_cooldown_min": 180,
-    "min_ai_close_hold_min": 25,
-    "sl_atr_mult": 1.5,
-    "backup_sl_max_frac_of_liq": 0.6,
-    "runner_mover_surface": {
-        "enabled": True,
-        "min_crypto_24h_pct": 10.0,
-        "min_hip3_24h_pct": 8.0,
-        "min_volume_usd": 5_000_000,
-    },
 }
+
+# 2026-10-23 (wave 2): every key the retired autonomous engine (scan/
+# research/execute, the DSL exit loop, the per-book sizing surface) read and
+# nothing else does is gone from DEFAULT_CONFIG and the live .agent-config.json
+# — `enable_crypto`, `equity_fraction_per_trade`, `leverage`,
+# `max_trade_notional_usd`, `asset_notional_multiplier`, `tp_scale_fraction`,
+# `max_concurrent`, `max_total_notional_pct`, `max_daily_loss_usd`,
+# `daily_giveback_halt_pct`, `daily_giveback_min_peak_usd`,
+# `crowded_with_min_conf`, `min_available_margin_pct`, `cooldown_min`,
+# `held_research_interval_min`, `min_ai_confidence`, `counter_regime_min_conf`,
+# `max_crypto_long_correlated`, `min_market_volume_usd`, `min_hip3_volume_usd`,
+# `min_short_volume_usd`, `dsl_exit`, `ta_sidestep_force_execute`,
+# `override_max_daily_extension_pct`, `block_counter_trend_bypass`,
+# `trend_surface_enabled`, `runner_entry_gate`, `loss_cooldown_min`,
+# `min_ai_close_hold_min`, `sl_atr_mult`, `backup_sl_max_frac_of_liq`,
+# `runner_mover_surface`. Claude trades through place_bracket/bracket_sweep
+# now — sized and leverage-checked per call, per the operator's saved risk
+# profile (`risk_limits`/`risk_size_trade`), not a global config knob.
+#
+# `LEGACY_SIZING_KEYS` below is untouched: `services/risk/migrate.py` still
+# has to read these names (and `min_order_bump_max_mult`/`max_daily_loss_pct`/
+# `default_stop_pct`, which were never in DEFAULT_CONFIG) out of an OLD
+# config that still carries them, to build a one-time RiskProfile migration.
+# That is a different concern from what the live, checked-in config contains
+# going forward.
 
 
 def read_agent_config() -> Dict[str, Any]:

@@ -23,11 +23,13 @@ part of this system that reliably works, and it is worth more than the trading.
 
 ### Read this before funding it
 
-- **Headless desk (2026-10-23).** The autonomous strategy books are retired —
+- **Headless desk (2026-10-23).** The autonomous strategy books, and then
+  the autonomous engine itself (the scan/research/execute loop, its 11 risk
+  gates, the DSL exit loop, the scheduler), are retired across two waves —
   Claude places every trade through the MCP server
-  (`scripts/pathiel-mcp-server.py`, `place_bracket` / `bracket_sweep`), and
-  `scripts/trading_loop.py` only scans, reviews open positions, and manages
-  exits. There is exactly one trader on the wallet. See **What was removed
+  (`scripts/pathiel-mcp-server.py`, `place_bracket` / `bracket_sweep`).
+  There is exactly one trader on the wallet, and no standing background
+  process places or exits a trade on its own. See **What was removed
   (2026-10-23)** below for what that deleted and why.
 - Sizing scales with equity from a $10 account up (2026-10-17): at $15 that
   is one position, sized to Hyperliquid's $10.50 minimum, with the daily pause
@@ -108,14 +110,28 @@ no shadow ledger left to render, and a headless desk needs a different
 screen, not a historical view of a dead one. See **Dashboard: the Desk
 page** below.
 
-What survives: `scripts/trading_loop.py` as the exit-management loop (DSL
-exits, housekeeping, no entries of its own), the MCP server as the one
-trading surface, and the general-purpose pieces the books leaned on but
-did not own — `book_params.py`'s sizing-floor resolver (now the one
-fallback for every entry), `shadow_ledger.py` (still grades the
-`thin_short_relax` live experiment), `rebalancer_owned.py`'s `state_file()`,
-`capital_flows.py`, `data_logger.py`, `news_catalyst.py`, `deadline.py`.
-Full account in `docs/overhaul/HEADLESS_2026-10-23.md`.
+What survives: the MCP server as the one trading surface, and the
+general-purpose pieces the books leaned on but did not own —
+`book_params.py`'s sizing-floor resolver (now the one fallback for every
+entry), `capital_flows.py`, `news_catalyst.py`. Full account in
+`docs/overhaul/HEADLESS_2026-10-23.md`.
+
+**Wave 2 (2026-10-23): the autonomous engine itself is gone.** The
+scan/research/execute loop (the trading-loop script), the AI research
+pipeline (`pathiel/agents/research.py`), the perception scanner
+(`perception.py`), the 11 risk gates (`risk_gates.py`), the DSL exit engine
+(`dsl_exit.py`), the entry-context/trade-ledger memory (`memory.py`), and
+the cron-replacement scheduler/process supervisor/alert evaluator (three
+more deleted scripts) are all deleted — Claude is the only trader on the wallet, placing every order
+through the MCP server's `place_bracket`/`bracket_sweep`/`close_position`
+(`pathiel/agents/bracket.py`), sized against the operator's saved risk
+profile (`risk_limits`/`risk_size_trade`), not a scanned/researched/gated
+pipeline. `shadow_ledger.py` and `data_logger.py` (no writer left once the
+executor's `thin_short_relax` experiment went with it) and `deadline.py`
+are deleted too. `book_params.py` and `rebalancer_owned.py`'s
+`state_file()` (moved to `pathiel/state.py`) stay — both are still
+load-bearing for the MCP server's live risk-sizing path. Full account in
+`docs/overhaul/HEADLESS_2026-10-23.md`'s wave-2 section.
 
 ## What was removed (2026-08-29)
 
@@ -752,19 +768,21 @@ scripts/restart.sh
 scripts/restart.sh status
 
 # Follow logs
-tail -f logs/trading_loop.log
+tail -f logs/server.log
 ```
 The API is available at `http://localhost:8000`. Health check: `GET /` returns `{"service": "Pathiel-Trader", "version": "0.3.0", "status": "running"}`.
 
-`scripts/restart.sh` manages the autonomous trading loop and the FastAPI server,
-including stop/verify/start and log files under `logs/`. The MCP stdio server is
-not managed by this script; Pathiel Agent respawns it on tool calls.
+`scripts/restart.sh` manages the FastAPI server and the log rotator,
+including stop/verify/start and log files under `logs/`. The MCP stdio server
+is not managed by this script; Pathiel Agent respawns it on tool calls.
+
+> **Known gap (2026-10-23, wave 2):** `scripts/restart.sh`, `fly.toml` and the
+> k8s manifests still declare a `loop`/`sched` process pair for the now-deleted
+> autonomous trading loop and scheduler scripts — that cleanup has not landed
+> yet. Fixing the deploy config is tracked separately from this doc update.
 
 ### Manual Process Launch
 ```bash
-# Foreground loop, useful while debugging
-python scripts/trading_loop.py
-
 # API server only
 python -m pathiel.server
 # or: uvicorn pathiel.server:app --host 0.0.0.0 --port 8000
@@ -773,13 +791,12 @@ python -m pathiel.server
 The `--env prod --daemon` flags are informational only; they do not fork the
 process. Use `scripts/restart.sh` for normal operation.
 
-**Trading Loop Behavior:**
-- Scans the top ~45 markets (by 24h volume) plus mover slots and a rotating universe sweep, every 60 seconds
-- Each tick, reconciles DSL trackers with live exchange positions and runs an exit pass — market-closes anything whose dynamic floor, hard stop, or timeout has tripped
-- Runs the TA filter on each trigger — only CONFIRMED signals (or fired momentum bursts) reach AI research
-- Researches qualifying signals with the selected AI brain provider (`openrouter`, `claude_cli`, or `codex_cli`)
-- Executes trades that clear all 11 risk gates
-- Runs continuously until stopped
+Claude is the only trader on the wallet (2026-10-23, wave 2): there is no
+standing scan/research/execute loop left to describe here. Every trade comes
+from an explicit `place_bracket` call through the MCP server, sized against
+the operator's saved risk profile (`risk_limits`/`risk_size_trade`); see
+`.claude/skills/oil-tick/SKILL.md` for the one scheduled loop that still
+exists — a 15-minute Claude-run tick, not a Python process.
 
 ---
 
@@ -810,22 +827,13 @@ failed on that day's headlines or BTC trend.
 
 ### Backtests and Grid Sweeps
 
-Logged-replay backtests use the real saved AI verdicts from `.agent-memory.json`
-and route them through the current gates/exits:
-
-```bash
-.venv/bin/python scripts/backtest_logged.py --hours 168 --summary-only \
-  --mode sidestep --force-bar 30 \
-  --apply-runner-gate --regime-mode neutral --slippage-bps 5
-
-.venv/bin/python scripts/strategy_grid_search.py --hours 168 --profile blend \
-  --mode sidestep --force-bar 30 \
-  --regime-mode neutral --slippage-bps 5
-```
-
-Treat these as replay diagnostics, not proof of future profit. The live outcome
-store, with slippage/funding/hold-time capture, is the source of truth once the
-sample is large enough.
+Deleted 2026-10-23 (wave 2) along with the autonomous AI-verdict pipeline
+they replayed: the logged-replay backtest and the strategy grid sweep both
+read `.agent-memory.json`'s saved verdicts and routed them through gates
+that no longer exist (`pathiel/agents/research.py`, `risk_gates.py`). There
+is no equivalent for the MCP-submitted path yet; the desk-grading service
+(`desk_grade` / `services/strategies/facade.py`) grades what actually
+happened, not a replayed what-if.
 
 ---
 
@@ -838,32 +846,23 @@ server are picked up.
 
 | Goal | Prompt to give Pathiel |
 |------|-----------------------|
-| **Check state** | *Load the pathiel skill and show me its current state — mode, equity, open positions, recent trades.* |
-| **Configure** (`OFF` analyzes only, `LIVE` places real orders) | *Set pathiel to LIVE mode with a max trade size of $20.* |
-| **Scan** | *Scan the markets with pathiel and list what triggered, with composite scores.* |
-| **Research** | *Research the top candidate and tell me the verdict, side, and confidence.* |
-| **Run one full cycle** | *Run a pathiel cycle: scan, run the TA filter, research the best candidate, and execute it if the verdict is LONG or SHORT. Tell me what happened.* |
-| **Start continuous trading** | *Start the pathiel trading loop in the background, then confirm it is running.* |
-| **Stop continuous trading** | *Stop the pathiel trading loop.* |
-| **Monitor (in session)** | *Check pathiel's status and tell me if anything changed since the last report.* |
+| **Check state** | *Load the pathiel skill, show me the oil desk's brief, and tell me what's open.* |
+| **Configure** | *Set pathiel to LIVE mode.* |
+| **Read the desk** | *Give me the oil desk brief and its current call.* |
+| **Place a trade** | *Place a bracket on xyz:BRENTOIL: entry 72.10, stop 71.40, target 73.80.* |
+| **Housekeeping** | *Run bracket_sweep on xyz:BRENTOIL and tell me if the position is covered by a stop.* |
+| **Monitor (in session)** | *Check pathiel's account overview and tell me if anything changed since the last report.* |
 
-"Start continuous trading" should use `scripts/restart.sh loop`, which starts
-the same scan -> TA-filter -> research -> execute loop on its own every
-`PATHIEL_SCAN_INTERVAL` seconds, independent of the Pathiel session.
-
-For **hands-off monitoring**, nothing needs resuming: `scripts/scheduler.py`
-already runs the watch on its own clock, started by `scripts/restart.sh`. It
-supervises the processes, evaluates `k8s/prometheusrule.yaml` every two minutes
-and delivers what fires, and snapshots state nightly.
-
-cron and launchd are NOT options on this machine and never were: macOS TCC
-denies both access to `~/Documents`, so a job defined there never runs and
-never says why. That is why the scheduler exists.
+2026-10-23 (wave 2): there is no autonomous loop left to start, stop, or
+monitor between sessions — Claude is the only trader, and every trade is an
+explicit `place_bracket` call in response to a prompt like the ones above.
+The closest thing to "continuous trading" is `/loop 15m /oil-tick`
+(`.claude/skills/oil-tick/SKILL.md`), which re-prompts Claude itself every
+15 minutes; it is not a background process and does nothing while no Claude
+session is running it.
 
 ```bash
 python3 scripts/preflight_live.py    # one-shot readiness, anything blocking a trade
-tail -f logs/alerts.log              # every alert that fired or resolved
-tail -f logs/supervisor.log          # every process restart
 ```
 
 ---

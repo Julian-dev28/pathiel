@@ -5,24 +5,27 @@ already gone wrong.
 
 ## Restoring state from a backup
 
-`scripts/backup_state.py` runs daily at 04:30 from the scheduler and keeps 14
-archives in `~/pathiel-backups` (override with `PATHIEL_BACKUP_DIR`). It captures
-the three things that cannot be recreated — `.agent-memory.json`, the
-`shadow_ledger` evidence base, and `capital_flows.jsonl` — and never captures
-`.env.local` or any key material.
+`scripts/backup_state.py` keeps 14 archives in `~/pathiel-backups` (override
+with `PATHIEL_BACKUP_DIR`). It captures the three things that cannot be
+recreated — `.agent-config.json`, the `.state/strategies/` desk-journal
+evidence base, and `capital_flows.jsonl` — and never captures `.env.local`
+or any key material.
 
-To restore, with the loop stopped:
+2026-10-23 (wave 2): nothing runs this automatically any more —
+scripts/scheduler.py, which used to dispatch it daily, is retired with the
+rest of the autonomous engine. Run it by hand, or add your own cron/launchd
+entry.
+
+To restore, with the server stopped:
 
 ```sh
-scripts/restart.sh stoploop
+scripts/restart.sh stop
 tar tzf ~/pathiel-backups/pathiel-state-YYYYMMDD-HHMMSS.tar.gz   # look first
 tar xzf ~/pathiel-backups/pathiel-state-YYYYMMDD-HHMMSS.tar.gz -C .
-scripts/restart.sh loop
+scripts/restart.sh server
 ```
 
 Paths inside the archive are relative to the repo root, so extract from there.
-`stoploop` writes a halt marker, so the supervisor will not restart the loop
-underneath you; `restart.sh loop` clears it.
 
 Check the last backup at any time:
 
@@ -89,19 +92,22 @@ cross-tenant leak and not a display bug; it was one on 2026-09-04.
 
 ## Restarting after a full stop
 
-`scripts/restart.sh stop` halts the loop, server, scheduler and rotator, and
-writes each to `.state/supervisor_halt.json` so `supervise_processes` will not
-bring them back. Every start clears that component's marker.
+2026-10-23 (wave 2): the process supervisor script and the `loop`/`sched`
+processes it used to watch are retired with the rest of the autonomous
+engine. `scripts/restart.sh stop` now halts only `server` and `rotator`, and
+writes each to `supervisor_halt.json` as a record of operator intent (there
+is no automated supervisor reading that file today). Every start clears
+that component's marker.
 
 ```sh
 bash scripts/restart.sh status     # what is up, what is halted
-bash scripts/restart.sh server     # dashboard only, no trading
-bash scripts/restart.sh restart    # everything, including live trading
+bash scripts/restart.sh server     # dashboard + JSON API only
+bash scripts/restart.sh restart    # server + rotator
 ```
 
-One consequence of a long stop: `data_logger` writes the funding/OI panel from
-inside the loop, so while the loop is down that panel stops growing.
-`xs_reversal` needs ~7 days of trailing funding history to judge a coin's market
-awake, so after a pause longer than that it will decline to rank until the panel
-refills. It takes no trade rather than trading on partial data, which is the
-correct failure.
+Trading itself has no process to stop or start: Claude places every trade
+through the MCP server (`scripts/pathiel-mcp-server.py`), a transient stdio
+process Claude Code respawns per tool call. Stopping the loop that used to
+guard `/api/agent/start`/`stop` for the retired autonomous bot no longer
+applies — the dashboard's STOP TRADING button sets `mode: OFF` in
+`.agent-config.json` instead (see docs/overhaul/DESK_UI_2026-10-23.md).

@@ -18,6 +18,102 @@ from pathiel.client.universe import get_universe
 
 logger = logging.getLogger(__name__)
 
+# ── asset classification ─────────────────────────────────────────────────────
+# Moved out of `pathiel/agents/market_regime.py` 2026-10-23 (wave 2): that
+# module's own trend detector (`detect_regime`, EMA20/EMA50 on 1h closes) fed
+# `risk_gates.market_regime_gate`, a gate in the now-retired autonomous
+# executor. `classify_asset` is the one piece of it this module still needs,
+# for `_compute_funding_regime`'s per-asset-class funding buckets — inlined
+# here rather than keeping a whole module alive for one function.
+
+# HL single-stock perps. Curated rather than auto-discovered because the
+# universe shifts and we want a stable classifier — adds latency to no new
+# coin, just a one-line update when HL lists more.
+_EQUITY_COINS = frozenset([
+    # Single-name equities
+    "TSLA", "NVDA", "AAPL", "MSFT", "GOOGL", "GOOG", "META", "AMZN",
+    "NFLX", "AMD", "INTC", "SPY", "QQQ", "COIN", "MSTR", "HOOD", "PLTR",
+    "DIS", "JPM", "BA", "WMT", "XOM", "MU", "ARM", "BABA", "SKHX",
+    # Broad-market indices (HIP-3: xyz:SP500, xyz:XYZ100, km:US500, km:USTECH, km:SMALL2000)
+    "SP500", "US500", "XYZ100", "USTECH", "QQQ", "DJI", "NDX", "SMALL2000", "USENERGY",
+])
+
+# HL commodity perps — names vary across the API; cover the obvious aliases
+# including HIP-3 namespaced equivalents (xyz:CL = crude, xyz:BRENTOIL, km:USOIL, etc.).
+_COMMODITY_COINS = frozenset([
+    "NATGAS", "GAS", "NGAS",
+    "OIL", "USOIL", "BRENT", "BRENTOIL", "WTI", "CL",
+    "GOLD", "SILVER", "COPPER", "PLATINUM", "PALLADIUM", "ALUMINIUM",
+])
+
+# Foreign / non-US-correlated stock indices. These trade on their own session
+# and drivers (Korea, Japan, HK, Europe, India, Australia) and do NOT track the
+# US SP500 proxy. Classified to use their OWN trend instead (same bucket as
+# commodities: "own trend", not a shared proxy).
+_FOREIGN_INDICES = frozenset([
+    "KR200", "KOSPI", "KOSPI200",
+    "JP225", "NIKKEI", "N225",
+    "HSI", "HANGSENG", "HK50",
+    "DAX", "DAX40", "FTSE", "FTSE100", "CAC", "CAC40", "STOXX", "STOXX50", "ESTX50",
+    "ASX", "ASX200", "SENSEX", "NIFTY", "NIFTY50",
+])
+
+# Bare tickers that trade as native (main-dex) HL perps — authoritatively
+# crypto. Built once from the universe and cached; lets `hyna:BTC`, `cash:ETH`,
+# `flx:XMR` etc. resolve to crypto by their bare ticker rather than being
+# swept into the HIP-3 equity default below.
+_crypto_tickers_cache: Optional[frozenset] = None
+
+
+def _native_crypto_tickers() -> frozenset:
+    global _crypto_tickers_cache
+    if _crypto_tickers_cache is None:
+        try:
+            uni = get_universe()  # main dex only — every perp here is crypto
+            tickers = frozenset(
+                m["coin"].upper() for m in uni
+                if m.get("type") == "perp" and ":" not in m.get("coin", "")
+            )
+            if tickers:  # only cache a real result; retry next call on failure
+                _crypto_tickers_cache = tickers
+            return tickers
+        except Exception:
+            return frozenset()
+    return _crypto_tickers_cache
+
+
+def classify_asset(coin: str) -> str:
+    """Map a coin to its asset class ("crypto" | "equity" | "commodity") for
+    the funding-regime bucket. Resolution is by BARE ticker (the dex prefix is
+    stripped), because HIP-3 venues are mixed: `xyz:`/`km:` are tokenized
+    stocks/commodities, but `hyna:`/`cash:`/`flx:` also list crypto
+    (`hyna:BTC`, `cash:ETH`).
+
+    Order:
+      1. commodity allowlist  → commodity
+      2. foreign index        → commodity (own-trend bucket, not US equity)
+      3. equity allowlist     → equity
+      4. native HL perp ticker (e.g. BTC, LINK, FARTCOIN) → crypto, so
+         `hyna:LINK` is gated by its own class, not swept into equity
+      5. any OTHER HIP-3 namespaced coin → equity — a tokenized stock the
+         allowlist doesn't enumerate (xyz:SNDK, xyz:CBRS).
+      6. bare unknown (no dex prefix) → crypto (main dex is all crypto)
+    """
+    raw = (coin or "")
+    namespaced = ":" in raw
+    bare = raw.split(":", 1)[-1].upper() if namespaced else raw.upper()
+    if bare in _COMMODITY_COINS:
+        return "commodity"
+    if bare in _FOREIGN_INDICES:
+        return "commodity"
+    if bare in _EQUITY_COINS:
+        return "equity"
+    if bare in _native_crypto_tickers():
+        return "crypto"
+    if namespaced:
+        return "equity"
+    return "crypto"
+
 # Hyperliquid's public leaderboard: the JSON its own UI renders. Not part of
 # /info, so it is a plain GET against the stats host.
 _LEADERBOARD_URL = "https://stats-data.hyperliquid.xyz/Mainnet/leaderboard"
@@ -470,7 +566,6 @@ def _compute_funding_regime() -> Dict[str, Any]:
     # are visible to the regime classifier. Without include_hip3=True, oil
     # (xyz:CL), semis (xyz:ARM), gold (xyz:GOLD), etc. would silently be
     # excluded — and the gate would default them to a stale crypto regime.
-    from pathiel.agents.market_regime import classify_asset
     universe = _get_universe(include_hip3=True)
     assets = []
     # Per-class counters: {"crypto": {"long": N, "short": M}, ...}

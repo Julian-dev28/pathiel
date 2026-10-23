@@ -1,22 +1,20 @@
 # Alerts for the failures, not the happy path.
 #
-# pathiel_equity_usd, pathiel_open_positions and friends all measure a working
-# system. None of them move when it BREAKS, which is how a dead trading loop, a
-# blind market feed and an unrotated disk each went unnoticed for weeks. Every
-# rule below corresponds to a silent failure this system has actually had.
+# An unrotated disk, a dead AI brain and a deep drawdown each went unnoticed
+# for weeks before these rules existed. Every rule below corresponds to a
+# silent failure this system has actually had.
 #
-# Two consumers, one definition:
-#   - In Kubernetes: apply with the rest of k8s/; requires the Prometheus
-#     Operator (same dependency as servicemonitor.yaml).
-#   - On the operator's Mac, where nothing runs Kubernetes:
-#     scripts/alert_eval.py reads THIS file every 2 minutes, honours `for:`,
-#     and delivers via macOS notification + logs/alerts.log. Until that
-#     existed these rules fired nowhere and were documentation.
-#
-# The local evaluator handles `metric OP number` joined by `and`, and nothing
-# more. A rule written outside that subset FAILS LOUDLY there rather than
-# silently never firing — but it does mean a new rule should stay in the
-# subset unless you are extending the evaluator with it.
+# 2026-10-23 (wave 2): the autonomous scan/research/execute engine is
+# retired, so the rules that watched IT are gone too — PathielLoopDead (the
+# trading loop's heartbeat), PathielFeedDegraded (the scanner's feed
+# integrity), PathielSupervisionStale and PathielAlertingStale (the process
+# supervisor and `scripts/alert_eval.py`, both scheduler jobs for a bot that
+# no longer runs). Keeping them would mean every one of these fires forever,
+# which is a false page, not a real one — the same reasoning that dropped
+# GRADING_AGE/PathielGradingStale in wave 1. `scripts/alert_eval.py` itself
+# is deleted with them; apply this file with the rest of k8s/ (requires the
+# Prometheus Operator, same dependency as servicemonitor.yaml) — there is no
+# longer a local/Mac evaluator for it.
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
 metadata:
@@ -27,33 +25,6 @@ spec:
   groups:
     - name: pathiel.silent-failures
       rules:
-        # The zombie week: the machine slept, the loop stopped, and nothing
-        # said so. 15m is ~2x the p99 heartbeat gap, so an ordinary slow cycle
-        # does not page.
-        - alert: PathielLoopDead
-          expr: pathiel_heartbeat_age_seconds > 900
-          for: 5m
-          labels: {severity: critical}
-          annotations:
-            summary: "Trading loop has not written a heartbeat in {{ $value | humanizeDuration }}"
-            description: >-
-              The loop is not running. Positions are unmanaged: DSL exits are
-              not being monitored. Check `scripts/restart.sh status`.
-
-        # A data outage reads downstream as a quiet market — an unreadable coin
-        # returns an empty candle list, which is indistinguishable from "no
-        # signal". Entries are already blocked automatically; this says why.
-        - alert: PathielFeedDegraded
-          expr: pathiel_feed_trustworthy == 0
-          for: 10m
-          labels: {severity: warning}
-          annotations:
-            summary: "Market data feed degraded — entries are blocked"
-            description: >-
-              {{ with query "pathiel_feed_gap_fraction" }}{{ . | first | value | humanizePercentage }}{{ end }}
-              of the scanned universe was unreadable. This is usually the
-              exchange, not us. Entries stay blocked until it recovers.
-
         # LIVE mode against an account that cannot place an order. Harmless
         # because the executor refuses, but it means the config says something
         # the system cannot do.
@@ -103,34 +74,8 @@ spec:
               The rotator should hold this under its directory cap. If it is
               growing anyway the rotator is not running.
 
-        # Who watches the watchers. Every alert above needs the evaluator to
-        # still be running; every restart needs the supervisor to still be
-        # running. Both are scheduler jobs, and both would stop the same silent
-        # way — by simply not happening.
-        - alert: PathielSupervisionStale
-          expr: pathiel_supervisor_age_seconds > 900
-          for: 5m
-          labels: {severity: critical}
-          annotations:
-            summary: "Process supervisor has not run in {{ $value | humanizeDuration }}"
-            description: >-
-              Nothing is restarting dead processes. The trading loop revives the
-              scheduler and the scheduler revives everything else, so both sides
-              of that are down. Check `scripts/restart.sh status`.
-
-        - alert: PathielAlertingStale
-          expr: pathiel_alert_eval_age_seconds > 900
-          for: 5m
-          labels: {severity: critical}
-          annotations:
-            summary: "Alert evaluator has not run in {{ $value | humanizeDuration }}"
-            description: >-
-              Nothing is delivering these alerts. Under Prometheus this rule is
-              redundant; on the local evaluator it is the one alert that cannot
-              page for itself, so it also shows in `scripts/preflight_live.py`.
-
-        # The evidence base under every book verdict is gitignored and sits on
-        # one disk. 36h, not 24h, so one skipped daily run is not a page.
+        # The evidence base under every desk's track record is gitignored and
+        # sits on one disk. 36h, not 24h, so one skipped daily run is not a page.
         - alert: PathielBackupStale
           expr: pathiel_backup_age_seconds > 129600
           for: 1h
@@ -138,9 +83,9 @@ spec:
           annotations:
             summary: "No verified state backup in {{ $value | humanizeDuration }}"
             description: >-
-              .agent-memory.json, the shadow-ledger evidence base and
-              capital_flows.jsonl have no current copy. An UNVERIFIED archive
-              counts as no backup here. Run `python scripts/backup_state.py`.
+              .agent-config.json, capital_flows.jsonl and the desk journals
+              have no current copy. An UNVERIFIED archive counts as no backup
+              here. Run `python scripts/backup_state.py`.
 
         # Not a system fault — a money fault. Worth a human looking.
         - alert: PathielDeepDrawdown

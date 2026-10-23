@@ -13,11 +13,15 @@ eleven dexes. `io:SNDK` was ranked, analysed and sent to the executor, and the
 ONLY thing that stopped the order was io happening to hold $0.00. Fund io and
 the same path opens a real position on a venue the operator switched off.
 
-So the allowlist is tested at both layers, because they need different
-guarantees. In `get_universe` it is a cost control: a muted dex must not even be
-fetched. In `maybe_execute` it is a safety control: a muted dex must be refused
-whatever produced the candidate, and refused for the RIGHT reason rather than
-incidentally by a balance check that a deposit would silence.
+In `get_universe` the allowlist is a cost control: a muted dex must not even
+be fetched. It no longer gates a second, SAFETY layer, because there is no
+autonomous candidate generator left to gate (2026-10-23, wave 2: the
+scan/research/execute engine, including `maybe_execute`'s own allowlist
+refusal for a candidate the scan itself turned up, is retired). Claude is
+the only trader now and names the coin/dex explicitly on every
+`place_bracket` call — the discipline that used to be an allowlist refusal
+is now the oil-tick skill's own scope (`.claude/skills/oil-tick/SKILL.md`:
+"Oil only").
 """
 from __future__ import annotations
 
@@ -91,29 +95,3 @@ def test_unreadable_config_does_not_silently_widen_or_empty(_dexes, monkeypatch)
 
     monkeypatch.setattr(CS, "read_agent_config", _boom)
     assert U._allowed_hip3_dexes() == ["xyz", "io", "para", "mkts", "km"]
-
-
-def test_executor_refuses_muted_dex_before_any_balance_lookup(monkeypatch):
-    """The live bug, at the layer that actually places the order.
-
-    Asserts the refusal reason names the ALLOWLIST. If it came back
-    'hip3_dex_underfunded' the order was stopped by io's empty balance, which
-    is luck, not a control - a deposit would remove it.
-    """
-    import pathiel.agents.executor as E
-
-    monkeypatch.setattr(E, "read_agent_config",
-                        lambda: {"hip3_dex_allowlist": ["xyz"], "enable_hip3": True,
-                                 "enable_crypto": False, "mode": "LIVE"})
-    monkeypatch.setattr(E, "resolve_user_address", lambda: "0xabc")
-
-    def _no_network(*a, **k):
-        raise AssertionError("balance lookup ran for a muted dex")
-
-    import pathiel.client.hl_client as HL
-    monkeypatch.setattr(HL, "_http_post", _no_network)
-
-    res = E.maybe_execute({"id": "t1", "coin": "io:SNDK", "side": "short"})
-    assert res["executed"] is False
-    assert "not_allowlisted" in res["reason"], res["reason"]
-    assert "io" in res["reason"]

@@ -1,17 +1,16 @@
 #!/usr/bin/env python3
-"""pathiel — autonomous multi-market trading agent for Hyperliquid.
+"""pathiel — CLI for the headless Hyperliquid desk.
+
+The autonomous scan/research/execute engine is retired (2026-10-23, wave 2):
+Claude places every trade through the MCP server
+(`scripts/pathiel-mcp-server.py`), so the commands that drove it (`scan`,
+`research`, `execute`, `status`, `trades`) are gone with it. The server
+itself runs as `python -m pathiel.server`, not through this CLI.
 
 Usage:
-  pathiel scan               Scan all markets for triggers
-  pathiel research <COIN>    AI analysis on a coin
-  pathiel execute            Execute trade from last analysis
-  pathiel status             Show agent state, positions, config
-  pathiel trades             Show trade history
-  pathiel account            Show HL account state
-  pathiel config [K=V ...]   Show or set config values
-  pathiel start              Run autonomous scanning loop
-  pathiel stop               Stop autonomous loop
-  pathiel version            Show version
+  pathiel account             Show HL account state
+  pathiel config [K=V ...]    Show or set config values
+  pathiel version             Show version
 """
 
 from __future__ import annotations
@@ -43,189 +42,7 @@ GRAY = lambda t: color(t, "\033[90m")
 BOLD = lambda t: color(t, "\033[1m")
 
 
-def _import_memory():
-    from pathiel.agents.memory import memory
-    memory.load()
-    return memory
-
-
 # ── Commands ──────────────────────────────────────────────────────────
-
-def cmd_scan():
-    """Scan all markets for triggers."""
-    from pathiel.agents.perception import scan_once
-    from pathiel.client.universe import get_universe
-
-    print_banner()
-    print("  Scanning all markets for trigger signals...\n")
-
-    universe = get_universe()
-    perceptions = scan_once(universe=universe, min_score=75)
-
-    if not perceptions:
-        print("  No triggers fired above threshold (score >= 75).\n")
-        return
-
-    print(f"  {len(perceptions)} trigger(s) detected:\n")
-    for i, p in enumerate(perceptions[:20], 1):
-        score = p.get("composite_score", 0)
-        coin = p.get("coin", "?")
-        mid = p.get("mid", 0)
-        fired = [t.get("name", "?") for t in p.get("triggers", []) if t.get("fired")]
-        print(f"  [{i:>2}] {coin:<12} score={score:>6.1f}  mid={mid:>12.2f}  triggers={', '.join(fired)}")
-    print()
-
-
-def cmd_research(coin: str):
-    """Run AI research on a coin."""
-    from pathiel.agents.research import research
-    from pathiel.agents.memory import memory
-    from pathiel.client.hl_client import fetch_all_mids
-
-    print_banner()
-    coin = coin.upper()
-
-    # Look up perception from memory
-    memory.load()
-    perception = None
-    for p in reversed(memory.get_recent_perceptions(100)):
-        if p.get("coin") == coin:
-            perception = p
-            break
-
-    if not perception:
-        # Fallback: create minimal perception from live mids
-        mids = fetch_all_mids()
-        perception = {"coin": coin, "mid": float(mids.get(coin, "0")), "type": "perp"}
-
-    print(f"  Running AI research on {coin}...\n")
-    analysis = research(coin=coin, perception=perception)
-
-    verdict = analysis.get("verdict", "?")
-    conf = analysis.get("confidence", 0)
-    side = analysis.get("side") or "—"
-    entry = analysis.get("entry_px", 0)
-    stop = analysis.get("stop_px", 0)
-    tp = analysis.get("tp_px", 0)
-    reason = analysis.get("reasoning", "")[:250]
-
-    if verdict == "PASS":
-        v = GRAY(verdict)
-    elif verdict == "LONG":
-        v = GREEN(verdict)
-    elif verdict == "SHORT":
-        v = RED(verdict)
-    else:
-        v = YELLOW(verdict)
-
-    print(f"  {BOLD('Coin:')}     {coin}")
-    print(f"  {BOLD('Verdict:')}  {v}")
-    print(f"  {BOLD('Conf:')}     {conf:.2f}")
-    print(f"  {BOLD('Side:')}     {side}")
-    if entry:
-        print(f"  {BOLD('Entry:')}    {entry:,.2f}")
-    if stop:
-        print(f"  {BOLD('Stop:')}     {stop:,.2f}")
-    if tp:
-        print(f"  {BOLD('TP:')}       {tp:,.2f}")
-    if reason:
-        print(f"  {BOLD('Reason:')}   {reason}")
-    print(f"  {BOLD('ID:')}       {analysis.get('id', '?')}\n")
-
-
-def cmd_execute():
-    """Execute trade from last confirmed analysis."""
-    from pathiel.agents.executor import maybe_execute
-
-    print_banner()
-    memory = _import_memory()
-
-    analyses = memory.get_all_analyses()
-    for a in reversed(analyses):
-        if a.get("verdict") in ("LONG", "SHORT", "CLOSE") and a.get("confidence", 0) >= 0.5:
-            print(f"  Executing {a['coin']} ({a['verdict']}, conf={a['confidence']:.2f})...\n")
-            result = maybe_execute(a)
-
-            if result.get("executed"):
-                print(GREEN(f"  ✅ {a['coin']} executed @ {result.get('entry_px', 0):,.2f} (${result.get('size_usd', 0):,.0f})"))
-            else:
-                reason = result.get("reason") or result.get("blocked_by")
-                if isinstance(reason, list):
-                    print(YELLOW(f"  ✗ Blocked: {', '.join(reason)}"))
-                else:
-                    print(YELLOW(f"  ✗ Blocked: {reason}"))
-            return
-
-    print("  No CONFIRMED analysis to execute.\n")
-
-
-def cmd_status():
-    """Show full agent state."""
-    from pathiel.agents.config_store import read_agent_config
-
-    print_banner()
-    memory = _import_memory()
-    config = read_agent_config()
-    state = memory.get_full_state()
-
-    wr = state.get("win_rate", {})
-    print(f"  {BOLD('Mode:')}         {config.get('mode', 'OFF')}")
-    print(f"  {BOLD('Equity:')}       ${state.get('equity', 0):,.2f}")
-    print(f"  {BOLD('Win Rate:')}     {wr.get('rate', 0):.0%} ({wr.get('wins', 0)}/{wr.get('total', 0)})")
-    print(f"  {BOLD('Daily PnL:')}    ${state.get('daily_pnl', 0):,.2f}")
-    print(f"  {BOLD('Analyses:')}     {len(state.get('recent_analyses', []))}")
-    print(f"  {BOLD('Perceptions:')}  {len(state.get('recent_perceptions', []))}")
-
-    positions = state.get("open_positions", [])
-    if positions:
-        print(f"\n  {BOLD('Open Positions:')}")
-        for p in positions:
-            szi = p.get("szi", 0)
-            coin = p.get("position", {}).get("coin", "?")
-            side = "long" if float(szi) > 0 else "short"
-            entry = p.get("position", {}).get("entryPx", 0)
-            pnl = p.get("unrealizedPnl", 0)
-            print(f"    {coin:<12} {side:>6}  szi={float(szi):>12.4f}  entry={float(entry):>12.2f}  pnl={float(pnl):>+10,.2f}")
-    else:
-        print(f"\n  {BOLD('Open Positions:')}  none")
-    print()
-
-
-def cmd_trades():
-    """Show trade history."""
-    print_banner()
-    memory = _import_memory()
-    trades = memory.get_all_trades()
-
-    if not trades:
-        print("  No trades yet.\n")
-        return
-
-    print(f"  {len(trades)} trade(s):\n")
-    for i, t in enumerate(reversed(trades), 1):
-        coin = t.get("coin", "?")
-        side = t.get("side", "?")
-        entry = t.get("entry_px", 0)
-        size = t.get("size_usd", 0)
-        pnl = t.get("pnl")
-        exit_px = t.get("exitPx")
-
-        pnl_str = f"${pnl:+,.2f}" if pnl is not None else "—"
-        extra = f"  exit={float(exit_px):,.2f}" if exit_px else ""
-
-        verdict = t.get("verdict")
-        if verdict == "PASS":
-            verdict_str = GRAY("PASS")
-        elif verdict == "LONG":
-            verdict_str = GREEN("LONG")
-        elif verdict == "SHORT":
-            verdict_str = RED("SHORT")
-        else:
-            verdict_str = YELLOW(str(verdict))
-
-        print(f"  [{i:>2}] {verdict_str}  {coin:<12} {side:>6}  entry={float(entry):>12.2f}  size=${float(size):>8,.0f}  {pnl_str:>12}{extra}")
-    print()
-
 
 def cmd_account():
     """Show HL account state."""
@@ -323,11 +140,6 @@ def cmd_version():
 # ── Main ──────────────────────────────────────────────────────────────
 
 COMMANDS = {
-    "scan": cmd_scan,
-    "research": cmd_research,
-    "execute": cmd_execute,
-    "status": cmd_status,
-    "trades": cmd_trades,
     "account": cmd_account,
     "config": cmd_config,
     "version": cmd_version,
@@ -340,16 +152,11 @@ def main():
         print("  Usage: pathiel <command> [args]")
         print()
         print("  Commands:")
-        print("    scan               Scan all markets for triggers")
-        print("    research <COIN>    AI analysis on a coin")
-        print("    execute            Execute trade from last analysis")
-        print("    status             Show agent state, positions, config")
-        print("    trades             Show trade history")
         print("    account            Show HL account state")
         print("    config [K=V ...]   Show or set config values")
-        print("    start              Start autonomous scanning loop")
-        print("    stop               Stop autonomous scanning loop")
         print("    version            Show version")
+        print()
+        print("  The server runs separately: python -m pathiel.server")
         print()
         return
 

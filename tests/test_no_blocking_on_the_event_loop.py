@@ -211,7 +211,6 @@ def calls(monkeypatch):
     c = Calls()
     _no_deployment(monkeypatch)
     monkeypatch.setenv("PATHIEL_OPERATOR_TOKEN", TOKEN)
-    monkeypatch.setattr(srv, "_last_scan_at", 0)
     monkeypatch.setattr(srv, "resolve_user_address", lambda: ADDR)
     account = {"equity": 15.21, "total_ntl": 0.0, "spot_balances": [],
                "queried_dexes": {"", "xyz"}, "dex_equity": {"": 0.01, "xyz": 15.2},
@@ -223,18 +222,9 @@ def calls(monkeypatch):
     monkeypatch.setattr(srv, "fetch_all_mids", c.fake("fetch_all_mids", {"BTC": "80000"}))
     monkeypatch.setattr(srv, "get_universe", c.fake("get_universe", [{"coin": "BTC"}]))
     monkeypatch.setattr(srv, "fetch_hl_candles", c.fake("fetch_hl_candles", []))
-    monkeypatch.setattr(srv, "scan_once", c.fake("scan_once", []))
-    monkeypatch.setattr(srv, "research", c.fake("research", {"verdict": "PASS"}))
-    monkeypatch.setattr(srv, "maybe_execute", c.fake("maybe_execute", {"executed": False}))
     monkeypatch.setattr(srv, "read_agent_config", c.fake("read_agent_config", {}))
     monkeypatch.setattr(srv, "update_agent_config", c.fake("update_agent_config", {}))
     monkeypatch.setattr(srv, "render_metrics", c.fake("render_metrics", (b"", "text/plain")))
-    monkeypatch.setattr(srv.memory, "load", c.fake("memory.load"))
-    monkeypatch.setattr(srv.memory, "get_full_state", c.fake("memory.get_full_state", {}))
-    monkeypatch.setattr(srv.memory, "update_equity", c.fake("memory.update_equity"))
-    monkeypatch.setattr(srv.memory, "get_all_trades", c.fake("memory.get_all_trades", []))
-    monkeypatch.setattr(srv.memory, "get_recent_perceptions", c.fake("memory.get_recent_perceptions", []))
-    monkeypatch.setattr(srv.memory, "get_analysis_by_id", c.fake("memory.get_analysis_by_id", {"id": "a1"}))
     monkeypatch.setattr(srv.session_log, "append", c.fake("session_log.append"))
     monkeypatch.setattr(srv.session_log, "tail", c.fake("session_log.tail", []))
     monkeypatch.setattr(hl_client, "_http_post", c.fake("_http_post", {"levels": [[], []]}))
@@ -250,11 +240,10 @@ def calls(monkeypatch):
 
 ROUTES = [
     # method, path, body, calls that must have happened (off the loop)
-    ("GET", "/api/agent/state", None, {"memory.load", "account"}),
-    ("POST", "/api/agent/scan", {"minScore": 30}, {"get_universe", "scan_once"}),
-    ("POST", "/api/agent/research/BTC", {}, {"memory.load", "research"}),
-    ("POST", "/api/agent/execute", {"analysisId": "a1"}, {"memory.get_analysis_by_id", "maybe_execute"}),
-    ("GET", "/api/agent/trades", None, {"memory.get_all_trades"}),
+    # 2026-10-23 (wave 2): GET/POST /api/agent/state, scan, research/{coin},
+    # execute and GET /api/agent/trades are retired with the rest of the
+    # autonomous engine (the scan/research/execute pipeline and its memory
+    # ledger). /api/agent/session-log and /api/agent/config survive.
     ("GET", "/api/agent/session-log", None, {"session_log.tail"}),
     ("GET", "/api/agent/config", None, {"read_agent_config"}),
     ("POST", "/api/agent/config", {"mode": "OFF"}, {"update_agent_config"}),
@@ -306,7 +295,7 @@ def test_every_server_route_is_covered_here():
                         and d.func.attr in _ROUTE_DECORATORS and d.args):
                     paths.add(d.args[0].value)
     covered = {p.split("?")[0].replace("/research/BTC", "/research/{coin}") for _, p, _, _ in ROUTES}
-    exempt = {"/api/health", "/api/agent/start", "/api/agent/stop"}
+    exempt = {"/api/health"}
     assert paths - covered - exempt == set()
 
 
@@ -337,7 +326,13 @@ def test_a_slow_venue_read_does_not_hold_up_other_requests(monkeypatch):
     assert waited < 0.3, f"/api/health waited {waited:.2f} s behind a venue read"
 
 
-# ── meaning kept: the scan window and the config save ───────────────────────
+# ── meaning kept: the config save ───────────────────────────────────────────
+#
+# test_two_scans_landing_together_start_one and
+# test_a_failed_universe_read_gives_the_window_back (the scan rate-limit
+# window's atomic check-and-claim) were removed 2026-10-23 (wave 2):
+# POST /api/agent/scan and the `_last_scan_at` window it guarded are retired
+# with the rest of the autonomous engine.
 
 class _Body:
     def __init__(self, raw=b""):
@@ -349,48 +344,6 @@ class _Body:
     async def json(self):
         import json
         return json.loads(self.raw)
-
-
-def test_two_scans_landing_together_start_one(monkeypatch):
-    """The 30 s window is checked and claimed with no await in between, so on
-    the one loop a second click is refused even while the first scan runs on
-    a worker thread."""
-    import pathiel.server as srv
-    scans = []
-
-    def slow_scan(universe=None, min_score=20):
-        scans.append(min_score)
-        time.sleep(0.2)
-        return []
-    monkeypatch.setattr(srv, "_last_scan_at", 0)
-    monkeypatch.setattr(srv, "read_agent_config", lambda: {})
-    monkeypatch.setattr(srv, "get_universe", lambda *, include_hip3=False: [{"coin": "BTC"}])
-    monkeypatch.setattr(srv, "scan_once", slow_scan)
-    monkeypatch.setattr(srv.session_log, "append", lambda entry: None)
-
-    async def both():
-        return await asyncio.gather(srv.run_scan(_Body()), srv.run_scan(_Body()),
-                                    return_exceptions=True)
-    results = asyncio.run(both())
-    assert sorted(getattr(r, "status_code", None) for r in results) == [200, 429]
-    assert scans == [20]
-
-
-def test_a_failed_universe_read_gives_the_window_back(monkeypatch):
-    import pathiel.server as srv
-    monkeypatch.setattr(srv, "_last_scan_at", 0)
-    monkeypatch.setattr(srv, "read_agent_config", lambda: {})
-    monkeypatch.setattr(srv.session_log, "append", lambda entry: None)
-    monkeypatch.setattr(srv, "scan_once", lambda universe=None, min_score=20: [])
-
-    def down(*, include_hip3=False):
-        raise RuntimeError("venue down")
-    monkeypatch.setattr(srv, "get_universe", down)
-    with pytest.raises(RuntimeError):
-        asyncio.run(srv.run_scan(_Body()))
-    assert srv._last_scan_at == 0
-    monkeypatch.setattr(srv, "get_universe", lambda *, include_hip3=False: [])
-    assert asyncio.run(srv.run_scan(_Body())).status_code == 200
 
 
 @pytest.mark.parametrize("raw,empty_ok,expect", [
