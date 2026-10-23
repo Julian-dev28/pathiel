@@ -30,7 +30,7 @@ Persistent state on disk:  .agent-memory.json  .agent-config.json  .dsl-state.js
 Two entry processes:
   scripts/trading_loop.py     — autonomous: scans, decides, executes, exits, repeats
   pathiel/server.py     — FastAPI: public dashboard + token-gated operator + JSON API + SSE feed
-  scripts/pathiel-mcp-server.py — MCP stdio server: exposes 81 tools to Pathiel Agent
+  scripts/pathiel-mcp-server.py — MCP stdio server: exposes 59 tools to Claude
 ```
 
 All three share the same on-disk state and the same Python modules under
@@ -70,7 +70,7 @@ pathiel:
 |---|---|
 | **DSL (Dynamic Stop Loss) two-phase exit** | `pathiel/agents/dsl_exit.py` is a re-implementation of the same idea: hard stop in phase 1, ratcheting trailing floor with tiered retrace in phase 2, hard timeout as a backstop. |
 | **Skill-shaped trading strategies** | The `skills/pathiel-agent/` directory mirrors Senpi's per-strategy folder layout (SKILL.md + scripts/ + references/) so a Pathiel Agent skill is portable in shape, if not in runtime. |
-| **MCP as the integration boundary** | Senpi exposes its proprietary backend through an MCP server; pathiel does the same with `scripts/pathiel-mcp-server.py` (81 tools). Same pattern, open implementation. |
+| **MCP as the integration boundary** | Senpi exposes its proprietary backend through an MCP server; pathiel does the same with `scripts/pathiel-mcp-server.py` (59 tools). Same pattern, open implementation. |
 
 The crucial difference: **Senpi's runtime and MCP server are closed.** Their
 open skills can't execute trades without their proprietary infrastructure.
@@ -354,25 +354,29 @@ user scale.
 
 ## The MCP server
 
-`scripts/pathiel-mcp-server.py` — 81 tools over MCP stdio. The contract that
-lets Pathiel Agent (and any MCP client) operate the engine.
+`scripts/pathiel-mcp-server.py` — 59 tools over MCP stdio. The contract that
+lets Claude (and any MCP client) operate the oil desk.
 
 Tool categories:
 
 | Category | Examples | Count |
 |---|---|---|
-| Trading core | `scan`, `research`, `submit_verdict`, `execute`, `close_position`, `state`, `config` | 7 |
-| Hyperfeed discovery | `leaderboard_get_markets`, `discovery_get_top_traders`, `whale_concentration`, `oi_funding_anomaly` | ~10 |
-| Market data | `market_get_asset_data`, `market_get_funding_regime`, `market_get_mids`, `market_list_instruments` | ~15 |
-| Direct HL passthrough | account state, candles, mids, l2 book, place order, cancel order, etc. | ~70 |
+| Desks | `desk_list`, `desk_brief`, `desk_refresh`, `desk_submit_call`, `desk_track_record`, `desk_grade` | 6 |
+| Trading core | `place_bracket`, `bracket_sweep`, `close_position`, `set_leverage`, `cancel_order`, `state`, `config` | 7 |
+| Account and risk | `account_overview`, `accounts`, `risk_limits`, `risk_size_trade`, `connected_wallets`, `wallet_account` | 6 |
+| Market data | `market_get_asset_data`, `market_get_funding_regime`, `market_list_instruments`, `get_candles`, `get_price`, `get_l2_book`, etc. | 21 |
+| Direct HL account/venue passthrough | order history, fills, funding, deposits/withdrawals, rate limits, etc. | 19 |
 
-Some of the passthroughs are stubs pending SDK wiring — they exist so clients
-get a clean `not_implemented` error instead of fake zeros or "tool not found."
-Never treat stub responses as data.
+Full table, regenerated from `TOOLS`: `docs/overhaul/MCP.md`.
 
-The 99-tool surface is intentionally wide because **the MCP server can't be
-modified at runtime** without a Pathiel restart. Better to expose more than
-the agent needs than to have to teach the agent a new tool mid-session.
+There are no stubs left as of the 2026-10-17 shore-up — every tool returns
+real data. The 2026-10-23 headless-oil-desk cut removed 22 tools outright
+(80 -> 58): the autonomous bot's brain path (`scan`, `research`,
+`submit_verdict`, `execute` — Claude now places trades through
+`place_bracket`/`bracket_sweep`), the leaderboard/discovery pair, and
+staking/validator/vault/referral/rewards/spot/network reads the oil workflow
+never used. The same day, `desk_grade` landed (80 -> 59 net): grades every
+expired desk thesis's trades against it, no order path.
 
 ---
 
@@ -519,7 +523,7 @@ pathiel/
 │   └── pathiel_data_api/         # market-data product (own deploy unit)
 ├── scripts/
 │   ├── trading_loop.py          # the autonomous loop (long-running)
-│   ├── pathiel-mcp-server.py     # MCP stdio server, 81 tools
+│   ├── pathiel-mcp-server.py     # MCP stdio server, 59 tools
 │   ├── grant_operator.py        # grant/revoke the operator role for a wallet
 │   └── backtest.py              # historical-candle backtest
 ├── skills/pathiel-agent/  # Pathiel Agent skill (operator's manual + helper scripts)

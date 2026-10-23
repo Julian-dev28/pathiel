@@ -2,8 +2,8 @@
 > Autonomous trading agent for Hyperliquid, restricted to majors — BTC/ETH, gold, silver, oil, the broad indices, and the mega-caps. A standalone Python system built with FastAPI and a pluggable AI brain (OpenRouter default; Claude/Codex CLI optional), operated by [Pathiel Agent](https://github.com/Julian-dev28/pathiel-agent) through an MCP server.
 
 **How you drive it: MCP.** The whole control surface is an MCP server —
-`scripts/pathiel-mcp-server.py`, 81 tools over stdio. Scanning, research,
-execution, config, risk state, Hyperliquid market data and the wallets signed in
+`scripts/pathiel-mcp-server.py`, 59 tools over stdio. Desk briefs, bracket
+orders, config, risk state, Hyperliquid market data and the wallets signed in
 to the dashboard are all tools an agent calls. There is no second API to learn
 and no framework dependency in the engine: point Claude Desktop, Pathiel Agent or
 any MCP client at it and you are operating the system. Full table under
@@ -197,14 +197,14 @@ only fetches the newest bars. Measured 2026-10-18: a desk brief went from 22 to
 122 seconds to under 5 milliseconds.
 
 The scheduler runs `desks-refresh` every 30 minutes and `desks-grade` every hour.
-MCP agents get `desk_list`, `desk_brief`, `desk_refresh`, `desk_submit_call`
-and `desk_track_record`.
+MCP agents get `desk_list`, `desk_brief`, `desk_refresh`, `desk_submit_call`,
+`desk_track_record` and `desk_grade`.
 
 ## MCP Integration
 
 pathiel is a standalone Python application; **Pathiel Agent operates it through this MCP server** — that is the whole integration boundary. The agent calls the tools below; the trading engine itself has no Pathiel-framework dependency.
 
-The MCP server (`scripts/pathiel-mcp-server.py`) exposes 81 tools over stdio transport. The 18 primary tools are listed below; the remainder are Hyperliquid data passthroughs and the `desk_*` tools. Full table: `docs/overhaul/MCP.md`.
+The MCP server (`scripts/pathiel-mcp-server.py`) exposes 59 tools over stdio transport. The 17 primary tools are listed below; the remainder are Hyperliquid data passthroughs and the `desk_*` tools. Full table: `docs/overhaul/MCP.md`.
 
 **From Claude Code.** `.mcp.json` registers the server for this repo. Enable
 it once with `/mcp` (or `"enabledMcpjsonServers": ["pathiel"]` in
@@ -212,7 +212,7 @@ it once with `/mcp` (or `"enabledMcpjsonServers": ["pathiel"]` in
 calls `risk_size_trade`, "how much do I have" calls `account_overview` (every
 dex: HIP-3 money such as oil on xyz is not on the main dex). The server sends
 short instructions at connect time, and every tool carries MCP safety
-annotations: the four live-money tools are marked destructive, so Claude Code
+annotations: the five live-money tools are marked destructive, so Claude Code
 asks before each call. Calls run concurrently with a deadline each (120 s,
 `desk_refresh` 300 s), honor cancel, and report progress. Live check,
 read-only tools only: `.venv/bin/python scripts/mcp_smoke.py`.
@@ -230,11 +230,11 @@ for them.
 | Tool | Description |
 |------|-------------|
 | **Trading Core** | |
-| `scan` | Scan all HL markets (volume-filtered), return triggered candidates |
-| `research` | Deep AI analysis on a coin with the configured AI brain provider |
-| `submit_verdict` | Store an agent-authored verdict as an analysis for MCP-native brain mode |
-| `execute` | Execute trade through risk gates + DSL registration |
+| `place_bracket` | One entry (market or resting limit) with an exact stop and target, sized by the risk engine |
+| `bracket_sweep` | Cancel a stranded sibling order and confirm an open position is covered by a stop |
 | `close_position` | Close a coin through the same reduce-only executor close helper used by loop exits |
+| `set_leverage` | Set isolated leverage for a coin before an entry |
+| `cancel_order` | Cancel one resting order by id |
 | `state` | Get full agent state (mode, equity, positions, trades) |
 | `config` | Get/set agent configuration (mode, risk caps, thresholds, `ai_brain`) |
 | **Account and risk** (read-only) | |
@@ -245,12 +245,6 @@ for them.
 | **Connected wallets** (read-only) | |
 | `connected_wallets` | Wallets that signed in to the dashboard over SIWE, newest first |
 | `wallet_account` | Read-only Hyperliquid equity + positions for any address |
-| **Hyperfeed Discovery** | |
-| `leaderboard_get_markets` | Top markets by OI + volume |
-| `leaderboard_get_top_traders` | Top traders from HL's public leaderboard over a window, with live positions |
-| `leaderboard_get_trader_positions` | Positions for a specific trader |
-| `discovery_get_top_traders` | Leaderboard pnl/roi for every window; ROI ranking floors accounts at $10k |
-| `discovery_get_trader_state` | Full trader state from discovery |
 | **Market Data** | |
 | `market_get_asset_data` | Candles + funding + OI for any coin |
 | `market_get_funding_regime` | LONG_CROWDED / SHORT_CROWDED / NEUTRAL |
@@ -987,7 +981,7 @@ pathiel/
 │   └── models/                    # Shared data types
 │       └── types.py               # Candle (OHLCV)
 ├── scripts/
-│   ├── pathiel-mcp-server.py       # MCP server (stdio, 81 tools)
+│   ├── pathiel-mcp-server.py       # MCP server (stdio, 59 tools)
 │   └── trading_loop.py            # Continuous trading loop
 ├── skills/pathiel-agent/    # Pathiel Agent skill
 ├── tests/                         # pytest suite — offline / online / live e2e

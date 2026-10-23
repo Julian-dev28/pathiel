@@ -44,24 +44,26 @@ mcp_servers:
 
 ## Primary Tools
 
-The server exposes 81 tools, every one of them implemented. The 7 trading-core tools below
+The server exposes 59 tools, every one of them implemented. The 7 trading-core tools below
 are the ones you call directly.
 
-Six of those stubs were promoted on 2026-09-06 after an audit found the
-capability already sat in `pathiel.client`: `get_coin_price`, `get_leverage`,
+Six stubs were promoted on 2026-09-06 after an audit found the capability
+already sat in `pathiel.client`: `get_coin_price`, `get_leverage`,
 `get_funding_history`, `get_asset_context`, `get_open_interest` and
 `get_predicted_funding`. A stub is worse than a missing tool — an agent reads
 "not implemented" as "this data does not exist here" and goes without it.
 `get_predicted_funding` returns rates across venues, so it is a basis read as
-well as a funding one.
+well as a funding one. (`get_funding_history` was later cut outright on
+2026-10-23 when pathiel became a headless oil desk — `get_funding_rate` and
+`get_predicted_funding` cover the funding picture a trader needs.)
 
 | Tool | Args | Returns |
 |------|------|---------|
-| `scan` | `minScore: number` (0-100), `maxMarkets?: number` | Triggered candidates |
-| `research` | `coin: string` | AI analysis verdict from the configured brain provider |
-| `submit_verdict` | verdict payload | Store an agent-authored verdict and return `analysisId` |
-| `execute` | `analysisId: string` | Trade result |
+| `place_bracket` | `coin, entry_px?, stop_px, tp_px, leverage?, min_r?` | One entry with an exact stop and target, sized by the risk engine |
+| `bracket_sweep` | `coin: string` | Cancels a stranded sibling order, reports whether the position is covered by a stop |
 | `close_position` | `coin: string` | Delegates to `executor.close_position_market()` |
+| `set_leverage` | `coin: string, leverage: number` | Sets isolated leverage before an entry |
+| `cancel_order` | `asset: number, order_id: number` | Cancels one resting order |
 | `state` | none | Full agent state |
 | `config` | see SKILL.md | Current or updated config, including `ai_brain` |
 
@@ -89,7 +91,7 @@ The web auth vars (`PATHIEL_AUTH_DOMAIN`, `PATHIEL_PUBLIC_DASHBOARD`,
 In Pathiel Agent, after the MCP server connects:
 
 ```
-mcp pathiel scan { minScore: 80 }
-mcp pathiel research { coin: "BTC" }
+mcp pathiel desk_brief { desk: "oil" }
+mcp pathiel bracket_sweep { coin: "xyz:BRENTOIL" }
 mcp pathiel state
 ```
