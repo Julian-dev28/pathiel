@@ -74,12 +74,69 @@ async function loadCall() {
     document.getElementById('call-stale-note').textContent = stale.join(' · ');
     renderTrackRecord(brief.track_record);
     renderIntel(brief);
+    lastThesisCall = (brief.thesis && brief.thesis.call) || null;
+    renderPositionMismatch();
   } catch (e) {
     show('call-loading', false);
     setErrorDetail('call', e);
     reportRefreshFailure('oil desk call', e, document.getElementById('call-error'));
     renderIntel(null, e);
+    lastThesisCall = null;
+    renderPositionMismatch();
   }
+}
+
+// The thesis's own numbers (entry/stop/leverage/side) are written at most
+// once an hour; the venue's own position (fetched by loadWallets below) can
+// move at any time — a hand trade, a bracket_sweep, a stop getting hit and
+// re-placed. Printing the thesis's stop/entry as if it were the live order
+// is how a trader gets hurt (2026-10-24: thesis said "long Brent 109.24 at
+// 5x, stop 108.05" while the actual position was 111.57 at 10x, stop 110.9
+// — same side, same instrument, three numbers off).
+//
+// lastThesisCall / lastPositionsByCoin are filled by loadCall() and
+// loadWallets() respectively (they run in parallel inside loadAll(), so
+// either can resolve first); renderPositionMismatch() is called from both
+// and only reads the two module-level vars, never fetches anything itself.
+let lastThesisCall = null;
+let lastPositionsByCoin = {};
+
+const MISMATCH_PX_TOL = 0.003; // 0.3% — past this, "entry 109.24" is not "entry 111.57"
+
+/** Pure comparison, no DOM: null when the two agree (or there is nothing to
+ *  compare), otherwise a plain-language description of what differs. */
+function callPositionMismatch(call, position) {
+  if (!call || !position) return null;
+  if (!['long', 'short'].includes(call.side)) return null;
+  if (call.side !== position.side) {
+    return `Thesis says ${call.side}; your open position is ${position.side}.`;
+  }
+  const diffs = [];
+  const pxDiff = (a, b) => a != null && b != null && isFinite(a) && isFinite(b)
+    && Math.abs(a - b) / Math.abs(b) > MISMATCH_PX_TOL;
+  if (pxDiff(call.entry_px, position.entry_px)) {
+    diffs.push(`entry ${fmtPrice(call.entry_px)} vs your ${fmtPrice(position.entry_px)}`);
+  }
+  if (call.leverage != null && position.leverage != null && Number(call.leverage) !== Number(position.leverage)) {
+    diffs.push(`${call.leverage}x vs your ${position.leverage}x`);
+  }
+  const posStop = Array.isArray(position.stop_px) && position.stop_px.length ? Number(position.stop_px[0]) : null;
+  if (pxDiff(call.stop_px, posStop)) {
+    diffs.push(`stop ${fmtPrice(call.stop_px)} vs your ${fmtPrice(posStop)}`);
+  }
+  if (!diffs.length) return null;
+  return `This call has not caught up with your open position (${diffs.join(', ')}). `
+    + `Trade off the Wallets card below, not this text, until the desk is refreshed.`;
+}
+
+function renderPositionMismatch() {
+  const el = document.getElementById('call-position-mismatch');
+  if (!el) return;
+  const coin = lastThesisCall && lastThesisCall.instrument;
+  const position = coin ? lastPositionsByCoin[coin] : null;
+  const message = callPositionMismatch(lastThesisCall, position);
+  el.textContent = message || '';
+  el.hidden = !message;
 }
 
 function fmtR(entries) {
@@ -250,10 +307,23 @@ async function loadWallets() {
   try {
     const accounts = await fetchJson('/api/accounts');
     show('wallets-loading', false);
-    if (!accounts.length) { list.innerHTML = ''; show('wallets-empty', true); return; }
+    if (!accounts.length) {
+      list.innerHTML = ''; show('wallets-empty', true);
+      lastPositionsByCoin = {}; renderPositionMismatch();
+      return;
+    }
+    const byCoin = {};
     const blocks = await Promise.all(accounts.map(async account => {
       try {
         const snapshot = await fetchJson(`/api/accounts/${encodeURIComponent(account.id)}/positions`);
+        // The active trade account's own position is the one the call
+        // should match; a watch account's position (if any) only fills in
+        // where the active account has none, never overrides it.
+        for (const a of (snapshot.accounts || [])) {
+          for (const p of (a.positions || [])) {
+            if (!byCoin[p.coin] || account.is_active) byCoin[p.coin] = p;
+          }
+        }
         return renderWalletAccount(account, snapshot);
       } catch (e) {
         return `<div class="card" style="margin-bottom:14px">
@@ -262,11 +332,15 @@ async function loadWallets() {
       }
     }));
     list.innerHTML = blocks.join('');
+    lastPositionsByCoin = byCoin;
+    renderPositionMismatch();
   } catch (e) {
     show('wallets-loading', false);
     list.innerHTML = '';
     setErrorDetail('wallets', e);
     reportRefreshFailure('wallets', e, document.getElementById('wallets-error'));
+    lastPositionsByCoin = {};
+    renderPositionMismatch();
   }
 }
 
@@ -464,7 +538,23 @@ async function startOilDesk() {
   await loadActiveDesks();
   loadAll();                     // once immediately — pollEvery's own first
   pollEvery(loadAll, REFRESH_MS); // tick fires only after the first REFRESH_MS
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) loadAll(); });
+  // This page's own <script type="speculationrules"> prerenders same-origin
+  // links at "moderate" eagerness, so a visit here often starts life as a
+  // prerendered, hidden document: that first loadAll() call above (and the
+  // guard inside loadAll() itself) correctly does nothing rather than spend
+  // the venue budget on a page nobody may ever look at. Reproduced live,
+  // 2026-10-24: a background tab never fired a single /api request and
+  // every section sat on "Loading..." forever. The reason: a prerendered
+  // page's activation does not reliably fire 'visibilitychange' (a
+  // documented Chrome/Speculation-Rules gotcha — see
+  // web.dev/articles/speculation-rules#prerenderingchange) so the listener
+  // below, on its own, never ran for that page. 'prerenderingchange' is the
+  // event the spec actually guarantees on activation; listening for both
+  // covers a normal hidden-tab resume (visibilitychange) and a prerender
+  // activation (prerenderingchange) the same way.
+  const resumeIfVisible = () => { if (!document.hidden) loadAll(); };
+  document.addEventListener('visibilitychange', resumeIfVisible);
+  document.addEventListener('prerenderingchange', resumeIfVisible);
 }
 
 // ── Onboarding: first run + the "how much risk" wizard ──────────────────────

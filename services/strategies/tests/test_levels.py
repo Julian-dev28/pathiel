@@ -6,9 +6,14 @@ modes, which scripts/oil_levels.py's CLI does not exercise (it has its own
 curl-based fetch)."""
 from __future__ import annotations
 
+import re
+from pathlib import Path
+
 import pytest
 
 from services.strategies import levels as L
+
+ROOT = Path(__file__).resolve().parents[3]
 
 
 def test_fetch_candles_returns_rows_with_the_close_timestamp(monkeypatch):
@@ -53,3 +58,49 @@ def test_summarize_coin_stamps_the_coin_on_the_result(monkeypatch):
     monkeypatch.setattr(L, "fetch_candles", lambda coin, interval, hours, now_ms=None: [])
     out = L.summarize_coin("xyz:BRENTOIL", now_ms=1_000_000)
     assert out["coin"] == "xyz:BRENTOIL" and out["mid"] == 107.5
+
+
+# ── LEVELS_TTL_S vs the Desk page's own poll interval (2026-10-24) ──────────
+#
+# oil_desk.js polls GET /api/desks/{id}/levels every REFRESH_MS. At the old
+# 20s TTL, every single 60s poll was a cache MISS: the Levels card paid two
+# full candleSnapshot reads (weight 20 each, ~2s wall clock measured live)
+# on every refresh, forever, even after the venue-budget fix (af82adf)
+# stopped those reads from being refused. Caching across the page's own
+# poll cycle is free (1h/15m candles do not move inside a minute) and this
+# pair of tests pins it two ways: the two constants cannot drift apart
+# again (this test), and the cache actually behaves that way (the next
+# one).
+
+def _oil_desk_refresh_ms() -> float:
+    text = (ROOT / "pathiel" / "static" / "oil_desk.js").read_text()
+    m = re.search(r"REFRESH_MS\s*=\s*([\d_]+)", text)
+    assert m, "oil_desk.js's REFRESH_MS constant not found"
+    return int(m.group(1).replace("_", ""))
+
+
+def test_levels_ttl_covers_one_full_desk_poll_interval():
+    refresh_s = _oil_desk_refresh_ms() / 1000.0
+    assert L.LEVELS_TTL_S >= refresh_s, (
+        f"LEVELS_TTL_S ({L.LEVELS_TTL_S}s) is shorter than oil_desk.js's own poll "
+        f"interval ({refresh_s}s) — every poll would be a cache miss again")
+
+
+def test_summarize_coin_hits_the_cache_within_ttl_and_refetches_after(monkeypatch):
+    calls = []
+    monkeypatch.setattr(L, "fetch_mid", lambda coin: calls.append(coin) or 107.5)
+    monkeypatch.setattr(L, "fetch_candles", lambda coin, interval, hours, now_ms=None: [])
+    L._LEVELS_CACHE.clear()
+    clock = [1_000.0]
+    monkeypatch.setattr(L, "_mono", lambda: clock[0])
+
+    L.summarize_coin("xyz:BRENTOIL")
+    assert len(calls) == 1, "first call always fetches"
+
+    clock[0] += L.LEVELS_TTL_S - 1   # still inside the window
+    L.summarize_coin("xyz:BRENTOIL")
+    assert len(calls) == 1, "a poll inside the TTL must be served from cache"
+
+    clock[0] += 2   # now past LEVELS_TTL_S since the first fetch
+    L.summarize_coin("xyz:BRENTOIL")
+    assert len(calls) == 2, "a poll past the TTL must refetch"
