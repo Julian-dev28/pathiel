@@ -141,8 +141,17 @@ async function loadLine() {
 
 function renderWalletAccount(account, snapshot) {
   const equity = (snapshot.accounts || []).reduce((sum, a) => sum + (a.equity_usd || 0), 0);
+  const marginUsed = (snapshot.accounts || []).reduce((sum, a) => sum + (a.margin_used_usd || 0), 0);
   const positions = (snapshot.accounts || []).flatMap(a => (a.positions || []).map(p => ({ ...p, dex: a.dex })));
   const naked = snapshot.any_naked;
+  // A watch-only wallet earns a card only while it holds something: flat, it
+  // is noise next to the trading account (operator, 2026-10-24). It reappears
+  // with the NAKED check the moment a hand-placed position shows up.
+  if (account.mode === 'watch' && !positions.length && !(snapshot.errors || []).length) return '';
+  // Equity, margin tied up in positions, and what is still free to deploy.
+  const marginLine = `<div class="note">Equity ${esc(fmtMoney(equity))} · Margin in use ${esc(fmtMoney(marginUsed))}`
+    + (equity > 0 ? ` (${Math.round(marginUsed / equity * 100)}%)` : '')
+    + ` · Free ${esc(fmtMoney(Math.max(0, equity - marginUsed)))}</div>`;
 
   const head = `
     <div class="dc-head">
@@ -176,6 +185,7 @@ function renderWalletAccount(account, snapshot) {
       <td class="num ${p.pnl_pct > 0 ? 'pos' : p.pnl_pct < 0 ? 'neg' : ''}">${p.pnl_pct != null ? (p.pnl_pct > 0 ? '+' : '') + p.pnl_pct.toFixed(2) + '%' : '—'}</td>
       <td class="num">${p.r_now != null ? (p.r_now > 0 ? '+' : '') + p.r_now.toFixed(2) + 'R' : '—'}</td>
       <td class="num">${p.leverage != null ? p.leverage + 'x' : '—'}</td>
+      <td class="num">${p.margin_usd != null ? fmtMoney(p.margin_usd) : '—'}</td>
       <td class="num">${fmtPrice(p.liq_px)}</td>
       <td class="num">${pctUnsigned(p.liq_dist_pct != null ? p.liq_dist_pct / 100 : null)}</td>
       <td class="num">${fmtMoney(p.upnl_usd)}</td>
@@ -184,10 +194,10 @@ function renderWalletAccount(account, snapshot) {
       <td>${p.naked ? '<span class="badge b-fail">NAKED</span>' : ''}</td>
     </tr>`).join('');
 
-  return `<div class="card" style="margin-bottom:14px">${head}${failed}${stale}
+  return `<div class="card" style="margin-bottom:14px">${head}${marginLine}${failed}${stale}
     <div class="scroll-x"><table>
       <thead><tr><th>Dex</th><th>Coin</th><th>Side</th><th class="num">Size</th><th class="num">Entry</th><th class="num">Mark</th><th class="num">P&amp;L %</th><th class="num">R now</th>
-        <th class="num">Lev</th><th class="num">Liq</th><th class="num">Dist</th><th class="num">uPnL</th>
+        <th class="num">Lev</th><th class="num">Margin</th><th class="num">Liq</th><th class="num">Dist</th><th class="num">uPnL</th>
         <th>Stop</th><th>Target</th><th></th></tr></thead>
       <tbody>${rows}</tbody>
     </table></div></div>`;
