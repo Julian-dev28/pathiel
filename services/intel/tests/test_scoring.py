@@ -181,3 +181,50 @@ def test_stance_btc_lexicon():
 def test_stance_unknown_desk_uses_default_lexicon():
     assert stance("Stock soars after earnings beat", "some_new_desk") == "bull"
     assert stance("Stock plunges after earnings miss", "some_new_desk") == "bear"
+
+
+# ── instrument_only_factor ───────────────────────────────────────────────
+# 2026-10-24: the oil desk's headline list carried "Is this Prince Harry or
+# David Brent in The Office?" because the instrument label "Brent" is a
+# single-token query phrase and matched exactly.
+
+from services.intel.scoring import INSTRUMENT_ONLY_PENALTY, instrument_only_factor
+
+OIL_QUERIES = ["crude oil price", "Strait of Hormuz", "OPEC+", "Brent crude"]
+OIL_INSTRUMENTS = ["Brent", "BRENTOIL", "WTI", "CL"]
+OIL_CONTEXT = OIL_QUERIES + ["Iran sanctions", "Strategic Petroleum Reserve", "Iran deal", "oil price"]
+
+
+def _factor(title):
+    return instrument_only_factor(title, query_phrases=OIL_QUERIES,
+                                  instrument_phrases=OIL_INSTRUMENTS, context_phrases=OIL_CONTEXT)
+
+
+def test_a_sitcom_headline_on_a_bare_instrument_token_is_penalised():
+    assert _factor("Is this Prince Harry or David Brent in The Office? Either way, a masterclass") == INSTRUMENT_ONLY_PENALTY
+    assert 0 < INSTRUMENT_ONLY_PENALTY < 0.5
+
+
+def test_a_query_phrase_match_is_never_penalised():
+    assert _factor("Brent crude tops $113, highest level since May, after Trump hints at action on Iran") == 1.0
+
+
+def test_an_instrument_token_with_a_desk_context_word_is_kept():
+    # no query phrase, but "Iran" is a desk context token
+    assert _factor("Brent falls as Iran's president discusses mediation with Pakistani army chief") == 1.0
+    assert _factor("WTI slips ahead of OPEC meeting") == 1.0
+
+
+def test_a_headline_matching_nothing_is_left_to_match_score():
+    # relevance() already zeroes it; the factor must not pretend otherwise
+    assert _factor("Local bakery wins award") == 1.0
+
+
+def test_relevance_pipeline_sinks_the_sitcom_below_the_real_story():
+    fresh = NOW - timedelta(hours=1)
+    real = relevance("Brent crude tops $113 after Trump hints at action on Iran",
+                     queries=OIL_QUERIES + OIL_INSTRUMENTS, source="CNBC", published_at=fresh, now=NOW)
+    sitcom = relevance("Is this Prince Harry or David Brent in The Office?",
+                       queries=OIL_QUERIES + OIL_INSTRUMENTS, source="The Guardian", published_at=fresh, now=NOW)
+    sitcom *= _factor("Is this Prince Harry or David Brent in The Office?")
+    assert real >= 0.9 and sitcom <= 0.25

@@ -129,6 +129,36 @@ def relevance(title: str, *, queries: Iterable[str], source: Optional[str],
     return round(min(1.0, max(0.0, m * r * t)), 4)
 
 
+# A headline whose ONLY hit is a bare instrument label or ticker, with no
+# desk context word anywhere in it, keeps this fraction of its relevance.
+# 2026-10-24: "Is this Prince Harry or David Brent in The Office?" sat in
+# the oil desk's headline list on the single token "Brent".
+INSTRUMENT_ONLY_PENALTY = 0.25
+
+
+def instrument_only_factor(title: str, *, query_phrases: Iterable[str],
+                           instrument_phrases: Iterable[str],
+                           context_phrases: Iterable[str]) -> float:
+    """1.0 when the title matches a desk query phrase, or matches an
+    instrument token AND carries at least one desk context word (any token
+    of the desk's news queries, policy topics or prediction-market queries
+    that is not itself an instrument token). INSTRUMENT_ONLY_PENALTY when
+    the instrument token is the only thing in the title that fits the desk.
+    Deterministic; multiplies into relevance() in news.score_and_dedup."""
+    instrument_phrases = [p for p in instrument_phrases if p]
+    if not instrument_phrases or match_score(title, instrument_phrases) <= 0.0:
+        return 1.0                      # no instrument hit: nothing to second-guess
+    inst_toks: FrozenSet[str] = frozenset().union(*(title_tokens(p) for p in instrument_phrases))
+    # Query phrases and context words count only through tokens that are
+    # NOT themselves instrument tokens: "Brent crude" must not rescue a
+    # title on "brent" alone, which is exactly the bag-of-words half match.
+    ctx_toks: FrozenSet[str] = frozenset().union(
+        *(title_tokens(p) for p in (*query_phrases, *context_phrases) if p)) - inst_toks
+    if (title_tokens(title) - inst_toks) & ctx_toks:
+        return 1.0
+    return INSTRUMENT_ONLY_PENALTY
+
+
 # ── stance lexicon ───────────────────────────────────────────────────────
 # Per-desk bull/bear word lists. Not a DeskSpec field (the contract is
 # owned by desk-core; this stays a services/intel-local config) — keyed by

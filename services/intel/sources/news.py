@@ -234,6 +234,9 @@ def score_and_dedup(raw_items: List[Dict[str, Any]], spec: DeskSpec,
     so api.py's parallel fetch path can call the network fetchers
     concurrently and run this once, after every future resolves."""
     phrases = query_phrases(spec)
+    instruments = desk_rules.instrument_tokens(spec)
+    context = (list(spec.news_queries) + list(getattr(spec, "policy_topics", None) or [])
+               + list(getattr(spec, "prediction_market_queries", None) or []))
     sorted_raw = sorted(raw_items, key=lambda r: r.get("published_at") or datetime.min.replace(
         tzinfo=timezone.utc), reverse=True)
     deduped = dedup_by_title(sorted_raw, lambda r: r["title"])
@@ -242,6 +245,11 @@ def score_and_dedup(raw_items: List[Dict[str, Any]], spec: DeskSpec,
     for r in deduped:
         title, url, source, pub = r["title"], r["url"], r["source"], r["published_at"]
         rel = scoring.relevance(title, queries=phrases, source=source, published_at=pub, now=now)
+        # a bare instrument token with no desk context ("David Brent in The
+        # Office") keeps a quarter of its score and sinks below the fold
+        rel = round(rel * scoring.instrument_only_factor(
+            title, query_phrases=spec.news_queries, instrument_phrases=instruments,
+            context_phrases=context), 4)
         headlines.append(Headline(
             id=stable_id("headline", url or title, title),
             title=title[:500], url=url or "about:blank", source=source or "unknown",
