@@ -25,7 +25,9 @@ from typing import List, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-CONTRACT_VERSION = "1.0.0"
+CONTRACT_VERSION = "1.1.0"   # 1.1.0 (2026-10-23): + DeskAnalytics.structure (candle-derived
+                              # price structure for the primary instrument - additive, old
+                              # readers ignore the new field)
 
 Side = Literal["long", "short"]
 CallSide = Literal["long", "short", "flat", "pair"]
@@ -179,6 +181,42 @@ class AccountSnapshot(_M):
     source: Literal["venue", "fixture", "assumed"] = "assumed"
 
 
+class PriceRange(_M):
+    high: float
+    low: float
+
+
+class CandleBar(_M):
+    """One closed candle's OHLC, plus the UTC time it closed."""
+    open: float
+    high: float
+    low: float
+    close: float
+    closed_at: datetime
+
+
+class InstrumentStructure(_M):
+    """Deterministic candle-derived price structure for one PRIMARY
+    instrument, built by services/strategies/analytics.py::build_analytics
+    from closed 1h candles (the same numbers
+    services/strategies/levels.py::summarize computes for the oil
+    dashboard). Carried into DeskAnalytics so services/thesis's prompt can
+    ground a call's stop/target in actual price structure instead of only
+    the leverage ladder's liquidation-derived stop - this module's own rule
+    ("numbers are computed in DeskAnalytics... the Thesis may only quote
+    numbers that exist in those payloads") applies to these fields exactly
+    like every other analytics number.
+    """
+    coin: str
+    mid: float
+    last_closed_1h: Optional[CandleBar] = None
+    range_8h: Optional[PriceRange] = None
+    range_24h: Optional[PriceRange] = None
+    range_48h: Optional[PriceRange] = None
+    atr14_1h_pct: Optional[float] = None       # ATR14 on 1h bars, fraction of mid
+    mid_pos_in_24h: Optional[float] = None     # 0 = sits at the 24h low, 1 = at the 24h high
+
+
 class DeskAnalytics(_M):
     contract_version: str = CONTRACT_VERSION
     desk_id: str
@@ -187,6 +225,7 @@ class DeskAnalytics(_M):
     pairs: List[PairSnapshot] = []
     forward: List[ForwardStats] = []
     ladder: List[LadderRung] = []
+    structure: List[InstrumentStructure] = []  # one entry per PRIMARY instrument
     account: AccountSnapshot = AccountSnapshot()
     notes: List[str] = []                      # data caveats, e.g. "sample includes war shock"
 

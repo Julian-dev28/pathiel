@@ -4,10 +4,11 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from contracts.strategies.models import (
-    Call, Catalyst, ConditionalStats, DeskAnalytics, DeskSpec, ForwardStats, Headline,
-    InstrumentSnapshot, Instrument, IntelPacket, LadderRung, Lesson, LeverageView,
-    MarketOdds, PairSnapshot, PairSpec, PayloadRef, Point, PolicyItem, PositioningItem,
-    Quantiles, Scenario, SourceRef, Thesis, TokenBudget, Usage, AccountSnapshot,
+    Call, CandleBar, Catalyst, ConditionalStats, DeskAnalytics, DeskSpec, ForwardStats, Headline,
+    InstrumentSnapshot, Instrument, InstrumentStructure, IntelPacket, LadderRung, Lesson,
+    LeverageView, MarketOdds, PairSnapshot, PairSpec, PayloadRef, Point, PolicyItem,
+    PositioningItem, PriceRange, Quantiles, Scenario, SourceRef, Thesis, TokenBudget, Usage,
+    AccountSnapshot,
 )
 
 HERE = Path(__file__).parent
@@ -76,6 +77,24 @@ analytics = DeskAnalytics(
                    p_lose_half=0.65, fees_funding_pct=0.039, stop_px=97.81, p_stop=0.248,
                    verdict="avoid"),
     ],
+    structure=[
+        # Deterministic candle-derived structure for xyz:CL (WTI), the
+        # primary instrument of THIS fixture desk - hand-built to the same
+        # 2026-10-17 02:10 UTC read the rest of the fixture uses. Supports a
+        # stop at 98.5 (just beyond the 8h low 98.6) and a first target at
+        # the grounded high_20d (101.19, below the 24h/48h high of 100.1
+        # would be too close - 20d range is the next real level up).
+        InstrumentStructure(
+            coin="xyz:CL", mid=99.339,
+            last_closed_1h=CandleBar(open=99.20, high=99.42, low=99.05, close=99.339,
+                                     closed_at=datetime(2026, 10, 17, 2, 0, tzinfo=timezone.utc)),
+            range_8h=PriceRange(high=99.60, low=98.60),
+            range_24h=PriceRange(high=100.10, low=96.80),
+            range_48h=PriceRange(high=100.10, low=95.50),
+            atr14_1h_pct=0.0062,
+            mid_pos_in_24h=0.769,
+        ),
+    ],
     account=AccountSnapshot(equity_usd=15.21, source="fixture"),
     notes=["sample includes the Mar/Apr 2026 war shocks (-20% and -16.6% days)"],
 )
@@ -115,11 +134,17 @@ intel = IntelPacket(
 thesis = Thesis(
     id="oil-20261017T0210-m", desk_id="oil", author="machine", created_at=T0,
     expires_at=T0 + timedelta(days=7), horizon_days=7,
+    # Stop at 98.5 sits just beyond the 8h range low (98.6, STRUCTURE above),
+    # well inside the 5x ladder rung's own stop (88.64 - the leverage's
+    # LIMIT, not a target) - and the first target (101.19, high_20d, already
+    # grounded in InstrumentSnapshot) pays 2.21R to stop's 0.84%: a real,
+    # tradable call, not the <1R WTI-at-91.4 stop the live Brent desk
+    # shipped with before this fix (2026-10-23).
     call=Call(side="long", instrument="xyz:CL",
-              one_liner="Long WTI at 5x: Hormuz shut, talks dead, specs light. Out below 91.4.",
-              entry_px=99.339, entry_zone=[96.5, 99.5], stop_px=91.4, targets=[106.6, 111.0],
+              one_liner="Long WTI at 5x: Hormuz shut, talks dead, specs light. Out below 98.5.",
+              entry_px=99.339, entry_zone=[96.5, 99.5], stop_px=98.5, targets=[101.19, 106.62],
               leverage=5, confidence=0.58,
-              invalidation="US-Iran deal headline, or WTI daily close below 91.4"),
+              invalidation="US-Iran deal headline, or WTI daily close below 98.5"),
     scenarios=[
         Scenario(name="Hormuz shut, grind up", probability=0.45, move_lo_pct=0.02, move_hi_pct=0.5,
                  description="No deal before OPEC+ Nov 1. WTI 103-106.", triggers=["tanker strikes"]),

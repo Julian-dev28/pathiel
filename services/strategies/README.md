@@ -36,7 +36,8 @@ tool that did the checking.
 ```
 desks/*.py       DeskSpec registry (config, offline, pure)
 analytics.py     DeskAnalytics (deterministic: snapshots, pairs, forward
-                 stats, leverage ladder) — the ONLY numbers a Thesis may quote
+                 stats, leverage ladder, candle-derived structure for the
+                 primary instrument) — the ONLY numbers a Thesis may quote
 journal.py       Thesis storage on disk, atomic writes
 grader.py        Grade expired theses from hourly candles; TrackRecord roll-up
 trades.py        Grade every registered account's trades against the thesis
@@ -184,6 +185,27 @@ The cost is fewer "hold" calls. Oil 5x is `dip_only` while the sample
 includes the March/April war shocks. That is deliberate: liquidations were
 92% of this account's 60-day loss (docs/overhaul/PROFIT_AUDIT.md).
 
+## Instrument structure (2026-10-23)
+
+`DeskAnalytics.structure` (`InstrumentStructure`, one entry per PRIMARY
+instrument) is candle-derived price structure, built by
+`analytics.build_instrument_structure` from closed 1h bars: the last closed
+1h candle, 8h/24h/48h range, ATR14 on 1h bars, and where mid sits in the
+24h range - the same numbers `services/strategies/levels.py::summarize`
+computes for the oil dashboard, rebuilt here on this module's own
+injectable `(coin, interval, count) -> Sequence[Candle]` fetcher shape
+(offline-testable, no network in tests) rather than levels.py's raw-HL-dict
+shape.
+
+Why it exists: before this, `services/thesis`'s prompt gave the model
+nothing about price structure, so a thesis's stop copied the leverage
+ladder's liquidation-derived `stop_px` (60% of the distance to
+liquidation) - at 5x that is roughly 10% away, which pays well under 1R to
+a nearby target. `services/thesis`'s prompt now shows this block and tells
+the model the ladder's stop is that leverage's LIMIT, never a target to
+copy; `services/thesis`'s validator enforces it (`check_r_multiple`,
+`check_stop_within_ladder`) so a thesis that ignores the instruction gets
+one repair round, then degrades, same as any other validator failure.
 
 ## Pipeline: the token gate
 

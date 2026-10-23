@@ -16,7 +16,7 @@ from datetime import datetime, timezone
 from typing import List, Optional, Tuple
 
 from contracts.strategies.models import (
-    Catalyst, DeskAnalytics, DeskSpec, Headline, IntelPacket, LadderRung,
+    Catalyst, DeskAnalytics, DeskSpec, Headline, InstrumentStructure, IntelPacket, LadderRung,
     PairSnapshot, PolicyItem, Thesis,
 )
 from services.thesis import desk_lookup
@@ -111,6 +111,21 @@ def build_system_prompt(spec: DeskSpec) -> str:
         "stop_px must be on the losing side of entry_px for the side you "
         "chose (below entry for a long, above entry for a short). Never "
         "choose a leverage rung whose verdict (given below) is \"avoid\".\n"
+        "- stop_px must sit just beyond a real structural edge: the nearest "
+        "8h/24h range edge in STRUCTURE below, or a swing low/high you can "
+        "point to in the last closed candle or ranges given there. The "
+        "LEVERAGE LADDER's stop_px for your chosen leverage is that "
+        "leverage's LIMIT, not a target to copy - your stop may sit "
+        "anywhere INSIDE that distance, never farther from entry than it. "
+        "targets must sit at the next real structural level beyond entry in "
+        "the direction of your trade (the next range edge, or a level named "
+        "in the market snapshot) - never an arbitrary round number. The "
+        "call must pay at least 1.5R to its first target, where R is the "
+        "distance from entry to stop (reward divided by risk) - if the "
+        "nearest structural stop and the nearest structural target do not "
+        "clear 1.5R together, either tighten the stop to the next edge in, "
+        "or pick a different leverage/instrument; never widen the stop past "
+        "the ladder limit to force a target to qualify.\n"
         "- scenarios must be 3 to 5 buckets of horizon-day return, "
         "non-overlapping and contiguous, with probabilities that sum to "
         "1.0. move_lo_pct and move_hi_pct are FRACTIONS: -0.05 means -5%, "
@@ -235,10 +250,18 @@ def render_analytics_dense(spec: DeskSpec, analytics: DeskAnalytics) -> str:
                     f"p50 {_pct(cond.p50)} hit-rate-up {_pct_abs(cond.hit_rate_up)}"
                 )
 
+    if analytics.structure:
+        lines.append("")
+        lines.append("STRUCTURE (deterministic, from closed 1h candles - use this to place the "
+                     "stop and targets, never the ladder's liquidation-derived stop)")
+        for st in analytics.structure:
+            lines.append(_render_structure(st))
+
     if analytics.ladder:
         lines.append("")
         acct = f"equity {_usd(analytics.account.equity_usd)}" if analytics.account.equity_usd else "equity n/a"
-        lines.append(f"LEVERAGE LADDER ({acct}, source: {analytics.account.source})")
+        lines.append(f"LEVERAGE LADDER ({acct}, source: {analytics.account.source}) - "
+                     "each rung's stop_px is that leverage's LIMIT, not a suggestion")
         for rung in analytics.ladder:
             lines.append(_render_ladder_rung(rung))
 
@@ -273,6 +296,24 @@ def _render_pair(pair: PairSnapshot) -> str:
             f"p75 {_num(q.p75)} p90 {_num(q.p90)}"
         )
     return "\n".join(out)
+
+
+def _render_structure(st: InstrumentStructure) -> str:
+    bits = [f"- {st.coin}: mid {_num(st.mid, 3)}"]
+    if st.last_closed_1h is not None:
+        c = st.last_closed_1h
+        bits.append(
+            f"  last closed 1h candle ({c.closed_at.strftime('%Y-%m-%d %H:%M')} UTC): "
+            f"O {_num(c.open, 3)} H {_num(c.high, 3)} L {_num(c.low, 3)} C {_num(c.close, 3)}"
+        )
+    for label, rng in (("8h", st.range_8h), ("24h", st.range_24h), ("48h", st.range_48h)):
+        if rng is not None:
+            bits.append(f"  {label} range: {_num(rng.low, 3)} to {_num(rng.high, 3)}")
+    if st.atr14_1h_pct is not None:
+        bits.append(f"  ATR14 (1h) {_pct_abs(st.atr14_1h_pct)}")
+    if st.mid_pos_in_24h is not None:
+        bits.append(f"  mid sits at {st.mid_pos_in_24h * 100:.0f}% of the 24h range (0%=24h low, 100%=24h high)")
+    return "\n".join(bits)
 
 
 def _render_ladder_rung(rung: LadderRung) -> str:
@@ -479,8 +520,12 @@ def _render_analytics_compact(spec: DeskSpec, analytics: DeskAnalytics) -> str:
             f"- {primary.label} ({primary.coin}): mid {_num(primary.mid, 3)}, "
             f"1d {_pct(primary.ret_1d)}, 5d {_pct(primary.ret_5d)}, ATR14 {_pct_abs(primary.atr14_pct)}"
         )
+        primary_structure = next((st for st in analytics.structure if st.coin == primary.coin), None)
+        if primary_structure is not None:
+            lines.append("STRUCTURE (current numbers, use this for the stop and targets):")
+            lines.append(_render_structure(primary_structure))
     if analytics.ladder:
-        lines.append("LEVERAGE LADDER (current numbers):")
+        lines.append("LEVERAGE LADDER (current numbers, each rung's stop_px is a limit):")
         for rung in analytics.ladder:
             lines.append(_render_ladder_rung(rung))
     return "\n".join(lines)
