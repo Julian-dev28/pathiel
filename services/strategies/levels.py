@@ -96,11 +96,28 @@ def fetch_mid(coin: str) -> Optional[float]:
         return None
 
 
+_LEVELS_CACHE: Dict[str, Any] = {}
+LEVELS_TTL_S = 20.0
+_mono = time.monotonic
+
+
 def summarize_coin(coin: str, now_ms: Optional[int] = None) -> Dict[str, Any]:
     """summarize() for `coin`, fetching its own candles and mid. Raises
     RuntimeError if the mid cannot be read at all (no reads failed, there is
     simply no live level to show) - callers (the HTTP route) turn that into
-    a clear error, never a 200 with made-up numbers."""
+    a clear error, never a 200 with made-up numbers. Cached LEVELS_TTL_S per
+    coin: two candle reads at weight 20 each per call, polled by every open
+    Desk page (budget starvation, 2026-10-23)."""
+    hit = _LEVELS_CACHE.get(coin)
+    if now_ms is None and hit is not None and _mono() - hit[0] < LEVELS_TTL_S:
+        return dict(hit[1])
+    out = _summarize_coin_uncached(coin, now_ms)
+    if now_ms is None:
+        _LEVELS_CACHE[coin] = (_mono(), dict(out))
+    return out
+
+
+def _summarize_coin_uncached(coin: str, now_ms: Optional[int] = None) -> Dict[str, Any]:
     now_ms = now_ms if now_ms is not None else int(time.time() * 1000)
     mid = fetch_mid(coin)
     if mid is None:

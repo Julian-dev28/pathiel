@@ -109,3 +109,17 @@ def _no_real_env_identity(monkeypatch):
     for name, blank in (("PRIVATE_KEY_HEX", ""), ("HL_WALLET", ""), ("HL_MASTER", ""),
                         ("IS_AGENT", False), ("HL_ACCOUNT", "")):
         monkeypatch.setattr(_ex, name, blank, raising=False)
+
+
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def clear_positions_cache():
+    """positions.py caches venue reads per account (15 s) and dex discovery
+    (120 s) in module state; tests that fake different venue answers for the
+    same address must not see each other's entries."""
+    from services.accounts import positions
+    positions.clear_cache()
+    yield
+    positions.clear_cache()
