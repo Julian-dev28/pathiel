@@ -45,6 +45,8 @@ def _router_json(url: str, **kw):
         return fixture_json("sec_company_tickers_sample.json"), None
     if "data.sec.gov/submissions" in url:
         return fixture_json("sec_nvda_submissions_sample.json"), None
+    if "sec.gov/Archives" in url and "index.json" in url:
+        return fixture_json("sec_nvda_form4_index.json"), None
     return None, "unmocked_url"
 
 
@@ -57,6 +59,23 @@ def _router_text(url: str, **kw):
         return fixture_text("cointelegraph.xml"), None
     if "ofac.treasury.gov" in url:
         return fixture_text("ofac_recent_actions.html"), None
+    if "cdn.cboe.com" in url:
+        for sym in ("VIX9D", "VIX3M", "VIX"):  # longest-prefix first: "VIX" is a substring of both
+            if sym in url:
+                return fixture_text(f"cboe_{sym}_history.csv"), None
+        return None, "unmocked_url"
+    if "sec.gov/cgi-bin/browse-edgar" in url:
+        return fixture_text("sec_nvda_form4_browse_atom.xml"), None
+    if "sec.gov/Archives" in url:  # the Form 4 XML itself (not index.json, routed above)
+        return fixture_text("sec_nvda_form4_sample.xml"), None
+    return None, "unmocked_url"
+
+
+def _router_post(url: str, json_body, **kw):
+    if json_body.get("type") == "metaAndAssetCtxs":
+        return fixture_json("hl_meta_and_ctxs_xyz.json"), None
+    if json_body.get("type") == "fundingHistory":
+        return fixture_json("hl_funding_history_brentoil.json"), None
     return None, "unmocked_url"
 
 
@@ -64,6 +83,8 @@ def _router_text(url: str, **kw):
 def mock_all_http(monkeypatch):
     monkeypatch.setattr(http_client, "fetch_json", lambda url, **kw: _router_json(url, **kw))
     monkeypatch.setattr(http_client, "fetch_text", lambda url, **kw: _router_text(url, **kw))
+    monkeypatch.setattr(http_client, "fetch_json_post",
+                        lambda url, json_body, **kw: _router_post(url, json_body, **kw))
 
 
 def test_build_packet_oil_desk_is_valid_and_populated(oil_spec, monkeypatch):
@@ -72,6 +93,9 @@ def test_build_packet_oil_desk_is_valid_and_populated(oil_spec, monkeypatch):
     # Empty, not deleted: the intel env loader re-reads .env.local with
     # setdefault, so a deleted key comes straight back; an empty one stays.
     monkeypatch.setenv("CONGRESS_API_KEY", "")
+    # Same reasoning as CONGRESS_API_KEY above: force the missing-key path
+    # explicitly rather than assume the environment has none.
+    monkeypatch.setenv("EIA_API_KEY", "")
     packet = build_packet(oil_spec, now=T0)
     assert isinstance(packet, IntelPacket)
     assert packet.desk_id == "oil"
@@ -80,8 +104,50 @@ def test_build_packet_oil_desk_is_valid_and_populated(oil_spec, monkeypatch):
     assert len(packet.catalysts) > 0
     assert len(packet.odds) > 0
     assert len(packet.positioning) > 0
-    # congress.gov key unset -> must be named
+    assert len(packet.datapoints) > 0  # venue.py fires for every desk, no key needed
+    # congress.gov / EIA keys unset -> each must be named, never silently empty
     assert any("CONGRESS_API_KEY" in f for f in packet.sources_failed)
+    assert any("EIA_API_KEY" in f for f in packet.sources_failed)
+
+
+def test_build_packet_oil_desk_venue_datapoints_are_real(oil_spec):
+    """Proves the venue.py wiring in api.py end to end: funding/OI/volume
+    rows for the oil desk's real HIP-3 instruments, built from the real
+    captured metaAndAssetCtxs(dex="xyz")/fundingHistory fixtures."""
+    packet = build_packet(oil_spec, now=T0)
+    venue_points = [dp for dp in packet.datapoints if dp.source == "venue_hl"]
+    assert venue_points
+    labels = {dp.label for dp in venue_points}
+    assert any("funding rate" in l for l in labels)
+    assert any("open interest" in l for l in labels)
+    assert any("24h volume" in l for l in labels)
+
+
+def test_build_packet_oil_desk_eia_and_fred_populate_with_keys_present(monkeypatch, oil_spec):
+    monkeypatch.setenv("EIA_API_KEY", "fake-test-key")
+    eia_response = {"response": {"data": [
+        {"period": "2026-10-10", "value": "420000"},
+        {"period": "2026-10-03", "value": "430000"},
+        {"period": "2026-09-26", "value": "431000"},
+    ]}}
+
+    def router_with_eia(url, **kw):
+        if "api.eia.gov" in url:
+            return eia_response, None
+        return _router_json(url, **kw)
+    monkeypatch.setattr(http_client, "fetch_json", router_with_eia)
+
+    packet = build_packet(oil_spec, now=T0)
+    eia_points = [dp for dp in packet.datapoints if dp.source == "eia"]
+    assert eia_points
+    assert not any("EIA_API_KEY" in f for f in packet.sources_failed)
+
+
+def test_build_packet_ai_desk_gets_cboe_and_edgar_datapoints(ai_equity_spec):
+    packet = build_packet(ai_equity_spec, now=T0)
+    sources = {dp.source for dp in packet.datapoints}
+    assert "cboe" in sources
+    assert "sec_edgar" in sources
 
 
 def test_build_packet_oil_desk_round_trips_through_pydantic(oil_spec):
