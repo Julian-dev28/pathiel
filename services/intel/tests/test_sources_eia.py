@@ -21,6 +21,13 @@ def _metals_spec() -> DeskSpec:
         Instrument(coin="xyz:GOLD", label="Gold", role="primary")])
 
 
+def _gas_spec() -> DeskSpec:
+    """Mirrors services/strategies/desks/gas.py — the dedicated nat-gas
+    desk added on overhaul-2026-10-17 alongside this branch."""
+    return DeskSpec(id="gas", name="Nat Gas", tagline="t", instruments=[
+        Instrument(coin="xyz:NATGAS", label="Nat Gas", role="primary")])
+
+
 def _levels_response(values):
     """values newest-first -> the documented EIA v2 {"response": {"data": [...]}}
     shape, one row per week."""
@@ -50,6 +57,24 @@ def test_crude_stocks_skips_non_oil_desk_cleanly(monkeypatch):
     monkeypatch.setenv("EIA_API_KEY", "fake-key")
     items, err = eia.fetch_crude_stocks(_metals_spec())
     assert items == [] and err is None
+
+
+def test_crude_stocks_skips_the_gas_desk_too(monkeypatch):
+    """Crude stocks are not this desk's edge — only the natural-gas
+    storage number is (see fetch_natgas_storage below)."""
+    monkeypatch.setenv("EIA_API_KEY", "fake-key")
+    items, err = eia.fetch_crude_stocks(_gas_spec())
+    assert items == [] and err is None
+
+
+def test_natgas_storage_fires_for_the_dedicated_gas_desk(monkeypatch):
+    monkeypatch.setenv("EIA_API_KEY", "fake-key")
+    levels = [3000, 3050, 3090, 3120, 3140, 3155]
+    monkeypatch.setattr(http_client, "fetch_json",
+                        lambda url, **kw: (_levels_response(levels), None))
+    items, err = eia.fetch_natgas_storage(_gas_spec())
+    assert err is None and len(items) == 1
+    assert items[0].unit == "bcf"
 
 
 # ── success path (documented schema, not a live capture — see docstring) ──

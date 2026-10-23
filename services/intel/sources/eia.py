@@ -14,8 +14,13 @@ v2's documented `/data/` endpoint schema (every `/data` query returns
 live capture — flagged exactly like policy.py flags its congress.gov
 fixture for the same reason.
 
-Only fires for the oil desk (`desk_rules.is_oil_desk`) per the brief's
-desk-relevance mapping — the oil desk sees EIA and venue numbers.
+`fetch_crude_stocks` fires for the oil desk only. `fetch_natgas_storage`
+also fires for the dedicated "gas" desk added on overhaul-2026-10-17
+alongside this branch (services/strategies/desks/gas.py) — its own
+primary edge is literally the weekly EIA natural gas storage number, so
+excluding it here (its id/labels have no "oil"/"wti"/"brent"/"crude"
+token, the thing `is_oil_desk` alone checks for) would miss the desk this
+number matters to most. See `desk_rules.is_natgas_desk`.
 """
 from __future__ import annotations
 
@@ -114,7 +119,7 @@ def fetch_crude_stocks(spec: DeskSpec) -> Tuple[List[DataPoint], Optional[str]]:
 
 
 def fetch_natgas_storage(spec: DeskSpec) -> Tuple[List[DataPoint], Optional[str]]:
-    if not desk_rules.is_oil_desk(spec):
+    if not desk_rules.is_natgas_desk(spec):
         return [], None
     api_key = _api_key()
     if not api_key:
