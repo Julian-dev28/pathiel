@@ -148,6 +148,55 @@ def test_fetch_json_custom_retry_count(monkeypatch, retries):
     assert calls["n"] == retries + 1
 
 
+def test_fetch_json_post_sends_json_body_and_method(monkeypatch):
+    seen = {}
+
+    def fake_request(self, method, url, **kw):
+        seen["method"] = method
+        seen["json"] = kw.get("json")
+        return _FakeResponse(200, json_data={"ok": True})
+
+    monkeypatch.setattr(httpx.Client, "request", fake_request)
+    data, err = http_client.fetch_json_post("https://x.test/info", {"type": "meta"})
+    assert data == {"ok": True} and err is None
+    assert seen["method"] == "POST"
+    assert seen["json"] == {"type": "meta"}
+
+
+def test_fetch_json_post_never_raises_on_timeout(monkeypatch):
+    def fake_request(self, method, url, **kw):
+        raise httpx.TimeoutException("slow")
+
+    monkeypatch.setattr(httpx.Client, "request", fake_request)
+    monkeypatch.setattr(http_client.time, "sleep", lambda s: None)
+    data, err = http_client.fetch_json_post("https://x.test/info", {"type": "meta"})
+    assert data is None and err == "timeout"
+
+
+def test_fetch_json_post_bad_json_body(monkeypatch):
+    def fake_request(self, method, url, **kw):
+        return _FakeResponse(200, json_data=None)
+
+    monkeypatch.setattr(httpx.Client, "request", fake_request)
+    data, err = http_client.fetch_json_post("https://x.test/info", {"type": "meta"})
+    assert data is None and err == "bad_json"
+
+
+def test_fetch_json_get_is_unaffected_by_post_method_default(monkeypatch):
+    """Guards against a refactor accidentally making GET send a method
+    other than 'GET' (the retryable-status / never-raise contract is
+    shared code between fetch_json and fetch_json_post)."""
+    seen = {}
+
+    def fake_request(self, method, url, **kw):
+        seen["method"] = method
+        return _FakeResponse(200, json_data={"ok": True})
+
+    monkeypatch.setattr(httpx.Client, "request", fake_request)
+    http_client.fetch_json("https://x.test/a")
+    assert seen["method"] == "GET"
+
+
 def test_gate_session_blocks_real_network():
     """The session guard in conftest must be active for the default (offline)
     selection: an unmocked fetch fails closed instead of reaching the network."""

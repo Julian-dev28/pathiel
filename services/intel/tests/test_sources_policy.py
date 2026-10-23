@@ -126,6 +126,23 @@ def test_ofac_http_failure_propagates(monkeypatch):
     assert items == [] and err == "policy:ofac:timeout"
 
 
+def test_ofac_uses_a_timeout_that_keeps_two_attempts_under_the_packet_budget(monkeypatch):
+    """Regression for the real `policy.fetch_ofac:timeout_budget_exceeded`
+    failure: http_client's DEFAULT_TIMEOUT (connect=4s, read=6s) times two
+    attempts plus the 1s retry backoff can cost ~21s on a slow
+    treasury.gov page, well over build_packet's 12s FETCH_DEADLINE_S.
+    fetch_ofac must pass an explicit timeout small enough that even two
+    attempts stay comfortably inside that budget."""
+    captured = {}
+
+    def fake(url, **kw):
+        captured.update(kw)
+        return "<html></html>", None
+    monkeypatch.setattr(http_client, "fetch_text", fake)
+    policy.fetch_ofac(_spec_with_topics(["x"]))
+    assert captured["timeout_s"] <= 5.0, "two attempts at this timeout plus 1s backoff must stay under 12s"
+
+
 # ── congress.gov bills ─────────────────────────────────────────────
 
 def test_congress_bills_missing_key_is_reported_not_silent(monkeypatch):

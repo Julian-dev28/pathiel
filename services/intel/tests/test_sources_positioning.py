@@ -100,3 +100,91 @@ def test_safe_float_never_raises_on_garbage():
     assert positioning._safe_float("not a number") == 0.0
     assert positioning._safe_float(None) == 0.0
     assert positioning._safe_float("123.5") == 123.5
+
+
+# ── new contracts: silver, natgas, S&P 500 e-mini, Nasdaq-100 e-mini ───
+
+def test_silver_real_fixture(monkeypatch):
+    fixture = fixture_json("cftc_cot_silver.json")
+    monkeypatch.setattr(http_client, "fetch_json", lambda *a, **k: (fixture, None))
+    items, err = positioning.fetch_cot(_spec("xyz:SILVER", "Silver"))
+    assert err is None and len(items) == 1
+    assert items[0].label == "Silver non-commercial net long"
+
+
+def test_natgas_real_fixture(monkeypatch):
+    fixture = fixture_json("cftc_cot_natgas.json")
+    monkeypatch.setattr(http_client, "fetch_json", lambda *a, **k: (fixture, None))
+    items, err = positioning.fetch_cot(_spec("xyz:NATGAS", "Nat Gas"))
+    assert err is None and len(items) == 1
+    assert items[0].label == "Natural gas non-commercial net long"
+
+
+def test_sp500_emini_real_fixture(monkeypatch):
+    fixture = fixture_json("cftc_cot_sp500.json")
+    monkeypatch.setattr(http_client, "fetch_json", lambda *a, **k: (fixture, None))
+    items, err = positioning.fetch_cot(_spec("xyz:SP500", "S&P 500"))
+    assert err is None and len(items) == 1
+    assert items[0].label == "S&P 500 e-mini non-commercial net long"
+
+
+def test_nasdaq_emini_real_fixture(monkeypatch):
+    fixture = fixture_json("cftc_cot_ndx.json")
+    monkeypatch.setattr(http_client, "fetch_json", lambda *a, **k: (fixture, None))
+    items, err = positioning.fetch_cot(_spec("xyz:NDX", "Nasdaq-100"))
+    assert err is None and len(items) == 1
+    assert items[0].label == "Nasdaq-100 e-mini non-commercial net long"
+
+
+def test_metals_desk_gets_both_gold_and_silver(monkeypatch):
+    gold_row = fixture_json("cftc_cot_gold.json")[0]
+    silver_row = fixture_json("cftc_cot_silver.json")[0]
+
+    def fake(url, params=None, **kw):
+        code = (params or {}).get("$where", "")
+        if "088691" in code:
+            return [gold_row], None
+        if "084691" in code:
+            return [silver_row], None
+        return [], None
+    monkeypatch.setattr(http_client, "fetch_json", fake)
+    spec = DeskSpec(id="metals", name="Metals", tagline="t", instruments=[
+        Instrument(coin="xyz:GOLD", label="Gold"), Instrument(coin="xyz:SILVER", label="Silver",
+                                                               role="secondary")])
+    items, err = positioning.fetch_cot(spec)
+    assert err is None
+    assert {i.label for i in items} == {"Gold non-commercial net long", "Silver non-commercial net long"}
+
+
+# ── 1-year percentile ──────────────────────────────────────────────────
+
+def test_percentile_1y_is_one_hundred_percent_when_latest_is_the_highest(monkeypatch):
+    rows = [{"noncomm_positions_long_all": str(100 + i), "noncomm_positions_short_all": "0",
+            "report_date_as_yyyy_mm_dd": f"2026-{(i % 12) + 1:02d}-01",
+            "change_in_noncomm_long_all": "0", "change_in_noncomm_short_all": "0"}
+            for i in range(10)]
+    rows[0], rows[-1] = rows[-1], rows[0]  # newest-first: put the biggest value first
+    monkeypatch.setattr(http_client, "fetch_json", lambda *a, **k: (rows, None))
+    items, err = positioning.fetch_cot(_spec("xyz:CL", "WTI"))
+    assert err is None
+    assert items[0].percentile_1y == 1.0
+
+
+def test_percentile_1y_none_with_a_single_row(monkeypatch):
+    fixture = fixture_json("cftc_cot_wti.json")
+    monkeypatch.setattr(http_client, "fetch_json", lambda *a, **k: ([fixture[0]], None))
+    items, err = positioning.fetch_cot(_spec("xyz:CL", "WTI"))
+    assert err is None
+    assert items[0].percentile_1y is None
+
+
+def test_fetch_cot_requests_a_years_lookback(monkeypatch):
+    seen = {}
+
+    def fake(url, params=None, **kw):
+        seen["limit"] = params.get("$limit")
+        return fixture_json("cftc_cot_wti.json"), None
+    monkeypatch.setattr(http_client, "fetch_json", fake)
+    positioning.fetch_cot(_spec("xyz:CL", "WTI"))
+    assert seen["limit"] == positioning.COT_LOOKBACK_REPORTS
+    assert positioning.COT_LOOKBACK_REPORTS >= 52

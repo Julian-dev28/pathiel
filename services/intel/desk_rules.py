@@ -63,6 +63,28 @@ def is_crypto_desk(spec: DeskSpec) -> bool:
     return bool(coins & tickers) or bool(labels & tickers)
 
 
+def is_natgas_desk(spec: DeskSpec) -> bool:
+    """True for the dedicated "gas" desk (services/strategies/desks/gas.py,
+    added on overhaul-2026-10-17 alongside this branch) AND for the oil
+    desk, which still carries xyz:NATGAS as a hedge instrument — both want
+    sources/eia.py's natural-gas-storage number; is_oil_desk alone misses
+    the gas desk (its id/labels contain no "oil"/"wti"/"brent"/"crude"
+    token at all)."""
+    hay = (spec.id + " " + " ".join(instrument_tokens(spec))).lower()
+    return any(k in hay for k in ("natgas", "nat gas", "henry hub")) or is_oil_desk(spec)
+
+
+def is_metals_desk(spec: DeskSpec) -> bool:
+    hay = (spec.id + " " + " ".join(instrument_tokens(spec))).lower()
+    return any(k in hay for k in ("gold", "silver", "xau", "xag", "metal"))
+
+
+def is_indices_desk(spec: DeskSpec) -> bool:
+    hay = (spec.id + " " + " ".join(instrument_tokens(spec))).lower()
+    return any(k in hay for k in ("s&p", "sp500", "nasdaq", "ndx", "nikkei", "kospi",
+                                  "xyz100", "index", "indices"))
+
+
 def is_equity_desk(spec: DeskSpec) -> bool:
     """True if any instrument looks like a plain equity ticker rather than
     a commodity/crypto perp — used to gate the best-effort SEC EDGAR

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from contracts.strategies.models import Catalyst, Headline, IntelPacket, PolicyItem
+from contracts.strategies.models import Catalyst, DataPoint, Headline, IntelPacket, PolicyItem
 from services.intel.render import estimate_tokens, render_compact
 
 T0 = datetime(2026, 10, 17, 3, 0, tzinfo=timezone.utc)
@@ -152,6 +152,77 @@ def test_plain_markets_keep_the_two_most_traded_per_event():
     text = render_compact(pk, 4000)
     kept = [ln for ln in text.splitlines() if ln.startswith("[p")]
     assert [ln.split("]")[0] for ln in kept] == ["[p6", "[p5"]
+
+
+# ── HARD DATA block (DataPoint, 1.2.0) ──────────────────────────────
+
+def _dp(dp_id="dp1", value=-8.6, prior=-2.1, change=-6.5, unit="mm_bbl",
+        note="surprise -6.5 vs 4wk avg -1.7", relevance=0.9) -> DataPoint:
+    return DataPoint(id=dp_id, source="eia", label="EIA crude stocks weekly change",
+                     value=value, prior=prior, change=change, unit=unit, as_of=T0, note=note,
+                     relevance=relevance)
+
+
+def test_hard_data_renders_first_ahead_of_headlines_and_catalysts():
+    packet = IntelPacket(
+        desk_id="oil", as_of=T0, datapoints=[_dp()],
+        headlines=[Headline(id="h1", title="Oil rises on Hormuz attack", url="u",
+                             source="Reuters", relevance=0.9)],
+        catalysts=[Catalyst(id="c1", kind="eia_weekly", title="EIA report",
+                             at=T0 + timedelta(days=1), importance=3, source="EIA")],
+    )
+    text = render_compact(packet, max_tokens=2000)
+    assert text.index("HARD DATA:") < text.index("HEADLINES:") < text.index("CATALYSTS:")
+
+
+def test_hard_data_line_shows_value_prior_change_unit_and_note():
+    packet = IntelPacket(desk_id="oil", as_of=T0, datapoints=[_dp()])
+    text = render_compact(packet, max_tokens=2000)
+    assert "[dp1]" in text
+    assert "eia" in text
+    assert "EIA crude stocks weekly change" in text
+    assert "-8.6" in text and "mm_bbl" in text
+    assert "prior -2.1" in text
+    assert "chg -6.5" in text
+    assert "surprise -6.5 vs 4wk avg -1.7" in text
+
+
+def test_hard_data_handles_missing_prior_and_change_as_na():
+    dp = DataPoint(id="dp2", source="cboe", label="VIX", value=19.03, unit="index_pts", as_of=T0)
+    packet = IntelPacket(desk_id="oil", as_of=T0, datapoints=[dp])
+    text = render_compact(packet, max_tokens=2000)
+    assert "prior n/a" in text
+    assert "chg n/a" in text
+
+
+def test_hard_data_outranks_a_low_relevance_headline_under_a_tight_budget():
+    """DataPoint relevance maps into the 0.75-0.95 band (see render.py's
+    _datapoint_lines) specifically so a hard number survives a tight
+    budget ahead of a middling headline — the operator wants hard numbers
+    before the headline, not buried behind 30 of them."""
+    packet = IntelPacket(
+        desk_id="oil", as_of=T0, datapoints=[_dp(relevance=0.1)],  # low DataPoint relevance...
+        headlines=[Headline(id=f"h{i}", title=f"Minor oil story number {i} with filler text",
+                             url="u", source="Unknown", relevance=0.3) for i in range(30)],
+    )
+    text = render_compact(packet, max_tokens=90)
+    assert "[dp1]" in text  # ...still beats a 0.3-relevance headline (0.75 floor vs 0.3)
+
+
+def test_hard_data_section_cap_bounds_a_flooded_packet():
+    from services.intel.render import SECTION_CAPS
+    dps = [_dp(dp_id=f"dp{i}", relevance=i / 20.0) for i in range(20)]
+    packet = IntelPacket(desk_id="oil", as_of=T0, datapoints=dps)
+    text = render_compact(packet, max_tokens=100_000)
+    kept = [ln for ln in text.splitlines() if ln.startswith("[dp")]
+    assert len(kept) == SECTION_CAPS["HARD DATA"]
+
+
+def test_hard_data_section_omitted_when_no_datapoints():
+    packet = IntelPacket(desk_id="oil", as_of=T0,
+                         headlines=[Headline(id="h1", title="x", url="u", source="s", relevance=0.5)])
+    text = render_compact(packet, max_tokens=2000)
+    assert "HARD DATA:" not in text
 
 
 def test_section_caps_bound_a_flooded_packet():

@@ -100,8 +100,28 @@ def frozen_at_fixture_time(monkeypatch, oil):
 
 @pytest.mark.usefixtures("frozen_at_fixture_time")
 def test_render_quick_shows_the_earliest_upcoming_catalyst(oil):
-    text = render.render_markdown(oil.thesis, oil.analytics, mode="quick")
+    # Frozen at the fixture's own as_of instant (all three fixture catalysts
+    # are upcoming then) rather than real wall-clock `now` — the fixture's
+    # catalyst dates are fixed 2026-10 timestamps, so a wall-clock default
+    # here is a time bomb: this exact assertion went from pass to fail
+    # purely because the real calendar advanced past c1/c2 while nothing in
+    # services/intel/services/thesis changed (caught 2026-10-23).
+    frozen_now = datetime(2026, 10, 17, 2, 10, tzinfo=timezone.utc)
+    text = render.render_markdown(oil.thesis, oil.analytics, mode="quick", now=frozen_now)
     assert "API crude inventories" in text  # c1, the earliest of the three
+
+
+def test_render_quick_next_catalyst_uses_real_clock_by_default(oil):
+    """Without an explicit `now`, the three fixture catalysts (dated
+    2026-10-20/21, 2026-11-01) are all in the past relative to any `now`
+    after 2026-11-01, so `_next_catalyst` falls back to its documented
+    "none left -> earliest of all" behavior rather than raising or
+    silently going stale — pinned so that fallback path has a test, not
+    just the happy path."""
+    far_future = datetime(2030, 1, 1, tzinfo=timezone.utc)
+    text = render.render_markdown(oil.thesis, oil.analytics, mode="quick", now=far_future)
+    assert "Next catalyst:" in text
+    assert "API crude inventories" in text  # no catalyst is upcoming -> min() over all of them, by date
 
 
 def test_render_quick_ends_with_a_decision_line(oil):

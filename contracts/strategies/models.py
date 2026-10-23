@@ -25,9 +25,11 @@ from typing import List, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-CONTRACT_VERSION = "1.1.0"   # 1.1.0 (2026-10-23): + DeskAnalytics.structure (candle-derived
-                              # price structure for the primary instrument - additive, old
-                              # readers ignore the new field)
+CONTRACT_VERSION = "1.2.0"   # 1.1.0 (2026-10-23): + DeskAnalytics.structure (candle-derived
+                              # price structure for the primary instrument).
+                              # 1.2.0 (2026-10-23, intel-hard-data): + IntelPacket.datapoints
+                              # (hard numbers: venue/EIA/FRED/CBOE/CFTC/SEC). Both additive;
+                              # old readers ignore either new field.
 
 Side = Literal["long", "short"]
 CallSide = Literal["long", "short", "flat", "pair"]
@@ -282,6 +284,30 @@ class PositioningItem(_M):
     value: float
     change: Optional[float] = None
     as_of: datetime
+    percentile_1y: Optional[float] = None      # 1.2.0+: value's rank (0..1) in its own
+                                                # trailing ~52 weekly reports — "WTI net
+                                                # long is near its 1y high" vs a bare number
+
+
+class DataPoint(_M):
+    """One hard number: a venue read, an EIA/FRED/CBOE/CFTC/SEC figure —
+    anything deterministic a thesis should quote instead of a headline's
+    adjective. Added 1.2.0 (overhaul-2026-10-17, intel-hard-data branch),
+    additive only: every existing IntelPacket still validates with
+    datapoints defaulting to []. `services/intel/desk_rules.py` decides
+    which sources populate which desk; `render.py`'s HARD DATA block
+    renders these the same deterministic, budget-capped way every other
+    section is rendered — never summarized by a model."""
+    id: str
+    source: str                                # "venue_hl", "eia", "cboe", "fred", "cftc_cot", "sec_edgar"
+    label: str                                 # desk-relevant, e.g. "Brent funding rate (hourly)"
+    value: float
+    prior: Optional[float] = None
+    change: Optional[float] = None
+    unit: str                                  # "usd", "pct", "bbl_mm", "days", "index_pts", ...
+    as_of: datetime
+    note: Optional[str] = None                 # surprise math, crowding flag, missing-key reason, etc.
+    relevance: float = Field(ge=0, le=1, default=0.5)
 
 
 class IntelPacket(_M):
@@ -293,6 +319,7 @@ class IntelPacket(_M):
     catalysts: List[Catalyst] = []
     odds: List[MarketOdds] = []
     positioning: List[PositioningItem] = []
+    datapoints: List[DataPoint] = []           # 1.2.0+: hard numbers, see DataPoint docstring
     token_estimate: int = 0                    # tokens of the compact render fed to the LLM
     sources_failed: List[str] = []             # feeds that errored; never silently empty
 
