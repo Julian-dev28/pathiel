@@ -11,13 +11,18 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from services.strategies import api as strategies_api
-from services.strategies import journal
+from services.strategies import journal, pipeline
 from services.strategies.tests.conftest import make_thesis, minimal_analytics
 
 
 @pytest.fixture
 def client(stub_live_analytics):
-    stub_live_analytics(minimal_analytics("oil", mid=107.5, coin="xyz:BRENTOIL"))
+    analytics = minimal_analytics("oil", mid=107.5, coin="xyz:BRENTOIL")
+    stub_live_analytics(analytics)
+    # Warm cache — see test_api.py's client fixture for why this is needed
+    # now that a cold desk no longer builds inline on wait=False
+    # (docs/overhaul/DESK_UI_2026-10-23.md, Polish section).
+    pipeline.save_analytics("oil", analytics)
     strategies_api._JOBS.clear()
     app = FastAPI()
     app.include_router(strategies_api.router)

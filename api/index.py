@@ -1,24 +1,26 @@
-"""Vercel entrypoint: the pathiel dashboard, serving synthetic data.
+"""Vercel entrypoint: a read-only public mirror of the real pathiel dashboard.
 
-This is a demo deployment. It runs the real dashboard code — the same
-`pathiel/dashboard.py` the live system serves — against a generated session log,
-positions snapshot and agent config. No exchange connection, no credentials, no
-trading loop.
-
-Why the real code rather than a static mock: the dashboard's value is in what it
-computes (drawdown, fee drag, the funnel, the book league table), and a static
-mock demonstrates none of it. Feeding invented inputs to the production
-renderers shows the actual product.
+`services/demo` (a separate sub-application at /demo, serving synthetic
+trading history through a generated session log/positions snapshot/agent
+config) was removed 2026-10-23 (docs/overhaul/DESK_UI_2026-10-23.md, Polish
+section): the autonomous bot UI it was built to demonstrate (scan feed, book
+league table, funding/OI heat) is itself long retired, and its generator was
+never extended for the desk/thesis/account pages that replaced it — a worked
+example of a UI nobody can open any more. This deployment now just serves the
+real pages against whatever this deployment's own state holds (empty on a
+fresh instance, exactly like a fresh local install), with no account ever
+reachable: no exchange credential can be present (checked below) and every
+write is refused (`PATHIEL_DASHBOARD_READONLY=1`).
 
 Three things this file exists to guarantee, in order of how badly they would
 hurt if they were wrong:
 
   1. **No credentials, ever.** `PATHIEL_PUBLIC_DASHBOARD=1` deliberately opens
-     every account endpoint to anonymous readers — that is what makes the demo
-     viewable. It is also exactly the flag the 2026-09-04 audit called a
-     privacy leak when there is a real account behind it. So this module
-     refuses to boot if any exchange credential is present in the environment.
-     A demo that can reach the live account is not a demo.
+     every account endpoint to anonymous readers — that is what makes this
+     mirror viewable at all. It is also exactly the flag the 2026-09-04 audit
+     called a privacy leak when there is a real account behind it. So this
+     module refuses to boot if any exchange credential is present in the
+     environment. A public mirror that can reach the live account is not one.
   2. **Read-only.** `PATHIEL_DASHBOARD_READONLY=1` makes every POST a 403, so
      the STOP TRADING button and the operator token field are inert.
   3. **Env before import.** `pathiel.dashboard` resolves the session-log,
@@ -53,18 +55,18 @@ _present = [k for k in _FORBIDDEN if os.environ.get(k)]
 
 # `pathiel/server.py` loads `.env.local` into the environment on import, before
 # anything here gets a second look. Checking os.environ alone would therefore
-# pass on a developer box and then boot the demo against real keys, so the file
-# itself counts as a credential.
+# pass on a developer box and then boot this deployment against real keys, so
+# the file itself counts as a credential.
 if os.path.exists(os.path.join(_REPO_ROOT, ".env.local")):
     _present.append(".env.local (file present; server.py loads it on import)")
 
 if _present:
     raise RuntimeError(
-        "demo deployment refuses to boot with exchange credentials in the "
-        f"environment: {', '.join(_present)}. This deployment serves a public, "
-        "unauthenticated dashboard; with a real key present it would be a "
-        "window onto the live account. Remove these from the Vercel project "
-        "environment and redeploy."
+        "this public-mirror deployment refuses to boot with exchange "
+        f"credentials in the environment: {', '.join(_present)}. This "
+        "deployment serves a public, unauthenticated dashboard; with a real "
+        "key present it would be a window onto the live account. Remove "
+        "these from the Vercel project environment and redeploy."
     )
 
 # ── 2. give the process a writable home ──────────────────────────────────────
@@ -92,9 +94,6 @@ os.environ["HOME"] = _HOME
 # error about the message, which was never built, pointing nowhere near the
 # filesystem.
 #
-# This used to be set as a side effect of generating the demo data into the
-# global environment. Moving the demo behind its own sub-application took the
-# side effect with it and left the live app with nowhere to write.
 _STATE_DIR = os.path.join(tempfile.gettempdir(), "pathiel-state")
 os.makedirs(_STATE_DIR, exist_ok=True)
 os.environ.setdefault("PATHIEL_STATE_DIR", _STATE_DIR)
@@ -102,10 +101,9 @@ os.environ.setdefault("PATHIEL_STATE_DIR", _STATE_DIR)
 # ── 3. the live app is the landing page ──────────────────────────────────────
 #
 # This deployment has no trading state — no session log, no positions snapshot,
-# nothing written by a loop — so the live dashboard renders empty, which is the
-# honest thing for it to do and exactly what a fresh install looks like. The
-# demo lives behind a toggle at /demo, mounted below, and is the only thing in
-# this process that serves invented numbers.
+# nothing written by a loop — so the dashboard renders empty, which is the
+# honest thing for it to do and exactly what a fresh install looks like.
+# Nothing in this process serves invented numbers.
 
 # ── 4. open the read APIs, close every write ─────────────────────────────────
 os.environ["PATHIEL_PUBLIC_DASHBOARD"] = "1"
@@ -156,15 +154,4 @@ if _host:
 # background task get scheduled by the server's lifespan hook.
 os.environ.setdefault("PATHIEL_DISABLE_TRADING_LOOP", "1")
 
-from pathiel.server import app  # noqa: E402
-
-# ── 5. the demo, behind a prefix ─────────────────────────────────────────────
-#
-# A separate sub-application with its own dashboard instance and its own data,
-# so `/demo/api/dashboard/summary` and `/api/dashboard/summary` are served by
-# different module objects reading different files. The front-end toggle is a
-# path prefix rather than a mode, which means no request can put the live view
-# into a state where it renders generated numbers.
-from services.demo.router import build_demo_app  # noqa: E402
-
-app.mount("/demo", build_demo_app(os.path.join(tempfile.gettempdir(), "pathiel-demo")))
+from pathiel.server import app  # noqa: E402,F401 — the Vercel ASGI entry point
