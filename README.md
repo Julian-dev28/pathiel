@@ -101,11 +101,12 @@ Deleted rather than disabled, same reasoning as the 2026-08-29 removal below
   `strategy_book_equity_frac`, `strategy_book_notional_usd`,
   `books_bypass_ai`).
 
-The dashboard is frozen, not developed, and its book panels (`/book_league`,
-`/news`, `/analytics`'s tapes) are left exactly as they were: they will
-render whatever the shadow ledger already holds, and nothing writes a new
-row to it any more, so they are an honest historical view rather than a
-broken one. See **Dashboard tabs** below.
+The dashboard's bot-watching surface (the old `/activity`, `/news`,
+`/trends`, `/analytics` pages, and the landing page's book panels/decision
+funnel/trade tape) was removed outright 2026-10-23, not frozen — there is
+no shadow ledger left to render, and a headless desk needs a different
+screen, not a historical view of a dead one. See **Dashboard: the Desk
+page** below.
 
 What survives: `scripts/trading_loop.py` as the exit-management loop (DSL
 exits, housekeeping, no entries of its own), the MCP server as the one
@@ -137,8 +138,11 @@ mover-recorder live arms. Roughly 26,000 lines came out.
 
 A desk is a siloed focus with its own instruments, news, policy watch,
 catalyst calendar, leverage ladder, token budget and thesis journal. Six ship:
-**oil** (priced off Brent, plus WTI and natgas; the flagship), **btc**, **top5** crypto, **ai**
-equities, **metals** and **indices**. Open `/desks`, pick one, read the call.
+**oil** (priced off Brent, plus WTI and natgas; the flagship and the only one
+currently marked active — agent config `active_desks`), **btc**, **top5** crypto,
+**ai** equities, **metals** and **indices**. The Desk page (`/`) renders the
+active desk's call; its Thesis tab (`/desk/{id}`, default `oil`) is the full
+reading room.
 
 ```
 services/strategies   desk registry, deterministic analytics, journal, grader, HTTP routes
@@ -415,31 +419,43 @@ Replicates the Hyperfeed MCP plugin's data directly from HL API:
 | `pathiel/indicators/math.py` | TA indicators: EMA, SMA, ATR, RSI, ADX |
 | `pathiel/models/types.py` | Shared data type: `Candle` (OHLCV) |
 | `pathiel/server.py` | FastAPI server — 22 REST routes for frontend/dashboard |
-| `services/trend_engine/` | `/trends` tab: 7d HL regime + recorder P&L (own README) |
+| `services/trend_engine/` | 7d HL regime + recorder P&L (own README); its dashboard tab was removed 2026-10-23, the service itself is untouched |
 | `pathiel/agents/universe.py` | The majors allowlist, applied at scan time as well as at the gate |
 | `pathiel/agents/capital_flows.py` | Deposits/withdrawals + the flow-neutral NAV index the drawdown uses |
 | `pathiel/agents/atomic_io.py` | Crash-safe state writes (temp + fsync + rename + dir fsync) |
 
-### Dashboard tabs
+### Dashboard: the Desk page
 
-**Frozen 2026-10-23:** the dashboard is maintained but not developed — Claude
-via MCP is the operator surface now. `/`, `/book_league` and the `/news` and
-`/analytics` tapes still render whatever the shadow ledger already holds
-(the strategy books that wrote to it are retired, so that history is a
-historical view, not a live one); `/desks`, `/account`, `/activity` and
-`/trends` are unaffected.
+**Rebuilt 2026-10-23** (docs/overhaul/DESK_UI_2026-10-23.md) for the headless
+oil desk: the bot is retired, Claude runs a 15-minute loop through MCP
+(`.claude/skills/oil-tick/SKILL.md`), and the operator trades their own
+wallet by hand from the same thesis. The old bot-watching surface (scan
+feed, book panels, AI-brain trend tab, trade tape) is gone; three tabs are
+left.
+
+The product is a generic desk UI, not an oil-only one — other `DeskSpec`s
+(`btc`, `top5`, `ai`, `metals`, `indices`) stay registered in
+`services/strategies/desks/*.py` and reachable by a direct link or script,
+but the UI only ever shows desks listed in agent config's `active_desks`
+(default `["oil"]`). One active desk renders with no switcher; several show
+a small tab row. Oil is the only desk actually trading today, not the
+product's identity.
 
 | Path | What it shows |
 |------|---------------|
-| `/` | Landing — risk band (drawdown, fee drag, win rate, kill switch) then equity, positions, the books table (every row now permanently `off`) |
-| `/desks` | Desks — one card per desk; `/desks/<id>` leads with the call, then the leverage switch |
-| `/account` | Account & Risk — the connected account, the risk preset with a live preview |
-| `/activity` | Event journal — verdicts, executions, gate results, DSL closes |
-| `/news` | News-catalyst reads + research events with news context (historical — see freeze note above) |
-| `/trends` | Trend analysis + forecasts (see `services/trend_engine/README.md`) |
-| `/analytics` | Funnel, book league (historical), coin chart with our trade markers, funding heat |
+| `/` | **Desk** — the active desk's current call plus the 20x line (liquidation price, stop distance as a share of it, verdict, R to targets — computed from the call's own entry/stop, `pathiel/agents/bracket.py`), one row per registered wallet (active + watch-only, with a NAKED badge for an uncovered position), candle-derived levels, headlines and catalysts, the last 30 lines of that desk's loop log, and the track record. Shows an onboarding wizard first for a brand-new visitor (connect account → risk preset → done). |
+| `/desk/{id}` | **Thesis** — the full reading room for one desk (default `oil`): the call, the leverage picker (same 20x line as `/`, plus the probabilistic ladder), scenarios, catalysts, bull vs bear, what changes my mind, desk school, track record, and "make your own call." |
+| `/account` | **Account** — the connected Hyperliquid account (or a watch-only address) and the risk preset with a live preview. |
 
-Keyboard: `g` then `d` / `a` / `n` / `p` / `t` / `y`.
+The old auto-trader's kill switch survives on `/` (sets agent config `mode:
+OFF`) but is relabeled plainly: it does not stop the oil-tick loop
+(`place_bracket`/`bracket_sweep`) or the operator's own trades, only the
+retired bot's own `execute` path.
+
+The `/desks` grid list page (one card per desk, with no active-desk concept)
+was removed — see the keep/delete audit in
+docs/overhaul/DESK_UI_2026-10-23.md for the full reasoning behind every page
+and section cut.
 
 ### Who can see this
 
@@ -452,7 +468,7 @@ Reads are closed by default now, and there are two tiers:
 
 | surface | who | route |
 |---|---|---|
-| the **house** account | operator role only | `/api/dashboard/summary`, `/risk`, `/positions`, `/closed-trades`, `/equity-curve`, `/funnel`, `/book_league` |
+| the **house** account | operator role only | `/api/dashboard/risk`, `/positions` (the rest — `/summary`, `/closed-trades`, `/equity-curve`, `/funnel`, `/book_league` — were removed 2026-10-23 with the pages that rendered them; `/risk` and `/positions` stay because `pathiel/metrics.py`'s `/metrics` endpoint and their own test suites read them independent of any page) |
 | **your own** account | any signed-in wallet | `/api/dashboard/account` |
 | health probes | anyone | `/api/health*` — a check that needs a session cannot report a broken session |
 
