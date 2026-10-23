@@ -258,6 +258,21 @@ def get_brief(desk_id: str, *, max_age_s: Optional[float] = None, wait: bool = F
 
     if intel is None:
         stale.append("intel: never fetched (run refresh)")
+    elif intel.sources_failed:
+        # A missing free API key (EIA_API_KEY/FRED_API_KEY/CONGRESS_API_KEY)
+        # skips its source cleanly and lands here as "...API_KEY_missing" —
+        # visible before this fix only inside intel.sources_failed itself,
+        # never in the one list __main__.py's CLI and the MCP brief both
+        # print. See scripts/intel_keys.py for which keys are missing and
+        # where to get each.
+        missing_keys = [f for f in intel.sources_failed if "API_KEY_missing" in f]
+        if missing_keys:
+            stale.append(f"intel: missing API key(s) — {', '.join(missing_keys)} "
+                         f"(run scripts/intel_keys.py)")
+        other = [f for f in intel.sources_failed if f not in missing_keys]
+        if other:
+            stale.append(f"intel: {len(other)} source(s) failed this refresh "
+                         f"(see intel.sources_failed)")
     if thesis is None:
         stale.append("thesis: none yet (run refresh)")
     elif thesis.expires_at <= now:

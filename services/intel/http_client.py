@@ -34,16 +34,18 @@ def _should_retry_status(status: int) -> bool:
 
 
 def _do_request(method: str, url: str, *, params: Optional[Dict[str, Any]],
-                 headers: Optional[Dict[str, str]], timeout: httpx.Timeout) -> httpx.Response:
+                 headers: Optional[Dict[str, str]], timeout: httpx.Timeout,
+                 json_body: Optional[Dict[str, Any]] = None) -> httpx.Response:
     hdrs = {"User-Agent": DEFAULT_UA}
     if headers:
         hdrs.update(headers)
     with httpx.Client(timeout=timeout, follow_redirects=True) as client:
-        resp = client.request(method, url, params=params, headers=hdrs)
+        resp = client.request(method, url, params=params, headers=hdrs, json=json_body)
     return resp
 
 
-def _fetch(url: str, *, params: Optional[Dict[str, Any]] = None,
+def _fetch(url: str, *, method: str = "GET", params: Optional[Dict[str, Any]] = None,
+           json_body: Optional[Dict[str, Any]] = None,
            headers: Optional[Dict[str, str]] = None,
            timeout_s: Optional[float] = None,
            retries: int = 1) -> Tuple[Optional[httpx.Response], Optional[str]]:
@@ -52,7 +54,8 @@ def _fetch(url: str, *, params: Optional[Dict[str, Any]] = None,
     last_err: Optional[str] = None
     for attempt in range(attempts):
         try:
-            resp = _do_request("GET", url, params=params, headers=headers, timeout=timeout)
+            resp = _do_request(method, url, params=params, headers=headers, timeout=timeout,
+                                json_body=json_body)
         except httpx.TimeoutException:
             last_err = "timeout"
         except httpx.HTTPError as exc:
@@ -96,3 +99,26 @@ def fetch_text(url: str, *, params: Optional[Dict[str, Any]] = None,
         logger.warning(f"[intel.http] GET {url} failed: {err}")
         return None, err
     return resp.text, None
+
+
+def fetch_json_post(url: str, json_body: Dict[str, Any], *,
+                     headers: Optional[Dict[str, str]] = None,
+                     timeout_s: Optional[float] = None,
+                     retries: int = 1) -> Tuple[Optional[Any], Optional[str]]:
+    """POST `json_body` as JSON, parse the JSON response. Same contract as
+    `fetch_json`: never raises, returns (data, None) or (None, "<reason>").
+    Added for Hyperliquid's /info endpoint (services/intel/sources/venue.py),
+    which is POST-only — every other source in this service is a plain GET,
+    so this is the one exception to "fetch_json/fetch_text are the only two
+    network entry points", not a second code path duplicating the retry/
+    timeout/never-raise contract above."""
+    resp, err = _fetch(url, method="POST", json_body=json_body, headers=headers,
+                        timeout_s=timeout_s, retries=retries)
+    if resp is None:
+        logger.warning(f"[intel.http] POST {url} failed: {err}")
+        return None, err
+    try:
+        return resp.json(), None
+    except Exception as exc:
+        logger.warning(f"[intel.http] POST {url} returned non-JSON: {exc}")
+        return None, "bad_json"

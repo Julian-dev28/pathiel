@@ -89,6 +89,44 @@ def test_get_brief_shows_cached_intel_and_thesis_after_refresh(monkeypatch, stub
     assert brief.stale == []
 
 
+def test_get_brief_surfaces_missing_api_keys_in_stale(monkeypatch, stub_live_analytics):
+    """A missing free key (EIA_API_KEY/FRED_API_KEY/CONGRESS_API_KEY) skips
+    its source cleanly and lands in IntelPacket.sources_failed — but
+    before this fix, nothing surfaced it into DeskBrief.stale, the one
+    list the CLI (__main__.py) and the MCP brief both print. Regression
+    for the intel-hard-data brief's "the missing-key list must be visible
+    in the brief's stale/sources_failed"."""
+    stub_live_analytics(minimal_analytics("oil", mid=99.0, coin="xyz:BRENTOIL"))
+
+    def fake_resolve(path):
+        import services.strategies.pipeline as P
+        if path == P.INTEL_PROVIDER_PATH:
+            return lambda spec: IntelPacket(
+                desk_id=spec.id, as_of=NOW,
+                sources_failed=["eia:crude_stocks:EIA_API_KEY_missing",
+                                "policy:congress_bills:CONGRESS_API_KEY_missing",
+                                "news:gdelt:http_429"],
+            )
+        if path == P.THESIS_PROVIDER_PATH:
+            return lambda spec, a, i, p: make_thesis(
+                desk_id="oil", thesis_id="w1", instrument="xyz:BRENTOIL", scenarios=[],
+                created_at=datetime.now(timezone.utc))
+        raise ImportError(path)
+
+    import services.strategies.pipeline as pipeline_mod
+    monkeypatch.setattr(pipeline_mod, "_resolve_provider", fake_resolve)
+
+    facade.refresh("oil", force=True)
+    brief = facade.get_brief("oil")
+    missing_line = next((s for s in brief.stale if "missing API key" in s), None)
+    assert missing_line is not None
+    assert "EIA_API_KEY_missing" in missing_line
+    assert "CONGRESS_API_KEY_missing" in missing_line
+    assert "intel_keys.py" in missing_line
+    other_line = next((s for s in brief.stale if "source(s) failed" in s), None)
+    assert other_line is not None and "1 source(s) failed" in other_line
+
+
 def test_get_brief_flags_expired_thesis_as_stale(stub_live_analytics):
     stub_live_analytics(minimal_analytics("oil", mid=99.0, coin="xyz:BRENTOIL"))
     expired = make_thesis(desk_id="oil", instrument="xyz:BRENTOIL",

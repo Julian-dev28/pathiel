@@ -1,0 +1,122 @@
+[
+  {
+    "coin": "xyz:BRENTOIL",
+    "fundingRate": "-0.0000049005",
+    "premium": "-0.0003784072",
+    "time": 1790143200005
+  },
+  {
+    "coin": "xyz:BRENTOIL",
+    "fundingRate": "-0.0000037638",
+    "premium": "-0.0003602202",
+    "time": 1790146800002
+  },
+  {
+    "coin": "xyz:BRENTOIL",
+    "fundingRate": "0.0000006225",
+    "premium": "-0.00029004",
+    "time": 1790150400033
+  },
+  {
+    "coin": "xyz:BRENTOIL",
+    "fundingRate": "-0.0000027339",
+    "premium": "-0.0003437416",
+    "time": 1790154000065
+  },
+  {
+    "coin": "xyz:BRENTOIL",
+    "fundingRate": "0.00000625",
+    "premium": "-0.0001664756",
+    "time": 1790157600062
+  },
+  {
+    "coin": "xyz:BRENTOIL",
+    "fundingRate": "0.00000625",
+    "premium": "0.000017394",
+    "time": 1790161200047
+  },
+  {
+    "coin": "xyz:BRENTOIL",
+    "fundingRate": "0.00000625",
+    "premium": "-0.000080905",
+    "time": 1790164800030
+  },
+  {
+    "coin": "xyz:BRENTOIL",
+    "fundingRate": "0.00000625",
+    "premium": "0.0000305655",
+    "time": 1790168400050
+  },
+  {
+    "coin": "xyz:BRENTOIL",
+    "fundingRate": "0.00000625",
+    "premium": "-0.0000479106",
+    "time": 1790172000043
+  },
+  {
+    "coin": "xyz:BRENTOIL",
+    "fundingRate": "0.00000625",
+    "premium": "0.0000363531",
+    "time": 1790175600003
+  },
+  {
+    "coin": "xyz:BRENTOIL",
+    "fundingRate": "-0.0002169537",
+    "premium": "-0.0037712598",
+    "time": 1791907200030
+  },
+  {
+    "coin": "xyz:BRENTOIL",
+    "fundingRate": "-0.0002241169",
+    "premium": "-0.0038858701",
+    "time": 1791910800017
+  },
+  {
+    "coin": "xyz:BRENTOIL",
+    "fundingRate": "-0.0002250438",
+    "premium": "-0.0039007006",
+    "time": 1791914400057
+  },
+  {
+    "coin": "xyz:BRENTOIL",
+    "fundingRate": "-0.000245014",
+    "premium": "-0.0042202232",
+    "time": 1791918000029
+  },
+  {
+    "coin": "xyz:BRENTOIL",
+    "fundingRate": "-0.0002685747",
+    "premium": "-0.0045971954",
+    "time": 1791921600010
+  },
+  {
+    "coin": "xyz:BRENTOIL",
+    "fundingRate": "-0.0003043903",
+    "premium": "-0.0051702444",
+    "time": 1791925200014
+  },
+  {
+    "coin": "xyz:BRENTOIL",
+    "fundingRate": "-0.0001770399",
+    "premium": "-0.0031326386",
+    "time": 1791928800054
+  },
+  {
+    "coin": "xyz:BRENTOIL",
+    "fundingRate": "0.00000625",
+    "premium": "-0.0001982223",
+    "time": 1791932400036
+  },
+  {
+    "coin": "xyz:BRENTOIL",
+    "fundingRate": "0.00000625",
+    "premium": "0.000145195",
+    "time": 1791936000012
+  },
+  {
+    "coin": "xyz:BRENTOIL",
+    "fundingRate": "0.00000625",
+    "premium": "0.000015436",
+    "time": 1791939600042
+  }
+]

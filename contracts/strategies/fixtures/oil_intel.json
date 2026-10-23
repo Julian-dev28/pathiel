@@ -93,7 +93,8 @@
       "label": "WTI non-commercial net long",
       "value": 99060.0,
       "change": -10403.0,
-      "as_of": "2026-10-06T00:00:00Z"
+      "as_of": "2026-10-06T00:00:00Z",
+      "percentile_1y": null
     }
   ],
   "datapoints": [
