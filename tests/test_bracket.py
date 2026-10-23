@@ -324,3 +324,19 @@ def test_sweep_still_cancels_true_leftovers_when_nothing_rests():
     ex = FakeEx(pos=0.0, orders=[sl])
     out = bracket.sweep(COIN, ex=ex)
     assert out["cancelled_stranded"] == 1 and ("sweep", COIN) in ex.calls and "attached_to_entry" not in out
+
+
+def test_handler_refuses_when_venue_max_leverage_is_unknown(monkeypatch):
+    """Wave 2 concern: the retired executor refused when leverage could not
+    be resolved; _coin_specs swallows the failure into None. Without the
+    venue cap the 20x rule cannot run, so the handler must refuse, not
+    fall back to the profile cap and trade blind."""
+    mcp = _mcp()
+    from pathiel.agents import bracket as br
+
+    monkeypatch.setattr(mcp, "_risk_inputs", lambda: (SimpleNamespace(max_leverage=10.0), [], None))
+    monkeypatch.setattr(mcp, "_coin_specs", lambda c: (None, 2))
+    monkeypatch.setattr(mcp, "_live_equity", lambda: 15.21)
+    monkeypatch.setattr(br, "place_bracket", lambda *a, **k: (_ for _ in ()).throw(AssertionError("must not place")))
+    out = json.loads(mcp.handle_place_bracket({"coin": COIN, "entry_px": 107.2, "stop_px": 106.7, "tp_px": 108.45}))
+    assert out["ok"] is False and out["placed"] is False and "not trading blind" in out["error"]
