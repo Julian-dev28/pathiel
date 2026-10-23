@@ -279,8 +279,12 @@ def test_the_hl_client_tells_the_limiter_the_priority_and_request_type(monkeypat
     with background_priority():
         assert hl_client._http_post("/info", {"type": "candleSnapshot"}) is None
     assert hl_client._http_post("/info", {"type": "clearinghouseState"}) is None
-    assert seen == [{"background": True, "label": "candleSnapshot"},
-                    {"background": False, "label": "clearinghouseState"}]
+    # The label is "<request type><<caller>": the caller is the first frame
+    # outside pathiel.client, so /api/health/system can say WHO spent the
+    # budget (2026-10-24), here this test function.
+    assert [s["background"] for s in seen] == [True, False]
+    assert seen[0]["label"].startswith("candleSnapshot<") and seen[1]["label"].startswith("clearinghouseState<")
+    assert seen[0]["label"].endswith(".test_the_hl_client_tells_the_limiter_the_priority_and_request_type")
 
 
 # ── fetch_account_state: the two new options, and the old default ───────────

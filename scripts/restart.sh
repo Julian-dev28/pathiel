@@ -178,8 +178,8 @@ start_server() {
   local port="${PATHIEL_PORT:-8000}"
   info "starting FastAPI server on port $port (log: $SERVER_LOG)"
   nohup env PATHIEL_STATE_READONLY=1 \
-    PATHIEL_HL_RATE_REFILL_PER_SEC="${PATHIEL_SERVER_RATE_REFILL:-2}" \
-    PATHIEL_HL_RATE_CAPACITY="${PATHIEL_SERVER_RATE_CAPACITY:-60}" \
+    PATHIEL_HL_RATE_REFILL_PER_SEC="${PATHIEL_SERVER_RATE_REFILL:-8}" \
+    PATHIEL_HL_RATE_CAPACITY="${PATHIEL_SERVER_RATE_CAPACITY:-200}" \
     "$PY" -m pathiel.server >> "$SERVER_LOG" 2>&1 &
   local pid=$!
   disown "$pid" 2>/dev/null || true

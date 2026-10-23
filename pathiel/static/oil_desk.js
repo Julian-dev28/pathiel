@@ -252,6 +252,16 @@ async function loadLevels() {
 
 const STANCE_CHIP = { bull: 'chip-green', bear: 'chip-red', neutral: 'chip-amber' };
 
+/** "3h ago" / "2d ago" for a headline's published_at; '' when unparseable. */
+function fmtAge(iso) {
+  const t = new Date(iso).getTime();
+  if (!isFinite(t)) return '';
+  const m = Math.max(0, Math.round((Date.now() - t) / 60000));
+  if (m < 60) return `${m}m ago`;
+  if (m < 48 * 60) return `${Math.round(m / 60)}h ago`;
+  return `${Math.round(m / 1440)}d ago`;
+}
+
 function renderIntel(brief, loadError) {
   const chips = document.getElementById('catalyst-chips');
   const headlines = document.getElementById('headlines-list');
@@ -281,11 +291,14 @@ function renderIntel(brief, loadError) {
       <span class="catalyst-when">${esc(fmtCountdown(c.at))}</span>
     </span>`).join('');
 
+  // A headline carries a stance chip only when the intel layer tagged one;
+  // an untagged headline shows its source and age, never the word "unknown"
+  // (2026-10-24: every row read "unknown" because stance is not tagged yet).
   headlines.innerHTML = [...heads].sort((a, b) => (b.relevance || 0) - (a.relevance || 0)).slice(0, INTEL_CAP).map(h => `
     <div class="headline-row">
-      <span class="chip ${STANCE_CHIP[h.stance] || ''}">${esc(h.stance || 'unknown')}</span>
+      ${h.stance && h.stance !== 'unknown' ? `<span class="chip ${STANCE_CHIP[h.stance] || ''}">${esc(h.stance)}</span>` : ''}
       <a class="headline-title" href="${esc(h.url)}" target="_blank" rel="noopener">${esc(h.title)}</a>
-      <span class="headline-meta">${esc(h.source || '')}</span>
+      <span class="headline-meta">${esc([h.source, h.published_at ? fmtAge(h.published_at) : ''].filter(Boolean).join(' · '))}</span>
     </div>`).join('');
 
   odds.innerHTML = [...marketOdds].sort((a, b) => (b.volume_usd || 0) - (a.volume_usd || 0)).slice(0, INTEL_CAP).map(o => `
