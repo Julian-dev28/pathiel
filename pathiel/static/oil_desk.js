@@ -12,7 +12,7 @@
  * fetch below is against `activeDesk`, never a hardcoded "oil".
  *
  * Loaded after pathiel.js (esc, fmtUsd, fmtAddUsd, RISK_PRESETS,
- * matchesPresetDefaults, reportRefreshFailure, pollEvery, PathielMode,
+ * matchesPresetDefaults, reportRefreshFailure, pollEvery, PathielDesk,
  * PathielSession already in scope) and after desks.js (pctSigned,
  * pctUnsigned, fmtMoney, fmtPrice, fmtCountdown, kindLabel, setDollarField,
  * wireDiscreetToggle, VERDICT_CLASS, SIDE_CLASS already in scope — desks.js's
@@ -186,10 +186,11 @@ function renderWalletAccount(account, snapshot) {
 }
 
 async function loadWallets() {
-  show('wallets-error', false); show('wallets-empty', false);
+  show('wallets-loading', true); show('wallets-error', false); show('wallets-empty', false);
   const list = document.getElementById('wallets-list');
   try {
     const accounts = await fetchJson('/api/accounts');
+    show('wallets-loading', false);
     if (!accounts.length) { list.innerHTML = ''; show('wallets-empty', true); return; }
     const blocks = await Promise.all(accounts.map(async account => {
       try {
@@ -203,6 +204,7 @@ async function loadWallets() {
     }));
     list.innerHTML = blocks.join('');
   } catch (e) {
+    show('wallets-loading', false);
     list.innerHTML = '';
     setErrorDetail('wallets', e);
     reportRefreshFailure('wallets', e, document.getElementById('wallets-error'));
@@ -212,9 +214,10 @@ async function loadWallets() {
 // ── 3. LEVELS ────────────────────────────────────────────────────────────────
 
 async function loadLevels() {
-  show('levels-error', false);
+  show('levels-loading', true); show('levels-error', false);
   try {
     const l = await fetchJson(`/api/desks/${encodeURIComponent(activeDesk)}/levels`);
+    show('levels-loading', false);
     const stats = document.getElementById('levels-stats');
     const last = l.last_closed_1h;
     stats.innerHTML = `
@@ -227,6 +230,7 @@ async function loadLevels() {
       <div><div class="sec-label">Mid position in 24h range</div><div class="kv">${l.mid_pos_in_24h != null ? pctUnsigned(l.mid_pos_in_24h) : '—'}</div></div>`;
     show('levels-stats', true);
   } catch (e) {
+    show('levels-loading', false);
     show('levels-stats', false);
     setErrorDetail('levels', e);
     reportRefreshFailure('oil levels', e, document.getElementById('levels-error'));
@@ -244,7 +248,7 @@ function renderIntel(brief, loadError) {
   const chips = document.getElementById('catalyst-chips');
   const headlines = document.getElementById('headlines-list');
   const odds = document.getElementById('odds-list');
-  show('intel-error', false); show('intel-empty', false);
+  show('intel-loading', false); show('intel-error', false); show('intel-empty', false);
 
   if (loadError) {
     chips.innerHTML = ''; headlines.innerHTML = ''; odds.innerHTML = '';
@@ -383,7 +387,12 @@ let pollStarted = false;
 /** Which desk(s) to render (GET /api/desks/active). One entry -> no
  *  switcher; several -> a small tab row, switching re-fetches every
  *  section for the clicked desk. Also repoints the Thesis nav link and
- *  "Full thesis" link at the active desk, and the page's H1 at its name. */
+ *  "Full thesis" link at the active desk, and the page's H1 at its name.
+ *
+ *  Prefers the reader's last-selected desk (localStorage, via PathielDesk)
+ *  over activeDesks[0] so a reload keeps the desk they were actually
+ *  looking at, falling back to the first active desk only when nothing is
+ *  stored yet or the stored id is no longer active. */
 async function loadActiveDesks() {
   try {
     const d = await fetchJson('/api/desks/active');
@@ -391,15 +400,16 @@ async function loadActiveDesks() {
   } catch (e) {
     activeDesks = ['oil'];
   }
-  if (!activeDesks.includes(activeDesk)) activeDesk = activeDesks[0];
+  const stored = PathielDesk.get();
+  activeDesk = (stored && activeDesks.includes(stored)) ? stored : activeDesks[0];
+  PathielDesk.set(activeDesk);
   renderDeskSwitcher();
   repointDeskLinks();
 }
 
 function repointDeskLinks() {
+  PathielDesk.repointThesisLink();
   const thesisHref = `/desk/${encodeURIComponent(activeDesk)}`;
-  const thesisLink = document.getElementById('nav-thesis-link');
-  if (thesisLink) { thesisLink.href = thesisHref; thesisLink.dataset.nav = thesisHref; }
   const fullThesisLink = document.getElementById('full-thesis-link');
   if (fullThesisLink) fullThesisLink.href = thesisHref;
 }
@@ -419,6 +429,7 @@ function renderDeskSwitcher() {
     radio.addEventListener('change', () => {
       if (!radio.checked) return;
       activeDesk = radio.value;
+      PathielDesk.set(activeDesk);
       repointDeskLinks();
       loadAll();
     });

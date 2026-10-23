@@ -35,12 +35,19 @@ def test_list_cards_reflects_cached_analytics_and_latest_thesis(stub_live_analyt
 def test_get_brief_renders_for_gas(stub_live_analytics):
     """Fixture-driven brief render for the gas desk, same shape as the oil
     checks above: a cached analytics snapshot + a saved thesis come back
-    out of get_brief() whole, on gas's own primary coin (xyz:NATGAS)."""
+    out of get_brief() whole, on gas's own primary coin (xyz:NATGAS).
+
+    wait=True: this test is about get_brief()'s ASSEMBLY of analytics +
+    thesis + intel, not the stale-while-revalidate scheduling policy (that
+    is test_facade_swr.py's job) — a cold desk with wait=False now queues a
+    background build and returns analytics=None instead of blocking, which
+    is the fix for the Thesis-page-loads-slowly bug
+    (docs/overhaul/DESK_UI_2026-10-23.md, Polish section)."""
     stub_live_analytics(minimal_analytics("gas", mid=3.21, coin="xyz:NATGAS", label="Nat Gas"))
     journal.save_thesis(make_thesis(desk_id="gas", instrument="xyz:NATGAS", side="short",
                                     created_at=datetime.now(timezone.utc)))
 
-    brief = facade.get_brief("gas")
+    brief = facade.get_brief("gas", wait=True)
     assert brief.spec.id == "gas"
     assert brief.analytics is not None
     assert brief.analytics.instruments[0].coin == "xyz:NATGAS"
@@ -57,8 +64,9 @@ def test_get_brief_unknown_desk_raises():
 
 def test_get_brief_never_refreshed_is_honestly_empty(stub_live_analytics):
     stub_live_analytics(minimal_analytics("oil", mid=99.0, coin="xyz:BRENTOIL"))
-    brief = facade.get_brief("oil")
-    assert brief.analytics is not None   # brief ALWAYS builds analytics live
+    # wait=True: see test_get_brief_renders_for_gas above for why.
+    brief = facade.get_brief("oil", wait=True)
+    assert brief.analytics is not None   # brief builds analytics live when asked to wait
     assert brief.intel is None
     assert brief.thesis is None
     assert "intel: never fetched (run refresh)" in brief.stale

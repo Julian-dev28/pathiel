@@ -1,7 +1,7 @@
 /* desks.js — Strategies ("Desks") pages: /desks (grid) and /desks/{id}.
  *
  * Loaded after pathiel.js (esc, fmtPct, tok, reportRefreshFailure,
- * clampProse, PathielMode, PathielAuth already in scope) and after the page
+ * clampProse, PathielDesk, PathielAuth already in scope) and after the page
  * body, same convention as landing.html's own inline script: this file
  * queries DOM that is already parsed, no DOMContentLoaded wrapper needed.
  *
@@ -961,9 +961,51 @@ function currentDeskIdFromPath() {
   return parts[parts.length - 1] || '';
 }
 
+/** Same tab row as the Desk page's #desk-switcher (oil_desk.js), adapted to
+ *  this page: there is no in-place re-render here, so picking another tab
+ *  just navigates to its /desk/{id} — the fetch that page's own loadDesk()
+ *  does on arrival is the "re-fetch". One active desk (or the current one
+ *  missing from that list, e.g. a direct link to a desk nobody activated)
+ *  -> no tab row, same rule the Desk page follows. */
+async function loadActiveDesksForSwitcher(currentId) {
+  const seg = document.getElementById('desk-switcher');
+  let activeDesks = [currentId];
+  try {
+    const r = await fetch('/api/desks/active');
+    if (r.ok) {
+      const d = await r.json();
+      if (d.active_desks && d.active_desks.length) activeDesks = d.active_desks;
+    }
+  } catch (_) { /* fall back to just the current desk: no tab row */ }
+  if (!activeDesks.includes(currentId)) activeDesks = [...activeDesks, currentId];
+  if (!seg) return;
+  if (activeDesks.length < 2) { seg.hidden = true; seg.innerHTML = ''; return; }
+  seg.hidden = false;
+  seg.innerHTML = activeDesks.map(id => `
+    <span class="lev-radio-wrap">
+      <input type="radio" name="active-desk-choice" class="lev-radio" id="desk-opt-${esc(id)}"
+             value="${esc(id)}" ${id === currentId ? 'checked' : ''}>
+      <label for="desk-opt-${esc(id)}" class="lev-radio-label">${esc(id)}</label>
+    </span>`).join('');
+  seg.querySelectorAll('.lev-radio').forEach(radio => {
+    radio.addEventListener('change', () => {
+      if (!radio.checked) return;
+      PathielDesk.set(radio.value);
+      location.href = `/desk/${encodeURIComponent(radio.value)}`;
+    });
+  });
+}
+
 function initDeskPage() {
   const deskId = currentDeskIdFromPath();
   document.getElementById('desk-root').dataset.deskId = deskId;
+  // The reader is looking at THIS desk's thesis right now — that is the
+  // one the header's Thesis link (every page) and the 'g t' shortcut
+  // should return to next, so it becomes the stored selection here too,
+  // the same way picking a tab on the Desk page does.
+  PathielDesk.set(deskId);
+  PathielDesk.repointThesisLink();
+  loadActiveDesksForSwitcher(deskId);
   document.getElementById('desk-retry').addEventListener('click', () => loadDesk(deskId));
   wireUserThesisForm(deskId);
   wireRefresh(deskId);

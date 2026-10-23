@@ -13,13 +13,23 @@ from fastapi.testclient import TestClient
 
 from contracts.strategies.models import DeskBrief, DeskCard, RefreshJob, Thesis
 from services.strategies import api as strategies_api
-from services.strategies import journal
+from services.strategies import journal, pipeline
 from services.strategies.tests.conftest import make_thesis, minimal_analytics
 
 
 @pytest.fixture
 def client(stub_live_analytics):
-    stub_live_analytics(minimal_analytics("oil", mid=99.0, coin="xyz:BRENTOIL"))
+    analytics = minimal_analytics("oil", mid=99.0, coin="xyz:BRENTOIL")
+    stub_live_analytics(analytics)
+    # A warm cache, same as a desk that has been through at least one refresh
+    # or background build — matching normal (not first-ever-cold) operation.
+    # facade.get_brief() no longer builds inline for a desk with NO cache at
+    # all (docs/overhaul/DESK_UI_2026-10-23.md, Polish section: that used to
+    # block the request for as long as the live venue build took), so a test
+    # exercising the ordinary "brief has analytics" path needs a seeded
+    # cache rather than relying on the retired inline-build-on-every-call
+    # behavior.
+    pipeline.save_analytics("oil", analytics)
     # fresh per-test job registry — a module-level dict would otherwise leak
     # queued/done jobs from one test into the next's assertions.
     strategies_api._JOBS.clear()

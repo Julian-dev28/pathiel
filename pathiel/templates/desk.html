@@ -37,6 +37,11 @@
     <a href="/" class="note">&larr; Desk</a>
     <h1 class="page-title" id="desk-name">&nbsp;</h1>
     <div class="page-sub" id="desk-tagline">&nbsp;</div>
+    <!-- Same switcher as the Desk page ("/"): one active desk -> hidden,
+         several -> a small tab row so the reader can jump straight to
+         another desk's thesis without going back through "/" first.
+         Filled by desks.js's loadActiveDesksForSwitcher(). -->
+    <div id="desk-switcher" class="lev-seg" role="tablist" aria-label="Active desk" hidden></div>
     <div id="desk-updating" class="note desk-updating" hidden role="status">Updating prices&hellip;</div>
     <!-- A refresh in progress, at the top where you are looking: the Refresh
          button sits near the bottom, and a reload mid-refresh picks the job
@@ -45,7 +50,7 @@
   </div>
 
   <div id="desk-loading" class="state-block" aria-live="polite">
-    <div class="state-title">Loading desk&hellip;</div>
+    <div class="state-title"><span class="spinner" aria-hidden="true"></span>Loading desk&hellip;</div>
   </div>
 
   <div id="desk-error" class="state-block" hidden role="alert">

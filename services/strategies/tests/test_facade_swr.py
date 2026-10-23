@@ -82,8 +82,39 @@ def test_wait_true_still_serves_a_young_enough_cache(builds):
     assert builds == []
 
 
-def test_no_cache_builds_inline(builds):
+def test_no_cache_queues_a_background_build_instead_of_blocking(builds, worker):
+    """2026-10-23 (docs/overhaul/DESK_UI_2026-10-23.md, Polish section): a
+    desk with NO cache at all used to build inline even with wait=False —
+    the "fast: candles come from candle_store" theory in this module's own
+    docstring, which measured 9-24s against a genuinely cold candle_store
+    (top5, ai) and left the Thesis page's one fetch sitting on a blank
+    screen for the whole build. The web route (services/strategies/api.py)
+    always calls with wait=False, so a cold desk now comes back at once
+    with analytics=None and refreshing=True, same shape as the stale-cache
+    case above, and the background worker fills it in."""
     brief = facade.get_brief("oil")
+    assert builds == [] and brief.analytics is None
+    assert brief.refreshing is True and facade.is_refreshing("oil")
+    assert any("queued in the background" in s for s in brief.stale)
+    worker[0]()
+    assert builds == ["oil"]
+    assert mid(facade.get_brief("oil")) == 200.0      # now cached, served without a build
+
+
+def test_no_cache_and_background_disabled_degrades_instead_of_blocking(builds, monkeypatch):
+    """The same cold desk with the background worker off (PATHIEL_DESK_
+    BACKGROUND_REFRESH=0, the gate suite's own default per root conftest.py)
+    — still never blocks; there is simply nothing to wait for."""
+    monkeypatch.setenv("PATHIEL_DESK_BACKGROUND_REFRESH", "0")
+    brief = facade.get_brief("oil")
+    assert builds == [] and brief.analytics is None and brief.refreshing is False
+    assert any("unavailable" in s for s in brief.stale)
+
+
+def test_wait_true_builds_inline_even_with_no_cache(builds):
+    """The one caller-set escape hatch: wait=True (MCP, CLI — no page to
+    come back and update later) still rebuilds inline on a cold desk."""
+    brief = facade.get_brief("oil", wait=True)
     assert builds == ["oil"] and mid(brief) == 200.0
 
 
@@ -103,9 +134,13 @@ def test_failed_inline_rebuild_serves_the_cache(monkeypatch):
 
 
 def test_failed_build_with_no_cache_degrades_instead_of_raising(monkeypatch):
+    # wait=True: a cold desk with wait=False never attempts the build inline
+    # any more (see test_no_cache_queues_a_background_build_instead_of_blocking
+    # above), so there is nothing here to fail synchronously unless the
+    # caller is one of the ones still asking to wait (MCP, CLI).
     monkeypatch.setattr(pipeline.analytics_mod, "build_analytics",
                         lambda spec, **kw: (_ for _ in ()).throw(RuntimeError("timeout")))
-    brief = facade.get_brief("oil")
+    brief = facade.get_brief("oil", wait=True)
     assert brief.analytics is None
     assert any("unavailable" in s for s in brief.stale)
 

@@ -145,9 +145,9 @@ def fire_account_changed(page: Page, detail: dict) -> None:
     page.evaluate("d => window.__fireAccountChanged(d)", detail)
 
 
-# ── first run: one welcome card, three actions ───────────────────────────────
+# ── first run: one welcome card, two actions ───────────────────────────────
 
-def test_first_run_shows_one_welcome_card_with_three_actions(server, browser):
+def test_first_run_shows_one_welcome_card_with_two_actions(server, browser):
     seed(server, "fresh")
     page, issues = open_page(browser)
     page.goto(server + "/", wait_until="load", timeout=20000)
@@ -160,7 +160,6 @@ def test_first_run_shows_one_welcome_card_with_three_actions(server, browser):
 
     assert page.locator("#onb-connect").is_visible()
     assert page.locator("#onb-watch").is_visible()
-    assert page.locator("#onb-demo").get_attribute("href") == "/demo"
     assert "Connect your Hyperliquid account" in page.locator("#onboard-welcome").inner_text()
 
     page.locator("#onb-connect").click()

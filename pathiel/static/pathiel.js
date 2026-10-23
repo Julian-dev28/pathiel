@@ -95,23 +95,70 @@ function matchesPresetDefaults(presetApplied, profile) {
       && close(profile.max_leverage, def.max_leverage);
 }
 
-/** Mark the current tab in the masthead. */
-(function () {
+/** Mark the current tab in the masthead. Exported (not a one-shot IIFE) so a
+ *  page that repoints a nav link's href AFTER this first runs — PathielDesk
+ *  below, or a page's own desk-switcher — can re-mark without duplicating
+ *  the comparison. */
+function markActiveNav() {
   const here = window.location.pathname.replace(/\/$/, '') || '/';
   document.querySelectorAll('a[data-nav]').forEach(a => {
-    if (a.dataset.nav === here) a.classList.add('nav-active');
+    a.classList.toggle('nav-active', a.dataset.nav === here);
   });
+}
+
+/** Which desk's Thesis the header's "Thesis" link opens.
+ *
+ *  It used to be hard-coded to `/desk/oil` on every page — pick the metals
+ *  tab on the Desk page, click Thesis in the header, land on oil. Persisted
+ *  in localStorage so a reload (or a visit from the Desk or Account page)
+ *  keeps pointing at the desk the reader actually cares about rather than
+ *  resetting to oil. The Desk page's own switcher (oil_desk.js) and the
+ *  Thesis page itself (desks.js's initDeskPage) both call `set()` when the
+ *  reader picks or opens a desk; this module just needs the current value
+ *  at page-load time to repoint the link before `markActiveNav()` runs.
+ */
+const PathielDesk = (function () {
+  const KEY = 'pathiel.activeDesk';
+
+  function get() {
+    try { return localStorage.getItem(KEY); } catch { return null; }
+  }
+
+  function set(id) {
+    try { localStorage.setItem(KEY, id); } catch { /* storage unavailable */ }
+  }
+
+  function repointThesisLink() {
+    const link = document.getElementById('nav-thesis-link');
+    if (!link) return;
+    const href = `/desk/${encodeURIComponent(get() || 'oil')}`;
+    link.href = href;
+    link.dataset.nav = href;
+    markActiveNav();
+  }
+
+  return { get, set, repointThesisLink };
 })();
+
+// pathiel.js loads from <head>, un-deferred, before <body> (and the nav
+// markup in it) exists in the DOM — so the repoint has to wait for it.
+// oil_desk.js/desks.js (loaded at the bottom of <body>, after this fires)
+// call repointThesisLink() again once they know the real active/viewed
+// desk; this first pass is what gives account.html — which loads neither —
+// a correct link with no page-specific script of its own.
+document.addEventListener('DOMContentLoaded', () => PathielDesk.repointThesisLink());
 
 /** `g` then a key hops tabs, the way a desk application would. Inert while
  *  typing in a field or holding a modifier. */
 (function () {
-  const map = { d: '/', t: '/desk/oil', a: '/account' };
+  // 't' follows the same selected desk as the header's Thesis link, not a
+  // hard-coded oil.
+  const map = { d: () => '/', t: () => `/desk/${encodeURIComponent(PathielDesk.get() || 'oil')}`, a: () => '/account' };
   let armed = 0;
   addEventListener('keydown', e => {
     if (e.target.closest('input,textarea,select') || e.metaKey || e.ctrlKey || e.altKey) return;
     if (e.key === 'g') { armed = Date.now(); return; }
-    if (armed && Date.now() - armed < 900 && map[e.key]) location.href = map[e.key];
+    if (armed && Date.now() - armed < 900 && map[e.key]) location.href = map[e.key]();
     armed = 0;
   });
 })();
@@ -157,101 +204,24 @@ function clampProse(root) {
   });
 }
 
-/* ── Live / Demo ─────────────────────────────────────────────────────────────
- *
- * The demo is a separate sub-application mounted at /demo, with its own
- * dashboard instance reading its own generated files (services/demo/router.py).
- * So switching is NAVIGATION, not client state: no fetch rewriting, no mode
- * flag to leak, and no way for a live page to end up rendering invented
- * numbers — the code that serves them is not mounted under the live prefix.
- *
- * It also means the toggle is bookmarkable and survives a reload, and "which am
- * I looking at" is answered by the address bar rather than by a badge someone
- * has to notice.
- */
-const PathielMode = (function () {
-  const DEMO_PREFIX = '/demo';
-
-  const isDemo = () => location.pathname === DEMO_PREFIX
-    || location.pathname.startsWith(DEMO_PREFIX + '/');
-
-  /* The same page on the other side. /activity <-> /demo/activity. */
-  function counterpart() {
-    const path = location.pathname;
-    if (isDemo()) return (path.slice(DEMO_PREFIX.length) || '/') + location.search;
-    return DEMO_PREFIX + (path === '/' ? '/' : path) + location.search;
-  }
-
-  function render() {
-    const slot = document.querySelector('.masthead-right');
-    if (!slot || document.getElementById('mode-toggle')) return;
-    const demo = isDemo();
-
-    const wrap = document.createElement('div');
-    wrap.id = 'mode-toggle';
-    wrap.className = 'mode-toggle';
-    wrap.setAttribute('role', 'group');
-    wrap.setAttribute('aria-label', 'Data source');
-
-    const here = document.createElement('span');
-    here.className = 'mode-opt on';
-    here.textContent = demo ? 'Demo' : 'Live';
-    here.setAttribute('aria-current', 'true');
-
-    const there = document.createElement('a');
-    there.className = 'mode-opt';
-    there.href = counterpart();
-    there.textContent = demo ? 'Live' : 'Demo';
-    there.title = demo
-      ? 'Back to this deployment\u2019s own trading. Empty until the loop has run.'
-      : 'A worked example: seven days of generated trading history. No account, no exchange connection.';
-
-    wrap.append(demo ? there : here, demo ? here : there);
-    slot.insertBefore(wrap, slot.firstChild);
-    if (demo) document.body.classList.add('is-demo');
-  }
-
-  // Self-registering: this used to be called from the now-deleted sign-in
-  // module's own DOMContentLoaded handler, which had nothing to do with
-  // the demo/live toggle beyond happening to also fire on page load.
-  // Losing that handler silently lost this call with it — regression
-  // caught by services/demo/tests/test_router.py's
-  // test_the_toggle_renders_on_load, which is the reason this module now
-  // owns rendering itself instead of depending on another one to remember
-  // to. The callback runs on DOMContentLoaded, well after this IIFE
-  // returns and the const below is assigned, so the outer-scope reference
-  // resolves fine despite looking circular.
-  document.addEventListener('DOMContentLoaded', () => PathielMode.render());
-
-  return { render, isDemo, prefix: () => (isDemo() ? DEMO_PREFIX : '') };
-})();
-
-/* ── fetch wrapper: demo-mode rewrite + operator-role signal ────────────────
+/* ── fetch wrapper: operator-role signal ─────────────────────────────────
  *
  * Used to live inside the now-deleted sign-in module, which also used it to
  * pop a sign-in gate on 401. The gate is gone — wallet-connect is the
- * identity now, there is no separate sign-in — but this wrapper's other two
- * jobs are unrelated to that and still needed by every page, so it moved out
- * on its own rather than disappearing with it.
+ * identity now, there is no separate sign-in — but this wrapper's other job
+ * is unrelated to that and still needed by every page, so it moved out on
+ * its own rather than disappearing with it.
+ *
+ * Demo mode (a second sub-application mounted at /demo, with its own
+ * generated session log/positions/config — services/demo/router.py) was
+ * removed 2026-10-23 (docs/overhaul/DESK_UI_2026-10-23.md, Polish section):
+ * this wrapper used to rewrite every absolute `/api/...` fetch to
+ * `/demo/api/...` while on a /demo page. There is no /demo page left to
+ * rewrite for.
  */
 (function () {
   const _fetch = window.fetch;
   window.fetch = async function (...args) {
-    // Keep a demo page talking to the demo app.
-    //
-    // Every dashboard call in the templates is written absolute — the pages
-    // were the whole site before /demo existed. From /demo/ an absolute
-    // `/api/dashboard/summary` resolves to the LIVE app, so the demo rendered
-    // the live account's numbers: on this deployment a page of zeros, and on a
-    // real one somebody else's book behind a button labelled Demo.
-    //
-    // Rewritten here rather than at ~30 call sites across five templates,
-    // because this wrapper already exists and a call site added tomorrow is
-    // covered by it without anyone remembering.
-    if (PathielMode.isDemo() && typeof args[0] === 'string'
-        && args[0].startsWith('/api/')) {
-      args = [PathielMode.prefix() + args[0], ...args.slice(1)];
-    }
     const res = await _fetch.apply(this, args);
     // 403 on a house-account route is not an error to report. It is the normal
     // answer for a signed-in customer: those routes describe the deployment's
