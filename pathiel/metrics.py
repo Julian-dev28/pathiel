@@ -78,10 +78,6 @@ BACKUP_AGE = Gauge(
     "pathiel_backup_age_seconds",
     "Seconds since the last VERIFIED state backup. The evidence base under "
     "every book verdict is gitignored and lives on one disk")
-GRADING_AGE = Gauge(
-    "pathiel_grading_age_seconds",
-    "Seconds since autonomous-cycle last COMPLETED. A job that fails daily "
-    "still looks like it ran daily; this only moves on success")
 
 
 def _to_float(value: object) -> float:
@@ -156,22 +152,6 @@ def _refresh() -> None:
         ALERTS_FIRING.set(len(firing) if isinstance(firing, list) else 0)
     except Exception as e:  # noqa: BLE001
         logger.debug(f"[metrics] alerts firing read failed: {e}")
-
-    try:
-        from pathiel.agents.atomic_io import read_json
-        from pathiel.agents.rebalancer_owned import state_file
-
-        # The cycle's own receipt first: a hand-run grade counts, and what
-        # matters is whether the books were graded, not who ran it. The
-        # scheduler's last_ok is the fallback.
-        ts = _to_float((read_json(state_file("grading.json"), default=None) or {}).get("ts"))
-        if ts <= 0:
-            sched = read_json(state_file("scheduler.json"), default=None) or {}
-            ts = _to_float((sched.get("autonomous-cycle") or {}).get("last_ok"))
-        GRADING_AGE.set(time.time() - ts if ts > 0 else _never_ran)
-    except Exception as e:  # noqa: BLE001
-        logger.debug(f"[metrics] scheduler state read failed: {e}")
-        GRADING_AGE.set(_never_ran)
 
     try:
         from pathiel.agents.atomic_io import read_json

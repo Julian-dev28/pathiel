@@ -3,102 +3,101 @@ from __future__ import annotations
 from services.risk import books
 
 
-def test_book_names_mirror_the_live_claims_registry_exactly():
-    """See books.py's module docstring: BOOK_NAMES is a deliberate
-    duplicate of rebalancer_owned._ACTIVE_CLAIM_BOOKS (not an import, to
-    avoid pulling a live-signing module into this package). This test is
-    the tripwire that catches the two sets drifting apart."""
-    from pathiel.agents.rebalancer_owned import _ACTIVE_CLAIM_BOOKS
-    assert set(books.BOOK_NAMES) == set(_ACTIVE_CLAIM_BOOKS)
+def test_book_names_is_permanently_empty():
+    """Headless desk, 2026-10-23: the seven strategy books
+    (news_surge_short, news_surge_multi, social_trending, unlock_short_runin,
+    xs_reversal, drawdown_ladder, copy_trade) are all deleted. BOOK_NAMES
+    used to mirror pathiel.agents.rebalancer_owned._ACTIVE_CLAIM_BOOKS (also
+    deleted, same reason) and now stays empty on purpose — see books.py's
+    module docstring for why `all_book_specs()` does NOT follow suit."""
+    assert books.BOOK_NAMES == ()
+    assert books.RISK_SCALED_BOOK_NAMES == ()
+    assert books._FIXED_BOOKS == {}
+    assert books._UNSIZED_BOOKS == frozenset()
 
 
-def test_drawdown_ladder_fixed_minimum_matches_the_live_formula():
-    """Re-derived, not imported (see books.py's module docstring) — this
-    test is the tripwire for THAT duplication: if drawdown_ladder_live.py's
-    constants ever change, this fails instead of silently going stale."""
-    from pathiel.agents.drawdown_ladder_live import (
-        DEFAULT_SLEEVE_FRAC, LEVERAGE, RUNGS, UNIVERSE, min_equity_to_trade)
-    live_value = min_equity_to_trade(DEFAULT_SLEEVE_FRAC)
-    assert books._DRAWDOWN_LADDER_MIN_EQUITY_USD == live_value
-    assert books._FIXED_BOOKS["drawdown_ladder"]["fixed_min_equity_usd"] == live_value
-    assert live_value == 525.0
-    # sanity on the formula itself, independent of either module
-    from pathiel.client.exchange import MIN_ORDER_USD
-    assert live_value == MIN_ORDER_USD * RUNGS * len(UNIVERSE) / LEVERAGE / DEFAULT_SLEEVE_FRAC
-
-
-def test_config_key_for_the_one_naming_split():
-    assert books.config_key_for("unlock_short_runin") == "unlock_short"
-    for name in books.BOOK_NAMES:
-        if name == "unlock_short_runin":
-            continue
+def test_config_key_for_is_the_identity_map():
+    """No naming split survives the books (unlock_short_runin -> unlock_short
+    was the one exception) — config_key_for is now just `name -> name`."""
+    for name in ("main_engine", "anything", "unlock_short_runin"):
         assert books.config_key_for(name) == name
 
 
-def test_risk_scaled_names_excludes_the_fixed_and_unsized_books():
-    assert set(books.RISK_SCALED_BOOK_NAMES) == set(books.BOOK_NAMES) - {"drawdown_ladder", "copy_trade"}
+def test_main_engine_spec_is_always_enabled():
+    """Unlike a book's BookSpec (enabled read from its own config block's
+    `enabled` key), main_engine_spec forces enabled=True — whether this path
+    may trade at all is decided elsewhere (mode == LIVE,
+    main_engine.entries_enabled), not by a config block this path has never
+    had."""
+    spec = books.main_engine_spec({})
+    assert spec.name == books.MAIN_ENGINE == "main_engine"
+    assert spec.enabled is True
 
 
-def test_book_spec_from_config_disabled_when_block_absent():
-    spec = books.book_spec_from_config({}, "xs_reversal")
-    assert spec.enabled is False
+def test_main_engine_spec_resolves_sizing_through_book_params():
+    cfg = {"leverage": 5, "default_stop_pct": 12.0}
+    spec = books.main_engine_spec(cfg)
+    assert spec.stop_pct == 12.0
+    assert spec.max_leverage == 5.0
 
 
-def test_book_spec_from_config_disabled_when_shadow_only():
-    cfg = {"xs_reversal": {"enabled": True, "shadow_only": True}}
-    spec = books.book_spec_from_config(cfg, "xs_reversal")
-    assert spec.enabled is False
+def test_main_engine_spec_coin_max_leverage_tightens_the_cap():
+    cfg = {"leverage": 20}
+    spec = books.main_engine_spec(cfg, coin_max_leverage=5)
+    assert spec.max_leverage == 5.0   # the tighter of 20 (config) and 5 (coin)
 
 
-def test_book_spec_from_config_enabled_reads_resolved_sizing():
-    cfg = {"news_surge_short": {"enabled": True, "shadow_only": False,
-                                "leverage": 10, "stop_pct": 6.0}}
-    spec = books.book_spec_from_config(cfg, "news_surge_short")
+def test_all_book_specs_is_the_one_item_main_engine_roster():
+    """NOT `[]`: derive_limits computes can_trade = any(r.can_trade for r in
+    rows), so an empty roster would make every risk-limits reader (the
+    dashboard, GET /api/risk/limits, the MCP risk_limits tool) report
+    'cannot trade' even on a funded account. See books.py's module
+    docstring — this is the one regression this whole test file exists to
+    catch."""
+    specs = books.all_book_specs({})
+    assert [s.name for s in specs] == [books.MAIN_ENGINE]
+    assert specs[0].enabled is True
+
+
+def test_all_book_specs_resolves_against_the_passed_config():
+    cfg = {"leverage": 7, "default_stop_pct": 9.0}
+    specs = books.all_book_specs(cfg)
+    assert len(specs) == 1
+    assert (specs[0].stop_pct, specs[0].max_leverage) == (9.0, 7.0)
+
+
+def test_derive_limits_can_trade_with_the_main_engine_roster():
+    """The regression this file exists to catch, end to end: a funded
+    account must show can_trade=True from the real all_book_specs() output,
+    not 'No book is configured to trade yet.'"""
+    from contracts.risk.models import RiskProfile
+    from services.risk.derive import VenueRules, derive_limits
+
+    cfg = {"leverage": 3, "default_stop_pct": 15.0}
+    limits = derive_limits(50.0, RiskProfile(), books.all_book_specs(cfg),
+                           VenueRules(min_order_notional_usd=10.5))
+    assert limits.can_trade is True
+    assert "No book is configured to trade yet" not in limits.headline
+
+
+def test_book_spec_from_config_still_works_for_an_arbitrary_name():
+    """book_spec_from_config stays general-purpose (pathiel.agents.executor
+    no longer calls it directly, but nothing stops a future caller from
+    asking for a named config block's BookSpec)."""
+    cfg = {"anything": {"enabled": True, "shadow_only": False,
+                        "leverage": 10, "stop_pct": 6.0}}
+    spec = books.book_spec_from_config(cfg, "anything")
     assert spec.enabled is True
     assert spec.stop_pct == 6.0
     assert spec.max_leverage == 10.0
 
 
-def test_book_spec_from_config_applies_the_naming_split():
-    cfg = {"unlock_short": {"enabled": True, "shadow_only": False, "stop_pct": 12.0}}
-    spec = books.book_spec_from_config(cfg, "unlock_short_runin")
-    assert spec.enabled is True
-    assert spec.stop_pct == 12.0
+def test_book_spec_from_config_disabled_when_block_absent():
+    spec = books.book_spec_from_config({}, "anything")
+    assert spec.enabled is False
 
 
-def test_book_spec_from_config_coin_max_leverage_tightens_the_cap():
-    cfg = {"xs_reversal": {"enabled": True, "shadow_only": False, "leverage": 20}}
-    spec = books.book_spec_from_config(cfg, "xs_reversal", coin_max_leverage=5)
-    assert spec.max_leverage == 5.0   # the tighter of 20 (config) and 5 (coin)
-
-
-def test_book_spec_from_config_drawdown_ladder_is_fixed_not_risk_scaled():
-    cfg = {"drawdown_ladder": {"enabled": True, "shadow_only": False}}
-    spec = books.book_spec_from_config(cfg, "drawdown_ladder")
-    assert spec.enabled is True
-    assert spec.fixed_min_equity_usd == 525.0
-    assert spec.stop_pct is None
-
-
-def test_all_book_specs_returns_exactly_the_seven_books_in_order():
-    specs = books.all_book_specs({})
-    assert [s.name for s in specs] == list(books.BOOK_NAMES)
-    assert len(specs) == 7
-
-
-def test_copy_trade_is_neither_risk_scaled_nor_fixed():
-    """A third shape (see module docstring): no stop_pct, no
-    fixed_min_equity_usd, so derive_limits reports it honestly as unsized
-    rather than guessing a stop for a leader-mirroring book."""
-    cfg = {"copy_trade": {"enabled": True, "shadow_only": False, "leverage_mult": 1.0}}
-    spec = books.book_spec_from_config(cfg, "copy_trade")
-    assert spec.enabled is True
-    assert spec.stop_pct is None
-    assert spec.fixed_min_equity_usd is None
-    assert "copy_trade" not in books.RISK_SCALED_BOOK_NAMES
-    from services.risk.derive import VenueRules, book_feasibility, derive_limits
-    from contracts.risk.models import RiskProfile
-    limits = derive_limits(1_000_000.0, RiskProfile(preset="pro"), [spec], VenueRules())
-    row = book_feasibility(limits, "copy_trade")
-    assert row.can_trade is False
-    assert "no sizing rule" in row.reason
+def test_book_spec_from_config_disabled_when_shadow_only():
+    cfg = {"anything": {"enabled": True, "shadow_only": True}}
+    spec = books.book_spec_from_config(cfg, "anything")
+    assert spec.enabled is False

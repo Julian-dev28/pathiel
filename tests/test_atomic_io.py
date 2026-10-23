@@ -129,25 +129,17 @@ def test_directories_are_created_on_demand(tmp_path):
 
 # ── the callers that matter ──────────────────────────────────────────────────
 
-def test_the_claims_registry_writes_atomically(tmp_path):
-    """A torn claims file drops every claim, and a dropped claim is two books
-    opening the same coin."""
-    from pathiel.agents.rebalancer_owned import ClaimsRegistry
-    p = str(tmp_path / "claims.json")
-    cr = ClaimsRegistry(p, active_books={"book_a"}).load()
-    cr.claim("BTC", "book_a")
-    cr.save()
-    assert json.loads(open(p).read())["claims"] == {"BTC": "book_a"}
-    assert [f for f in os.listdir(tmp_path) if f.startswith(".tmp-")] == []
-
-
 def test_the_state_writers_no_longer_truncate_before_writing():
     """Guard against a future edit reintroducing open(path,'w') in the files
-    where a torn write has a named, specific consequence."""
+    where a torn write has a named, specific consequence.
+
+    pathiel/agents/rebalancer_owned.py dropped out of this list 2026-10-23:
+    the headless-desk cleanup cut it down to state_file() alone (OwnedPositions
+    and ClaimsRegistry, its only writers, were book-only and are deleted), so
+    it has no writer left to guard."""
     import pathlib
     root = pathlib.Path(__file__).resolve().parents[1]
-    for rel in ("pathiel/agents/rebalancer_owned.py",
-                "pathiel/agents/shadow_ledger.py",
+    for rel in ("pathiel/agents/shadow_ledger.py",
                 "pathiel/agents/capital_flows.py"):
         src = (root / rel).read_text()
         assert 'open(self._path, "w")' not in src, rel

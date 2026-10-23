@@ -14,8 +14,7 @@ import uuid
 from typing import Any, Dict, List, Optional
 
 from pathiel.agents.book_params import (
-    BACKUP_SL_MAX_FRAC_OF_LIQ, LIQ_SAFETY_FRAC, apply_notional_ceiling, book_params,
-    max_stop_pct_at_leverage)
+    BACKUP_SL_MAX_FRAC_OF_LIQ, LIQ_SAFETY_FRAC, max_stop_pct_at_leverage)
 from pathiel.agents.config_store import read_agent_config, read_risk_profile
 from pathiel.agents.dsl_exit import (
     ExitPolicy,
@@ -44,7 +43,6 @@ from pathiel.client.exchange import (
 )
 from pathiel.client.hl_client import fetch_account_state, resolve_user_address
 from services.risk import books as risk_books
-from services.risk.derive import BookSpec as _RiskBookSpec
 from services.risk.derive import VenueRules as _RiskVenueRules
 from services.risk.derive import book_feasibility as _risk_book_feasibility
 from services.risk.derive import derive_limits as _derive_risk_limits
@@ -424,8 +422,7 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
     because real callers hand this in after a storage/JSON round-trip
     (`memory.get_analysis_by_id`, an HTTP request body in `server.py`, an MCP
     tool call in `scripts/pathiel-mcp-server.py`) where the static type is
-    already erased; only the 6 construction sites that build the dict fresh
-    (`research.py` x2 + the 4 live books' `_analysis`/`_live_analysis`) are
+    already erased; only `research.py`'s two construction sites are
     annotated against `BookAnalysis` directly.
     """
     config = read_agent_config()
@@ -442,30 +439,24 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
             "analysis_id": analysis["id"], "reason": "mode_not_live",
         }
 
-    # BOOKS-ONLY. An analysis with no `strategy_book` is a main-engine
-    # (AI-verdict) entry, and those are DELETED — W-ME1, 2026-08-30: the
-    # trigger showed no excess over a random-entry null (p=0.117) and at the
-    # live gate fired zero times across all five majors in 17 days. Forensics
-    # on 2,721 fills had already put sub-2h AI-engine churn at -$385.59 net
-    # against +$134.96 for >=2h holds — the #1 measured loss source.
-    #
-    # The default stays True and the protection lives in the CALLER: the loop no
-    # longer generates non-book entries at all. Flipping this default was tried
-    # and reverted — 28 tests use a bookless analysis as a harness for other
+    # main_engine.entries_enabled: an operator kill-switch for discretionary
+    # (AI-verdict) entries, independent of `mode`. Default stays True — the
+    # 2026-08-30 W-ME1 finding that killed the old scan->research->execute
+    # path (no excess over a random-entry null, p=0.117; sub-2h churn at
+    # -$385.59 net against +$134.96 for >=2h holds) was fixed at the CALLER
+    # (trading_loop.py no longer generates entries at all), not by flipping
+    # this default — 28 tests use this analysis shape as a harness for other
     # gates (ATR stops, cooldowns, sidestep), so the flip silently changed what
-    # those tests were exercising. A backstop that disturbs 28 unrelated
-    # assertions is not worth the belt it adds to existing braces.
-    #
-    # Books tag their analyses with `strategy_book` and pass untouched. AI
-    # close-checks never route through maybe_execute, so exits are unaffected —
-    # AI closes remain a standing hard requirement.
-    if (not analysis.get("strategy_book")
-            and not bool((config.get("main_engine") or {}).get("entries_enabled", True))):
+    # those tests were exercising. This is the one remaining entry path
+    # (research.py / the MCP server's execute and submit_verdict tools; AI
+    # close-checks never route through maybe_execute, so exits are
+    # unaffected), and it stays live unless the operator explicitly disables it.
+    if not bool((config.get("main_engine") or {}).get("entries_enabled", True)):
         return {
             "executed": False, "mode": mode,
             "analysis_id": analysis["id"],
             "reason": "main_engine_entries_disabled",
-            "blocked_by": ["main-engine entries disabled (books-only mode, rebuild 2026-07-18)"],
+            "blocked_by": ["main-engine entries disabled"],
         }
 
     # Bind `coin` EARLY. The per-account sizing block (~L516, `_sz_dex = coin.split(...)`)
@@ -778,42 +769,30 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
 
     # Per-trade feasibility (docs/overhaul/PROFIT_AUDIT.md section 1;
     # services/risk/derive.py). REPLACES the old single global
-    # min_tradable_equity(config) block: that floor gated every book behind
+    # min_tradable_equity(config) block: that floor gated every entry behind
     # one operator-set (or derived "every enabled book at once") number, so a
     # $15.19 account sat under a $26 override and could place NOTHING, in a
-    # system whose own books can clear Hyperliquid's $10.50 minimum well
-    # below $26. The replacement asks a narrower, truthful question — "can
-    # THIS book afford THIS trade at THIS equity" — via the exact same
-    # RiskProfile (config_store.read_risk_profile: an explicit "risk_profile"
-    # key, else a migration of the old scattered keys, else presets.py's
-    # equity-tiered defaults) every other risk surface uses.
+    # system that can clear Hyperliquid's $10.50 minimum well below $26. The
+    # replacement asks a narrower, truthful question — "can THIS entry afford
+    # THIS trade at THIS equity" — via the exact same RiskProfile
+    # (config_store.read_risk_profile: an explicit "risk_profile" key, else a
+    # migration of the old scattered keys, else presets.py's equity-tiered
+    # defaults) every other risk surface uses.
     # min_tradable_equity()/book_margin_requirement() ARE UNCHANGED above and
     # stay exported — tests/test_funded_readiness.py, tests/test_risk_panel.py
     # and others assert their standalone behavior directly; this call site is
     # the only thing that stopped using them to BLOCK a trade.
-    _book_name = analysis.get("strategy_book") or "main_engine"
-    if _book_name in risk_books.BOOK_NAMES:
-        _book_spec = risk_books.book_spec_from_config(
-            config, _book_name, coin_max_leverage=get_max_leverage(coin))
-    else:
-        # Bookless (main-engine) entries, OR a strategy_book tag that is not
-        # one of the seven currently registered books (services/risk/books.py
-        # models only those — a retired/hypothesis-stage name like
-        # "rally_exhaustion" or a test harness's synthetic tag both land
-        # here). Build the BookSpec directly rather than looking up a config
-        # block that may not exist or may not mean what its presence would
-        # imply. book_params() degrades safely on an unknown key (no block
-        # -> top-level/floor fallback) and `enabled` is forced True here
-        # because whether THIS caller is allowed to trade at all was already
-        # decided earlier (the entries_enabled check for bookless entries;
-        # nothing further to check for an unregistered book name) — this
-        # gate only asks "can equity afford it", not "is it turned on".
-        _mp = book_params(config, _book_name)
-        _lev_caps = [v for v in (float(_mp.leverage), float(get_max_leverage(coin))) if v > 0]
-        _book_spec = _RiskBookSpec(
-            name=_book_name, enabled=True, stop_pct=float(_mp.stop_pct),
-            max_leverage=min(_lev_caps) if _lev_caps else None,
-        )
+    #
+    # The strategy books (services/risk/books.py's BOOK_NAMES) are retired
+    # 2026-10-23 and BOOK_NAMES is now permanently empty, so every entry here
+    # is bookless (main-engine / MCP-submitted). risk_books.main_engine_spec
+    # builds the BookSpec for that one path (enabled forced True — whether
+    # THIS caller is allowed to trade at all was already decided above, by
+    # the entries_enabled check; this gate only asks "can equity afford it").
+    # Shared with `all_book_specs()` (dashboard risk panel, MCP risk_limits)
+    # so both surfaces price the same path the same way.
+    _book_name = risk_books.MAIN_ENGINE
+    _book_spec = risk_books.main_engine_spec(config, coin_max_leverage=get_max_leverage(coin))
     _risk_profile = read_risk_profile(config)
     _limits = _derive_risk_limits(equity, _risk_profile, [_book_spec], _RISK_VENUE)
     _feasibility = _risk_book_feasibility(_limits, _book_name)
@@ -948,43 +927,6 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
         analysis.get("dsl_exit_override"),
     )
     _notional_cap = float(config.get("max_trade_notional_usd", 0) or 0)
-    # Strategy-book trades size to their own (smaller) cap — these edges are real but
-    # thin/regime-volatile, so they ride at reduced notional until live data confirms.
-    _ext_notional = float(analysis.get("strategy_book_notional", 0) or 0)
-    if _ext_notional <= 0 and analysis.get("strategy_book"):
-        # Equity-fraction sizing for strategy_book positions: size at
-        # strategy_book_equity_frac of the FUNDING account's equity (size_equity)
-        # times leverage — the same mechanism as the normal equity_fraction_per_trade
-        # path but at a smaller fraction (default 0.1 vs 0.2). This produces a
-        # meaningfully larger position than the old flat $15 cap while keeping the
-        # normal margin/notional safety gates in force.  The old absolute cap
-        # (strategy_book_notional_usd) becomes an OPTIONAL upper ceiling: when >0 it
-        # further clips the result so the operator can bound the per-trade size in USD
-        # terms as well; when 0 (default) it is inactive.
-        # Example: size_equity=$60, leverage=12, frac=0.1 → notional = $60×0.1×12 = $72.
-        # Per-analysis override first (majors_swing sizes at its own fraction of the
-        # funding account without coupling every other book to the global knob).
-        _ea_frac = float(analysis.get("strategy_book_equity_frac_override", 0) or 0)
-        if _ea_frac <= 0:
-            _ea_frac = float(config.get("strategy_book_equity_frac", 0.0) or 0.0)
-        if _ea_frac > 0:
-            _ea_notional = size_equity * _ea_frac * leverage
-            _ea_abs_cap = float(config.get("strategy_book_notional_usd", 0) or 0)
-            if _ea_abs_cap > 0:
-                _ea_notional = min(_ea_notional, _ea_abs_cap)
-            _ext_notional = _ea_notional
-            logger.debug(
-                f"[executor] strategy_book equity-frac sizing {coin}: "
-                f"${size_equity:.0f} × {_ea_frac} × {leverage}x = ${_ext_notional:.0f}"
-                + (f" (abs_cap ${_ea_abs_cap:.0f} applied)" if _ea_abs_cap > 0 and _ext_notional == _ea_abs_cap else "")
-            )
-        else:
-            # Rebalancer _analysis builders can omit an explicit notional; fall
-            # back to the strategy-book cap so live strategy books size below
-            # full discretionary trades unless they set their own override.
-            _ext_notional = float(config.get("strategy_book_notional_usd", 0) or 0)
-    if _ext_notional > 0:
-        _notional_cap = min(_notional_cap, _ext_notional) if _notional_cap > 0 else _ext_notional
     # SHORTS ride at a small dedicated cap — newly-enabled, validated only in the current
     # down-regime (edge_shorts.py: trend-aligned shorts +0.52%/trade, 73% win, OOS-robust;
     # late/down-mover shorts lose). Trend filter gates them to downtrends. Small until live
@@ -997,11 +939,9 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
     # random-time null) and HIGHER confidence did worse, so a confidence floor
     # can't fix it. Cap the main engine's AI-long notional instead: exposure
     # drops ~10x while entries keep flowing for the confirmation window.
-    # Strategy books are EXEMPT.
     # 0 disables (hot-read, reversible).
     _ai_long_notional = float(config.get("ai_long_notional_usd", 0) or 0)
-    if (analysis.get("side") != "short" and not analysis.get("strategy_book")
-            and _ai_long_notional > 0):
+    if analysis.get("side") != "short" and _ai_long_notional > 0:
         _notional_cap = min(_notional_cap, _ai_long_notional) if _notional_cap > 0 else _ai_long_notional
     mid_price = 0.0
     atr = 0.0
@@ -1029,30 +969,13 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
             f"${_before_mult:.0f} × {_asset_mult:.2f} = ${trade_notional:.0f}"
         )
 
-    # Per-BOOK notional CEILING from DerivedLimits (services/risk/derive.py),
-    # applied through book_params.apply_notional_ceiling — see its docstring
-    # for exactly why this only ever clamps DOWN (never sizes a trade up, so
-    # a deliberate under-sizing like xs_reversal's documented de-risking
-    # stays untouched) and why None (a fixed/structural book like
-    # drawdown_ladder) is a no-op.
-    #
-    # Scoped to the seven REGISTERED books (risk_books.BOOK_NAMES) — the exact
-    # same condition the feasibility gate above used to decide whether
-    # _book_spec came from real config or a generic fallback. Main-engine
-    # (bookless) entries and any unregistered/synthetic strategy_book tag
-    # keep their existing, separately-tested sizing mechanisms
-    # (equity_fraction_per_trade, ai_long_notional_usd, the
-    # strategy_book_equity_frac branch) completely untouched: "per-book
-    # notional comes from the limits" is a statement about the seven real
-    # books, not about every string that can appear in analysis["strategy_book"].
-    if _book_name in risk_books.BOOK_NAMES:
-        _capped_notional = apply_notional_ceiling(trade_notional, _feasibility.notional_usd)
-        if _capped_notional != trade_notional:
-            logger.info(
-                f"[executor] {_book_name}: notional ${trade_notional:.2f} > risk-profile ceiling "
-                f"${_capped_notional:.2f} at ${equity:.2f} equity — clamping to the ceiling"
-            )
-        trade_notional = _capped_notional
+    # Per-book notional CEILING from DerivedLimits (services/risk/derive.py)
+    # was scoped to the seven strategy books (services/risk/books.py's
+    # BOOK_NAMES), which kept main-engine entries on their own,
+    # separately-tested sizing mechanisms (equity_fraction_per_trade,
+    # ai_long_notional_usd). Those books are retired 2026-10-23 and
+    # BOOK_NAMES is now permanently empty, so this clamp never applies —
+    # removed rather than left as dead code behind an always-false check.
 
     # Normalize to the exact HL-valid entry size BEFORE risk gates. The order
     # layer enforces a $10.50 minimum and coin-size precision; if we wait until
@@ -1192,7 +1115,6 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
         # doesn't clear the live bar still records to the shadow ledger.
         _is_thin_short_reject = (
             analysis.get("side") == "short"
-            and not analysis.get("strategy_book")
             and mid_price > 0
             and any("short on thin market" in str(r)
                     for r in gate_output["block_reasons"]))
@@ -1662,14 +1584,11 @@ def _volume_confirmed(coin: str, min_ratio: float, lookback: int = 20) -> bool:
 
 def _trend_filter_block_reason(analysis: Dict[str, Any], config: Dict[str, Any]) -> str:
     """PTJ 200-day-MA trend-regime filter: block entries fighting the daily trend.
-    Flag-gated + hot-read. Strategy-book edges are exempt (separately validated). A
-    coin with too little daily history is 'unknown' and only blocked when
-    block_unknown=true (default false — don't penalize fresh HIP-3 listings, which are
-    our +EV bucket)."""
+    Flag-gated + hot-read. A coin with too little daily history is 'unknown'
+    and only blocked when block_unknown=true (default false — don't penalize
+    fresh HIP-3 listings, which are our +EV bucket)."""
     tf = config.get("trend_filter_200ma") or {}
     if not bool(tf.get("enabled", False)):
-        return ""
-    if analysis.get("strategy_book"):              # separate validated edge — exempt
         return ""
     if _daily_mover_long_bypass_ok(analysis, config):
         return ""
@@ -1700,12 +1619,6 @@ def _runner_entry_block_reason(analysis: Dict[str, Any], config: Dict[str, Any])
     """
     gate = config.get("runner_entry_gate") or {}
     if not bool(gate.get("enabled", False)):
-        return ""
-
-    # Strategy-book signals are different alpha sources from the discretionary
-    # candle-impulse runner. They bypass this entry-alpha filter, while every
-    # safety gate downstream still applies unchanged.
-    if analysis.get("strategy_book"):
         return ""
 
     coin = analysis.get("coin") or ""

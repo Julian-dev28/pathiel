@@ -43,7 +43,6 @@ def _analysis(coin: str = "BTC") -> Dict[str, Any]:
         "confidence": 0.95, "entry_px": 0.0, "stop_px": 0.0, "tp_px": 0.0,
         "reasoning": "[test]", "news_risk": "none", "ai_down": False,
         "created_at": int(time.time() * 1000), "composite_score": 0.0,
-        "strategy_book": "xs_reversal",
     }
 
 
@@ -108,14 +107,21 @@ def _real_config_for_test() -> Dict[str, Any]:
     # hl_client._http_post call, which is unrelated to what this test is
     # proving. Every risk-relevant key (min_tradable_equity_usd,
     # equity_fraction_per_trade, leverage, max_concurrent,
-    # max_daily_loss_pct, min_order_bump_max_mult, the book blocks) is
-    # exactly the real file's.
+    # max_daily_loss_pct, min_order_bump_max_mult) is exactly the real
+    # file's.
     cfg["enable_crypto"] = True
-    # The operator switched every book off on 2026-10-23 (trades through
-    # Claude only). This test proves the SIZING path for the book it names in
-    # _analysis, so re-enable that one book in the copy; its parameters stay
-    # exactly the real file's.
-    cfg["xs_reversal"] = {**cfg.get("xs_reversal", {}), "enabled": True}
+    # This test proves the per-trade FEASIBILITY gate (services/risk),
+    # isolated from two separate discretionary-alpha gates an AI-verdict
+    # entry must also clear — runner_entry_gate (composite/breakout/volume
+    # heuristics the test's synthetic analysis carries no triggers for) and
+    # trend_filter_200ma (a real `fetch_hl_candles` network call this test's
+    # mocks do not stub, by design: no order is ever placed here, but a
+    # live candle fetch is a real network reach a gate test must not make).
+    # The strategy books (retired 2026-10-23) used to be exempt from both
+    # entirely; every entry is bookless now, so this test disables them
+    # explicitly instead of leaning on an exemption that no longer exists.
+    cfg["runner_entry_gate"] = {**cfg.get("runner_entry_gate", {}), "enabled": False}
+    cfg["trend_filter_200ma"] = {**cfg.get("trend_filter_200ma", {}), "enabled": False}
     return cfg
 
 

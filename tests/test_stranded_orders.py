@@ -241,7 +241,11 @@ def test_settle_vanished_positions_handles_nothing(executor_env):
 
 # ── 4. the trading loop wires it in ─────────────────────────────────────────
 
-def test_the_loop_settles_vanished_positions_with_the_books_exempt():
+def test_the_loop_settles_vanished_positions_with_no_exemptions():
+    """drawdown_ladder and copy_trade (the two books whose positions used to
+    be exempt from this settle pass) are retired 2026-10-23 — there is
+    nothing left to exempt, so exempt_coins is an empty set literal, not a
+    name referencing a book-ownership computation."""
     tree = ast.parse((ROOT / "scripts" / "trading_loop.py").read_text())
     calls = [n for n in ast.walk(tree) if isinstance(n, ast.Call)
              and getattr(n.func, "id", None) == "settle_vanished_positions"]
@@ -249,7 +253,8 @@ def test_the_loop_settles_vanished_positions_with_the_books_exempt():
     (call,) = calls
     assert isinstance(call.args[0], ast.Name) and call.args[0].id == "stale_trackers"
     kw = {k.arg: k.value for k in call.keywords}
-    assert isinstance(kw["exempt_coins"], ast.Name) and kw["exempt_coins"].id == "_ladder_coins"
+    exempt = kw["exempt_coins"]
+    assert isinstance(exempt, ast.Call) and getattr(exempt.func, "id", None) == "set" and not exempt.args
     names = {getattr(n.func, "id", None) for n in ast.walk(tree) if isinstance(n, ast.Call)}
     assert "record_external_position_close" not in names   # only through settle_vanished_positions
 

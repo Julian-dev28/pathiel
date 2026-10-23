@@ -28,14 +28,19 @@ HL market data ──▶ Scanner ──▶ TA filter ──▶ AI research ─�
 Persistent state on disk:  .agent-memory.json  .agent-config.json  .dsl-state.json  session-log.jsonl
 
 Two entry processes:
-  scripts/trading_loop.py     — autonomous: scans, decides, executes, exits, repeats
+  scripts/trading_loop.py     — exit-management loop: scans, reviews open positions, manages exits, repeats. No entries of its own (headless desk, 2026-10-23).
   pathiel/server.py     — FastAPI: public dashboard + token-gated operator + JSON API + SSE feed
-  scripts/pathiel-mcp-server.py — MCP stdio server: exposes 59 tools to Claude
+  scripts/pathiel-mcp-server.py — MCP stdio server: exposes 59 tools to Pathiel Agent / Claude — the one trading surface
 ```
 
 All three share the same on-disk state and the same Python modules under
-`pathiel/`. The trading loop owns the trade decisions; the server owns
-the human-visible surface; the MCP server owns the Pathiel Agent integration.
+`pathiel/`. The trading loop owns exits and housekeeping only; the MCP
+server owns every trade decision (Claude places orders through
+`place_bracket` / `bracket_sweep`); the dashboard server owns the
+human-visible surface. Pathiel used to run seven autonomous strategy books
+that placed entries unattended through the trading loop — retired
+2026-10-23, operator decision, so there is exactly one trader on the
+wallet. See `docs/overhaul/HEADLESS_2026-10-23.md`.
 
 ---
 
@@ -53,10 +58,14 @@ Two things follow from this design choice:
    plain Python process. The MCP boundary is the only contact surface — that's
    what lets you also operate it through Claude Desktop, Cursor, or any
    MCP-aware client without changing a line of trading code.
-2. **Pathiel Agent is operational; the engine is autonomous.** The trading loop
-   in `scripts/trading_loop.py` runs on its own forever. Pathiel Agent is what
-   you (a human) use to inspect, configure, and direct the engine — start it,
-   stop it, ask "what did you just do," set the mode, etc.
+2. **Pathiel Agent (or Claude, directly) is the operator; the engine manages
+   risk and exits.** `scripts/trading_loop.py` runs forever managing DSL
+   exits and housekeeping, but places no entries of its own — every trade
+   decision runs through the MCP server. Pathiel Agent / Claude is what
+   you (a human, through it) use to inspect, configure, and direct the
+   engine, and the surface through which it actually trades: start the
+   loop, stop it, ask "what did you just do," set the mode, scan, research,
+   place a bracket, etc.
 
 ---
 
@@ -493,9 +502,9 @@ pathiel/
 │   │   ├── market_regime.py     # per-asset-class regime detection (new)
 │   │   ├── memory.py            # disk-backed singleton state
 │   │   ├── config.py / config_store.py  # config read/write
-│   │   ├── xs_reversal_live.py   # W-XSR1 cross-sectional reversal (live 2026-09-04)
-│   │   ├── data_logger.py       # the funding/OI panel xs_reversal reads
-│   │   ├── shadow_ledger.py     # forward evidence record every book writes to
+│   │   ├── book_params.py       # sizing-floor resolver for every entry (stop/leverage/notional)
+│   │   ├── data_logger.py       # the dashboard's funding/OI (funding-heat) panel
+│   │   ├── shadow_ledger.py     # forward evidence record (thin_short_relax and any future experiment)
 │   │   ├── hyperfeed.py         # leaderboard + whale-flow + OI anomaly (Hyperfeed clone)
 │   │   ├── whale_index.py       # whale tracking on top of public HL endpoints
 │   │   └── system_prompt.py     # the LLM's operating instructions

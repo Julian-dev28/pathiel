@@ -50,13 +50,6 @@ def test_unknown_history_blocked_when_strict(monkeypatch):
     assert "insufficient daily history" in ex._trend_filter_block_reason({"coin": "xyz:NEW", "side": "long"}, cfg)
 
 
-def test_strategy_book_exempt(monkeypatch):
-    _patch_direction(monkeypatch, -1)  # would block a normal long
-    cfg = {"trend_filter_200ma": {"enabled": True}}
-    a = {"coin": "BTC", "side": "long", "strategy_book": "xs_momentum"}
-    assert ex._trend_filter_block_reason(a, cfg) == ""
-
-
 def test_daily_mover_long_bypass_exempts_downtrend(monkeypatch):
     _patch_direction(monkeypatch, -1)  # would block a normal long
     cfg = {

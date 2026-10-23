@@ -38,22 +38,20 @@ records `verified: false`, which reports as *no backup* to both the metric and
 
 ## Before funding the account
 
-The executor refuses every order under the structural floor, so at the current
-balance the books have never actually run. `scripts/funded_dry_run.py` answers
-what happens the moment money lands, derived from the same config the executor
-reads and the books' own forward ledgers. It never invokes the order path —
-mode is LIVE, so "simulating" through `executor.maybe_execute` would place real
-orders.
+The executor refuses every order under the structural floor
+(`min_tradable_equity`). `scripts/preflight_live.py` reports whether the one
+entry path left (main-engine / MCP-submitted, since the strategy books were
+retired 2026-10-23) can actually place a trade at the account's current
+equity — derived from the same `services/risk` config the executor reads,
+read-only, no order ever placed.
 
 ```sh
-python scripts/funded_dry_run.py              # at the derived floor
-python scripts/funded_dry_run.py --equity 50  # at a partial deposit
+python scripts/preflight_live.py
 ```
 
-At partial funding the report says which books can hold a position and which
-wait. Read that carefully: concurrency is first-come, so the account trades
-whatever signals soonest, not whatever signals best. Funding to the derived
-floor is what makes the book set behave as configured rather than as a race.
+Its `equity` and `trade capacity` lines answer "can this account trade right
+now, and if not, what is short" directly from `GET /api/risk/limits`'s own
+arithmetic — no separate simulation script to keep in sync with the executor.
 
 ---
 

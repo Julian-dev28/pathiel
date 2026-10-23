@@ -45,10 +45,12 @@ def test_empty_signals_passes_trivially():
 
 
 def test_a_15_dollar_equity_executes_a_real_signal_from_the_live_bug():
-    """The exact scenario this whole wave fixes: a tight-stop signal from a
-    real registered book, replayed at $15 equity, should be executable --
-    this is the eval's own small proof the $15 fix generalizes beyond the
-    one hand-built e2e test."""
+    """The exact scenario this whole wave fixes: a tight-stop signal,
+    replayed at $15 equity, should be executable -- this is the eval's own
+    small proof the $15 fix generalizes beyond the one hand-built e2e test.
+    `news_surge_short` is a historical tag (that book is retired 2026-10-23)
+    -- replay() no longer looks it up in a book roster, it is priced
+    against the one surviving main_engine BookSpec regardless of tag."""
     signals = [_sig("news_surge_short", stop_pct=6.0)]
     report = replay(signals, [15.0], "auto")
     assert report["passed"] is True
@@ -56,17 +58,15 @@ def test_a_15_dollar_equity_executes_a_real_signal_from_the_live_bug():
     assert report["per_equity"][0]["risk_taken_usd"] > 0
 
 
-def test_unregistered_book_name_is_skipped_not_crashed():
-    signals = [_sig("some_retired_hypothesis_book")]
+def test_a_historical_tag_from_a_retired_book_is_still_considered():
+    """There is no more per-book roster to miss: every strategy book is
+    deleted (headless desk, 2026-10-23), so a `book` tag that was once one
+    of the seven registered names is now just a label on the row -- the
+    signal is priced the same as any other, not skipped as unregistered."""
+    signals = [_sig("some_retired_hypothesis_book", stop_pct=10.0)]
     report = replay(signals, [1000.0], "auto")
     assert report["passed"] is True
-    assert report["per_equity"][0]["signals_considered"] == 0
-
-
-def test_fixed_structural_book_is_skipped_it_has_no_risk_scaled_shape():
-    signals = [_sig("drawdown_ladder", stop_pct=0.0)]
-    report = replay(signals, [1000.0], "auto")
-    assert report["per_equity"][0]["signals_considered"] == 0
+    assert report["per_equity"][0]["signals_considered"] == 1
 
 
 def test_zero_or_missing_stop_pct_is_skipped_not_treated_as_free_risk():
@@ -75,14 +75,19 @@ def test_zero_or_missing_stop_pct_is_skipped_not_treated_as_free_risk():
     assert report["per_equity"][0]["signals_considered"] == 0
 
 
+def test_a_missing_book_tag_falls_back_to_main_engine():
+    signals = [_sig(None, stop_pct=10.0)]
+    report = replay(signals, [1000.0], "auto")
+    assert report["per_equity"][0]["signals_considered"] == 1
+    assert report["per_equity"][0]["would_execute"] == 1
+
+
 def test_never_violates_its_own_pass_rule_across_a_wide_equity_sweep():
-    """The property that IS the eval: across every registered risk-scaled
-    book and a wide equity sweep, no executed trade's risk_pct ever
-    exceeds its cap (the base cap, or the bump cap when bumped)."""
-    import services.risk.books as risk_books
-    signals = [_sig(b, coin="BTC", stop_pct=p)
-              for b in risk_books.RISK_SCALED_BOOK_NAMES
-              for p in (3.0, 6.0, 12.0, 21.0)]
+    """The property that IS the eval: across a wide range of historical
+    tags and stops and a wide equity sweep, no executed trade's risk_pct
+    ever exceeds its cap (the base cap, or the bump cap when bumped)."""
+    tags = ("main_engine", "thin_short_relax", "news_surge_short", "xs_reversal")
+    signals = [_sig(b, coin="BTC", stop_pct=p) for b in tags for p in (3.0, 6.0, 12.0, 21.0)]
     report = replay(signals, [5, 15, 50, 500, 5000, 100000], "auto")
     assert report["passed"] is True, report["violations"]
 
@@ -92,15 +97,15 @@ def test_more_equity_never_decreases_would_execute_for_a_fixed_signal_set():
     (services/risk/tests/test_derive.py) -- re-asserted here against the
     REPLAY path specifically, since that is the code the eval script
     actually exercises."""
-    import services.risk.books as risk_books
-    signals = [_sig(b, stop_pct=15.0) for b in risk_books.RISK_SCALED_BOOK_NAMES]
+    tags = ("main_engine", "thin_short_relax", "news_surge_short", "xs_reversal")
+    signals = [_sig(b, stop_pct=15.0) for b in tags]
     report = replay(signals, [5, 10, 15, 100, 10000], "auto")
     counts = [row["would_execute"] for row in report["per_equity"]]
     assert counts == sorted(counts)
 
 
 def test_format_report_names_the_pass_rule_and_is_human_readable():
-    report = replay([_sig("xs_reversal")], [15.0], "auto")
+    report = replay([_sig("xs_reversal", stop_pct=15.0)], [15.0], "auto")
     text = format_report(report)
     assert "no trade exceeds its limit" in text
     assert "PASSED" in text or "FAILED" in text

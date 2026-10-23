@@ -1,12 +1,26 @@
 # services/risk
 
 Risk sizing that scales from a $10 account to a $100k one. Five plain
-choices (`RiskProfile`); everything else — every book's notional, how many
-positions can be open at once, the daily loss limit, whether `$15.19` can
-place a trade at all — is DERIVED from those five choices and current
-equity by one pure function, `derive_limits`. No LLM anywhere in this
-service: every number comes from a deterministic formula you can read in
-`derive.py` and re-run yourself.
+choices (`RiskProfile`); everything else — notional, how many positions can
+be open at once, the daily loss limit, whether `$15.19` can place a trade
+at all — is DERIVED from those five choices and current equity by one pure
+function, `derive_limits`. No LLM anywhere in this service: every number
+comes from a deterministic formula you can read in `derive.py` and re-run
+yourself.
+
+**Headless desk, 2026-10-23:** this service originally modeled a roster of
+seven autonomous strategy books, each with its own `BookSpec`. All seven
+are retired — Claude places every trade through the MCP server now — and
+`BOOK_NAMES` (`services/risk/books.py`) is permanently empty. The service
+is not retired with them: `all_book_specs()` returns a one-item roster
+built by `main_engine_spec()` for the bookless (main-engine / MCP-submitted)
+entry path, the only trader left on the wallet, and every formula below
+still runs exactly the same way against that one row. Examples in this
+doc that show a `news_surge_short`/`xs_reversal`/`drawdown_ladder` row are
+historical illustrations of the old multi-book shape and have been
+regenerated below against the current one-row reality where it matters
+(the worked examples), and left as history where it doesn't (the design
+rationale for why the shapes exist at all).
 
 ## The problem this replaces
 
@@ -15,13 +29,13 @@ equity and an operator-set `min_tradable_equity_usd: 26.0` in
 `.agent-config.json`. `pathiel.agents.executor.min_tradable_equity` returns
 $26 against that config; `maybe_execute` checked `equity < min_tradable_equity`
 on every single entry attempt and refused all of them, unconditionally,
-whatever book or coin was asking. The account could not place one trade.
+whatever coin was asking. The account could not place one trade.
 
 That one global number was standing in for two different questions —
-"is this account funded at all" and "can THIS book afford THIS trade
+"is this account funded at all" and "can THIS entry afford THIS trade
 right now" — and conflating them meant a single hand-tuned override could
-block a book that would have fit easily. The fix separates them:
-`BookFeasibility` answers the second question per book, per trade, and
+block an entry that would have fit easily. The fix separates them:
+`BookFeasibility` answers the second question per entry, per trade, and
 `maybe_execute` no longer asks the first one at all (see "Behavior deltas"
 below).
 
@@ -59,39 +73,40 @@ every preset including `auto`'s mid-sweep preset switches.
 
 **Why `starter`'s bump cap is 15%, not something smaller.** Hyperliquid's
 real minimum order is $10.50 (`pathiel.client.exchange.MIN_ORDER_USD`), and
-`book_params.py`'s own fallback stop width when a book sets no override is
+`book_params.py`'s own fallback stop width when nothing sets an override is
 15% (`FLOOR_STOP_PCT`). Solving `needs_equity_usd` for that worst-realistic
 case against a 15% bump cap gives `$10.50 × 0.15 × 100 / 15 = $10.50` — a
 brand-new, zero-configuration account can place its first trade the
 instant it clears the EXCHANGE's own minimum, no migration and no manual
-tuning required. A tighter-stop book (6%, what the currently-live
-`news_surge_short`/`news_surge_multi` actually use) stays far under this
-ceiling in practice.
+tuning required. A tighter-stop entry (6%, what the now-retired
+`news_surge_short`/`news_surge_multi` books used to run) stays far under
+this ceiling in practice.
 
-## How a book's size is derived (`derive.py`)
+## How an entry's size is derived (`derive.py`)
 
-Two shapes:
+Two shapes — `BookSpec` can model either, though the one entry path left
+(`main_engine_spec`) only ever builds the first:
 
-- **Risk-scaled** (most books — `stop_pct` set): `notional = risk_budget_usd
-  / stop_distance`, then capped by (1) the profile's `max_leverage`, (2) the
-  book's own per-coin leverage cap, and (3) a **margin share** — equity's
-  usable margin split across `max_open_positions`, so one book can't be
-  sized as if it owned the whole account when others might be open too.
-  If the result is under Hyperliquid's minimum, it's bumped UP to exactly
-  that minimum only when the profile allows it AND the resulting risk% is
-  at or under `max_bumped_risk_pct` — otherwise the book reports exactly
-  how much more equity it needs (`needs_equity_usd`) and by how many
-  dollars (`reason`).
-- **Fixed / structural** (`drawdown_ladder` — five resting rungs at 1x, no
-  stop at all): either equity clears its hard floor ($525 — re-derived from
-  `drawdown_ladder_live.py`'s own rung formula, `MIN_ORDER_USD × RUNGS ×
-  len(UNIVERSE) / (LEVERAGE × DEFAULT_SLEEVE_FRAC)`, and pinned against it
-  by a test so the two numbers can't drift apart) or it doesn't, no risk
-  math applies.
+- **Risk-scaled** (the live roster today — `stop_pct` set): `notional =
+  risk_budget_usd / stop_distance`, then capped by (1) the profile's
+  `max_leverage`, (2) a per-coin leverage cap, and (3) a **margin share** —
+  equity's usable margin split across `max_open_positions`, so one entry
+  can't be sized as if it owned the whole account when others might be
+  open too. If the result is under Hyperliquid's minimum, it's bumped UP
+  to exactly that minimum only when the profile allows it AND the
+  resulting risk% is at or under `max_bumped_risk_pct` — otherwise it
+  reports exactly how much more equity it needs (`needs_equity_usd`) and
+  by how many dollars (`reason`).
+- **Fixed / structural** (no stop at all — the retired `drawdown_ladder`
+  book was the one example, five resting rungs at 1x): either equity
+  clears a hard floor or it doesn't, no risk math applies. Nothing in the
+  live roster uses this shape today; `_FIXED_BOOKS` in `books.py` is empty,
+  kept so a future fixed/structural entry can plug in without a `derive.py`
+  change.
 
-`copy_trade` is neither shape — it mirrors a leader's own position sizing,
-not a stop distance — so it reports "no sizing rule configured" rather than
-guessing. It is also `enabled: false` in the live config today.
+A `BookSpec` with neither shape — the retired `copy_trade` book's case: it
+mirrored a leader's own position sizing, not a stop distance — reports "no
+sizing rule configured" rather than guessing.
 
 `max_open_positions`, when not set explicitly, is the smallest of: how many
 $-minimum positions equity's usable margin could cover at the leverage cap,
@@ -100,42 +115,41 @@ and the preset's own simplicity ceiling.
 
 ## Worked examples
 
-Generated by actually running `derive_limits` against the DEFAULT book
-roster (`pathiel.agents.config_store.DEFAULT_CONFIG`) — not hand-typed.
+Generated by actually running `derive_limits` against the DEFAULT config
+roster (`pathiel.agents.config_store.DEFAULT_CONFIG` — one row,
+`main_engine`, since the strategy books are retired) — not hand-typed.
 
 ### $15 (starter)
 
-> You can trade 1 position at a time, risking about $0.45 per trade.
+> You can trade 1 position at a time; a stop-out costs about $1.57.
 
-| book | can trade | reason |
+| entry | can trade | reason |
 |---|---|---|
-| news_surge_short | yes | Sized up to Hyperliquid's $10.50 minimum: risks $1.57 (10.5%) if the stop hits. |
-| xs_reversal | yes | Sized up to Hyperliquid's $10.50 minimum: risks $1.57 (10.5%) if the stop hits. |
-| drawdown_ladder | no | Book is disabled. |
+| main_engine | yes | Sized up to Hyperliquid's $10.50 minimum: risks $1.57 (10.5%) if the stop hits. |
 
-Every DEFAULT_CONFIG book (15% stop, 1x leverage) bumps to the $10.50
-minimum and risks 10.5% — under starter's 15% bump ceiling. This is the
-exact shape of the $15.19 account's fix: previously `below_min_tradable_equity`
-against a $26 floor, unconditionally.
+The one row (15% stop, 1x leverage at this floor config) bumps to the
+$10.50 minimum and risks 10.5% — under starter's 15% bump ceiling. This is
+the exact shape of the $15.19 account's fix: previously
+`below_min_tradable_equity` against a $26 floor, unconditionally.
 
 ### $500 (starter — still under the $1,000 band)
 
-> You can trade 1 position at a time, risking about $15.00 per trade.
+> You can trade 1 position at a time; a stop-out costs about $15.00.
 
-| book | can trade | reason |
+| entry | can trade | reason |
 |---|---|---|
-| news_surge_short | yes | Fits: $100.00 notional at 1.0x, risks $15.00 (3.0%) if the stop hits. |
+| main_engine | yes | Fits: $100.00 notional at 10.0x, risks $15.00 (3.0%) if the stop hits. |
 
 No bump needed — the organic risk-sized notional ($100) already clears the
 exchange minimum comfortably, at the un-bumped 3% target.
 
 ### $10,000 (standard)
 
-> You can trade 3 positions at a time, risking about $150.00 per trade.
+> You can trade 3 positions at a time; a stop-out costs about $150.00.
 
-| book | can trade | reason |
+| entry | can trade | reason |
 |---|---|---|
-| xs_reversal | yes | Fits: $1,000.00 notional at 1.0x, risks $150.00 (1.5%) if the stop hits. |
+| main_engine | yes | Fits: $1,000.00 notional at 6.0x, risks $150.00 (1.5%) if the stop hits. |
 
 Three concurrent positions now, 1.5% risk each, no bump mechanics involved
 at all — `standard`'s `allow_min_order_bump` is off because at this equity
@@ -205,26 +219,29 @@ and `book_params.py` all changed. Every delta:
   `book_margin_requirement(config)` still exist, unchanged, still exported
   (existing tests assert their standalone behavior directly) — but
   `maybe_execute` no longer calls them to BLOCK a trade. The new gate asks
-  "can THIS book afford THIS trade at THIS equity" via `DerivedLimits`
+  "can THIS entry afford THIS trade at THIS equity" via `DerivedLimits`
   instead. **Any account that cleared the old floor still clears the new
-  gate** — the new per-book thresholds are a fraction of what the old
+  gate** — the new per-entry threshold is a fraction of what the old
   global floor demanded (tens of dollars vs. the old $26/$88.89-style
   numbers), so this is strictly more permissive for anything that already
   worked, and newly permissive for the accounts it was blocking.
-- **Per-book notional is now a ceiling, never a floor.** A legacy fixed
-  `notional_usd` (or the equity-fraction result) that exceeds what the
-  resolved `RiskProfile` allows at current equity gets clamped down
-  (`book_params.apply_notional_ceiling`). A book already sized BELOW the
-  ceiling — including a deliberate under-sizing like `xs_reversal`'s
-  documented de-risking while its forward ledger is unvalidated — is left
-  exactly as configured. Scoped to the seven registered books only; the
-  separately-tested main-engine (bookless) sizing path
-  (`equity_fraction_per_trade`, `ai_long_notional_usd`) is untouched.
+- **Per-book notional ceiling (`book_params.apply_notional_ceiling`),
+  retired with the books, 2026-10-23.** It clamped a legacy fixed
+  `notional_usd` down to what `DerivedLimits` allowed at current equity,
+  scoped to the seven registered books (`services/risk/books.py`'s
+  `BOOK_NAMES`, now permanently empty) — the separately-tested main-engine
+  sizing path (`equity_fraction_per_trade`, `ai_long_notional_usd`) was
+  always untouched by it. `apply_notional_ceiling` is deleted from
+  `book_params.py`; nothing calls it any more.
 - **`max_open_positions` replaces `max_concurrent`** as the concurrency
-  gate's ceiling, for any entry not covered by the existing book-capital
-  carveout (`book_capital_carveout`, on by default for strategy-book
-  entries since the 2026-07-10 funnel-audit fix — that carveout is
-  untouched by this wave).
+  gate's ceiling. `risk_gates.py`'s `book_capital_carveout` (on by default
+  for `is_book=True` callers since the 2026-07-10 funnel-audit fix) still
+  exists and is untouched, but is now permanently dormant: nothing sets
+  `analysis["strategy_book"]` any more, so `is_book` is always `False` in
+  production and the carveout never triggers. Left in place rather than
+  removed — it is `risk_gates.py`'s own mechanism, outside this service's
+  ownership, and a future `is_book`-tagged caller would still get it for
+  free.
 - **The daily loss limit's percent can now come from the profile.**
   `effective_daily_loss_limit`'s precedence: an explicit `max_daily_loss_pct`
   in config still wins outright; the resolved profile's
@@ -273,15 +290,16 @@ and `book_params.py` all changed. Every delta:
   tiers, every preset contract-valid, auto resolution, overrides, custom).
 - `services/risk/tests/test_derive.py` — unit tests for the formulas, plus
   the property suite over `[5, 8, ..., 100k] × {starter, small, standard,
-  pro, auto}`: every book row has a reason; risk never exceeds its cap
-  except through the documented bump; more equity never shrinks the
-  feasible-book set or drops `max_open_positions`; the headline agrees with
-  `can_trade`.
+  pro, auto}`: every row has a reason; risk never exceeds its cap except
+  through the documented bump; more equity never shrinks the feasible set
+  or drops `max_open_positions`; the headline agrees with `can_trade`.
 - `services/risk/tests/test_migrate.py` — every legacy-key mapping, in
   isolation, plus the real $15.19-shaped config end to end.
-- `services/risk/tests/test_books.py` — the book registry mirrors the live
-  claims registry exactly (tripwire test); the drawdown_ladder $525
-  constant mirrors the live rung formula exactly (tripwire test).
+- `services/risk/tests/test_books.py` — `BOOK_NAMES` stays permanently
+  empty; `all_book_specs()` returns the one-item `main_engine` roster, not
+  `[]` (the regression this file exists to catch — see `books.py`'s module
+  docstring); `main_engine_spec` resolves sizing correctly and is always
+  `enabled`.
 - `services/risk/tests/test_api.py` — every route through `TestClient`,
   including the 503 path and the accounts-service-preferred-over-fallback path.
 - `services/risk/tests/test_replay_benchmark.py` — the eval script's pure
@@ -290,10 +308,9 @@ and `book_params.py` all changed. Every delta:
   `.agent-config.json`, copied, at $15.19 equity, through a fully mocked
   exchange, places a valid order; at $5 it refuses naming the dollar
   shortfall; equities already served by the old $26 floor stay served.
-- `tests/test_risk_wiring_gates.py`, `tests/test_risk_wiring_config_store.py`,
-  and the `apply_notional_ceiling` tests appended to `tests/test_book_params.py`
-  — the risk_gates.py/config_store.py/book_params.py wiring additions, each
-  in isolation.
+- `tests/test_risk_wiring_gates.py`, `tests/test_risk_wiring_config_store.py`
+  and `tests/test_book_params.py` — the risk_gates.py/config_store.py/
+  book_params.py wiring, each in isolation.
 
 ## Eval
 
@@ -302,18 +319,19 @@ and `book_params.py` all changed. Every delta:
 
 Copies `shadow_ledger/` out of `--state-dir` into a fresh temp directory
 (never touches the source, never signs or places anything), replays every
-recent signal from every book's own forward ledger against `derive_limits`
-at each equity, and reports risk taken vs. would-execute counts. Pass rule:
-**no trade exceeds its limit**. See the main agent report for a real run's
-numbers (no live `PATHIEL_STATE_DIR` exists in this isolated worktree, so
-that run used a representative synthetic ledger — the script itself takes
-a real one exactly the same way).
+recent signal in the forward ledger — whatever tag it carries, book or not
+— against the one surviving `main_engine` `BookSpec` at each equity, and
+reports risk taken vs. would-execute counts. Pass rule: **no trade exceeds
+its limit**. See the main agent report for a real run's numbers (no live
+`PATHIEL_STATE_DIR` exists in this isolated worktree, so that run used a
+representative synthetic ledger — the script itself takes a real one
+exactly the same way).
 
 ## Sizing one trade (`size.py`)
 
 `size_trade(equity, profile, books, entry_px=, stop_px=, leverage=, targets=)`
-answers "how big is THIS trade for my account" with the same rules the books
-use: the profile's risk budget over the stop distance, leverage capped at
+answers "how big is THIS trade for my account" with the same rules
+`derive_limits` uses: the profile's risk budget over the stop distance, leverage capped at
 min(requested, coin max, profile max), bumped to the venue minimum only when
 the profile allows. It returns `TradeSize` (contracts/risk/models.py) with the
 coin size rounded to the venue's step (never under the minimum), margin, dollars
