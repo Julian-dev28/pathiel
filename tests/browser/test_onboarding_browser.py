@@ -361,7 +361,7 @@ def test_account_page_security_note_shows_only_for_the_env_sourced_account(serve
 
 # ── cross-cutting: nav, no sign-in, mobile, console ──────────────────────────
 
-ALL_FIXTURE_PAGES = ("/", "/activity", "/news", "/analytics", "/trends", "/account")
+ALL_FIXTURE_PAGES = ("/", "/account")
 
 
 def test_account_nav_link_on_every_page(server, browser):

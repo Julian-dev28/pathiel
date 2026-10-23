@@ -284,6 +284,21 @@ def test_all_pages_render_and_are_self_contained(client):
             assert banned not in r.text, f"{path} references CDN: {banned}"
 
 
+def test_the_desk_page_has_every_section(client):
+    """TestClient smoke test standing in for a browser one (tests/browser/
+    has no working no-network pattern for the Desk page specifically — its
+    fixtures are desks.html/onboarding-flow specific). Covers every section
+    docs/overhaul/DESK_UI_2026-10-23.md lists for "/": the call, wallets,
+    levels, headlines and catalysts, loop log, track record, the old
+    auto-trader kill switch, plus the onboarding wizard root that gates all
+    of it for a brand-new visitor."""
+    body = client.get("/").text
+    for section_id in ("onboarding-root", "oil-desk-root", "call-section",
+                       "wallets-section", "levels-section", "intel-section",
+                       "log-section", "track-section", "stop-section"):
+        assert f'id="{section_id}"' in body, f"/ is missing #{section_id}"
+
+
 # ── nav: Desk / Thesis / Account (2026-10-23 Desk UI overhaul) ──────────────
 
 ALL_PAGES = ("/", "/account")
