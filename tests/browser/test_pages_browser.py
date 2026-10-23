@@ -1,25 +1,24 @@
 """Per-page contract: every page ux-qa owns loads clean in a real browser.
 
-For each of /, /activity, /analytics, /news, /trends, at both 1280x800 and
-375x812:
+For "/" (the Desk landing page; docs/overhaul/DESK_UI_2026-10-23.md), at
+both 1280x800 and 375x812:
   - the page loads (HTTP 200, no navigation error)
   - zero console errors, beyond the one documented, cross-team exception
     (see tests/browser/_shared.py's _EXPECTED_CONSOLE_ERROR)
   - zero failed requests, zero unexpected HTTP error responses
   - no horizontal scroll at 375px
-  - the nav is present, identical across pages, carries the Desks link
-    second (right after Dashboard), and ends with Account (wave-2
-    onboarding, 2026-10-17)
+  - the nav is present and carries Desk / Thesis / Account, in that order
   - one page-specific element that answers "the one thing that matters" is
     visible above the fold
 
-/account itself, and the full first-run-through-save onboarding flow, are
-NOT in this file's PAGES — demo_server boots the real pathiel.server:app,
-which does not mount the accounts/risk routers this wave (integrator-only,
-SWARM_RULES section 10), so account.html's own fetches would 404 here with
-no account to show. See tests/browser/test_onboarding_browser.py, which
-runs the same kind of checks against a fixture app that serves the real
-contract fixtures instead.
+/activity, /analytics, /news, /trends were removed 2026-10-23 with the bot
+UI they served. /account itself, and the full first-run-through-save
+onboarding flow, are NOT in this file's PAGES — demo_server boots the real
+pathiel.server:app, which does not mount the accounts/risk routers this
+wave (integrator-only, SWARM_RULES section 10), so account.html's own
+fetches would 404 here with no account to show. See tests/browser/
+test_onboarding_browser.py, which runs the same kind of checks against a
+fixture app that serves the real contract fixtures instead.
 
 Deselected from the commit gate (-m browser): boots a server and drives
 Chromium. Run with:
@@ -49,7 +48,7 @@ from ._shared import load_page  # noqa: E402
 
 pytestmark = pytest.mark.browser
 
-PAGES = ("/", "/activity", "/analytics", "/news", "/trends")
+PAGES = ("/",)
 VIEWPORTS = {"desktop": (1280, 800), "mobile": (375, 812)}
 
 # The one element each page leads with — the ADHD-design mandate this whole
@@ -61,20 +60,14 @@ ABOVE_FOLD_ELEMENT = {
     # (services/accounts + services/risk are mounted in pathiel.server:app
     # as of the wave-2 merge) — GET /api/session always answers
     # needs_onboarding=true here, so "/" shows onboarding's welcome card
-    # (pathiel/templates/landing.html's #onboarding-root), not the
-    # dashboard underneath it. That IS "the call first" for this state:
-    # the connect button, not a net-asset-value of zero.
+    # (pathiel/templates/oil_desk.html's #onboarding-root), not the Desk
+    # page underneath it. That IS "the call first" for this state: the
+    # connect button, not a net-asset-value of zero.
     "/": "#onb-connect",
-    "/activity": "#session-strip",  # 6h scans/candidates/opened/closed/equity
-    "/analytics": "#panel-funnel",  # the decision funnel, first panel
-    "/news": "#news-strip",         # reads today / breaking / last read
-    "/trends": "#hl-strip",         # the regime KPI row (or its honest empty state)
 }
 
 EXPECTED_NAV = [
-    ("/", "Dashboard"), ("/desks", "Desks"), ("/activity", "Activity"),
-    ("/news", "News"), ("/analytics", "Markets"), ("/trends", "Trends"),
-    ("/account", "Account"),
+    ("/", "Desk"), ("/desk/oil", "Thesis"), ("/account", "Account"),
 ]
 
 

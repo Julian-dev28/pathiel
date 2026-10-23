@@ -258,7 +258,12 @@ async def _readonly_guard(request: Request, call_next):
 #   /auth/*        login is unauthenticated by definition.
 #   /static, /     the pages themselves; they render a sign-in prompt and fetch
 #                  their data over these gated APIs.
-_GATED_PREFIXES = ("/api/dashboard", "/api/feed", "/api/hl")
+#   /api/feed/* used to live here too (the SSE tail the old landing page
+#   read); that route was removed with it 2026-10-23
+#   (docs/overhaul/OIL_DESK_UI_2026-10-23.md) and nothing else was ever
+#   registered under that prefix, so it comes out here rather than gating
+#   a path nothing answers.
+_GATED_PREFIXES = ("/api/dashboard", "/api/hl")
 _OPEN_PREFIXES = ("/api/health", "/auth/", "/static", "/docs", "/openapi.json")
 
 

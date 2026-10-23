@@ -1,4 +1,5 @@
-"""scripts/oil_levels.py: the pure part, on synthetic candles. No network."""
+"""services/strategies/levels.py: the pure candle math, on synthetic candles
+(no network), plus scripts/oil_levels.py's thin CLI wrapper around it."""
 from __future__ import annotations
 
 import importlib.util
@@ -7,10 +8,12 @@ from pathlib import Path
 
 import pytest
 
+from services.strategies import levels as L
+
 ROOT = Path(__file__).resolve().parents[1]
 _spec = importlib.util.spec_from_file_location("oil_levels", ROOT / "scripts" / "oil_levels.py")
-L = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(L)
+CLI = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(CLI)
 
 H = L.HOUR_MS
 NOW = 100 * H   # an exact hour boundary
@@ -73,17 +76,17 @@ def test_summarize_with_no_candles_does_not_crash():
 
 
 def test_check_passes_through_the_bracket_r_gate(capsys):
-    assert L.main(["--check", "107.20", "106.70", "108.45"]) == 0
+    assert CLI.main(["--check", "107.20", "106.70", "108.45"]) == 0
     out = json.loads(capsys.readouterr().out)
     assert out["ok"] and out["side"] == "long" and out["r_multiple"] == 2.5
-    L.main(["--check", "107.61", "106.70", "108.45"])
+    CLI.main(["--check", "107.61", "106.70", "108.45"])
     assert json.loads(capsys.readouterr().out)["ok"] is False
 
 
 def test_check_with_leverage_prints_the_20x_line(capsys):
-    L.main(["--check", "107.16", "106.70", "108.45", "--lev", "20"])
+    CLI.main(["--check", "107.16", "106.70", "108.45", "--lev", "20"])
     out = json.loads(capsys.readouterr().out)
     assert out["ok"] and out["verdict"] == "20x OK" and out["leverage"]["liq_px"] == pytest.approx(104.41, abs=0.03)
-    L.main(["--check", "107", "101.65", "115", "--lev", "20"])
+    CLI.main(["--check", "107", "101.65", "115", "--lev", "20"])
     out = json.loads(capsys.readouterr().out)
     assert not out["ok"] and out["verdict"] == "no 20x: max 8x for this stop"

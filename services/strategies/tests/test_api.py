@@ -146,36 +146,24 @@ def test_post_thesis_rejects_extra_fields(client):
 
 # ── HTML routes ──────────────────────────────────────────────────────────
 
-def test_desks_html_page_placeholder_when_template_missing(client, monkeypatch, tmp_path):
-    """Templates ship now (desk-ui), so simulate a missing one: the route must
-    still answer 200 with a placeholder, never a 500."""
-    from services.strategies import api as strategies_api
-    monkeypatch.setattr(strategies_api, "_TEMPLATES_DIR", tmp_path)
+def test_the_desks_grid_list_page_is_gone(client):
+    """/desks (the grid of every desk) was removed 2026-10-23 — the Desk
+    UI overhaul made /desk/oil ("Thesis" in the 3-tab nav) the only desk
+    page the UI links to by default (active_desks). desks.html no longer
+    exists on disk either."""
     r = client.get("/desks")
-    assert r.status_code == 200
-    assert "text/html" in r.headers["content-type"]
-    # The placeholder, not the real template: it links the JSON route.
-    assert "/api/desks" in r.text
-    assert "desks-grid" not in r.text
-
-
-def test_desks_html_page_serves_real_template(client):
-    """With desk-ui merged, /desks serves pathiel/templates/desks.html."""
-    r = client.get("/desks")
-    assert r.status_code == 200
-    real = (Path(__file__).resolve().parents[3] / "pathiel/templates/desks.html").read_text()
-    assert r.text == real
-    assert "no-cache" in r.headers.get("cache-control", "")
+    assert r.status_code == 404
+    assert not (Path(__file__).resolve().parents[3] / "pathiel/templates/desks.html").exists()
 
 
 def test_desk_html_page_known_desk(client):
-    r = client.get("/desks/oil")
+    r = client.get("/desk/oil")
     assert r.status_code == 200
     assert "text/html" in r.headers["content-type"]
 
 
 def test_desk_html_page_unknown_desk_404(client):
-    r = client.get("/desks/not-a-real-desk")
+    r = client.get("/desk/not-a-real-desk")
     assert r.status_code == 404
 
 

@@ -14,7 +14,6 @@ import pathlib
 import re
 import shutil
 import subprocess
-import time
 
 import pytest
 from fastapi import FastAPI
@@ -133,220 +132,8 @@ def client():
 
 # ── activity classification ──────────────────────────────────────────────────
 
-def test_activity_newest_first_and_types(monkeypatch):
-    monkeypatch.setattr(db, "_read_log_lines", lambda: list(ALL_EVENTS))
-    out = db._activity_payload(limit=50)
-    evs = out["events"]
-    assert [e["ts"] for e in evs] == sorted((e["ts"] for e in ALL_EVENTS), reverse=True)
-    by_ts = {e["ts"]: e for e in evs}
-    assert by_ts[100]["type"] == "research"
-    assert by_ts[100]["web_search_used"] is True
-    assert by_ts[100]["citations"] == [
-        {"url": "https://example.com/sol-article", "title": "example.com/sol-article"}]
-    assert by_ts[100]["provider"] == "openrouter"
-    assert by_ts[200]["type"] == "execute" and by_ts[200]["executed"] is False
-    assert by_ts[200]["gates"] == ["total notional $395 would exceed 1000% of equity ($390)"]
-    assert by_ts[300]["type"] == "execute" and by_ts[300]["book"] == "news_catalyst"
-    assert by_ts[400]["type"] == "close" and by_ts[400]["pnl_pct"] == pytest.approx(7.2407)
-    assert by_ts[500]["type"] == "book" and by_ts[500]["shadow"] is True
-    assert by_ts[500]["candidates"][0]["coin"] == "TRUMP"
-    assert by_ts[650]["type"] == "book" and by_ts[650]["subtype"] == "open"
-    assert set(out["books"]) == db._RENDERABLE_BOOK_NAMES
-
-
-def test_activity_alias_maps_to_book(monkeypatch):
-    monkeypatch.setattr(db, "_read_log_lines", lambda: list(ALL_EVENTS))
-    out = db._activity_payload(book="xs_momentum")
-    assert len(out["events"]) == 1
-    e = out["events"][0]
-    assert e["type"] == "book" and e["book"] == "xs_momentum"
-    # xs_rebalance-specific keys land in `extra` for the kv renderer
-    assert e["extra"]["longs"] == ["BTC", "ETH"]
-
-
-def test_activity_filters_and_limit(monkeypatch):
-    monkeypatch.setattr(db, "_read_log_lines", lambda: list(ALL_EVENTS))
-    research = db._activity_payload(etype="research")["events"]
-    assert [e["coin"] for e in research] == ["BTC", "SOL"]
-    nff = db._activity_payload(book="neg_funding_fade")["events"]
-    assert len(nff) == 1 and nff[0]["ts"] == 500
-    # execute events filter by their book field too
-    news = db._activity_payload(book="news_catalyst")["events"]
-    assert [e["ts"] for e in news] == [300]
-    limited = db._activity_payload(limit=2)["events"]
-    assert len(limited) == 2 and limited[0]["ts"] == 700
-
-
-def test_tier_hierarchy(monkeypatch):
-    """T1 = card-worthy, T2 = one-liner, T3 = coalesce-only, per operator order."""
-    monkeypatch.setattr(db, "_read_log_lines", lambda: list(ALL_EVENTS))
-    by_ts = {e["ts"]: e for e in db._activity_payload(limit=50)["events"]}
-    assert by_ts[100]["tier"] == 2          # research PASS → compact line
-    assert by_ts[150]["tier"] == 1          # research LONG → card
-    assert by_ts[200]["tier"] == 1          # blocked execute → card
-    assert by_ts[300]["tier"] == 1          # filled execute → card
-    assert by_ts[400]["tier"] == 1          # dsl close → card
-    assert by_ts[500]["tier"] == 2          # book cycle with signals → line
-    assert by_ts[600]["tier"] == 2          # xs_rebalance (content, no counts) → line
-    assert by_ts[650]["tier"] == 1          # book_open → card
-    assert by_ts[700]["tier"] == 2          # unknown shape → line
-
-
-def test_quiet_book_cycles_coalesce(monkeypatch):
-    quiet = {"ts": 10, "event": "neg_funding_fade", "shadow": True,
-             "signals": 0, "opened": 0,
-             "skipped": {"held": 0, "claimed": 0}, "candidates": []}
-    monkeypatch.setattr(db, "_read_log_lines", lambda: [quiet])
-    e = db._activity_payload()["events"][0]
-    assert e["tier"] == 3 and e["gkey"] == "quiet|neg_funding_fade"
-
-
-def test_gate_skips_group_by_coin_and_reason(monkeypatch):
-    """The operator's paste: the same CASHCAT+SNX pair rendered ~40 times.
-    That exact tape must resolve to exactly TWO group keys."""
-    events = []
-    for i in range(40):
-        # varying digits (bar counts, scores) must NOT split the groups
-        events.append({"ts": 1000 + i * 120_000, "event": "entry_preflight",
-                       "coin": "CASHCAT", "reason": f"history floor ({2 + i % 3}d<60d)"})
-        events.append({"ts": 1001 + i * 120_000, "event": "entry_preflight",
-                       "coin": "SNX", "reason": f"runner_gate_blocked (score={50 + i})"})
-    monkeypatch.setattr(db, "_read_log_lines", lambda: events)
-    out = db._activity_payload(limit=200)["events"]
-    assert len(out) == 80 and all(e["tier"] == 3 for e in out)
-    assert len({e["gkey"] for e in out}) == 2
-
-
-def test_scans_bucket_hourly_and_heartbeats_tier3(monkeypatch):
-    h = 3_600_000
-    events = [
-        {"ts": 1 * h + 100, "event": "scan", "triggers": 2},
-        {"ts": 1 * h + 200, "event": "scan", "triggers": 0},
-        {"ts": 2 * h + 100, "event": "scan", "triggers": 1},
-        {"ts": 2 * h + 200, "event": "loop_heartbeat", "equity": 39.91,
-         "open_positions": 0},
-    ]
-    monkeypatch.setattr(db, "_read_log_lines", lambda: events)
-    out = db._activity_payload()["events"]
-    scans = [e for e in out if e["type"] == "scan"]
-    assert {e["gkey"] for e in scans} == {"scan|1", "scan|2"}
-    hb = next(e for e in out if e["type"] == "heartbeat")
-    assert hb["tier"] == 3
-
-
-def test_loop_start_never_carries_the_config_dump(monkeypatch):
-    evt = {"ts": 5, "event": "loop_start", "scan_interval": 60, "min_score": 20,
-           "config": {"mode": "LIVE", "leverage": 15, "coin_blocklist": [],
-                      "dsl_exit": {"max_loss_pct": 2.5}, "equity_fraction_per_trade": 0.5}}
-    monkeypatch.setattr(db, "_read_log_lines", lambda: [evt])
-    e = db._activity_payload()["events"][0]
-    assert e["type"] == "system" and e["tier"] == 2
-    assert e["fields"] == {"mode": "LIVE", "scan_interval": 60, "min_score": 20}
-    assert "leverage" not in json.dumps(e)   # the dump must never reach the page
-
-
-def test_session_strip(monkeypatch):
-    now = int(time.time() * 1000)
-    events = [   # chronological, one event outside the 6h window first
-        {"ts": now - 7 * 3_600_000, "event": "scan", "triggers": 99},
-        {"ts": now - 9000, "event": "dsl_exit", "leveraged_pct": -2.2},
-        {"ts": now - 8000, "event": "dsl_exit", "realized_pnl_pct": 7.2},
-        {"ts": now - 7000, "event": "entry_preflight", "coin": "C"},
-        {"ts": now - 6000, "event": "execute", "executed": False},
-        {"ts": now - 5000, "event": "execute", "executed": True},
-        {"ts": now - 4000, "event": "research", "coin": "X"},
-        {"ts": now - 3000, "event": "scan", "triggers": 1},
-        {"ts": now - 2000, "event": "scan", "triggers": 3},
-        {"ts": now - 1000, "event": "loop_heartbeat", "equity": 39.91,
-         "daily_pnl": -0.40, "open_positions": 1},
-    ]
-    monkeypatch.setattr(db, "_read_log_lines", lambda: events)
-    s = db._session_strip()
-    assert s["scans"] == 2 and s["candidates"] == 4      # 99 is outside the window
-    assert s["researched"] == 1 and s["opened"] == 1 and s["closed"] == 2
-    assert s["blocks"] == 2                              # blocked execute + preflight
-    # realized = EXCHANGE truth (heartbeat daily_pnl vs SOD), never summed DSL
-    # close estimates (SKHY 2026-07-13: strip showed +6.44% on a -$0.40 day)
-    assert s["realized_pnl_pct"] == pytest.approx(-0.40 / (39.91 + 0.40) * 100, abs=0.01)
-    assert s["equity"] == 39.91 and s["open_positions"] == 1
-
-
-def test_activity_fresh_boundary(monkeypatch):
-    """Time-decay coalescing: T3 events inside the fresh window are flagged
-    fresh (client renders them as individual rows); older ones are not
-    (client folds them straight into coalesced groups)."""
-    now = 10_000_000_000
-    window_ms = db._FRESH_WINDOW_S * 1000
-    events = [
-        {"ts": now - window_ms - 1, "event": "scan", "triggers": 2},      # 1ms too old
-        {"ts": now - window_ms, "event": "entry_preflight", "coin": "A",
-         "reason": "history floor"},                                       # exactly on cutoff
-        {"ts": now - 60_000, "event": "loop_heartbeat", "equity": 39.9},   # 1 min old
-        {"ts": now - 1_000, "event": "scan", "triggers": 0},               # 1 s old
-    ]
-    monkeypatch.setattr(db, "_read_log_lines", lambda: events)
-    out = db._activity_payload(now_ms=now)["events"]
-    by_ts = {e["ts"]: e for e in out}
-    assert by_ts[now - window_ms - 1]["fresh"] is False
-    assert by_ts[now - window_ms]["fresh"] is True      # >= cutoff counts as fresh
-    assert by_ts[now - 60_000]["fresh"] is True
-    assert by_ts[now - 1_000]["fresh"] is True
-    assert db._activity_payload(now_ms=now)["fresh_window_s"] == db._FRESH_WINDOW_S
-
-
-def test_activity_since_returns_only_newer(monkeypatch):
-    monkeypatch.setattr(db, "_read_log_lines", lambda: list(ALL_EVENTS))
-    out = db._activity_payload(since_ts=500)
-    assert [e["ts"] for e in out["events"]] == [700, 650, 600]
-    assert db._activity_payload(since_ts=700)["events"] == []
-    # since + filter compose: only newer events of the requested type
-    only_book = db._activity_payload(etype="book", since_ts=500)["events"]
-    assert [e["ts"] for e in only_book] == [650, 600]
-
-
-def test_unknown_event_graceful_key_value(monkeypatch):
-    monkeypatch.setattr(db, "_read_log_lines", lambda: [UNKNOWN_EVT])
-    e = db._activity_payload()["events"][0]
-    assert e["type"] == "other" and e["name"] == "mystery_event"
-    assert e["fields"] == {"foo": "bar", "n": 3}
-
-
-def test_dsl_exit_falls_back_to_estimated_pnl(monkeypatch):
-    evt = {k: v for k, v in DSL_EXIT.items() if k != "realized_pnl_pct"}
-    monkeypatch.setattr(db, "_read_log_lines", lambda: [evt])
-    e = db._activity_payload()["events"][0]
-    assert e["pnl_pct"] == pytest.approx(7.523)  # leveraged_pct fallback
-
-
-def test_ai_close_classified_as_close(monkeypatch):
-    evt = {"ts": 10, "event": "ai_close", "coin": "LIT", "executed": True,
-           "reasoning": "structure flipped"}
-    monkeypatch.setattr(db, "_read_log_lines", lambda: [evt])
-    e = db._activity_payload()["events"][0]
-    assert e["type"] == "close" and e["source"] == "ai_close"
-    assert e["reason"] == "structure flipped"
-
 
 # ── books payload ────────────────────────────────────────────────────────────
-
-def test_books_payload_statuses_and_sizes(monkeypatch):
-    monkeypatch.setattr(db, "read_agent_config", lambda: dict(FIXTURE_CONFIG))
-    rows = {r["name"]: r for r in db._books_payload()}
-    # 2026-08-30, second pass: "if it's shadow, nuke it". The two MARGINAL
-    # mover books were shadow, so they are gone. What remains graded VALIDATED
-    # and is LIVE — there is no shadow tier left to sit in. xs_reversal joined
-    # 2026-09-04 and went live from its first bar: its evidence (W-XSR1) was
-    # gathered before the book existed, so there was nothing to graduate from.
-    assert set(rows) == db._KNOWN_BOOK_NAMES and len(rows) == 7   # drawdown_ladder 2026-09-14 (W-WH2), copy_trade 2026-09-21
-    assert rows["news_surge_short"]["status"] == "live"
-    assert "VALIDATED" in rows["news_surge_short"]["thesis"]
-    assert all(r["thesis"] for r in rows.values())
-
-
-def test_books_payload_missing_config_is_off(monkeypatch):
-    monkeypatch.setattr(db, "read_agent_config", lambda: {})
-    rows = db._books_payload()
-    assert len(rows) == 7 and all(r["status"] == "off" for r in rows)
 
 
 # ── news payload ─────────────────────────────────────────────────────────────
@@ -374,159 +161,6 @@ def _write_news_ledger(rows, book="news_surge_short"):
     with open(path, "w") as fh:
         for r in rows:
             fh.write(json.dumps(r) + "\n")
-
-
-def test_news_payload_newest_first_breaking_flagged(monkeypatch, isolated_ledger):
-    _write_news_ledger([
-        {"ts": 1000, "book": "news_surge_short", "coin": "VIRTUAL", "side": "long",
-         "entry_ref_px": 0.63671,
-         "meta": {"breaking": False, "n_recent": 1, "surge_x": 0.51,
-                  "shadow": True, "top3_titles": ["Robinhood AI agent - Cryptonews"]}},
-        {"ts": 2000, "book": "news_surge_short", "coin": "GRASS", "side": "long",
-         "entry_ref_px": 0.39463,
-         "meta": {"breaking": True, "n_recent": 3, "surge_x": 2.4,
-                  "shadow": True, "top3_titles": ["Big headline", "Second headline"]}},
-    ])
-    monkeypatch.setattr(db, "_read_log_lines", lambda: [RESEARCH_NEWS, RESEARCH_PLAIN])
-    payload = db._news_payload(limit=10)
-    items = payload["items"]
-    assert [i["coin"] for i in items] == ["GRASS", "VIRTUAL"]   # newest first
-    assert items[0]["breaking"] is True and items[1]["breaking"] is False
-    assert items[0]["n_recent"] == 3 and items[0]["surge_x"] == 2.4
-    assert items[0]["titles"] == ["Big headline", "Second headline"]
-    # research context: only the event with citations / non-none news_risk
-    ctx = payload["research_context"]
-    assert [c["coin"] for c in ctx] == ["SOL"]
-    assert ctx[0]["citations"] == [
-        {"url": "https://example.com/sol-article", "title": "example.com/sol-article"}]
-    assert ctx[0]["news_risk"] == "elevated"
-
-
-def test_news_payload_empty_ledger(monkeypatch, isolated_ledger):
-    _write_news_ledger([])
-    monkeypatch.setattr(db, "_read_log_lines", lambda: [])
-    payload = db._news_payload()
-    assert payload["items"] == [] and payload["research_context"] == []
-    assert payload["stats"] == {"reads_today": 0, "breaking_today": 0,
-                                "last_read_ts": None}
-
-
-def test_news_payload_stats_fresh_and_title_ages(monkeypatch, isolated_ledger):
-    """Flight-deck payload: header-strip stats (since local midnight), the
-    watcher fresh flag, and per-headline article-age passthrough."""
-    noon = int(time.mktime((2026, 1, 15, 12, 0, 0, 0, 0, -1)) * 1000)
-    _write_news_ledger([
-        {"ts": noon - 20 * 3600 * 1000, "coin": "C", "side": "long",   # yesterday
-         "meta": {"breaking": False, "top3_titles": []}},
-        {"ts": noon - 2 * 3600 * 1000, "coin": "A", "side": "long",    # today, aged
-         "meta": {"breaking": True, "top3_titles": ["fresh piece", "evergreen piece"],
-                  "top3_ages_h": [3.5, 200.0]}},
-        {"ts": noon - 60_000, "coin": "B", "side": "long",             # today, fresh
-         "meta": {"breaking": False, "top3_titles": []}},
-    ])
-    monkeypatch.setattr(db, "_read_log_lines", lambda: [])
-    p = db._news_payload(limit=10, now_ms=noon)
-    items = {i["coin"]: i for i in p["items"]}
-    assert items["B"]["fresh"] is True          # inside the fresh window
-    assert items["A"]["fresh"] is False and items["C"]["fresh"] is False
-    assert items["A"]["title_ages_h"] == [3.5, 200.0]   # article recency, when persisted
-    assert items["B"]["title_ages_h"] is None           # absent in older rows
-    assert p["fresh_window_s"] == db._FRESH_WINDOW_S
-    assert p["stats"] == {"reads_today": 2, "breaking_today": 1,
-                          "last_read_ts": noon - 60_000}
-
-
-def test_the_news_feed_ignores_a_book_that_can_no_longer_trade(monkeypatch, isolated_ledger):
-    """/news read shadow_ledger.load("news_catalyst") by name. That book was
-    demolished 2026-07-18 and is in _REMOVED_BOOKS, so on 2026-09-01 the tab was
-    serving 46-day-old July rows under a "reads today: 0" header while
-    news_surge_short wrote every day. Sources now derive from
-    _KNOWN_BOOK_NAMES; a fresh record in the removed ledger must not come back."""
-    _write_news_ledger([
-        {"ts": 9_000_000_000, "coin": "GHOST", "side": "long", "entry_ref_px": 1.0,
-         "meta": {"breaking": True, "n_recent": 9, "surge_x": 9.9,
-                  "top3_titles": ["should never render"]}},
-    ], book="news_catalyst")
-    _write_news_ledger([
-        {"ts": 9_000_000_001, "coin": "REAL", "side": "short", "entry_ref_px": 2.0,
-         "meta": {"breaking": True, "n_recent": 2, "surge_x": 3.0,
-                  "top3_titles": ["a live headline"]}},
-    ])
-    monkeypatch.setattr(db, "_read_log_lines", lambda: [])
-    items = db._news_payload(limit=10)["items"]
-    assert [i["coin"] for i in items] == ["REAL"]
-    assert items[0]["book"] == "news_surge_short"
-
-
-def test_a_surge_with_headlines_is_an_event_even_when_not_breaking(monkeypatch, isolated_ledger):
-    """`breaking` is a threshold applied on top of the surge, not the whole of
-    it. The page routed to its catalysts pane on `breaking` alone, so a 4.0x
-    surge that captured a headline was filed under "coverage checked, nothing
-    new" beside polls that found nothing at all."""
-    _write_news_ledger([
-        {"ts": 3000, "coin": "SURGE", "side": "short",
-         "meta": {"breaking": False, "n_recent": 4, "surge_x": 4.0,
-                  "top3_titles": ["a real headline"]}},
-        {"ts": 2000, "coin": "TITLED", "side": "short",
-         "meta": {"breaking": False, "n_recent": 1, "surge_x": 1.0,
-                  "top3_titles": ["captured a headline"]}},
-        {"ts": 1000, "coin": "POLL", "side": "short",
-         "meta": {"breaking": False, "n_recent": 0, "surge_x": 1.0,
-                  "top3_titles": []}},
-    ])
-    monkeypatch.setattr(db, "_read_log_lines", lambda: [])
-    by_coin = {i["coin"]: i for i in db._news_payload(limit=50)["items"]}
-    assert by_coin["SURGE"]["event"] is True      # above baseline
-    assert by_coin["TITLED"]["event"] is True     # captured headlines
-    assert by_coin["POLL"]["event"] is False      # found nothing
-
-
-def test_routine_polls_cannot_crowd_the_catalysts_off_the_page(monkeypatch, isolated_ledger):
-    """The books write ~200 polls a day against a handful of catalysts. Under
-    one flat limit over one chronological list, volume decided what the operator
-    saw: measured 2026-09-01, 48 of the newest 50 rows found nothing and the
-    catalysts pane was empty while real surges sat just below the cut.
-
-    The single oldest row here is the only event, buried under 200 newer polls.
-    It must still arrive."""
-    rows = [{"ts": 1000, "coin": "BURIED", "side": "short",
-             "meta": {"breaking": True, "n_recent": 9, "surge_x": 9.0,
-                      "top3_titles": ["the one that matters"]}}]
-    rows += [{"ts": 2000 + i, "coin": f"POLL{i}", "side": "short",
-              "meta": {"breaking": False, "n_recent": 0, "surge_x": 1.0}}
-             for i in range(200)]
-    _write_news_ledger(rows)
-    monkeypatch.setattr(db, "_read_log_lines", lambda: [])
-    items = db._news_payload(limit=50)["items"]
-    coins = [i["coin"] for i in items]
-    assert "BURIED" in coins, "the only catalyst was crowded out by routine polls"
-    # and the watcher still gets a heartbeat, or a live poller looks stopped
-    quiet = [i for i in items if not i["event"]]
-    assert 10 <= len(quiet) <= 50, len(quiet)
-    assert items == sorted(items, key=lambda i: -(i["ts"] or 0)), "still newest-first"
-
-
-def test_news_payload_title_urls_passthrough(monkeypatch, isolated_ledger):
-    """Breaking-coverage headlines carry a source URL (title_urls, parallel
-    to titles) when the recorder persisted one (news_catalyst_live.py's
-    top3_urls) — older rows recorded before that field existed fall back to
-    title_urls=None so the UI renders them as plain, unlinked text instead
-    of guessing a link. Regression (2026-07-15): these headlines were NEVER
-    hyperlinked — only the title string was ever recorded, never the URL —
-    operator: 'keep the article links'."""
-    noon = int(time.mktime((2026, 1, 15, 12, 0, 0, 0, 0, -1)) * 1000)
-    _write_news_ledger([
-        {"ts": noon - 60_000, "coin": "A", "side": "long",
-         "meta": {"breaking": True, "top3_titles": ["fresh piece"],
-                  "top3_urls": ["https://example.com/fresh-piece"]}},
-        {"ts": noon - 2 * 3600 * 1000, "coin": "B", "side": "long",   # pre-fix row
-         "meta": {"breaking": False, "top3_titles": ["old piece"]}},
-    ])
-    monkeypatch.setattr(db, "_read_log_lines", lambda: [])
-    p = db._news_payload(limit=10, now_ms=noon)
-    items = {i["coin"]: i for i in p["items"]}
-    assert items["A"]["title_urls"] == ["https://example.com/fresh-piece"]
-    assert items["B"]["title_urls"] is None
 
 
 # ── pages + endpoints ────────────────────────────────────────────────────────
@@ -626,39 +260,6 @@ def test_hidden_attribute_cannot_be_silently_overridden_by_a_display_rule():
         "the defensive [hidden]{display:none !important} rule is missing from pathiel.css")
 
 
-def test_landing_page_copy_and_removed_chrome(client):
-    r = client.get("/")
-    assert r.status_code == 200
-    assert HOW_IT_WORKS in r.text                 # exact operator copy
-    assert "live books" in r.text
-    assert "pathiel-modal" not in r.text           # terminal window removed
-    assert "operator-toggle" not in r.text        # operator chrome removed
-    assert "matrix-feed" not in r.text            # old sidebar feed removed
-    assert 'data-nav="/activity"' in r.text and 'data-nav="/trends"' in r.text
-    assert 'data-nav="/trends"' in r.text
-    # /news and /analytics were dropped from the nav on 2026-08-02 to shorten
-    # the bar. That left two working pages nobody could reach without typing
-    # the URL, which is a worse cost than a five-item nav: an unreachable page
-    # is the UX problem, not the nav width. Both are linked again 2026-08-31.
-    assert 'data-nav="/news"' in r.text
-    assert 'data-nav="/analytics"' in r.text
-    assert client.get("/news").status_code == 200
-    assert client.get("/analytics").status_code == 200
-    # nav is DASHBOARD · ACTIVITY · PREDICTIONS · TRENDS — config/operator deleted
-    assert 'data-nav="/config"' not in r.text
-    assert 'data-nav="/operator"' not in r.text
-    # token entry moved to the landing footer (localStorage only)
-    assert "op-token-btn" in r.text
-    # how-it-works sits at the BOTTOM: below the books dropdown, above the
-    # footer (operator order 2026-07-12)
-    assert r.text.index('id="books-wrap"') < r.text.index(HOW_IT_WORKS)
-    assert r.text.index(HOW_IT_WORKS) < r.text.index("<footer")
-    # the mascot, the shader and the 8-bit chrome are gone for good
-    for gone in ("pixel-cat", "gl-bg", "cat-sleep", "__setGlState",
-                 "repeating-linear-gradient", "scroll-progress"):
-        assert gone not in r.text, f"landing still ships {gone}"
-
-
 def test_config_and_operator_pages_are_gone(client):
     """Operator order 2026-07-12: /config and /operator are deleted — 404 is
     the EXPECTED behavior, and no page links to them anymore."""
@@ -668,14 +269,14 @@ def test_config_and_operator_pages_are_gone(client):
     assert client.get("/api/dashboard/operator/trackers").status_code == 404
     assert client.post("/api/dashboard/operator/terminal",
                        json={"command": "status"}).status_code == 404
-    for path in ("/", "/activity", "/news", "/analytics", "/trends"):
+    for path in ("/", "/account"):
         page = client.get(path).text
         assert 'data-nav="/config"' not in page, path
         assert 'data-nav="/operator"' not in page, path
 
 
 def test_all_pages_render_and_are_self_contained(client):
-    for path in ("/", "/activity", "/news", "/analytics", "/trends", "/account"):
+    for path in ("/", "/account"):
         r = client.get(path)
         assert r.status_code == 200, path
         for banned in ("unpkg.com", "fonts.googleapis", "fonts.gstatic",
@@ -683,19 +284,34 @@ def test_all_pages_render_and_are_self_contained(client):
             assert banned not in r.text, f"{path} references CDN: {banned}"
 
 
-# ── nav: the "Desks" link (2026-10-17) ───────────────────────────────────────
+def test_the_desk_page_has_every_section(client):
+    """TestClient smoke test standing in for a browser one (tests/browser/
+    has no working no-network pattern for the Desk page specifically — its
+    fixtures are desks.html/onboarding-flow specific). Covers every section
+    docs/overhaul/DESK_UI_2026-10-23.md lists for "/": the call, wallets,
+    levels, headlines and catalysts, loop log, track record, the old
+    auto-trader kill switch, plus the onboarding wizard root that gates all
+    of it for a brand-new visitor."""
+    body = client.get("/").text
+    for section_id in ("onboarding-root", "oil-desk-root", "call-section",
+                       "wallets-section", "levels-section", "intel-section",
+                       "log-section", "track-section", "stop-section"):
+        assert f'id="{section_id}"' in body, f"/ is missing #{section_id}"
 
-ALL_PAGES = ("/", "/activity", "/news", "/analytics", "/trends")
+
+# ── nav: Desk / Thesis / Account (2026-10-23 Desk UI overhaul) ──────────────
+
+ALL_PAGES = ("/", "/account")
 
 
 def test_nav_is_identical_across_every_page_and_carries_desks(client):
-    """Desks and Account sit in every page's nav. Placed second, right after
-    Dashboard, per the overhaul brief's 'near the front'. Every page's nav
-    must be byte-identical in order and labels, matching the pre-existing
-    pattern this sweep found already held for the original five links.
-    Account is wave-2 onboarding's own addition (Build step 4): always the
-    LAST item, so it reads as "everything else, then account settings"
-    rather than competing with Desks for the front."""
+    """Three tabs everywhere: Desk (the landing page, parameterized by the
+    active desk id), Thesis (the active desk's own page, /desk/{id}), and
+    Account, always last. The bare `client` fixture only mounts dashboard.
+    register_routes() (/, /account); desk.html lives on a different router
+    (services/strategies/api.py) and is checked separately by
+    test_account_is_the_last_nav_item_on_every_template, which already
+    reads every template file directly for exactly this reason."""
     navs = {}
     for path in ALL_PAGES:
         page = client.get(path).text
@@ -705,55 +321,32 @@ def test_nav_is_identical_across_every_page_and_carries_desks(client):
     first = navs[ALL_PAGES[0]]
     for path, nav in navs.items():
         assert nav == first, f"{path}'s nav differs from {ALL_PAGES[0]}'s"
-    assert '<a href="/desks" data-nav="/desks" class="nav-link">Desks</a>' in first
+    assert '<a href="/" data-nav="/" class="nav-link">Desk</a>' in first
+    assert 'href="/desk/oil" data-nav="/desk/oil"' in first and ">Thesis</a>" in first
     assert '<a href="/account" data-nav="/account" class="nav-link">Account</a>' in first
-    # "near the front": right after Dashboard, before every other link
-    assert first.index('data-nav="/"') < first.index('data-nav="/desks"')
-    assert first.index('data-nav="/desks"') < first.index('data-nav="/activity"')
-    # Account is last, after everything else — including Trends.
-    assert first.index('data-nav="/trends"') < first.index('data-nav="/account"')
+    # order: Desk, then Thesis, then Account last.
+    assert first.index('data-nav="/"') < first.index('data-nav="/desk/oil"')
+    assert first.index('data-nav="/desk/oil"') < first.index('data-nav="/account"')
     assert first.rindex('<a ') == first.index('<a href="/account"'), (
         "Account is not the last nav link")
 
 
 def test_account_is_the_last_nav_item_on_every_template():
-    """Build step 4: 'Add Account as the last nav item, identical in every
-    template.' Desks and desk.html (nav order Desks-last, pre-existing — not
-    this wave's to unify) get their own check since
+    """Account is always the last nav item, identical in every template —
+    including desk.html, which gets its own check here since
     test_nav_is_identical_across_every_page_and_carries_desks above only
-    compares ALL_PAGES, which excludes them. Reads the template files
-    directly rather than through a client: desks.html/desk.html are served
-    by services/strategies' router, not dashboard.register_routes(), so the
-    bare `client` fixture 404s on them."""
+    compares ALL_PAGES (desk.html is served by services/strategies' router,
+    not dashboard.register_routes(), so the bare `client` fixture 404s on
+    it). Reads every template file directly rather than through a client,
+    so it covers all three (oil_desk.html, desk.html, account.html) the
+    same way."""
     account_link = '<a href="/account" data-nav="/account" class="nav-link">Account</a>'
     for name, html in _template_files():
-        if name not in ("desks.html", "desk.html"):
-            continue
         start = html.index('<nav class="tabs-main">')
         end = html.index("</nav>", start)
         nav = html[start:end]
         assert account_link in nav, f"{name} has no Account nav link"
         assert nav.rindex("<a ") == nav.index(account_link), f"{name}: Account is not last"
-
-
-def test_trends_masthead_has_no_leftover_corrupted_markup(client):
-    """Regression (2026-10-17 ux-qa sweep): trends.html's masthead carried a
-    dead <span> whose id attribute was five real element ids pasted in with
-    literal embedded newlines
-    (id="token-clear\\ntoken-input\\ntoken-row\\ntoken-save\\ntoken-why") —
-    invalid per the HTML5 spec (an id must not contain ASCII whitespace),
-    referenced by nothing, and contributing zero width/content — found while
-    tracing why /trends' masthead overflowed the page at 375px. The real
-    #token-row / #token-input / #token-save / #token-clear / #token-why
-    elements exist correctly elsewhere in the same file and must still be
-    there; only the stray duplicate span is gone."""
-    page = client.get("/trends").text
-    assert "token-clear\ntoken-input" not in page
-    assert page.count('id="token-row"') == 1
-    assert page.count('id="token-input"') == 1
-    assert page.count('id="token-save"') == 1
-    assert page.count('id="token-clear"') == 1
-    assert page.count('id="token-why"') == 1
 
 
 def test_mobile_masthead_right_wraps_instead_of_overflowing():
@@ -788,101 +381,15 @@ def test_mobile_masthead_right_wraps_instead_of_overflowing():
         ".masthead-right has no flex-wrap in the mobile media query")
 
 
-def test_book_filter_and_coin_select_have_accessible_names():
-    """Regression (2026-10-17 ux-qa sweep): #book-filter (activity.html) and
-    #coin-select (analytics.html) are <select> elements with no <label>, no
-    aria-label, and no title — a screen-reader user tabbing to them hears
-    nothing describing what they filter."""
-    activity = (pathlib.Path(__file__).resolve().parent.parent
-                / "pathiel" / "templates" / "activity.html").read_text()
-    analytics = (pathlib.Path(__file__).resolve().parent.parent
-                 / "pathiel" / "templates" / "analytics.html").read_text()
-    assert re.search(r'id="book-filter"[^>]*aria-label="[^"]+"', activity), (
-        "#book-filter has no aria-label")
-    assert re.search(r'id="coin-select"[^>]*aria-label="[^"]+"', analytics), (
-        "#coin-select has no aria-label")
-
-
-def test_activity_endpoint_filters(client, monkeypatch):
-    monkeypatch.setattr(db, "_read_log_lines", lambda: list(ALL_EVENTS))
-    r = client.get("/api/dashboard/activity?type=book&book=neg_funding_fade")
-    assert r.status_code == 200
-    data = r.json()
-    assert len(data["events"]) == 1
-    assert data["events"][0]["book"] == "neg_funding_fade"
-    assert "types" in data and "book" in data["types"]
-    # session strip rides along on every activity response
-    assert "session" in data and data["session"]["window_h"] == 6
-
-
-def test_activity_endpoint_since_bypasses_cache(client, monkeypatch):
-    monkeypatch.setattr(db, "_read_log_lines", lambda: list(ALL_EVENTS))
-    r = client.get("/api/dashboard/activity?since=500")
-    assert r.status_code == 200
-    assert [e["ts"] for e in r.json()["events"]] == [700, 650, 600]
-    # incremental polls carry a fresh `since` every time — they must NOT
-    # accumulate one-shot keys in the TTL cache
-    with db._TTL_CACHE_LOCK:
-        assert not any(k.startswith("activity:") for k in db._TTL_CACHE)
-
-
-def test_landing_has_equity_curve(client):
-    r = client.get("/")
-    assert 'id="equity-chart"' in r.text
-    assert "/static/chart.umd.min.js" in r.text
-    assert "/static/chartjs-adapter-date-fns.min.js" in r.text
-    assert "equity-curve?range_s=" in r.text     # wired to the live endpoint
-
-
-def test_landing_books_dropdown_wraps_flow(client):
-    """Live books stays a disclosure: header and counts always visible, rows
-    behind a toggle whose state is remembered."""
-    r = client.get("/").text
-    assert 'id="books-toggle"' in r and 'id="books-wrap"' in r
-    assert "pathiel-books-open" in r                  # state remembered in localStorage
-    assert 'class="books-wrap"' in r                 # static HTML ships collapsed
-    assert "books-open .books-wrap" in CSS           # the collapsed/open rule
-    assert ".chev" in CSS                            # chevron toggle affordance
-    assert "Live books" in r                         # header + counts always visible
-    # the flowing rows live INSIDE the collapsed container
-    assert 'id="books-flow"' in r and "book-row" in r
-    assert r.index('id="books-wrap"') < r.index('id="books-flow"')
-
-
 def test_no_emoji_glyphs_anywhere(client):
     """Brand order 2026-07-12: no emoji glyphs — the cat is crafted SVG
     markup, geometric shapes are CSS. This sweep must stay green."""
     banned = ["👁", "🙈", "♥", "⚡", "⟳", "■", "⚠", "▶", "⚙", "🐈", "🐱",
               "🤖", "😴", "💰", "💀", "🤑", "😱", "😎", "🔒", "🔓", "🐹", "🐰"]
-    for path in ("/", "/activity", "/news", "/analytics"):
+    for path in ("/", "/account"):
         page = client.get(path).text
         for ch in banned:
             assert ch not in page, f"{path} still renders glyph {ch!r}"
-
-
-def test_kpi_tick_flash_on_value_change(client):
-    """Session-strip KPI numbers flash on change (same green/red tick
-    language as the positions table), not a hard silent swap — a small but
-    real 'live app' signal, present on both flowing-stream pages."""
-    for path in ("/activity", "/news"):
-        r = client.get(path).text
-        assert "flashChanged" in r and "data-k=" in r, path
-        assert "tick-up" in r and "tick-dn" in r, path
-
-
-def test_citations_are_chips_not_blue_links(client):
-    """Citation links read as source chips (dot marker + pill), not generic
-    blue underlined hyperlinks (operator: 'not blue like a link but make the
-    links apparent') — still real <a> tags with a real href, just styled and
-    labeled like a clickable source tag instead of inline blue text."""
-    for path in ("/activity", "/news"):
-        r = client.get(path).text
-        assert "citeChip" in r and "domainOf" in r, f"{path}: missing chip builder"
-        assert "cite-row" in r, f"{path}: citations not wrapped in a chip row"
-        assert "#7dd3fc" not in r, f"{path}: old blue link color still present"
-        assert "text-decoration:underline" not in r, f"{path}: still underlining citations"
-        # chip still carries a real, safe, new-tab link
-        assert 'target="_blank"' in r and 'rel="noopener noreferrer"' in r, path
 
 
 # Helpers shared by every page live in static/pathiel.js now, so the extractor
@@ -933,141 +440,15 @@ def _run_titles_block(html: str, item: dict) -> str:
 
 
 @pytest.mark.skipif(not shutil.which("node"), reason="node not on PATH")
-def test_cite_chip_preserves_server_shortened_path(client):
-    """Regression (2026-07-15): the chip redesign collapsed ANY title
-    containing a '/' down to a bare domain — but the server
-    (_parse_citation/_short_url in dashboard.py) already shortens titleless
-    citations to a DISTINGUISHING host+path string, not a raw URL. That bug
-    made every citation from the same domain render as an identical chip,
-    hiding which specific article a link pointed to. Operator: 'KEEP THE
-    LINKS TO THE NEWS ARTICLES'. The label must preserve a server-shortened
-    host+path title verbatim; only a truly titleless citation falls back to
-    a bare domain."""
-    for path in ("/activity", "/news"):
-        html = client.get(path).text
-        out = _run_cite_chip(html, [
-            # real shape produced by dashboard.py's _short_url fallback
-            {"url": "https://www.kucoin.com/announcement/en-introducing-xyz-token",
-             "title": "www.kucoin.com/announcement/en-introdu…"},
-            {"url": "https://reuters.com/article/123", "title": "Fed cuts rates by 50bps"},
-            {"url": "https://example.com/foo/bar", "title": ""},
-        ])
-        assert 'href="https://www.kucoin.com/announcement/en-introducing-xyz-token"' in out[0], path
-        assert "en-introdu" in out[0], f"{path}: lost the article path, collapsed to bare domain: {out[0]!r}"
-        assert "Fed cuts rates by 50bps" in out[1], f"{path}: real headline mangled: {out[1]!r}"
-        assert ">example.com<" in out[2], f"{path}: titleless citation should fall back to bare domain: {out[2]!r}"
 
 
 @pytest.mark.skipif(not shutil.which("node"), reason="node not on PATH")
-def test_titles_block_links_headlines_when_url_present(client):
-    """Regression (2026-07-15): breaking-coverage headlines (the CATALYSTS
-    pane's readCard/titlesBlock) were NEVER hyperlinked at all — the
-    recorder only ever persisted the title string, never the source URL,
-    so there was nothing to link to. Operator pasted a real example where
-    the headline ran straight into its age with no separator or link
-    ('...Seeking Alpha48m old'), asking to 'keep the article links.' A
-    headline WITH a url now renders as a real <a class="src-link"> to that
-    url, with a space between the title and its age chip; a headline from
-    an older, pre-fix ledger row with no url falls back to plain text
-    rather than a broken link."""
-    html = client.get("/news").text
-    assert "src-link" in html, "titlesBlock never grew a linked variant"
-    linked = _run_titles_block(html, {
-        "titles": ["SK Hynix implied volatility says fasten your seatbelts (SKHY:NASDAQ) - Seeking Alpha"],
-        "title_urls": ["https://seekingalpha.com/news/skhy-implied-vol"],
-        "title_ages_h": [0.8],
-    })
-    assert 'class="src-link"' in linked, linked
-    assert 'href="https://seekingalpha.com/news/skhy-implied-vol"' in linked, linked
-    assert "Seeking Alpha</a>" in linked, f"title text not fully inside the link: {linked!r}"
-    assert "Alpha</a> <span" in linked, f"age chip glued onto the title with no separator: {linked!r}"
-    assert "48m old" in linked
-
-    unlinked = _run_titles_block(html, {
-        "titles": ["evergreen background piece"], "title_urls": None, "title_ages_h": [200.0],
-    })
-    assert "<a " not in unlinked, f"titleless-url row should not render a link: {unlinked!r}"
-    assert "evergreen background piece" in unlinked
 
 
 @pytest.mark.skipif(not shutil.which("node"), reason="node not on PATH")
-def test_trade_empty_copy_does_not_claim_nothing_actionable_with_open_positions(client):
-    """Regression (2026-07-15): operator screenshot showed the trade pane's
-    empty state reading "nothing actionable since 14:36 — engine scanning
-    normally" while two real positions (PUMP, xyz:SKHY) sat open with real
-    uPnL — the copy only ever looked at recent-event counts, never
-    session.open_positions (which the strip KPI already reads correctly,
-    dashboard.py:1000, from live heartbeat data). With open positions the
-    message must say so plainly instead of implying there is nothing to
-    watch; with zero open positions the original wording is unchanged."""
-    html = client.get("/activity").text
-    held = _run_node(
-        html, [("const", "fmtHM"), ("function", "tradeEmptyCopy")],
-        "tradeEmptyCopy({since_ts: Date.now(), scans: 150, blocks: 885, open_positions: 2})",
-    )
-    assert "nothing actionable" not in held, held
-    assert "2 positions open" in held and "holding quiet" in held, held
-    assert "150 scans, 885 blocks" in held, held
-
-    quiet = _run_node(
-        html, [("const", "fmtHM"), ("function", "tradeEmptyCopy")],
-        "tradeEmptyCopy({since_ts: Date.now(), scans: 10, blocks: 4, open_positions: 0})",
-    )
-    assert "nothing actionable since" in quiet, quiet
-
-    singular = _run_node(
-        html, [("const", "fmtHM"), ("function", "tradeEmptyCopy")],
-        "tradeEmptyCopy({since_ts: Date.now(), scans: 1, blocks: 0, open_positions: 1})",
-    )
-    assert "1 position open" in singular and "1 positions" not in singular, singular
 
 
 @pytest.mark.skipif(not shutil.which("node"), reason="node not on PATH")
-def test_scan_freshtext_guards_against_non_array_coins(client):
-    """Regression (2026-10-17 ux-qa sweep): dashboard.py's scan classification
-    prefers e.coin_scores over e.coins whenever coin_scores is present and
-    truthy (`e.get("coin_scores") or e.get("coins") or []`, dashboard.py's
-    scan branch) — correct when coin_scores is a list (the real shape
-    scripts/trading_loop.py logs), but services/demo/generator.py logs it as
-    a `{coin: score}` dict instead, and this file's freshText() called
-    `.slice()` on whatever came through behind only a truthiness fallback
-    (`e.coins || []`) — a dict is truthy, so that fallback never ran.
-
-    Reproduced live: one 'scan' event with a dict `coins` field threw inside
-    fullLoad()'s per-event ingest loop and aborted it entirely. Not one bad
-    row — all 300 events in that load silently failed to render, and the
-    trade pane got stuck forever on the generic 'feed load failed — is the
-    server up?' banner (the outer .catch()), while every OTHER pane kept
-    showing whatever had rendered before the throw. The fix is the
-    Array.isArray guard below; the per-event try/catch in fullLoad/pollNew is
-    defense in depth for whatever shape nobody has thought of yet — this test
-    proves the specific cause is actually closed, not just contained."""
-    html = client.get("/activity").text
-    # the exact shape that crashed it: coin_scores logged as a dict
-    out = _run_node(
-        html, [("const", "esc"), ("function", "freshText")],
-        "freshText({type: 'scan', coins: {BTC: 50.0, ETH: 61.2}, triggers: 2})")
-    assert "scanned the board" in out and "2 triggers" in out, out
-    # no coins field at all (the common, unremarkable case) must not throw
-    out2 = _run_node(
-        html, [("const", "esc"), ("function", "freshText")],
-        "freshText({type: 'scan', triggers: 0})")
-    assert "no triggers" in out2, out2
-    # the real, correct shape (scripts/trading_loop.py: a list) must still
-    # name the top coins — the guard must not blind the working case
-    out3 = _run_node(
-        html, [("const", "esc"), ("function", "freshText")],
-        "freshText({type: 'scan', coins: ['BTC', 'ETH'], triggers: 2})")
-    assert "BTC, ETH" in out3, out3
-
-
-def test_activity_has_time_decay_flow(client):
-    act = client.get("/activity").text
-    assert "ev-fresh" in act                 # fresh T3 events render individually
-    assert "foldAged" in act                 # aging sweep folds them into groups
-    assert "fresh_window_s" in act           # window sourced from the server
-    assert "ev-fold" in act                  # smooth fold transition class
-    assert "gi-hb" in act and "gi-restart" in act   # geometric glyphs, not emoji
 
 
 def test_positions_rows_expose_liq_px():
@@ -1089,343 +470,7 @@ def test_positions_rows_expose_liq_px():
     assert eth["liq_px"] is None and eth["side"] == "short"
 
 
-def test_landing_has_open_positions_section(client):
-    r = client.get("/").text
-    assert 'id="positions-body"' in r
-    assert "Open positions" in r
-    assert "refreshPositions" in r
-    # placed between the KPI row and the equity curve
-    assert r.index('id="positions-body"') < r.index('id="equity-chart"')
-    assert r.index("Last scan") < r.index('id="positions-body"')
-    # liq proximity danger treatment + origin badges + PnL tick animation
-    assert "liq-danger" in r
-    assert "MANUAL" in r and "originBadge" in r
-    assert "tick-up" in r and "tick-dn" in r
-
-
-def test_stream_pages_flow_and_respect_reduced_motion(client):
-    act = client.get("/activity").text
-    news = client.get("/news").text
-    assert "prefers-reduced-motion" in CSS        # motion opt-out honoured globally
-    for page in (act, news):
-        assert "ev-enter" in page                 # arrival class still applied
-    assert "function ingest" in act               # polls merge/prepend, no full re-render
-    assert "flash-green" in act and "flash-red" in act   # trade emphasis
-    assert "session-strip" in act                 # pinned last-6h answer
-    assert "quiet cycle" in act                   # signal-less book runs coalesce
-    assert "steady" in act                        # unchanged-heartbeat divider
-    assert "nothing actionable since" in act      # empty-tape copy (trade pane)
-    assert "entry refused" in act                 # gate groups read as flight-log
-    assert "quiet stream" in news                 # sparse-ledger empty state copy
-    # Breaking items are marked by a LABEL, not a pulsing animation. A page
-    # that throbs at the reader is the thing this redesign removed.
-    assert 'class="badge b-breaking"' in news
-    assert "breaking-pulse" not in news and "breaking-pulse" not in CSS
-    assert "coverage checked" in news             # quiet reads in flight-log copy
-    assert "nothing new" in news                  # no side/surge fragments on quiet rows
-    assert "control group" in news                # one-line explainer under the header
-
-
-def test_activity_flight_deck_panes(client):
-    """Operator order 2026-07-12: /activity is a flight deck of four
-    independent flowing windows; the panes ARE the type separation."""
-    act = client.get("/activity").text
-    for pane in ("pane-trade", "pane-research", "pane-books", "pane-machine",
-                 "flow-trade", "flow-research", "flow-books", "flow-machine"):
-        assert f'id="{pane}"' in act, f"missing {pane}"
-    for label in ("trade log", "research log", "books", "machine"):
-        assert label in act
-    assert "type-filters" not in act             # type chips are gone
-    assert 'id="book-filter"' in act             # book dropdown scoped to BOOKS pane
-    assert "function paneFor" in act             # routing = the separation
-    # flight-log copy consumes the server-side translations
-    assert "gates_human" in act and "reason_human" in act and "detail_human" in act
-    assert "e.human" in act
-    # human sentences, not machine fragments
-    assert "OPENED" in act and "CLOSED" in act and "REFUSED" in act
-    assert "nothing met the entry bar" in act
-    assert "scanned the board" in act
-
-
-def test_citation_parser():
-    """Citations arrive as 'title — url', legacy 'url — url', bare 'url', or
-    dicts. The href must be the LAST http(s) URL — never the whole string
-    (the ' — ' glue 404'd as %20%E2%80%94, operator screenshot 2026-07-13)."""
-    p = db._parse_citation
-    # title — url
-    assert p("Fed holds rates — https://reuters.com/markets/fed") == \
-        {"url": "https://reuters.com/markets/fed", "title": "Fed holds rates"}
-    # em-dash INSIDE the title survives; only the trailing ' — url' is stripped
-    assert p("Japan — and Korea — rally — https://a.com/x") == \
-        {"url": "https://a.com/x", "title": "Japan — and Korea — rally"}
-    # legacy url — url → href = LAST url, text = shortened URL
-    got = p("https://a.com/very/long/path — https://a.com/very/long/path")
-    assert got["url"] == "https://a.com/very/long/path"
-    assert got["title"].startswith("a.com") and "https://" not in got["title"]
-    # bare url → shortened display text
-    got = p("https://example.com/article?utm=x")
-    assert got["url"] == "https://example.com/article?utm=x"
-    assert got["title"] == "example.com/article"
-    # dict passthrough (with and without title)
-    assert p({"url": "https://b.com/y", "title": "T"}) == {"url": "https://b.com/y", "title": "T"}
-    assert p({"url": "https://b.com/y"})["title"] == "b.com/y"
-    # garbage → None
-    assert p("no url here") is None and p("") is None and p({}) is None
-
-
-def test_research_citations_are_parsed_objects(monkeypatch):
-    evt = {"ts": 1, "event": "research", "coin": "BTC", "verdict": "LONG",
-           "confidence": 0.7, "web_search_used": True,
-           "web_search_citations": ["ETF flows surge — https://reuters.com/etf",
-                                    "https://a.com/x — https://a.com/x",
-                                    "not a citation"]}
-    monkeypatch.setattr(db, "_read_log_lines", lambda: [evt])
-    e = db._activity_payload()["events"][0]
-    assert e["citations"][0] == {"url": "https://reuters.com/etf", "title": "ETF flows surge"}
-    assert e["citations"][1]["url"] == "https://a.com/x"
-    assert len(e["citations"]) == 2                     # the garbage one is dropped
-    # the news research-context path parses too
-    payload_evt = dict(evt, news_risk="elevated")
-    monkeypatch.setattr(db, "_read_log_lines", lambda: [payload_evt])
-    _write_news_ledger([])
-    ctx = db._news_payload()["research_context"][0]
-    assert ctx["citations"][0]["url"] == "https://reuters.com/etf"
-
-
-def test_news_flight_deck_panes(client):
-    """Operator order 2026-07-13: /news mirrors the /activity flight deck —
-    CATALYSTS + WATCHER panes, header strip, headline ages always visible."""
-    n = client.get("/news").text
-    for marker in ("pane-catalysts", "pane-watcher", "flow-catalysts", "flow-watcher"):
-        assert f'id="{marker}"' in n, f"missing {marker}"
-    assert "catalysts" in n and "watcher" in n           # pane labels
-    assert 'id="news-strip"' in n and "reads today" in n  # session-style strip
-    assert "last read" in n
-    # headline AGE is first-class: read age from row ts + per-article age
-    # chips when the recorder persisted them, stale flagged red past 7d
-    assert "function ageChip" in n and "age-stale" in n
-    assert "title_ages_h" in n
-    assert "read ${fmtAgo(it.ts)}" in n
-    # watcher time-decay: fresh reads individual, aged coalesce per coin/hour
-    assert "foldAged" in n and "ev-fresh" in n and "fresh_window_s" in n
-    assert "control group" in n                          # explainer kept
-
-
-def test_execute_detail_reason_also_translated(monkeypatch):
-    evt = {"ts": 1, "event": "execute", "coin": "SOL", "executed": False,
-           "blocked_by": None,
-           "detail": "runner_gate_blocked (needs volume+breakout/burst and structure; score=57, slow=0)"}
-    monkeypatch.setattr(db, "_read_log_lines", lambda: [evt])
-    e = db._activity_payload()["events"][0]
-    assert e["detail_human"] == "no fresh breakout structure (score 57)"
-    # filled executes never carry a refusal translation
-    ok = {"ts": 2, "event": "execute", "coin": "SOL", "executed": True, "detail": "493436405964"}
-    monkeypatch.setattr(db, "_read_log_lines", lambda: [ok])
-    e2 = db._activity_payload()["events"][0]
-    assert e2["detail_human"] is None
-
-
-def test_books_endpoint(client, monkeypatch):
-    monkeypatch.setattr(db, "read_agent_config", lambda: dict(FIXTURE_CONFIG))
-    r = client.get("/api/dashboard/books")
-    assert r.status_code == 200
-    rows = r.json()
-    assert len(rows) == 7          # xs_reversal 2026-09-04 (W-XSR1), drawdown_ladder 2026-09-14 (W-WH2), copy_trade 2026-09-21
-    assert {"name", "status", "size", "thesis"} <= set(rows[0])
-
-
-def test_news_endpoint(client, monkeypatch):
-    _write_news_ledger([
-        {"ts": 1, "coin": "VIRTUAL", "side": "long",
-         "meta": {"breaking": True, "n_recent": 2, "surge_x": 1.5,
-                  "top3_titles": ["t1"]}},
-    ])
-    monkeypatch.setattr(db, "_read_log_lines", lambda: [])
-    r = client.get("/api/dashboard/news?limit=5")
-    assert r.status_code == 200
-    data = r.json()
-    assert data["items"][0]["coin"] == "VIRTUAL"
-    assert data["items"][0]["breaking"] is True
-
-
-def test_humanize_reason_translates_real_vocabulary():
-    """Flight-log copy: mined from the live loop log 2026-07-12."""
-    h = db.humanize_reason
-    assert h("history_floor_preflight (2d < 60d history)") == \
-        "too young to trade (2d listed, needs 60d)"
-    assert h("liquidity_floor_preflight ($0.34M < $0.70M)") == \
-        "too thin ($0.34M daily volume, floor $0.70M)"
-    assert h("daily_loss_gate (PnL $-12.61 <= $-12)") == \
-        "daily loss floor hit ($-12.61 of $-12 today)"
-    assert h("runner_gate_blocked (needs volume+breakout/burst and structure; score=28, slow=0)") == \
-        "no fresh breakout structure (score 28)"
-    assert h("hip3_dex_underfunded (xyz: $0.00). Transfer USDC to 'xyz' via the HL frontend.") == \
-        "xyz dex unfunded ($0.00) — transfer USDC to trade equities"
-    assert h("trend_filter (long fights the daily 200d-MA downtrend — counter-trend entries bleed)") == \
-        "long against the daily downtrend (200MA)"
-    assert h("floor_breach (1x consec, floor=0.42)") == "profit floor"
-    assert h("max_loss (2.82% spot / 28.2% ROE >= 2.50% spot cap)") == "stop — max loss"
-    # An untranslated reason must still read as a sentence. The old fallback
-    # returned it verbatim, which is how MAIN_ENGINE_DELETED and a
-    # parenthetical naming the config key `min_tradable_equity_usd` became
-    # headline copy on the dashboard.
-    assert h("some_new_gate (whatever)") == "Some new gate"
-    assert h("MAIN_ENGINE_DELETED") == "Main engine deleted"
-    # services/risk (wave-2, 2026-10-17) replaced the flat
-    # below_min_tradable_equity ($X < $Y) refusal with a per-book one that
-    # already carries its own plain-English reason
-    # (contracts/risk/models.py's BookFeasibility.reason) — shown as-is.
-    assert h("book_not_feasible (drawdown_ladder @ $15.21 equity: "
-             "Needs $525: five resting rungs of $10.50 each at 1x.)") == \
-        "drawdown_ladder: Needs $525: five resting rungs of $10.50 each at 1x."
-    assert h(None) == ""
-
-
-def test_classified_events_carry_human_fields():
-    gate = db._classify_event({"event": "entry_preflight", "ts": 1, "coin": "CASHCAT",
-                               "reason": "history_floor_preflight (2d < 60d history)"})
-    assert gate["human"] == "too young to trade (2d listed, needs 60d)"
-    ex = db._classify_event({"event": "execute", "ts": 1, "coin": "ARB", "side": "long",
-                             "executed": False,
-                             "blocked_by": ["trend_filter (long fights the daily 200d-MA downtrend — x)"]})
-    assert ex["gates_human"] == ["long against the daily downtrend (200MA)"]
-    cl = db._classify_event({"event": "dsl_exit", "ts": 1, "coin": "GRASS", "side": "long",
-                             "reason": "floor_breach (1x consec, floor=0.42)",
-                             "realized_pnl_pct": 2.5, "executed": True})
-    assert cl["reason_human"] == "profit floor"
-
-
 # ── analytics: funnel, book league, funding heat, tapes, coin chart ─────────
-
-def test_funnel_payload_counts_and_reasons(monkeypatch):
-    now = 100_000_000_000
-    events = [
-        {"ts": now - 2 * 86_400_000, "event": "scan", "triggers": 99},   # outside 24h window (oldest, first)
-        {"ts": now - 500, "event": "scan", "triggers": 3},
-        {"ts": now - 400, "event": "scan", "triggers": 2},
-        {"ts": now - 300, "event": "research", "coin": "ARB"},
-        {"ts": now - 250, "event": "execute", "coin": "ARB", "executed": True},
-        {"ts": now - 200, "event": "execute", "coin": "SOL", "executed": False,
-         "blocked_by": ["daily_loss_gate (PnL $-12.61 <= $-12)"]},
-        {"ts": now - 150, "event": "execute", "coin": "ETH", "executed": False,
-         "blocked_by": ["daily_loss_gate (PnL $-9.00 <= $-12)"]},
-        {"ts": now - 100, "event": "entry_preflight", "coin": "CASHCAT",
-         "reason": "history_floor_preflight (2d < 60d history)"},
-    ]
-    monkeypatch.setattr(db, "_read_log_lines", lambda: events)
-    d = db._funnel_payload(window_s=86400, now_ms=now)
-    stages = {s["stage"]: s["n"] for s in d["funnel"]}
-    assert stages == {"Scan cycles": 2, "Triggers": 5, "Position reviews": 1, "Positions opened": 1}
-    assert d["blocked_executions"] == 2
-    # the two daily_loss_gate blocks collapse into ONE humanized reason, counted twice
-    top = {r["reason"]: r["n"] for r in d["top_reasons"]}
-    assert top["daily loss floor hit ($-12.61 of $-12 today)"] == 1  # exact numbers differ
-    assert sum(top.values()) == 3   # 2 execute blocks + 1 preflight
-    assert set(d["coins"]) == {"ARB", "SOL", "ETH"}
-
-
-def test_funnel_payload_counts_book_opens_as_executed(monkeypatch):
-    """A book trade (extreme_fade, xs... ) never emits `execute` — only
-    `book_open`. Operator screenshot 2026-07-14: funnel showed executed=0
-    while xs_momentum held real BTC/ETH positions. book_open must count."""
-    now = 100_000_000_000
-    events = [
-        {"ts": now - 300, "event": "book_open", "book": "extreme_fade",
-         "coin": "BTC", "side": "long"},
-        {"ts": now - 200, "event": "execute", "coin": "ETH", "executed": True},
-        {"ts": now - 100, "event": "execute", "coin": "SOL", "executed": False,
-         "blocked_by": ["some gate"]},
-    ]
-    monkeypatch.setattr(db, "_read_log_lines", lambda: events)
-    d = db._funnel_payload(window_s=86400, now_ms=now)
-    stages = {s["stage"]: s["n"] for s in d["funnel"]}
-    assert stages["Positions opened"] == 2         # book_open + execute(True)
-    assert set(d["coins"]) == {"BTC", "ETH", "SOL"}
-
-
-def test_funnel_payload_empty_log(monkeypatch):
-    monkeypatch.setattr(db, "_read_log_lines", lambda: [])
-    d = db._funnel_payload(window_s=86400)
-    assert all(s["n"] == 0 for s in d["funnel"])
-    assert d["top_reasons"] == [] and d["coins"] == []
-    assert d["last_scan_age_s"] is None
-
-
-def test_an_all_zero_funnel_carries_the_age_of_the_last_scan(monkeypatch):
-    """Four zero bars and "nothing blocked" is what a quiet market looks like.
-    It is also what a dead trading loop looks like, and the operator cannot tell
-    them apart from the bars. The age of the last scan is the only thing that
-    separates them, and it has to survive falling outside the window — that is
-    precisely the case where the loop has been down the whole time."""
-    hour = 3_600_000
-    now = 100 * hour
-    # One scan, eight hours before a 1h window: the window is empty, the loop is
-    # not merely quiet, and the payload has to say so.
-    monkeypatch.setattr(db, "_read_log_lines",
-                        lambda: [{"ts": now - 8 * hour, "event": "scan", "triggers": 3}])
-    d = db._funnel_payload(window_s=3600, now_ms=now)
-    assert all(s["n"] == 0 for s in d["funnel"])
-    assert d["last_scan_age_s"] == 8 * 3600
-
-
-def test_book_league_merges_summary_with_config(monkeypatch, tmp_path):
-    from pathiel.agents import shadow_ledger
-    monkeypatch.setattr(shadow_ledger, "_ledger_dir", lambda: str(tmp_path))
-    with open(tmp_path / "extreme_fade.jsonl", "w") as fh:
-        fh.write(json.dumps({"ts": 1000, "coin": "BTC", "signal_bar_t": 1000,
-                             "entry_ref_px": 100.0, "horizon_days": 3.0}) + "\n")
-    with open(tmp_path / "whale_flow.jsonl", "w") as fh:
-        fh.write(json.dumps({"ts": 2000, "coin": "ETH", "signal_bar_t": 2000,
-                             "entry_ref_px": 50.0, "horizon_days": 1.0}) + "\n")
-    monkeypatch.setattr(db, "read_agent_config", lambda: dict(FIXTURE_CONFIG))
-    rows = {r["book"]: r for r in db._book_league_payload(now_ms=2_000_000_000)}
-    # extreme_fade's module was deleted 2026-08-29. Its ledger survives as the
-    # evidence behind the refutation, but it is not a row: the table lists what
-    # can trade.
-    assert "extreme_fade" not in rows
-    # the resolve maths still has to be right — assert it on the summary, which
-    # is what the league reads, rather than on a row that no longer renders
-    summary = {r["book"]: r for r in shadow_ledger.summary(2_000_000_000)}
-    assert summary["extreme_fade"]["resolved"] == 1     # far past its 3d horizon
-    # whale_flow REFUTED + removed 2026-07-22 -> in _REMOVED_BOOKS, never renders
-    assert "whale_flow" not in rows
-
-
-def test_book_league_removed_books_never_render(monkeypatch, tmp_path):
-    """premium_fade_short / neg_funding_fade: module deleted, ledger fully
-    graded and REFUTED, and — operator order 2026-07-17 — removed from the
-    UI entirely. Their ledger files stay on disk as evidence, but the league
-    payload must skip them; a genuinely still-accruing lane like whale_flow
-    keeps its 'retired' status."""
-    from pathiel.agents import shadow_ledger
-    monkeypatch.setattr(shadow_ledger, "_ledger_dir", lambda: str(tmp_path))
-    with open(tmp_path / "premium_fade_short.jsonl", "w") as fh:
-        fh.write(json.dumps({"ts": 1000, "coin": "BTC", "signal_bar_t": 1000,
-                             "entry_ref_px": 100.0, "horizon_days": 1.0}) + "\n")
-    with open(tmp_path / "neg_funding_fade.jsonl", "w") as fh:
-        fh.write(json.dumps({"ts": 1000, "coin": "ETH", "signal_bar_t": 1000,
-                             "entry_ref_px": 50.0, "horizon_days": 1.0}) + "\n")
-    with open(tmp_path / "news_ta_quadrant.jsonl", "w") as fh:
-        fh.write(json.dumps({"ts": 1000, "coin": "SOL", "signal_bar_t": 1000,
-                             "entry_ref_px": 10.0, "horizon_days": 1.0}) + "\n")
-    with open(tmp_path / "whale_flow.jsonl", "w") as fh:
-        fh.write(json.dumps({"ts": 1000, "coin": "SOL", "signal_bar_t": 1000,
-                             "entry_ref_px": 10.0, "horizon_days": 1.0}) + "\n")
-    monkeypatch.setattr(db, "read_agent_config", lambda: {})
-    rows = {r["book"]: r for r in db._book_league_payload(now_ms=2_000_000_000)}
-    assert "premium_fade_short" not in rows
-    assert "neg_funding_fade" not in rows
-    assert "whale_flow" not in rows                       # REFUTED + removed 2026-07-22
-    assert "news_ta_quadrant" not in rows          # deleted module, ledger kept
-    # no row can ever carry the retired 'dead' status again
-    assert all(r["status"] != "dead" for r in rows.values())
-
-
-def test_book_league_empty_ledger_dir(monkeypatch, tmp_path):
-    from pathiel.agents import shadow_ledger
-    monkeypatch.setattr(shadow_ledger, "_ledger_dir", lambda: str(tmp_path))
-    monkeypatch.setattr(db, "read_agent_config", lambda: {})
-    assert db._book_league_payload() == []
 
 
 def _write_funding_log(path, rows):
@@ -1434,265 +479,7 @@ def _write_funding_log(path, rows):
             fh.write(json.dumps(r) + "\n")
 
 
-def test_funding_heat_accruing_below_threshold(monkeypatch, tmp_path):
-    log = tmp_path / "funding.jsonl"
-    _write_funding_log(log, [{"ts": 1000, "n": 1, "rows": [{"c": "BTC", "f": 0.0001, "oi": 100.0, "px": 60000.0}]}])
-    monkeypatch.setattr(db, "_FUNDING_OI_LOG", str(log))
-    d = db._funding_heat_payload()
-    assert d["status"] == "accruing" and d["count"] == 1 and d["since"] == 1000
-
-
-def test_funding_heat_ranks_by_extremity(monkeypatch, tmp_path):
-    log = tmp_path / "funding.jsonl"
-    hour = 3_600_000
-    rows = []
-    # BTC funding drifts low->low->...->HIGH (current = new high = 100th pctile)
-    for i in range(25):
-        f = 0.0001 if i < 24 else 0.0009
-        rows.append({"ts": i * hour, "n": 1,
-                     "rows": [{"c": "BTC", "f": f, "oi": 1000.0 + i, "px": 60000.0},
-                              {"c": "ETH", "f": 0.0002, "oi": 500.0, "px": 2000.0}]})
-    _write_funding_log(log, rows)
-    monkeypatch.setattr(db, "_FUNDING_OI_LOG", str(log))
-    d = db._funding_heat_payload(now_ms=25 * hour)
-    assert d["status"] == "ok"
-    by_coin = {r["coin"]: r for r in d["rows"]}
-    # 24 readings below, 1 tied (itself): (24 + 0.5) / 25 -> 98.
-    assert by_coin["BTC"]["funding_pctile"] == 98.0
-    assert by_coin["BTC"]["oi_change_24h_pct"] is not None
-    # ETH never moves, so it is exactly where it always is: the midpoint. Under
-    # the old count-ties-as-below percentile it scored 100.0 — the same as a
-    # genuine new high — and this ranking assertion passed on a coin flip.
-    assert by_coin["ETH"]["funding_pctile"] == 50.0
-    # BTC (extreme) ranks ahead of ETH (flat, mid percentile) in the top list
-    assert d["rows"][0]["coin"] == "BTC"
-
-
-def test_a_flat_funding_series_reads_normal_not_extreme(monkeypatch, tmp_path):
-    """Hyperliquid funding sits pinned at its 1.25e-05 baseline for long
-    stretches. Counting ties as "below" then scores every such coin at the 100th
-    percentile at once — measured on the live log 2026-09-01, BTC, ETH, SOL, XRP
-    and TRUMP all read exactly 100%ile in the same snapshot, and the panel was
-    ten rows of maximum alarm meaning nothing. A coin sitting where it always
-    sits is the definition of normal."""
-    log = tmp_path / "funding.jsonl"
-    hour = 3_600_000
-    baseline = 1.25e-05
-    rows = [{"ts": i * hour, "n": 1,
-             "rows": [{"c": c, "f": baseline, "oi": 1000.0, "px": 100.0}
-                      for c in ("BTC", "ETH", "SOL")]}
-            for i in range(25)]
-    _write_funding_log(log, rows)
-    monkeypatch.setattr(db, "_FUNDING_OI_LOG", str(log))
-    d = db._funding_heat_payload(now_ms=25 * hour)
-    assert d["status"] == "ok"
-    assert [r["funding_pctile"] for r in d["rows"]] == [50.0, 50.0, 50.0]
-    # and the rate itself is carried, because a rank alone cannot be sized
-    assert all(r["funding_now"] == baseline for r in d["rows"])
-
-
-def test_funding_heat_missing_file(monkeypatch, tmp_path):
-    monkeypatch.setattr(db, "_FUNDING_OI_LOG", str(tmp_path / "nope.jsonl"))
-    d = db._funding_heat_payload()
-    assert d["status"] == "accruing" and d["count"] == 0 and d["since"] is None
-
-
-def test_the_news_tape_reads_live_books_and_ignores_removed_ones(monkeypatch, tmp_path):
-    """_tapes_payload read `news_catalyst` by name for six weeks after that book
-    was demolished (2026-07-18) and added to _REMOVED_BOOKS, so /analytics said
-    "accruing — no news reads in the last 24h yet" while news_surge_multi and
-    news_surge_short wrote all day. The sources are now derived from
-    _KNOWN_BOOK_NAMES, so a removed book stops being read the moment it leaves
-    _BOOKS. This test is the proof: the removed ledger is on disk with a fresh,
-    breaking record and must still not reach the tape."""
-    from pathiel.agents import shadow_ledger
-    monkeypatch.setattr(shadow_ledger, "_ledger_dir", lambda: str(tmp_path))
-    now = 10_000_000_000
-    with open(tmp_path / "news_catalyst.jsonl", "w") as fh:      # REMOVED book
-        fh.write(json.dumps({"ts": now - 500, "coin": "GHOST", "side": "long",
-                             "meta": {"surge_x": 9.9, "breaking": True}}) + "\n")
-    with open(tmp_path / "whale_flow.jsonl", "w") as fh:         # REMOVED book
-        fh.write(json.dumps({"ts": now - 500, "coin": "GHOST2", "side": "long",
-                             "meta": {"surge_x": 8.8}}) + "\n")
-    with open(tmp_path / "news_surge_multi.jsonl", "w") as fh:   # LIVE book
-        fh.write(json.dumps({"ts": now - 500, "coin": "ARB", "side": "short",
-                             "meta": {"surge_x": 4.2, "breaking": True}}) + "\n")
-        fh.write(json.dumps({"ts": now - 30 * 3_600_000, "coin": "OLD", "side": "short",
-                             "meta": {"surge_x": 1.0}}) + "\n")   # >24h, excluded
-    d = db._tapes_payload(now_ms=now)
-    coins = [r["coin"] for r in d["news"]["rows"]]
-    assert coins == ["ARB"], coins
-    assert d["news"]["rows"][0]["breaking"] is True
-    assert d["news"]["rows"][0]["books"] == ["news_surge_multi"]
-    # the removed whale lane is gone from the payload, not merely empty
-    assert "whale" not in d
-
-
-def test_every_book_the_tape_reads_can_still_trade_today():
-    """The structural half of the fix above: no name the tape draws from may be
-    a book the dashboard already knows is gone."""
-    assert db._KNOWN_BOOK_NAMES.isdisjoint(db._REMOVED_BOOKS)
-
-
-def test_the_news_tape_ranks_by_surge_not_by_how_often_a_coin_was_polled(monkeypatch, tmp_path):
-    """Read count measures how often the poller looked at a coin, not whether
-    anything happened to it. Ranking on it led the panel with SKR — 80 reads, no
-    spike — above coins with real coverage surges."""
-    from pathiel.agents import shadow_ledger
-    monkeypatch.setattr(shadow_ledger, "_ledger_dir", lambda: str(tmp_path))
-    now = 10_000_000_000
-    with open(tmp_path / "news_surge_multi.jsonl", "w") as fh:
-        for _ in range(40):                       # polled constantly, never spikes
-            fh.write(json.dumps({"ts": now - 500, "coin": "POLLED", "side": "short",
-                                 "meta": {"surge_x": 0.0}}) + "\n")
-        fh.write(json.dumps({"ts": now - 500, "coin": "SPIKE", "side": "short",
-                             "meta": {"surge_x": 9.0}}) + "\n")
-    d = db._tapes_payload(now_ms=now)
-    rows = d["news"]["rows"]
-    assert [r["coin"] for r in rows] == ["SPIKE", "POLLED"]
-    assert rows[0]["peak_surge"] == 9.0 and rows[1]["peak_surge"] == 0.0
-    assert rows[1]["reads"] == 40          # still reported, just not what ranks
-
-
-def test_tapes_payload_with_nothing_recorded_is_quiet(monkeypatch, tmp_path):
-    from pathiel.agents import shadow_ledger
-    monkeypatch.setattr(shadow_ledger, "_ledger_dir", lambda: str(tmp_path))
-    d = db._tapes_payload()
-    assert d["news"]["status"] == "quiet" and d["news"]["rows"] == []
-
-
-def test_coin_chart_payload_no_coin():
-    assert db._coin_chart_payload("") == {
-        "coin": "", "interval": "1h", "candles": [], "markers": [], "status": "no_coin"}
-
-
-def test_coin_chart_payload_markers_and_candles(monkeypatch):
-    class FakeCandle:
-        def __init__(self, t, o, h, l, c, v):
-            self.t, self.o, self.h, self.l, self.c, self.v = t, o, h, l, c, v
-
-    candles = [FakeCandle(1000 + i * 3_600_000, 100 + i, 101 + i, 99 + i, 100.5 + i, 10)
-              for i in range(5)]
-    import pathiel.client.hl_client as hl_client
-    monkeypatch.setattr(hl_client, "fetch_hl_candles", lambda coin, interval, count: candles)
-    events = [
-        {"ts": 1000 + 3_600_000, "event": "execute", "coin": "ARB", "executed": True,
-         "side": "long", "entry_px": 101.0},
-        {"ts": 1000 + 2 * 3_600_000, "event": "dsl_exit", "coin": "ARB",
-         "fill_px": 103.0, "realized_pnl_pct": 2.0},
-        {"ts": 1000 + 3 * 3_600_000, "event": "research", "coin": "ARB", "verdict": "LONG",
-         "confidence": 0.7},
-        {"ts": 500, "event": "execute", "coin": "ARB", "executed": True,   # before candle window
-         "side": "long", "entry_px": 90.0},
-        {"ts": 1000 + 3_600_000, "event": "execute", "coin": "OTHER", "executed": True},
-    ]
-    monkeypatch.setattr(db, "_read_log_lines", lambda: events)
-    d = db._coin_chart_payload("ARB", "1h")
-    assert d["status"] == "ok" and len(d["candles"]) == 5
-    kinds = [m["kind"] for m in d["markers"]]
-    assert kinds == ["entry", "close", "verdict"]   # OTHER + pre-window ARB excluded
-
-
-def test_coin_chart_payload_fetch_failure(monkeypatch):
-    import pathiel.client.hl_client as hl_client
-    monkeypatch.setattr(hl_client, "fetch_hl_candles", lambda *a, **kw: [])
-    d = db._coin_chart_payload("NOPE")
-    assert d["status"] == "no_data" and d["candles"] == []
-
-
-def test_analytics_endpoints_route(client, monkeypatch):
-    # House-account routes became operator surface on 2026-09-04. This test is
-    # about payload shape, so it opts into single-operator mode rather than
-    # standing up a signed-in operator session.
-    monkeypatch.setenv("PATHIEL_PUBLIC_DASHBOARD", "1")
-    monkeypatch.setattr(db, "_read_log_lines", lambda: [])
-    monkeypatch.setattr(db, "read_agent_config", lambda: {})
-    for ep in ("/api/dashboard/funnel", "/api/dashboard/book_league",
-               "/api/dashboard/funding_heat", "/api/dashboard/tapes"):
-        r = client.get(ep)
-        assert r.status_code == 200, ep
-
-    import pathiel.client.hl_client as hl_client
-    monkeypatch.setattr(hl_client, "fetch_hl_candles", lambda *a, **kw: [])
-    r = client.get("/api/dashboard/coin_chart?coin=BTC")
-    assert r.status_code == 200 and r.json()["status"] == "no_data"
-    assert client.get("/api/dashboard/coin_chart").status_code == 422  # coin required
-
-
-def test_analytics_page_markers(client):
-    r = client.get("/analytics").text
-    for marker in ("panel-funnel", "panel-league", "panel-chart", "panel-heat",
-                  "panel-tapes", "funnel-bars", "league-body", "coin-canvas",
-                  "heat-body", "news-body", "pathiel-an-"):
-        assert marker in r, f"missing {marker}"
-    # muted from the nav, still served — the page must keep working
-    assert 'data-nav="/analytics"' in r
-    # The whale tape is gone, not hidden: whale_flow was REFUTED and removed
-    # 2026-07-22, and the page kept rendering a section for it that said
-    # "accruing" — a permanently dead lane described as one still filling up.
-    # Its money formatters went with it; nothing else used them.
-    assert "whale" not in r
-    assert "fmtMoneyCompact" not in r and "tape-bar-buy" not in r
-    # the dead-book branch is GONE (operator order 2026-07-17: refuted books
-    # are removed from the UI, not rendered with a special badge)
-    assert "b-dead" not in r and "row-dead" not in r
-
-
-
 # ── landing v3 (2026-07-17): living ambient layer + informational one-pager ──
-
-def test_landing_v3_new_sections_wired_and_ordered(client):
-    """The one-pager grew the decision funnel, recent-closes tape, and the
-    evidence league — all fed by existing local-file endpoints (zero added
-    HL API pressure). Section order contract: positions < equity chart <
-    books < league < how-it-works copy < footer."""
-    r = client.get("/").text
-    for marker in ('id="funnel-strip"', 'id="trade-tape"', 'id="league"',
-                   'id="pipeline"'):
-        assert marker in r, f"missing {marker}"
-    assert "/api/dashboard/funnel" in r
-    assert "book_league" in r
-    assert "closed-trades" in r
-    assert "refreshFunnel" in r and "refreshTape" in r and "refreshLeague" in r
-    assert r.index('id="positions-body"') < r.index('id="equity-chart"')
-    assert r.index('id="equity-chart"') < r.index('id="books-wrap"')
-    assert r.index('id="books-wrap"') < r.index('id="league"') < r.index(HOW_IT_WORKS)
-    # manual closes carry pnl_pct=null — the tape must never fake a 0
-    assert "pct == null" in r
-
-
-def test_landing_v3_token_popover_replaces_prompt(client):
-    """Operator token entry is a native popover in the top layer (with
-    ::backdrop) instead of the old blocking prompt()/confirm() dialogs.
-    Same localStorage key, so existing tooling reads it unchanged."""
-    r = client.get("/").text
-    assert "popover" in r and "popovertarget" in r
-    assert "::backdrop" in CSS
-    assert "prompt(" not in r and "confirm(" not in r
-    assert "pathiel-op-token" in r
-    assert "op-token-btn" in r
-
-
-def test_landing_v3_view_transition_range_switch(client):
-    """Equity-range switches run inside document.startViewTransition when
-    available, guarded so browsers without it (and reduced-motion users)
-    switch instantly."""
-    r = client.get("/").text
-    assert "document.startViewTransition" in r
-    assert "reduceMotion.matches" in r
-
-
-def test_landing_v3_kpi_tweens_and_spark(client):
-    """KPI numbers tween between polls (tabular-nums prevents jitter) and the
-    equity KPI carries a sparkline reusing the big chart's already-fetched
-    series — zero extra API calls."""
-    r = client.get("/").text
-    assert "function tween(" in r and "setMoney" in r
-    assert 'id="kpi-spark"' in r and "drawSpark" in r
-    # spark draws from the same series refreshChart just fetched — the call
-    # site lives inside refreshChart, right after the fetch
-    fetch_at = r.index("equity-curve?range_s=")
-    assert "drawSpark(data)" in r[fetch_at:fetch_at + 400]
 
 
 def test_v4_compiled_css_replaces_tailwind_runtime(client):
@@ -1709,7 +496,7 @@ def test_v4_compiled_css_replaces_tailwind_runtime(client):
     gen = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(gen)
     assert gen.OUT.read_text() == gen.build(), "app.css stale — rerun scripts/build_static_css.py"
-    for path in ("/", "/activity", "/news", "/analytics"):
+    for path in ("/", "/account"):
         r = client.get(path).text
         assert '"/static/app.css"' in r, path
         assert "tailwind.js" not in r, path
@@ -1717,40 +504,17 @@ def test_v4_compiled_css_replaces_tailwind_runtime(client):
 
 def test_v4_speculation_rules_and_hotkeys(client):
     """Hover-eagerness prerendering (speculation rules) makes tab hops
-    instant; g-then-key hotkeys (g d/a/n/y) give app-style navigation,
-    inert while typing."""
-    for path in ("/", "/activity", "/news", "/analytics"):
+    instant; g-then-key hotkeys give app-style navigation, inert while
+    typing. Only the Desk page (oil_desk.html) carries the speculation-
+    rules block today (it was landing.html's own); desk.html/account.html
+    never had it."""
+    r = client.get("/").text
+    assert 'type="speculationrules"' in r
+    assert '"eagerness":"moderate"' in r
+    for path in ("/", "/account"):
         r = client.get(path).text
-        assert 'type="speculationrules"' in r, path
-        assert '"eagerness":"moderate"' in r, path
         # hotkeys live in static/pathiel.js; every page has to load it
         assert "/static/pathiel.js" in r, path
-
-
-def test_v4_landing_wire_sse(client):
-    """The wire: live session-log tail on the landing page over the existing
-    /api/feed/stream SSE endpoint — newest engine event as a one-line strip,
-    hidden until the first event arrives so it never renders as chrome."""
-    r = client.get("/").text
-    assert 'id="wire"' in r
-    assert "EventSource" in r and "/api/feed/stream" in r
-    assert "aria-live" in r
-    assert r.index("</nav>") < r.index('id="wire"') < r.index('id="funnel-strip"')
-
-
-def test_summary_equity_is_true_account_equity(monkeypatch):
-    """Operator correction 2026-07-17: the equity KPI must match HL's own
-    Account Equity — perps across every dex PLUS idle spot USDC — not the
-    perps-only subtotal."""
-    hb = {"ts": int(time.time() * 1000) - 5_000, "event": "loop_heartbeat",
-          "equity": 20.40, "spot_usdc": 0.02, "daily_pnl": 1.9,
-          "available": 1.89, "open_positions": 3,
-          "dex_equity": {"": 11.95, "xyz": 8.45},
-          "dex_available": {"": 1.89, "xyz": 8.45}}
-    monkeypatch.setattr(db, "_read_log_lines", lambda: [hb])
-    s = db._summary_payload()
-    assert s["equity"] == 20.42          # 20.40 perps + 0.02 spot
-    assert s["spot_usdc"] == 0.02
 
 
 # ── a page must not assert health it cannot verify ──────────────────────────
@@ -1760,51 +524,15 @@ def _page(name):
     return dict(_template_files())[name]
 
 
-def test_no_page_reports_an_empty_funnel_without_saying_why():
-    """Four zero bars are what a quiet market looks like and what a stopped loop
-    looks like. Both pages that draw the funnel have to resolve that, or the one
-    reading an empty deck cannot tell which situation they are in."""
-    for name in ("analytics.html", "landing.html"):
-        src = _page(name)
-        assert "last_scan_age_s" in src, f"{name} ignores the liveness field"
-        assert "not a quiet market" in src or "the loop being down" in src, name
-
-
-def test_the_activity_feed_does_not_call_a_stopped_loop_normal():
-    """tradeEmptyCopy said "engine scanning normally (0 scans, 0 blocks)" — an
-    assertion of health built from the numbers that disprove it, shown exactly
-    when an operator is staring at an empty feed asking if the loop is alive."""
-    src = _page("activity.html")
-    assert "not a quiet market" in src
-    i = src.index("function tradeEmptyCopy")
-    body = src[i:src.index("function paneEmpties")]
-    assert "if (!scans)" in body, "the zero-scan case must be handled first"
-    # rindex: the phrase also appears in the comment above the guard.
-    assert body.index("if (!scans)") < body.rindex("scanning normally"), (
-        "the health claim must sit behind the zero-scan guard")
-
-
-def test_the_dashboard_does_not_claim_a_scan_that_never_happened():
-    """last_tick_age_s is null before the loop ever checks in. The strip printed
-    "0 triggers on last scan", which describes a scan that did not occur."""
-    src = _page("landing.html")
-    assert "s.last_tick_age_s == null ? 'No scan yet'" in src
-
-
 def test_the_dashboard_age_format_scales_past_minutes():
-    """fmtAge stopped at minutes, so a loop down eight hours read "480m ago" —
-    the one reading where the number most needs to land."""
-    src = _page("landing.html")
-    fn = src[src.index("const fmtAge = s =>"):src.index("const fmtAgeMs")]
+    """fmtAgeMinutes (static/desks.js, shared by every surviving page) must
+    not stop at minutes — a loop down eight hours must read in hours or
+    days, not "480m ago", the one reading where the number most needs to
+    land."""
+    src = (pathlib.Path(__file__).resolve().parent.parent
+          / "pathiel" / "static" / "desks.js").read_text()
+    fn = src[src.index("const fmtAgeMinutes"):src.index("const fmtAgeMinutes") + 400]
     assert "'h'" in fn and "'d'" in fn, "must scale to hours and days"
-
-
-def test_the_off_switch_label_never_shouts():
-    """The kill button is served as "Stop trading" and the script reset it to
-    "STOP TRADING", so it changed shape after the first press."""
-    src = _page("landing.html")
-    assert "STOP TRADING" not in src and "CONFIRM STOP" not in src
-    assert "Stop trading" in src and "Confirm stop" in src
 
 
 # ── the Markets panels have to be readable, not just correct ────────────────
@@ -1812,37 +540,6 @@ def test_the_off_switch_label_never_shouts():
 
 def _analytics_source():
     return dict(_template_files())["analytics.html"]
-
-
-def test_both_funding_extremes_are_marked_not_only_the_high_one():
-    """Crowded positioning is the read, and it is crowded at both ends. The old
-    heatColor returned the same token for `<= 20` as for the middle, so a coin in
-    the bottom fifth of its own funding range was painted exactly like one
-    sitting at its median — the panel hid the half of the signal it exists for."""
-    src = _analytics_source()
-    fn = src[src.index("function heatColor("):src.index("function fundingRate(")]
-    assert "pctile >= 80 || pctile <= 20" in fn, "the low extreme must be marked too"
-    assert fn.count("--amber") == 1 and "--ink-3" in fn, "middle must be the muted token"
-
-
-def test_the_heat_row_shows_the_funding_rate_and_not_only_its_rank():
-    """"100%ile" says where funding sits in its own history. It never says what
-    the carry costs, and a trader cannot size a position off a rank."""
-    src = _analytics_source()
-    assert "function fundingRate(" in src
-    assert "r.funding_now" in src, "the rate itself must reach the row"
-    assert ".heat-rate" in _css(), "and it needs a column to land in"
-
-
-def test_an_empty_funnel_says_whether_the_loop_is_down():
-    """Zeros in every stage are ambiguous — quiet market, or dead loop. The page
-    has to resolve that, because the two demand opposite responses."""
-    src = _analytics_source()
-    assert 'id="funnel-dead"' in src
-    assert "d.last_scan_age_s" in src
-    assert "not a quiet market" in src
-    # fmtAge is in HOURS; the payload field is seconds.
-    assert "fmtAge(age / 3600)" in src, "age must be converted before formatting"
 
 
 def _css():
@@ -1924,7 +621,7 @@ def test_no_page_calls_an_endpoint_that_is_not_registered(client):
 def test_no_page_pulls_a_third_party_asset(client):
     """The dashboard runs on a trading box. Every asset is vendored under
     /static so a CDN outage (or a CDN owner) cannot change what it renders."""
-    for path in ("/", "/activity", "/news", "/analytics", "/trends", "/account"):
+    for path in ("/", "/account"):
         # the SVG namespace is an identifier, not a fetch — everything else is
         body = client.get(path).text.replace(
             'xmlns="http://www.w3.org/2000/svg"', "")
@@ -1939,7 +636,7 @@ def test_no_page_pulls_a_third_party_asset(client):
 # words are not testable, but the specific things that made it read as a toy
 # are, and each one below was really on the page before this redesign.
 
-PAGES = ("/", "/activity", "/news", "/analytics", "/trends", "/account")
+PAGES = ("/", "/account")
 
 
 def test_no_page_ships_decorative_chrome(client):
@@ -1983,7 +680,7 @@ def test_every_page_uses_the_one_stylesheet(client):
 def test_no_page_carries_a_second_design_system(client):
     """A page-level <style> block is allowed for genuinely page-specific
     geometry (chart heights), but not for a whole palette."""
-    for name in ("landing", "activity", "analytics", "news", "trends", "account"):
+    for name in ("oil_desk", "desk", "account"):
         src = (pathlib.Path(__file__).resolve().parent.parent
                / "pathiel" / "templates" / f"{name}.html").read_text()
         blocks = re.findall(r"<style>(.*?)</style>", src, re.S)
@@ -2043,32 +740,6 @@ def test_no_page_animates_for_decoration(client):
 
 # ── nothing on screen may describe something that no longer exists ──────────
 
-def test_a_book_with_no_module_is_not_a_row_at_all(monkeypatch):
-    """A ledger whose book was deleted is not a row. It was first labelled
-    RECORDER ("still accruing toward a decision" — nothing accrues), then
-    RETIRED and folded on the dashboard. But the payload has TWO consumers,
-    so folding it in one template left /analytics listing all sixteen. The
-    filter belongs here, once."""
-    import pathiel.dashboard as db
-    from pathiel.agents import shadow_ledger
-
-    # imported inside the function, so patch the module it is pulled from
-    monkeypatch.setattr(db, "_books_payload", lambda *a, **k: [])
-    monkeypatch.setattr(shadow_ledger, "summary",
-                        lambda *a, **k: [{"book": "long_gone", "n": 5}])
-    assert db._book_league_payload(now_ms=0) == [], (
-        "a book with no config block is still rendered")
-
-
-def test_the_evidence_table_lists_only_what_trades(client):
-    """Sixteen dead books is not something anyone acts on. The table lists the
-    books that spend capital; the retired ledgers stay on disk and in git as
-    the evidence behind each refutation, but they are not dashboard furniture."""
-    r = client.get("/").text
-    assert "league-retired" not in r, "the retired roll-up is back on the page"
-    assert "r.status !== 'retired'" in r, "retired rows are not filtered out"
-    assert "RECORDER" not in r
-
 
 def test_a_scanned_coin_no_book_claimed_is_not_a_refusal():
     """There is no discretionary entry path: entries come from books, so a
@@ -2085,14 +756,6 @@ def test_a_scanned_coin_no_book_claimed_is_not_a_refusal():
         "a deleted feature's name is still emitted into the session log")
 
 
-def test_structurally_impossible_counts_are_not_printed(client):
-    """`0 shadow · 0 off` were two counts that can never be anything else
-    under the no-shadow doctrine."""
-    r = client.get("/").text
-    assert "shadow · ${" not in r
-    assert "shadow ? " in r, "the shadow count is printed unconditionally"
-
-
 def test_no_template_hard_codes_a_colour():
     """Charts and inline styles kept a neon crypto palette the stylesheet could
     not reach, so a theme change fixed the page and missed the chart."""
@@ -2106,60 +769,36 @@ def test_no_template_hard_codes_a_colour():
         "hard-coded colours bypass the design tokens:\n" + "\n".join(offenders))
 
 
-def test_every_page_reaches_every_other_page(client):
+def test_every_page_reaches_every_other_page():
     """A route that renders but is linked from nowhere is dead UI. Whatever
-    ships must be reachable by clicking."""
-    routes = {"/", "/activity", "/news", "/analytics", "/trends", "/account"}
-    for path in routes:
-        page = client.get(path).text
+    ships must be reachable by clicking. Reads every template file directly
+    (not through `client`) so desk.html — served by services/strategies'
+    router, not dashboard.register_routes() — is covered the same way."""
+    routes = {"/", "/desk/oil", "/account"}
+    for name, page in _template_files():
         linked = {r for r in routes if f'data-nav="{r}"' in page}
-        assert linked == routes, f"{path} cannot reach {sorted(routes - linked)}"
+        assert linked == routes, f"{name} cannot reach {sorted(routes - linked)}"
 
 
 def test_the_nav_marks_the_page_you_are_on(client):
     """The marking runs from static/pathiel.js — every page has to load it and
     give the nav something to match on."""
     assert "nav-active" in SHARED_JS
-    for path in ("/", "/activity", "/news", "/analytics", "/trends", "/account"):
+    for path in ("/", "/account"):
         page = client.get(path).text
         assert "/static/pathiel.js" in page, f"{path} does not load the shared script"
         assert f'data-nav="{path}"' in page, f"{path} has no nav entry to mark"
-
-
-def test_a_removed_subsystem_is_not_reported_as_a_refusal(monkeypatch):
-    """The loop stopped emitting MAIN_ENGINE_DELETED, but the funnel walks a
-    24h window — historical rows kept a deleted feature at the top of the
-    reasons list, naming something that does not exist and burying the gates
-    that actually stopped a trade."""
-    import pathiel.dashboard as db
-
-    now = 100_000_000_000
-    events = [
-        {"ts": now - 200, "event": "ta_skip", "signal": "MAIN_ENGINE_DELETED"},
-        {"ts": now - 190, "event": "ta_skip", "signal": "MAIN_ENGINE_DELETED"},
-        {"ts": now - 180, "event": "entry_preflight",
-         "reason": "history_floor_preflight (2d < 60d history)"},
-    ]
-    monkeypatch.setattr(db, "_read_log_lines", lambda: events)
-    top = {r["reason"]: r["n"] for r in db._funnel_payload(now_ms=now)["top_reasons"]}
-    assert not any("ain engine" in r for r in top), top
-    assert "too young to trade (2d listed, needs 60d)" in top
-
-
-def test_a_zero_stage_draws_no_bar(client):
-    """A 2% stub next to the number 0 says something happened."""
-    r = client.get("/").text
-    assert "s.n ? Math.max(2," in r, "zero-count stages still draw a minimum bar"
+    desk_html = dict(_template_files())["desk.html"]
+    assert "/static/pathiel.js" in desk_html
+    assert 'data-nav="/desk/oil"' in desk_html
 
 
 def test_the_hotkeys_are_defined_once(client):
     assert "keydown" in SHARED_JS
     assert "e.target.closest('input,textarea,select')" in SHARED_JS
-    for name in ("landing", "activity", "analytics", "news", "trends"):
-        src = (pathlib.Path(__file__).resolve().parent.parent
-               / "pathiel" / "templates" / f"{name}.html").read_text()
+    for name, src in _template_files():
         assert "addEventListener('keydown'" not in src, (
-            f"{name}.html re-declares the hotkey handler")
+            f"{name} re-declares the hotkey handler")
 
 
 # ── density: the page must not open with a wall of text ─────────────────────
@@ -2177,49 +816,6 @@ def test_no_page_opens_with_a_paragraph_of_theory(client):
             raise AssertionError(
                 f"{path} ships a {len(m.group(1))}-char paragraph unfolded: "
                 f"{' '.join(m.group(1).split())[:80]}")
-
-
-def test_long_explanations_are_folded_not_deleted(client):
-    """Folding is not the same as removing: a first-time reader still needs the
-    explanation."""
-    for path in ("/news", "/trends"):
-        page = client.get(path).text
-        assert 'class="explainer"' in page, f"{path} lost its explanation entirely"
-        assert "<summary>" in page
-
-
-def test_long_model_reasoning_is_clamped_with_a_way_to_read_it(client):
-    """Twenty research cards each opening with a five-line paragraph is a page
-    nobody scans. Two lines, then More — the text was previously cut with no
-    affordance at all."""
-    page = client.get("/news").text
-    assert "prose-clamp" in page and "prose-more" in page
-    assert "clampProse" in page
-    assert "PROSE_TWO_LINES" in SHARED_JS
-
-
-def test_the_ticker_table_shows_a_head_not_every_row(client):
-    """Sixty-four rows was a 6,700px table nobody reads to the bottom."""
-    page = client.get("/trends").text
-    assert "HL_HEAD" in page and "HL_SHOW_ALL" in page
-    assert 'id="hl-more"' in page, "no way to see the rest"
-
-
-def test_no_chart_can_grow_past_its_container():
-    """A canvas with no CSS width takes its LAYOUT width from its bitmap
-    width, and every chart here sets `canvas.width = width * dpr` on each
-    draw — so each redraw multiplied the element's box by the pixel ratio.
-    The coin chart reached 2,540px inside a 1,440px page and put a scrollbar
-    on the document."""
-    assert "canvas{ max-width:100%" in CSS.replace(" ", " "), (
-        "no global cap on canvas width")
-    tpl = pathlib.Path(__file__).resolve().parent.parent / "pathiel" / "templates"
-    for name in ("landing", "analytics"):
-        src = (tpl / f"{name}.html").read_text()
-        if "canvas.width" in src:
-            assert "parentElement.clientWidth" in src, (
-                f"{name}.html sizes a canvas from its own rect, which feeds "
-                f"its own growth back into the next draw")
 
 
 def test_a_wrapper_does_not_draw_a_second_panel_border():
@@ -2271,7 +867,12 @@ def test_the_single_operator_escape_hatch_is_explicit(monkeypatch):
     monkeypatch.setenv("PATHIEL_PUBLIC_DASHBOARD", "1")
     from fastapi.testclient import TestClient
     from pathiel.server import app
-    assert TestClient(app).get("/api/dashboard/summary").status_code == 200
+    # /api/dashboard/summary was removed 2026-10-23 with the page that showed
+    # it; /risk and /positions are the house routes still standing (kept for
+    # pathiel/metrics.py and their own dedicated test suites — see
+    # pathiel/dashboard.py's register_routes docstring).
+    assert TestClient(app).get("/api/dashboard/risk").status_code == 200
+    assert TestClient(app).get("/api/dashboard/positions").status_code == 200
 
 
 def test_every_page_keeps_the_wallet_connect_mount(client):
@@ -2292,7 +893,7 @@ def test_every_page_keeps_the_wallet_connect_mount(client):
     assert "PathielAuth" not in js
     assert "signIn" not in js and "signOut" not in js
     assert "PathielSession" in js
-    for path in ("/", "/activity", "/news", "/analytics", "/trends", "/account"):
+    for path in ("/", "/account"):
         body = client.get(path).text
         assert "pathiel.js" in body, f"{path} does not load the shared script"
         assert "masthead-right" in body, f"{path} has nowhere to put the wallet mount"
@@ -2322,21 +923,6 @@ def test_no_sign_in_ui_survives_anywhere(client):
             assert gone not in html, f"{name} still has {gone}"
 
 
-def test_the_onboarding_card_uses_tokens_that_exist():
-    """Same regression this test caught before wave-2 (then against the
-    retired #auth-gate): a `var(--x)` that does not exist renders as nothing,
-    so a typo'd token would make the preset card, the low-equity callout or
-    the trade-off banner invisible rather than failing loudly."""
-    import re
-    css = _css()
-    defined = set(re.findall(r"(--[a-z0-9-]+)\s*:", css))
-    for selector in (".preset-card.on", ".callout-amber", ".trade-banner", ".btn.go", ".security-note"):
-        m = re.search(re.escape(selector) + r"\s*\{([^}]*)\}", css)
-        assert m, f"{selector} has no rule in pathiel.css"
-        used = set(re.findall(r"var\((--[a-z0-9-]+)\)", m.group(1)))
-        assert not (used - defined), f"{selector} uses undefined tokens: {sorted(used - defined)}"
-
-
 # ── onboarding (wave-2, 2026-10-17): template structure ─────────────────────
 #
 # These are unit tests on markup and pure JS, not the behaviour — the full
@@ -2347,33 +933,13 @@ def test_the_onboarding_card_uses_tokens_that_exist():
 # doesn't need a browser: the right ids exist, in the right place, wired to
 # the right call.
 
-def test_landing_ships_one_welcome_card_hidden_by_default():
-    """Build step 2: '/' shows one welcome card ... with the three actions.
-    Hidden by default (not the dashboard) so PathielSession.get() — not a
-    guess — decides which one a visitor actually sees; see pathiel.js."""
-    html = dict(_template_files())["landing.html"]
-    start = html.index('id="onboarding-root"')
-    tag_start = html.rindex("<div", 0, start)
-    tag_end = html.index(">", start)
-    assert "hidden" in html[tag_start:tag_end], (
-        "#onboarding-root is not hidden by default — it would flash over the dashboard")
-    welcome = html[html.index('id="onboard-welcome"'):html.index('id="onboard-risk"')]
-    assert 'id="onb-connect"' in welcome and "Connect your Hyperliquid account" in welcome
-    assert 'id="onb-watch"' in welcome and "Watch an address" in welcome
-    assert 'id="onb-demo"' in welcome and 'href="/demo"' in welcome
-    # The dashboard itself also starts hidden, so there is no flash of empty
-    # zeros before PathielSession.get() resolves either.
-    dash_start = html.rindex("<div", 0, html.index('id="dashboard-main"'))
-    dash_end = html.index(">", dash_start)
-    assert "hidden" in html[dash_start:dash_end], (
-        "#dashboard-main is not hidden by default — a brand-new visitor would flash-see it")
-
 
 def test_landing_onboarding_wizard_has_exactly_three_steps_in_order():
     """Build step 2-3: welcome -> 'How much risk?' -> 'You're set', one
-    visible at a time (showStep() in landing.html toggles `hidden` by
-    data-step, never more than one shown)."""
-    html = dict(_template_files())["landing.html"]
+    visible at a time (showStep() in oil_desk.js toggles `hidden` by
+    data-step, never more than one shown). Ported from the old landing.html
+    verbatim into oil_desk.html, 2026-10-23."""
+    html = dict(_template_files())["oil_desk.html"]
     steps = re.findall(r'<section id="onboard-(\w+)" class="onboard-step card" data-step="(\d)"', html)
     assert steps == [("welcome", "1"), ("risk", "2"), ("done", "3")], steps
     # Only step 1 ships visible; 2 and 3 carry their own `hidden`.
@@ -2386,14 +952,18 @@ def test_landing_onboarding_wizard_has_exactly_three_steps_in_order():
 
 
 def test_landing_risk_step_has_preset_cards_preview_and_low_equity_callout():
-    """Build step 2: 'preset cards ... a live preview ... per-book list with
-    can-trade badges and reasons' plus the low-equity callout, 'never silent
-    zeros'."""
-    html = dict(_template_files())["landing.html"]
+    """Build step 2: 'preset cards ... a live preview' plus the low-equity
+    callout, 'never silent zeros'. Ported from the old landing.html into
+    oil_desk.html/oil_desk.js, 2026-10-23 — minus the per-book feasibility
+    preview (#onb-books): books are gone (docs/overhaul/
+    DESK_UI_2026-10-23.md)."""
+    html = dict(_template_files())["oil_desk.html"]
     risk_step = html[html.index('id="onboard-risk"'):html.index('id="onboard-done"')]
     for needed in ("onb-preset-cards", "onb-low-equity", "onb-headline",
-                   "onb-risk-usd", "onb-daily-pause", "onb-max-positions", "onb-books", "onb-save"):
+                   "onb-risk-usd", "onb-daily-pause", "onb-max-positions", "onb-save"):
         assert f'id="{needed}"' in risk_step, f"missing #{needed} in the risk step"
+    assert '"onb-books"' not in risk_step and "id=\"onb-books\"" not in risk_step, (
+        "the per-book feasibility preview should be gone with the books")
     # Four presets, matching contracts/risk/models.py's Preset literal
     # (minus "auto"/"custom" — the wizard only ever offers the four a human
     # picks between; auto is what the FIRST preview resolves TO, not a
@@ -2401,7 +971,9 @@ def test_landing_risk_step_has_preset_cards_preview_and_low_equity_callout():
     # in this page's own script: account.html's risk editor needs the exact
     # same four, and a second copy is how this codebase got five
     # near-identical fmtPct definitions in the first place.
-    assert "RISK_PRESETS" in html, "the risk step doesn't reference the shared preset table"
+    js = open(os.path.join(os.path.dirname(os.path.dirname(__file__)),
+                           "pathiel", "static", "oil_desk.js")).read()
+    assert "RISK_PRESETS" in js, "the risk step doesn't reference the shared preset table"
     assert re.search(r"RISK_PRESETS\s*=\s*\[", SHARED_JS)
     for preset in ("starter", "small", "standard", "pro"):
         assert f"id: '{preset}'" in SHARED_JS, f"preset card '{preset}' missing from pathiel.js"
@@ -2411,21 +983,24 @@ def test_landing_risk_step_has_preset_cards_preview_and_low_equity_callout():
     # preset match, and the wizard has to consult it, not just trust the
     # name literally.
     assert "matchesPresetDefaults" in SHARED_JS
-    assert "matchesPresetDefaults(" in html
+    assert "matchesPresetDefaults(" in js
 
 
 def test_landing_onboarding_calls_the_contract_routes_with_the_right_verbs():
     """Build step 2: equity from GET /api/accounts/active/summary, the
     preview from POST /api/risk/preview, saved with PUT /api/risk/profile —
     exactly contracts/accounts/models.py + contracts/risk/models.py's own
-    route table, not a route this agent invented."""
-    html = dict(_template_files())["landing.html"]
-    assert "fetch('/api/accounts/active/summary')" in html
-    assert "fetch('/api/risk/preview'" in html and "method: 'POST'" in html
-    assert "fetch('/api/risk/profile'" in html and "method: 'PUT'" in html
+    route table, not a route this agent invented. Lives in oil_desk.js now
+    (an external script), not inlined into the page like the old
+    landing.html."""
+    js = open(os.path.join(os.path.dirname(os.path.dirname(__file__)),
+                           "pathiel", "static", "oil_desk.js")).read()
+    assert "fetch('/api/accounts/active/summary')" in js
+    assert "fetch('/api/risk/preview'" in js and "method: 'POST'" in js
+    assert "fetch('/api/risk/profile'" in js and "method: 'PUT'" in js
     # The save body is exactly {preset: ...} — RiskProfile's other fields
     # default to None server-side, so this alone is a valid, complete body.
-    assert "JSON.stringify({ preset: chosenPreset })" in html
+    assert "JSON.stringify({ preset: chosenPreset })" in js
 
 
 def test_risk_presets_table_mirrors_services_risk_presets_exactly():
@@ -2503,16 +1078,19 @@ def test_a_migrated_legacy_profile_is_detectable_as_custom_front_end_side():
         f"{limits.preset_applied!r}'s own defaults — it should say Custom")
 
 
-def test_account_page_has_the_active_card_risk_editor_and_feasibility_table():
+def test_account_page_has_the_active_card_and_risk_editor():
     """Build step 4: active account card, switch/add, a preset segmented
-    control plus the 4 advanced fields collapsed, a book feasibility table,
-    a security note."""
+    control plus the 4 advanced fields collapsed, a security note. The
+    "Can each book trade?" feasibility table was removed 2026-10-23 —
+    books are gone (docs/overhaul/DESK_UI_2026-10-23.md)."""
     html = dict(_template_files())["account.html"]
     for needed in ("account-card", "acct-label", "acct-address", "acct-mode", "acct-equity",
                    "acct-blockers", "acct-switch", "security-note",
                    "risk-preset-seg", "risk-advanced", "adv-risk-pct", "adv-daily-pct",
-                   "adv-max-lev", "adv-max-pos", "risk-save", "feasibility-body"):
+                   "adv-max-lev", "adv-max-pos", "risk-save"):
         assert f'id="{needed}"' in html, f"/account is missing #{needed}"
+    assert 'id="feasibility-body"' not in html, (
+        "the book feasibility table should be gone with the books")
     # Advanced fields are COLLAPSED: a <details> with no `open` attribute.
     details_tag = html[html.index('<details class="risk-advanced"'):html.index(">", html.index('<details class="risk-advanced"')) + 1]
     assert "open" not in details_tag, "the advanced risk fields ship expanded, not collapsed"
@@ -2547,13 +1125,16 @@ def test_account_page_live_preview_has_no_reload_anywhere():
 def test_low_equity_message_is_built_from_min_equity_to_trade_usd_everywhere():
     """Build step 3: 'a clear "Add $X to place your first trade" built from
     min_equity_to_trade_usd. Never silent zeros.' Checked on both screens
-    that show it — the onboarding wizard and /account's risk editor — so
-    neither can drift to a different, uncomputed string."""
-    for name in ("landing.html", "account.html"):
-        html = dict(_template_files())[name]
-        assert "min_equity_to_trade_usd" in html, f"{name}: low-equity math isn't wired"
-        assert "to place your first trade" in html, f"{name}: missing the exact copy"
-        assert "fmtAddUsd(" in html, f"{name}: not using the shared, tested shortfall formatter"
+    that show it — the onboarding wizard (oil_desk.js, external script
+    since 2026-10-23) and /account's risk editor (inline) — so neither can
+    drift to a different, uncomputed string."""
+    oil_desk_js = open(os.path.join(os.path.dirname(os.path.dirname(__file__)),
+                                    "pathiel", "static", "oil_desk.js")).read()
+    sources = {"oil_desk.js": oil_desk_js, "account.html": dict(_template_files())["account.html"]}
+    for name, src in sources.items():
+        assert "min_equity_to_trade_usd" in src, f"{name}: low-equity math isn't wired"
+        assert "to place your first trade" in src, f"{name}: missing the exact copy"
+        assert "fmtAddUsd(" in src, f"{name}: not using the shared, tested shortfall formatter"
 
 
 def test_fmt_add_usd_is_the_shortfall_rounded_up_to_the_cent_never_negative():

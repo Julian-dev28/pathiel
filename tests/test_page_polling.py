@@ -46,10 +46,8 @@ def test_no_page_polls_the_server_with_setinterval():
 
 
 def test_the_dashboard_polls_are_on_pollevery():
-    text = (ROOT / "pathiel" / "templates" / "landing.html").read_text()
-    for poll in ("pollEvery(refreshSummary, 6000)", "pollEvery(refreshPositions, 10000)",
-                 "pollEvery(refreshRisk, 61000)", "pollEvery(refreshBooks, 30000)"):
-        assert poll in text
+    text = (ROOT / "pathiel" / "static" / "oil_desk.js").read_text()
+    assert "pollEvery(loadAll, REFRESH_MS)" in text
 
 
 def test_pollevery_is_shared_from_pathiel_js():

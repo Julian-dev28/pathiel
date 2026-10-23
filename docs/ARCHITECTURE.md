@@ -29,7 +29,7 @@ Persistent state on disk:  .agent-memory.json  .agent-config.json  .dsl-state.js
 
 Two entry processes:
   scripts/trading_loop.py     — exit-management loop: scans, reviews open positions, manages exits, repeats. No entries of its own (headless desk, 2026-10-23).
-  pathiel/server.py     — FastAPI: public dashboard + token-gated operator + JSON API + SSE feed
+  pathiel/server.py     — FastAPI: public dashboard (the Desk page, 2026-10-23) + token-gated operator + JSON API
   scripts/pathiel-mcp-server.py — MCP stdio server: exposes 59 tools to Pathiel Agent / Claude — the one trading surface
 ```
 
@@ -391,76 +391,61 @@ expired desk thesis's trades against it, no order path.
 
 ## The web dashboard
 
-`pathiel/dashboard.py` — single-file FastAPI extension that adds:
+**Rebuilt 2026-10-23** for the headless oil desk (docs/overhaul/
+DESK_UI_2026-10-23.md has the full keep/delete audit). The autonomous bot
+is retired; Claude runs a 15-minute MCP loop
+(`.claude/skills/oil-tick/SKILL.md`) and the operator trades their own
+wallet by hand from the same thesis. Everything the old Tamagotchi-styled,
+multi-tab bot-watching dashboard existed for — scan feed, book panels, the
+AI-brain trend tab, trade tape, decision funnel — is gone with the bot.
+Three pages are left:
 
-- `GET /` — public dashboard (no auth): how-it-works blurb, equity curve
-  (LTTB-decimated, gradient fill), KPIs (equity / today PnL / open / last tick),
-  open positions with leveraged ROE matching HL's display, recent closes with
-  fees-net PnL, streaming live activity feed via SSE.
-- `GET /operator?token=…` — token-gated console: config JSON, in-memory DSL
-  trackers, per-position force-close, OFF/LIVE mode toggle.
-- `POST /api/dashboard/operator/terminal?token=…` — Pathiel terminal endpoint.
-  Built-in commands resolve locally (`status`, `pause`, `resume`,
-  `close <coin>`, `regime`, `config`, `help`); free-form text falls through
-  to **Nous Pathiel 3 70B** via OpenRouter, primed with a structured
-  world-state snapshot (last 8 real trades from memory, live positions
-  with uPnL, recent research verdicts with reasoning, DSL exits with
-  reason+PnL, ta_skips) so the chat answers about what the bot is
-  actually doing, not in a vacuum.
-- `GET /api/feed/stream` — Server-Sent Events tailing the JSONL log.
-  Replays last 50 events on connect; heartbeats every 15s to defeat proxy
-  idle-kill.
-- `GET /api/dashboard/{summary,positions,equity-curve,closed-trades}` —
-  JSON endpoints driving the dashboard JS. Reusable for a future Next.js
-  frontend or any other consumer.
+- `GET /` — **the Desk page** (`pathiel/dashboard.py` serves
+  `pathiel/templates/oil_desk.html`). Parameterized by desk id (agent
+  config `active_desks`, default `["oil"]`): the active desk's current
+  call plus the 20x line computed from its own entry/stop
+  (`pathiel/agents/bracket.py`), one row per registered wallet with a
+  NAKED badge for an uncovered position, candle-derived levels, headlines
+  and catalysts, the loop's own progress log, and the track record. Shows
+  an onboarding wizard (connect account → risk preset → done) first for a
+  brand-new visitor; the same page becomes the Desk once an account is
+  connected.
+- `GET /desk/{id}` — **Thesis**, served by `services/strategies/api.py`
+  (`pathiel/templates/desk.html`), default `oil`: the full reading room —
+  call, leverage picker (same 20x line as `/`, plus the probabilistic
+  ladder), scenarios, catalysts, bull vs bear, what changes my mind, desk
+  school, track record, and a form to submit your own call.
+- `GET /account` — **Account**, served by `pathiel/dashboard.py`
+  (`pathiel/templates/account.html`): the connected Hyperliquid account
+  (or a watch-only address) and the risk preset with a live preview.
 
-### UI layer — Tamagotchi-meets-Matrix
+Supporting JSON routes: `services/strategies/api.py`'s `/api/desks/...`
+(desk briefs, the 20x line, candle levels, the loop log, which desk(s) are
+active) and `services/accounts/api.py`'s `/api/accounts/{id}/positions`
+(the Wallets section's per-account, per-dex position + stop-coverage read).
+`pathiel/dashboard.py` keeps only what nothing else replaced:
+`/api/dashboard/account` (a signed-in wallet's own balance, read-only) and
+the operator-gated `/api/dashboard/risk` + `/positions`, kept because
+`pathiel/metrics.py`'s `/metrics` endpoint and their own dedicated test
+suites read them independent of any page.
 
-Single-file static HTML, no build step. The dashboard intentionally has
-personality:
+### UI layer — vanilla, boring on purpose
 
-- **Press Start 2P font + NES.css** — pixel-bordered cards with hard 4px
-  depth offsets on every section. Title block (`PATHIEL-TRADER`) is an emerald-glow
-  LCD strip.
-- **Matrix-rain sidebar** — the live activity feed sits in a sticky 440px
-  right column with CRT scanline overlay, fade-in row animation, and
-  brighter glow on the newest entry (the "head" of the rain).
-- **White-rabbit habitat** — a hand-rolled 16×16 inline-SVG pixel rabbit
-  sits at the top of the matrix sidebar, bouncing on a spinning ⚙ wheel.
-  An NES speech balloon next to it cycles through 24 law-of-attraction
-  affirmations every 7s.
-- **Reactive header pet** — separate emoji widget that swaps on the
-  current `status` × `daily_pnl_pct` (scanning → 👀, executing → ⚡ shake,
-  profitable → 🤑/😎, losing → 😰 [pixel-SVG sprite] / 😱). Live trading
-  events animate the rabbit too: `execute` → yellow celebrate + ⚡ burst,
-  `dsl_exit` profit → green victory wiggle + 💰, `dsl_exit` loss → red
-  defeat shake + 💀.
-- **Heartbeat config insight line** — every heartbeat in the feed shows
-  the compact live config alongside the equity/PnL/open line:
-  `♥ perp=$X avail=$Y daily=±$Z open=N  ⚙ 5.0%×40x slots=20 cap=40x cool=60m hip3:on`.
-- **Currency + language selectors** — Intl.NumberFormat with USD-base FX
-  rates from open.er-api.com (15 currencies); 10 languages with a static
-  i18n dict applied via `data-i18n` attributes. Both persist in localStorage.
-- **Discreet mode** (`👁` toggle) — flips every $ amount to `•••` while
-  leaving every % visible. For screenshots / public sharing without
-  disclosing capital size.
-- **Operator-mode toggle** (`🔒 op` / `🔓 op` button) — prompts for the
-  `PATHIEL_OPERATOR_TOKEN`, stashes it in localStorage, reloads with
-  `?token=`. No more hand-editing the URL to unlock the terminal.
-- **Pathiel terminal modal** — **Cmd+K** (Ctrl+K) opens a NES-styled
-  black console with an emerald prompt. Operator-token gated. Esc closes.
-
-Design choice worth knowing: still **static HTML + Tailwind CDN +
-Chart.js CDN + NES.css CDN + vanilla JS**. No build step, no bundler, no
-SPA. This stays the right choice at this scale because:
-- Anyone can fork and modify in 5 minutes
-- No npm dependency surface to maintain
-- Server-side trivially deployable as one Python process
-- Looks indie-but-real, which is right for a public trading wallet
-
-Move to a real framework (Lit, Alpine, HTMX, or Svelte) once the
-dashboard grows multi-page, auth-multi-tenant, or marketplace-y — not
-before.
+Plain server-rendered HTML + vanilla JS, no build step, no framework —
+deliberately boring (the 2026-10-19 "v4" redesign's own brief: "something a
+person with a million dollars would use"), which the Desk rebuild kept.
+`static/pathiel.js` (shared formatters, the wallet-connect mount, the
+`pollEvery` poll scheduler that never stacks a slow network read behind
+itself) and `static/desks.css`/`desks.js` (the desk-card/leverage-radiogroup
+styling and behavior, shared between `/` and `/desk/{id}`) are the only
+cross-page assets; `oil_desk.js` is the Desk page's own script. One
+stylesheet (`static/app.css`, compiled by `scripts/build_static_css.py` —
+the gate asserts it is byte-exact with what that script emits), one design
+system, no CDN dependency, no emoji (crafted inline SVG instead), tabular
+figures for money. `services/wallet_ui`'s React bundle is the one exception
+— it renders the wallet-connect modal into a single mount point every page
+carries, loaded on demand (never on page load) so a visitor who never opens
+it never pays for its ~3 MB.
 
 ---
 
@@ -503,7 +488,7 @@ pathiel/
 │   │   ├── memory.py            # disk-backed singleton state
 │   │   ├── config.py / config_store.py  # config read/write
 │   │   ├── book_params.py       # sizing-floor resolver for every entry (stop/leverage/notional)
-│   │   ├── data_logger.py       # the dashboard's funding/OI (funding-heat) panel
+│   │   ├── data_logger.py       # funding/OI recorder; its dashboard panel was removed 2026-10-23
 │   │   ├── shadow_ledger.py     # forward evidence record (thin_short_relax and any future experiment)
 │   │   ├── hyperfeed.py         # leaderboard + whale-flow + OI anomaly (Hyperfeed clone)
 │   │   ├── whale_index.py       # whale tracking on top of public HL endpoints
@@ -519,7 +504,7 @@ pathiel/
 │   │   └── triggers.py          # trigger detection + composite scoring
 │   ├── models/types.py     # Candle (OHLCV)
 │   ├── server.py           # FastAPI: JSON API + routes, session gate, CSP
-│   ├── dashboard.py        # HTML + SSE feed; house routes are operator-only
+│   ├── dashboard.py        # the Desk page's HTML + house routes (operator-only)
 │   └── session_log.py      # JSONL append-only event log
 ├── services/               # independent units, contracts at the boundary
 │   ├── auth/                    # wallet sign-in (EIP-4361) + sessions + API keys
@@ -528,7 +513,7 @@ pathiel/
 │   │   ├── api_keys.py          # customer keys, owned by the minting wallet
 │   │   ├── deps.py / api.py     # cookie-or-Bearer dependency, routes
 │   │   └── tests/               # 50 tests, each named for the attack it stops
-│   ├── trend_engine/            # the /trends lane
+│   ├── trend_engine/            # 7d HL regime + recorder P&L; its dashboard tab was removed 2026-10-23
 │   └── pathiel_data_api/         # market-data product (own deploy unit)
 ├── scripts/
 │   ├── trading_loop.py          # the autonomous loop (long-running)
