@@ -164,7 +164,29 @@ def _positioning_lines(packet: IntelPacket) -> List[Tuple[str, str, float]]:
     return out
 
 
+def _datapoint_lines(packet: IntelPacket) -> List[Tuple[str, str, float]]:
+    """HARD DATA: venue/EIA/FRED/CBOE/CFTC/SEC numbers (IntelPacket.datapoints,
+    added 1.2.0 — see contracts/strategies/models.py's DataPoint). Rendered
+    first (see _SECTIONS below) and boosted into a 0.75-0.95 priority band
+    so these compete for budget ahead of a plain headline or odds row — the
+    operator wants the desks to see "hard numbers before the headline", not
+    just somewhere in the prompt. A crowding flag or a surprise lands in
+    `note` rather than a second row, same one-fact-one-id choice
+    _positioning_lines already makes for percentile_1y."""
+    out = []
+    for dp in packet.datapoints:
+        prior_s = f"{dp.prior:,.4g}" if dp.prior is not None else "n/a"
+        chg_s = f"{dp.change:+,.4g}" if dp.change is not None else "n/a"
+        unit_s = f" {dp.unit}" if dp.unit else ""
+        note_s = f" | {dp.note}" if dp.note else ""
+        line = (f"[{dp.id}] {dp.source:<10} {dp.label}: {dp.value:,.4g}{unit_s}"
+                f" (prior {prior_s}, chg {chg_s}){note_s}")
+        out.append((dp.id, line, 0.75 + dp.relevance * 0.20))
+    return out
+
+
 _SECTIONS = (
+    ("HARD DATA", _datapoint_lines),
     ("HEADLINES", _headline_lines),
     ("POLICY", _policy_lines),
     ("CATALYSTS", _catalyst_lines),
@@ -176,7 +198,7 @@ _SECTIONS = (
 # oil packet of 2026-10-17: 42 headlines, 25 policy items and 130 odds rows
 # filled a 6,000-token allowance and pushed one thesis call to ~19k input
 # tokens. A thesis needs the best few of each, not all of them.
-SECTION_CAPS = {"HEADLINES": 10, "POLICY": 6, "CATALYSTS": 8,
+SECTION_CAPS = {"HARD DATA": 12, "HEADLINES": 10, "POLICY": 6, "CATALYSTS": 8,
                 "PREDICTION MARKETS": 8, "POSITIONING": 6}
 
 
