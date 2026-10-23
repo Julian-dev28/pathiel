@@ -78,7 +78,11 @@ def test_get_limits_uses_the_mocked_active_equity(_client):
     assert r.status_code == 200
     body = r.json()
     assert body["equity_usd"] == 15.19
-    assert len(body["books"]) == 7
+    # One row now, not seven: the strategy books are retired (headless desk,
+    # 2026-10-23) and all_book_specs() returns the single main_engine
+    # roster (services/risk/books.py) — the one entry path left.
+    assert len(body["books"]) == 1
+    assert body["books"][0]["book"] == "main_engine"
     assert all("reason" in b and b["reason"] for b in body["books"])
 
 

@@ -1,49 +1,24 @@
 """The current book roster, translated into services/risk/derive.py's BookSpec.
 
-Source of truth for WHICH books exist is
-`pathiel.agents.rebalancer_owned._ACTIVE_CLAIM_BOOKS` — the SEVEN names
-`analysis["strategy_book"]` gets tagged with and the claims registry tracks.
-`BOOK_NAMES` below mirrors it exactly; `tests/test_books.py` pins the two
-sets equal so they cannot silently drift apart. It is duplicated rather than
-imported because `rebalancer_owned` is a live-signing surface (it "freezes
-the state directory at import time" — see pyproject.toml's ruff exclusion
-comment); this package should never need to load that just to answer "what
-books exist".
+Headless desk (operator decision 2026-10-23): the autonomous strategy books
+are retired — pathiel/agents/news_surge_short_live.py,
+news_surge_multi.py, social_trending_recorder.py, unlock_short_live.py,
+xs_reversal_live.py, drawdown_ladder_live.py and copy_trade_live.py are all
+deleted. `BOOK_NAMES` is now empty on purpose — there is no NAMED book left
+— but `all_book_specs()` does NOT return `[]`: `derive_limits` computes
+`can_trade = any(r.can_trade for r in rows)`, so an empty roster would make
+every dashboard risk panel, `GET /api/risk/limits`, and the MCP `risk_limits`
+/ `risk_size_trade` tools report "No book is configured to trade yet." even
+on a well-funded account — there is no book, but there IS exactly one
+tradeable path now: the bookless main-engine / MCP-submitted entry executor.py
+actually sizes through. `all_book_specs()` returns a one-item roster built by
+`main_engine_spec()`, mirroring the `BookSpec` `pathiel.agents.executor`
+builds inline for its own feasibility check on every real trade.
 
-copy_trade IS NOT RISK-SCALED OR FIXED/STRUCTURAL — IT'S A THIRD SHAPE
-It mirrors a chosen leader's own positions at a capped `leverage_mult`
-(pathiel/agents/copy_trade_live.py), so its risk comes from someone else's
-position sizing, not from a stop-distance risk budget or a fixed rung
-structure. Modeling that properly is out of this wave's scope (it is also
-`enabled: false` in the live config today — see docs/overhaul/
-PROFIT_AUDIT.md's "for the integrator" territory for cross-ownership notes,
-none of which cover this). It gets neither `stop_pct` nor
-`fixed_min_equity_usd`, so `derive_limits` reports it "has no sizing rule
-configured" — honest, not a crash, not a fabricated stop.
-
-Source of truth for HOW a book is sized (stop_pct, leverage) is
-`pathiel.agents.book_params.book_params()`, the existing one-precedence
-resolver (book value > top-level default > floor). This module does not
-re-decide sizing inputs — it only turns the already-resolved numbers into a
-`BookSpec` for `derive_limits`.
-
-ONE NAMING SPLIT, PRE-EXISTING, NOT INTRODUCED HERE
-`unlock_short_live.py` tags its own analyses `"unlock_short_runin"` (matching
-the claims registry) but reads its sizing config under the key
-`"unlock_short"` (pathiel/agents/unlock_short_live.py:40,102). Every other
-book's strategy_book name equals its config key; `_BOOK_CONFIG_KEY` carries
-the one exception.
-
-drawdown_ladder IS THE ONE FIXED/STRUCTURAL BOOK
-Five resting rungs at 1x, not a risk-per-trade question — see
-`drawdown_ladder_live.py`'s `rung_notional`/`min_equity_to_trade`. Its $525
-hard floor is RE-DERIVED here from the exact same formula
-(`MIN_ORDER_USD x RUNGS x len(UNIVERSE) / (LEVERAGE x DEFAULT_SLEEVE_FRAC)`
-= `10.5 x 5 x 5 / (1 x 0.5)` = `525.0`) rather than imported, for the same
-reason as above (that module's import chain reaches live signing).
-`tests/test_risk_books_registry.py` pins this constant against the live
-formula too, so a future change to those constants fails a test here
-instead of silently going stale.
+Source of truth for HOW a bookless entry is sized (stop_pct, leverage) is
+still `pathiel.agents.book_params.book_params()`, the one-precedence
+resolver (book value > top-level default > floor) — unchanged by the book
+roster going empty.
 """
 from __future__ import annotations
 
@@ -54,52 +29,23 @@ from services.risk.derive import BookSpec
 
 CONTRACT_VERSION = "1.0.0"
 
-# Mirrors pathiel.agents.rebalancer_owned._ACTIVE_CLAIM_BOOKS. See module docstring.
-BOOK_NAMES: tuple = (
-    "news_surge_short",
-    "news_surge_multi",
-    "social_trending",
-    "unlock_short_runin",
-    "xs_reversal",
-    "drawdown_ladder",
-    "copy_trade",
-)
+# Empty on purpose — see module docstring. Was the seven-name live-book
+# roster; every one of those books is deleted.
+BOOK_NAMES: tuple = ()
 
-_BOOK_CONFIG_KEY: Dict[str, str] = {
-    "news_surge_short": "news_surge_short",
-    "news_surge_multi": "news_surge_multi",
-    "social_trending": "social_trending",
-    "unlock_short_runin": "unlock_short",
-    "xs_reversal": "xs_reversal",
-    "drawdown_ladder": "drawdown_ladder",
-    "copy_trade": "copy_trade",
-}
+_BOOK_CONFIG_KEY: Dict[str, str] = {}
 
-# drawdown_ladder_live.py constants, re-derived (see module docstring):
-#   _MIN_ORDER_USD=10.5, RUNGS=5, len(UNIVERSE)=5, LEVERAGE=1, DEFAULT_SLEEVE_FRAC=0.5
-_DRAWDOWN_LADDER_MIN_EQUITY_USD = 10.5 * 5 * 5 / (1 * 0.5)   # == 525.0
+_FIXED_BOOKS: Dict[str, Dict[str, Any]] = {}
 
-_FIXED_BOOKS: Dict[str, Dict[str, Any]] = {
-    "drawdown_ladder": {
-        "fixed_min_equity_usd": _DRAWDOWN_LADDER_MIN_EQUITY_USD,
-        "fixed_description": "five resting rungs of $10.50 each at 1x, buying a 21% drawdown",
-    },
-}
+_UNSIZED_BOOKS: frozenset = frozenset()
 
-# Neither risk-scaled nor fixed/structural — see the module docstring's
-# "copy_trade is a third shape" section. book_spec_from_config gives these a
-# plain BookSpec (no stop_pct, no fixed_min_equity_usd), which derive_limits
-# reports as "has no sizing rule configured" rather than guessing.
-_UNSIZED_BOOKS = frozenset({"copy_trade"})
-
-RISK_SCALED_BOOK_NAMES: tuple = tuple(
-    n for n in BOOK_NAMES if n not in _FIXED_BOOKS and n not in _UNSIZED_BOOKS)
+RISK_SCALED_BOOK_NAMES: tuple = ()
 
 
 def config_key_for(strategy_book: str) -> str:
     """The config key book_params() resolves sizing from for this
-    strategy_book name. Equal to the name itself except
-    unlock_short_runin -> unlock_short."""
+    strategy_book name. Identity map now that BOOK_NAMES is empty
+    (_BOOK_CONFIG_KEY has no entries to override it)."""
     return _BOOK_CONFIG_KEY.get(strategy_book, strategy_book)
 
 
@@ -144,8 +90,35 @@ def book_spec_from_config(config: Dict[str, Any], strategy_book: str,
     )
 
 
+MAIN_ENGINE = "main_engine"
+
+
+def main_engine_spec(config: Dict[str, Any], coin_max_leverage: int = 0) -> BookSpec:
+    """The one BookSpec for the bookless (main-engine / MCP-submitted) entry
+    path — the only trader on the wallet since the strategy books were
+    retired 2026-10-23. `enabled` is forced True (not read from a config
+    block's `enabled` key, which this path has never had): whether this
+    caller may trade at all is decided earlier by `mode == "LIVE"` and
+    `main_engine.entries_enabled` (pathiel.agents.executor.maybe_execute),
+    not by anything `derive_limits` checks. Mirrors the `_RiskBookSpec`
+    `executor.maybe_execute` builds inline for its own live feasibility
+    check — this is the same shape, for callers with no coin in hand yet
+    (the dashboard-wide risk preview, the MCP `risk_limits` tool)."""
+    config_key = config_key_for(MAIN_ENGINE)
+    p = book_params(config, config_key)
+    leverage_caps = [v for v in (float(p.leverage), float(coin_max_leverage)) if v > 0]
+    return BookSpec(
+        name=MAIN_ENGINE, enabled=True, stop_pct=float(p.stop_pct),
+        max_leverage=min(leverage_caps) if leverage_caps else float(p.leverage),
+    )
+
+
 def all_book_specs(config: Dict[str, Any]) -> List[BookSpec]:
-    """The full seven-book roster, for the dashboard-wide GET /api/risk/limits
-    and POST /api/risk/preview — no live coin in hand, so no per-coin
-    leverage lookup (see book_spec_from_config)."""
-    return [book_spec_from_config(config, name) for name in BOOK_NAMES]
+    """The full roster, for the dashboard-wide GET /api/risk/limits and
+    POST /api/risk/preview — no live coin in hand, so no per-coin leverage
+    lookup. `BOOK_NAMES` is empty (headless desk, 2026-10-23: every named
+    strategy book is deleted), so this is always the one-item
+    `[main_engine_spec(config)]` roster rather than one row per `BOOK_NAMES`
+    entry — see `main_engine_spec` for why an empty list here would be
+    wrong, not just quiet."""
+    return [main_engine_spec(config)] + [book_spec_from_config(config, name) for name in BOOK_NAMES]

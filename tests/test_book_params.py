@@ -1,8 +1,9 @@
 """Omitting a sizing key must never make a position BIGGER.
 
 THE BUG THIS PREVENTS
-Before 2026-09-06 each book read its own sizing with its own inline fallback,
-and the fallbacks disagreed:
+Before 2026-09-06 each of the seven strategy books (all retired 2026-10-23 —
+headless desk, Claude trades through the MCP server) read its own sizing
+with its own inline fallback, and the fallbacks disagreed:
 
     book                leverage   notional   stop
     xs_reversal             1        $11      15%
@@ -19,27 +20,17 @@ leverage and $20 notional on a $34 account. The duplication WAS the safety.
 These tests exist so that is never true again: the config can be tidied because
 the fallback is correct, not because every value is spelled out.
 
-WHY TWO GEOMETRIES ARE NOW LEGAL
-`scripts/autonomous_cycle.py` promotes a book that clears its evidence bars, and
-promotion writes a deliberate geometry: PROMOTE_NOTIONAL_USD / PROMOTE_LEVERAGE
-/ PROMOTE_STOP_PCT. So "every book resolves identically" stopped being true the
-first time the loop promoted one, and asserting it turned a working safety
-system into four red tests that blocked every commit in the repo.
-
-What replaced it is narrower and still catches the original landmine: books the
-loop has NOT promoted must all resolve identically, and books it HAS promoted
-must match the promotion geometry exactly. An unintended hand edit still fails;
-the loop doing its job does not.
-
-The size invariant is unchanged in intent and sharper in expression. Promotion
-tightens the stop (15% -> 6%) while raising leverage (3 -> 10), so a per-field
-comparison reads the wider fallback stop as "sizing up" when risk per trade
-actually falls. The assertion is now on the thing that matters — notional,
-leverage, and leverage x stop — rather than on each field in isolation.
+STILL LOAD-BEARING AFTER THE BOOKS ARE GONE
+`book_params()` is not book-only infrastructure: `pathiel.agents.executor.
+maybe_execute` calls it (via `services.risk.books.main_engine_spec`) for
+EVERY live trade now — main-engine / MCP-submitted entries resolve their
+stop/leverage/notional through this exact precedence (book value > top-level
+default > floor), just keyed on `"main_engine"` instead of a book name. The
+floor-safety invariant below matters more with the books gone, not less:
+there is only one entry path left, and this is its only sizing fallback.
 """
 from __future__ import annotations
 
-import importlib.util
 import json
 from pathlib import Path
 
@@ -47,50 +38,28 @@ import pytest
 
 from pathiel.agents.book_params import (
     BACKUP_SL_MAX_FRAC_OF_LIQ, FLOOR_LEVERAGE, FLOOR_NOTIONAL_USD,
-    FLOOR_STOP_PCT, LIQ_SAFETY_FRAC, apply_notional_ceiling, book_params,
-    max_stop_pct_at_leverage)
+    FLOOR_STOP_PCT, LIQ_SAFETY_FRAC, book_params, max_stop_pct_at_leverage)
 
-BOOKS = ("xs_reversal", "news_surge_short", "news_surge_multi",
-         "unlock_short", "social_trending")
+# Synthetic config keys standing in for the retired books — the precedence
+# `book_params()` implements does not care what the key is named, and using
+# a name no live config block exists for since 2026-10-23 is deliberate: the
+# tests below exercise the FALLBACK path, not any particular book's tuned
+# numbers.
+SYNTHETIC_KEYS = ("alpha", "beta", "gamma")
 _ROOT = Path(__file__).resolve().parents[1]
 CFG = json.loads((_ROOT / ".agent-config.json").read_text())
 
-# Imported rather than copied: if the promotion geometry moves, these tests must
-# move with it, and a second copy of the numbers is how the original bug got in.
-_AC_SPEC = importlib.util.spec_from_file_location(
-    "autonomous_cycle", _ROOT / "scripts" / "autonomous_cycle.py")
-_AC = importlib.util.module_from_spec(_AC_SPEC)
-_AC_SPEC.loader.exec_module(_AC)
-PROMOTED = (_AC.PROMOTE_NOTIONAL_USD, _AC.PROMOTE_LEVERAGE, _AC.PROMOTE_STOP_PCT)
-
-
-def _is_promoted(book: str) -> bool:
-    """A book carrying the loop's exact promotion geometry.
-
-    Read off the config rather than hardcoded, so this tracks whatever the
-    evidence loop has promoted today instead of needing an edit each time.
-    """
-    p = book_params(CFG, book)
-    return (p.notional_usd, p.leverage, p.stop_pct) == PROMOTED
-
-
-BASELINE_BOOKS = tuple(b for b in BOOKS if not _is_promoted(b))
-PROMOTED_BOOKS = tuple(b for b in BOOKS if _is_promoted(b))
-
 
 # ------------------------------------------------------------- the invariant
-@pytest.mark.parametrize("book", BOOKS)
-def test_omitting_every_key_never_increases_size(book):
-    """The whole point. Strip a book to nothing and it must not size up.
-
-    Compared on risk rather than field by field. A promoted book runs a tighter
-    stop at higher leverage, so its fallback stop is WIDER (15% against 6%) —
-    which a per-field assertion reads as sizing up while the actual exposure per
-    trade falls, because leverage drops 10 -> 3 at the same time. The product is
-    what the account feels.
-    """
-    full = book_params(CFG, book)
-    stripped = book_params({**CFG, book: {}}, book)
+@pytest.mark.parametrize("key", SYNTHETIC_KEYS)
+def test_omitting_every_key_never_increases_size(key):
+    """The whole point. Strip a config block to nothing and it must not size up."""
+    cfg = {
+        "leverage": 3, "default_notional_usd": 11.0, "default_stop_pct": 15.0,
+        key: {"enabled": True, "leverage": 10, "notional_usd": 20.0, "stop_pct": 6.0},
+    }
+    full = book_params(cfg, key)
+    stripped = book_params({**cfg, key: {}}, key)
     assert stripped.leverage <= full.leverage, "fallback raised leverage"
     assert stripped.notional_usd <= full.notional_usd, "fallback raised notional"
     # Loss at the stop, as a fraction of margin: the number that decides how
@@ -130,37 +99,22 @@ def test_top_level_default_fills_what_the_book_omits():
     assert (p.leverage, p.notional_usd, p.stop_pct) == (3, 11.0, 15.0)
 
 
-def test_every_unpromoted_book_resolves_identically():
-    """The tripwire for an unintended hand edit.
-
-    Narrowed from "all five books" because promotion is a legitimate way for a
-    book to diverge — see the note at the top of this file. Everything the loop
-    has not promoted must still share one geometry.
-    """
-    if not BASELINE_BOOKS:
-        pytest.skip("every book is promoted; nothing left to compare")
-    resolved = {b: book_params(CFG, b) for b in BASELINE_BOOKS}
-    assert len(set(resolved.values())) == 1, resolved
-
-
-def test_promoted_books_carry_exactly_the_loops_geometry():
-    """A promoted book must match `apply_action(..., "promote")` to the digit.
-
-    Anything else means someone edited a promoted book by hand, which is the
-    case the identical-resolution test used to catch and no longer can.
-    """
-    for book in PROMOTED_BOOKS:
-        p = book_params(CFG, book)
-        assert (p.notional_usd, p.leverage, p.stop_pct) == PROMOTED, book
+def test_main_engine_resolves_through_the_same_precedence():
+    """services.risk.books.main_engine_spec and executor.maybe_execute both
+    call book_params(config, "main_engine") — the one entry path left since
+    the strategy books were retired. No "main_engine" block exists in the
+    live config, so this always lands on the top-level default / floor,
+    exactly like any other key with no block of its own."""
+    p = book_params(CFG, "main_engine")
+    assert (p.leverage, p.stop_pct) == (int(CFG["leverage"]), float(CFG["default_stop_pct"]))
 
 
 # ------------------------------------------------- the clamp, in one place
 class TestClampIsOneSourceOfTruth:
     """`max_stop_pct_at_leverage` and `executor.stop_honoring_leverage` answer
-    the same question from opposite ends. PROMOTE_STOP_PCT is derived from the
-    first, and the executor enforces the second. If they ever disagree, a
-    promoted book trades a stop the executor silently narrows — which is the
-    2026-07-20 bug, a different strategy rather than a smaller one.
+    the same question from opposite ends. If they ever disagree, a trade
+    requests a stop the executor silently narrows — which is the 2026-07-20
+    bug, a different strategy rather than a smaller one.
     """
 
     @pytest.mark.parametrize("leverage", [1, 2, 3, 4, 5, 6, 8, 10, 12, 20])
@@ -182,14 +136,6 @@ class TestClampIsOneSourceOfTruth:
         from pathiel.agents.executor import stop_honoring_leverage
         too_wide = max_stop_pct_at_leverage(leverage) * 1.02
         assert stop_honoring_leverage(leverage, too_wide) < leverage
-
-    def test_the_promotion_constant_is_derived_not_written(self):
-        """PROMOTE_STOP_PCT must equal the clamp at PROMOTE_LEVERAGE.
-
-        It was the literal 6.0 with a comment reading "== 60/10, exactly at the
-        clamp boundary" — true until someone edited either number.
-        """
-        assert _AC.PROMOTE_STOP_PCT == max_stop_pct_at_leverage(_AC.PROMOTE_LEVERAGE)
 
     def test_the_derivation_tracks_a_change_to_either_input(self):
         """Change the leverage or the clamp and the stop follows.
@@ -218,25 +164,15 @@ class TestClampIsOneSourceOfTruth:
             max_stop_pct_at_leverage(10, max_frac_of_liq=0, liq_safety_frac=0))
 
     def test_the_shared_defaults_are_what_the_executor_uses(self):
-        """The constants moved to book_params so the evidence loop could read
-        them without importing a signing stack. The executor must still be
-        reading the same ones."""
+        """The constants live in book_params so a research/grading script
+        could read them without importing a signing stack. The executor must
+        still be reading the same ones."""
         import inspect
 
         from pathiel.agents import executor
         sig = inspect.signature(executor.stop_honoring_leverage)
         assert sig.parameters["max_frac_of_liq"].default == BACKUP_SL_MAX_FRAC_OF_LIQ
         assert sig.parameters["liq_safety_frac"].default == LIQ_SAFETY_FRAC
-
-
-def test_a_promoted_stop_stays_reachable_and_inside_liquidation():
-    """The 2026-07-20 bug: executor.py clamps the backup stop to
-    entry * 60/leverage percent, so a promoted book whose stop sits outside that
-    trades a geometry it was never graded at."""
-    for book in PROMOTED_BOOKS:
-        p = book_params(CFG, book)
-        assert p.stop_pct <= 60.0 / p.leverage, f"{book}: stop unreachable"
-        assert p.stop_pct < 100.0 / p.leverage, f"{book}: stop past liquidation"
 
 
 # ----------------------------------------------------------------- robustness
@@ -258,63 +194,3 @@ def test_a_non_dict_book_entry_does_not_raise():
 def test_leverage_is_never_below_one():
     assert book_params({"b": {"leverage": 0}}, "b").leverage == 1
     assert book_params({"b": {"leverage": -5}}, "b").leverage == 1
-
-
-# ------------------------------------------------- fraction-sizing convention
-def test_zero_notional_means_equity_fraction_sizing():
-    """0 is not 'no position'. It tells executor.py to size from
-    strategy_book_equity_frac instead of a fixed dollar figure, which is how
-    the live config deploys a percentage of the account."""
-    assert float(CFG["default_notional_usd"]) == 0.0
-    assert float(CFG["strategy_book_equity_frac"]) > 0
-    for b in BASELINE_BOOKS:
-        assert book_params(CFG, b).notional_usd == 0.0
-    # A promoted book opts out on purpose: the loop grades a fixed dollar
-    # position, so it must trade the size it was graded at, not a fraction that
-    # drifts with equity.
-    for b in PROMOTED_BOOKS:
-        assert book_params(CFG, b).notional_usd == _AC.PROMOTE_NOTIONAL_USD
-
-
-# ------------------------------------------- apply_notional_ceiling (wave 2)
-# Config v2 / services/risk: the per-book notional ceiling DerivedLimits
-# computes for the account's current equity + resolved RiskProfile. See
-# pathiel.agents.executor.maybe_execute's call site and
-# book_params.apply_notional_ceiling's own docstring for the full picture;
-# these pin the function's own contract in isolation.
-
-def test_apply_notional_ceiling_clamps_down_when_over():
-    assert apply_notional_ceiling(100.0, 40.0) == 40.0
-
-
-def test_apply_notional_ceiling_never_sizes_up():
-    """A request already below the ceiling is untouched -- a book
-    deliberately under-sized (e.g. xs_reversal's documented de-risking
-    while its forward ledger is unvalidated) must keep its own number."""
-    assert apply_notional_ceiling(10.0, 40.0) == 10.0
-
-
-def test_apply_notional_ceiling_equal_is_a_no_op():
-    assert apply_notional_ceiling(40.0, 40.0) == 40.0
-
-
-def test_apply_notional_ceiling_none_is_a_no_op():
-    """A fixed/structural book (drawdown_ladder) has no derived ceiling --
-    BookFeasibility.notional_usd is None for those, and that must never
-    collapse a real request to zero or raise."""
-    assert apply_notional_ceiling(100.0, None) == 100.0
-
-
-def test_apply_notional_ceiling_non_positive_ceiling_is_a_no_op():
-    assert apply_notional_ceiling(100.0, 0.0) == 100.0
-    assert apply_notional_ceiling(100.0, -5.0) == 100.0
-
-
-def test_apply_notional_ceiling_never_fabricates_risk():
-    """The function's entire job is to REDUCE, never introduce, risk: its
-    output is never larger than max(requested, 0) when requested is already
-    the smaller number, and never larger than the ceiling otherwise."""
-    for requested, ceiling in ((100.0, 40.0), (10.0, 40.0), (0.0, 40.0), (40.0, 40.0)):
-        result = apply_notional_ceiling(requested, ceiling)
-        assert result <= max(requested, ceiling)
-        assert result <= requested or result == ceiling

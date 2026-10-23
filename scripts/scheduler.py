@@ -63,12 +63,6 @@ JOBS: Dict[str, Dict[str, Any]] = {
         "why": "record deposits/withdrawals so the drawdown is flow-neutral and "
                "a withdrawal stops reading as a trading loss",
     },
-    "autonomous-cycle": {
-        "args": [PY, os.path.join(ROOT, "scripts", "autonomous_cycle.py")],
-        "hour": 9, "minute": 15,
-        "log": "logs/autonomous_cycle.log",
-        "why": "grade every book, auto-demote refuted, auto-promote validated",
-    },
     "trends-price": {
         "args": [PY, "-m", "services.trend_engine.run", "--refresh-all",
                  "--lanes", "hl"],

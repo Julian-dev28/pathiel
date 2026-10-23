@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
 """Continuous trading loop for pathiel.
 
-Per cycle: scan the universe, run every live book, review open positions, and
-manage exits. ENTRIES COME FROM BOOKS ONLY — the discretionary
-scan -> TA filter -> research -> execute path was deleted (W-ME1, 2026-08-30)
-after it graded +2.15% against a +1.61% random-entry null and fired zero times
-in 17 days at the live gate. A scanned coin that no book claims is normal, not
-a refusal.
+Per cycle: scan the universe, review open positions, and manage exits. There
+is no entry path here: the discretionary scan -> TA filter -> research ->
+execute path was deleted (W-ME1, 2026-08-30) after it graded +2.15% against a
++1.61% random-entry null and fired zero times in 17 days at the live gate,
+and the autonomous strategy books that replaced it were retired 2026-10-23
+(operator decision: pathiel is a headless desk — Claude places trades through
+the MCP server, scripts/pathiel-mcp-server.py). A scanned coin that nothing
+trades is normal, not a refusal.
 
 The TA filter and the AI research call still run, but only for coins the
-account ALREADY HOLDS: they decide whether to close early. Book-owned
-positions are exempt — each book owns its own exit.
+account ALREADY HOLDS: they decide whether to close early.
 
 Every cycle and decision is appended to the session log (`session_log`), which
 backs the /activity feed and the decision funnel.
@@ -52,35 +53,14 @@ logging.basicConfig(
     format='%(asctime)s %(levelname)s:%(name)s:%(message)s'
 )
 
-from pathiel.agents.perception import (scan_once,
-                                             last_scan_integrity as _last_scan_integrity,
-                                             scan_is_trustworthy as _scan_is_trustworthy)
-from pathiel.agents.risk_gates import book_block_event as _book_block_event
-from pathiel.agents.risk_gates import books_bypass_ai as _books_bypass_ai
+from pathiel.agents.perception import scan_once
 from pathiel.agents.risk_gates import effective_daily_loss_limit as _effective_daily_loss_limit
 from pathiel.agents.ta_filter import analyze_perception
 from pathiel.agents.research import research
 from pathiel.agents.data_logger import maybe_log as _data_logger_maybe_log
-from pathiel.agents.social_trending_recorder import maybe_record as _social_trending_maybe_record
-from pathiel.agents.unlock_short_live import maybe_run as _unlock_short_maybe_run
-from pathiel.agents.news_surge_short_live import maybe_run as _news_surge_short_maybe_run
-from pathiel.agents.news_surge_multi import maybe_run as _news_surge_multi_maybe_run
-from pathiel.agents.xs_reversal_live import maybe_run as _xs_reversal_maybe_run
-from pathiel.agents.drawdown_ladder_live import (
-    book_positions as _ladder_book_positions,
-    maybe_run as _drawdown_ladder_maybe_run,
-    owned_coins as _ladder_owned_coins,
-)
-from pathiel.agents.copy_trade_live import (
-    maybe_run as _copy_trade_maybe_run,
-    owned_coins as _copy_owned_coins,
-)
-from pathiel.agents.unlock_recorder import maybe_record as _unlock_maybe_record
-from pathiel.agents.rebalancer_owned import get_claims_registry, prune_claims_to_live
 from pathiel.agents.executor import (
     _runner_entry_block_reason,
     close_position_market,
-    maybe_execute,
     monitor_exits,
     route_verdict,
     settle_vanished_positions,
@@ -101,61 +81,6 @@ def _staggered_ttl_ms(coin: str, base_ms: int, spread_ms: int = 7_200_000) -> in
     return base_ms + (zlib.crc32(coin.encode()) % spread_ms) - spread_ms // 2
 
 
-def _book_execute(analysis):
-    """execute_fn for the strategy books: run the real executor, but surface a BLOCK
-    to the activity feed. Logic lives in risk_gates.book_block_event (pure + tested);
-    here we just emit it. The executor never touches the feed and the main loop only
-    emits `execute` events for its own entries, so book denials were log-only before.
-
-    books_bypass_ai (default true) = books self-place, as always: straight to the
-    risk gates, no AI veto. Set it false to stop the books from placing on their
-    own — a book entry is then blocked here (surfaced to the feed) so only the
-    main AI engine opens positions. The ai_only book is exempt: it IS the AI's
-    verdict, so it places whenever ai_only_mode.place is on regardless."""
-    # A blind scan is not a quiet market. This gate used to live ONLY in the
-    # main_engine entry preflight, so it protected a path that (per W-ME1) could
-    # not fire on the majors universe — while the four books that DO trade went
-    # through unguarded. Moved here, to the single choke point every book passes.
-    if not _scan_is_trustworthy():
-        _st = _last_scan_integrity()
-        result = {"executed": False, "coin": analysis.get("coin"),
-                  "side": analysis.get("side"),
-                  "strategy_book": analysis.get("strategy_book"),
-                  "reason": (f"degraded_feed ({_st.get('gaps')}/{_st.get('markets')} "
-                             f"markets unreadable) — a data outage is not a quiet market"),
-                  "blocked_by": ["degraded_feed"]}
-        logger.warning(f"[book] {analysis.get('strategy_book')} blocked: "
-                       f"{result['reason']}")
-        try:
-            evt = _book_block_event(analysis, result)
-            if evt:
-                log_event(evt)
-        except Exception:
-            pass
-        return result
-
-    _cfg = read_agent_config()
-    if (not _books_bypass_ai(_cfg)
-            and analysis.get("strategy_book") not in (None, "ai_only")):
-        result = {"executed": False, "coin": analysis.get("coin"),
-                  "side": analysis.get("side"), "strategy_book": analysis.get("strategy_book"),
-                  "reason": "books_bypass_ai_disabled (books may not self-place)",
-                  "blocked_by": ["books_bypass_ai_disabled"]}
-        try:
-            evt = _book_block_event(analysis, result)
-            if evt:
-                log_event(evt)
-        except Exception:
-            pass
-        return result
-    result = maybe_execute(analysis)
-    try:
-        evt = _book_block_event(analysis, result)
-        if evt:
-            log_event(evt)
-    except Exception:
-        pass
-    return result
 from pathiel.agents.config_store import read_agent_config
 from pathiel.agents.memory import memory
 from pathiel.client.exchange import get_all_hl_mids, prewarm_meta_cache
@@ -306,13 +231,6 @@ _prewarm_meta_cache_bounded(float(os.environ.get('PATHIEL_META_PREWARM_TIMEOUT_S
 universe_refresh_s = int(os.environ.get('PATHIEL_UNIVERSE_REFRESH_S', '1800'))
 _last_universe_refresh = time.time()
 memory.load()  # hydrate from .agent-memory.json so cache + flush work.
-try:
-    _claims = get_claims_registry()
-    _claim_count = len(_claims.claims())
-    _claims.save()
-    logger.info(f"[rebalancer_claims] startup scrub complete: {_claim_count} active claim(s)")
-except Exception as _claim_exc:
-    logger.warning(f"[rebalancer_claims] startup scrub failed (non-fatal): {_claim_exc}")
 
 # Startup grace: the prewarm burst above + the cold-cache first scan (every
 # coin's candles fetched fresh) + any tail from the just-killed process all hit
@@ -602,21 +520,15 @@ while True:
         # flatten. Idempotent: after flattening, the next tick's positions are
         # empty so it won't re-fire.
         _max_daily_loss = _effective_daily_loss_limit(_cfg, equity, daily_pnl)
-        # drawdown_ladder positions are invisible to the flatten, the DSL tracker
-        # and the slot count below. Each would put a stop on a ladder, and W-WH2
-        # measured the stop as the whole difference between the rule and random
-        # entry. Operator decision 2026-09-14; the daily-loss GATE still blocks
-        # new ladders. copy_trade positions too (operator override 2026-09-21):
-        # the leader has no stop, and a stop of ours would break the mirror.
-        _ladder_coins = _ladder_owned_coins() | _copy_owned_coins()
-        _book_positions = _ladder_book_positions(positions, _ladder_coins)
+        # The books that used to be invisible to this flatten (drawdown_ladder,
+        # copy_trade) are retired 2026-10-23 — every open position is now in
+        # scope for the hard kill-switch.
+        _book_positions = positions
         if equity > 0 and _book_positions and daily_pnl <= _max_daily_loss:
             logger.warning(
                 f"[killswitch] HARD daily-loss floor breached: PnL ${daily_pnl:.2f} "
                 f"<= ${_max_daily_loss:.0f} — flattening {len(_book_positions)} open "
-                f"position(s) to cap the loss"
-                + (f" ({len(_ladder_coins)} drawdown_ladder/copy_trade "
-                   f"position(s) exempt)" if _ladder_coins else ""))
+                f"position(s) to cap the loss")
             for _p in _book_positions:
                 _coin = (_p.get("position") or {}).get("coin")
                 if not _coin:
@@ -627,8 +539,7 @@ while True:
                 except Exception as _e:
                     logger.error(f"[killswitch] failed to flatten {_coin}: {_e}")
             log_event({"event": "hard_killswitch", "daily_pnl": round(daily_pnl, 2),
-                       "limit": _max_daily_loss, "flattened": len(_book_positions),
-                       "exempt": sorted(_ladder_coins)})
+                       "limit": _max_daily_loss, "flattened": len(_book_positions)})
 
         # ── DSL exit pass ───────────────────────────────────────────────────
         # Reconcile trackers with live exchange positions (handles restarts,
@@ -644,7 +555,7 @@ while True:
             # its bracket (on its own dex: xyz:CL orders live on xyz).
             if stale_trackers:
                 for _settled in settle_vanished_positions(
-                        stale_trackers, exempt_coins=_ladder_coins, user=resolve_user_address()):
+                        stale_trackers, exempt_coins=set(), user=resolve_user_address()):
                     if _settled["cancelled"]:
                         log_event({"event": "stranded_orders_cancelled", "coin": _settled["coin"],
                                    "count": _settled["cancelled"]})
@@ -687,58 +598,6 @@ while True:
             logger.error(f"[dsl] monitor pass failed: {e}")
             log_event({"event": "error", "scope": "dsl_monitor", "error": str(e)})
 
-        # Keep cross-book ownership state tied to the authoritative live account
-        # even when a book's own cadence has not fired. Without this, stopped or
-        # AI-closed xs_momentum coins can remain claimed for days and suppress
-        # other EV+ books.
-        if equity > 0:
-            try:
-                _dropped_claims = prune_claims_to_live(positions)
-                if _dropped_claims:
-                    logger.info(
-                        f"[rebalancer_claims] live-position scrub claims={_dropped_claims}"
-                    )
-            except Exception as _claim_prune_exc:
-                logger.warning(
-                    f"[rebalancer_claims] live-position scrub failed (non-fatal): "
-                    f"{_claim_prune_exc}"
-                )
-
-        # drawdown_ladder (W-WH2 VALIDATED: 2.933x over 6y at 1x, null p 0.0015):
-        # buy a 21% drawdown in the five crypto majors on five resting rungs,
-        # exit at +5.14% over average entry, no stop. It runs every cycle and
-        # outside the slots gate because it manages ladders already on the
-        # exchange (re-prices the target after a rung fills, cancels rungs when
-        # a ladder closes). In OFF mode it still manages but opens nothing.
-        # See findings/W-WH2_scale_in_ladder.md.
-        if equity > 0:
-            try:
-                _drawdown_ladder_maybe_run(
-                    read_agent_config(), positions, equity,
-                    float((state.get("dex_available") or {}).get("", available) or 0.0),
-                    daily_pnl, _max_daily_loss,
-                    allow_entries=str(_cfg.get("mode", "OFF")).upper() != "OFF",
-                    log_event=log_event)
-            except Exception as _dll:
-                logger.error(f"[drawdown-ladder] pass failed (non-fatal): {_dll}")
-                log_event({"event": "error", "scope": "drawdown_ladder", "error": str(_dll)})
-
-        # copy_trade (W-CP1 REFUTED, live by operator override 2026-09-21):
-        # mirror the configured leader wallet's new positions at leverage_mult x
-        # his exposure. Runs every cycle and outside the slots gate because it
-        # must follow the leader's exits; in OFF mode it mirrors exits only.
-        if equity > 0:
-            try:
-                _copy_trade_maybe_run(
-                    read_agent_config(), positions, equity,
-                    dict(state.get("dex_available") or {"": available}),
-                    daily_pnl, _max_daily_loss,
-                    allow_entries=str(_cfg.get("mode", "OFF")).upper() != "OFF",
-                    log_event=log_event)
-            except Exception as _ctx:
-                logger.error(f"[copy-trade] pass failed (non-fatal): {_ctx}")
-                log_event({"event": "error", "scope": "copy_trade", "error": str(_ctx)})
-
         if str(_cfg.get("mode", "OFF")).upper() == "OFF":
             logger.info("[mode] OFF — skipping scan/research/execution; exits still monitored")
             _last_progress_ts = time.time()
@@ -775,37 +634,21 @@ while True:
             except Exception as e:
                 logger.warning(f"[universe] periodic refresh failed, keeping prior snapshot: {e}")
 
-        # OI time-series logger — self-collect open interest forward (HL exposes no OI
-        # history) so the OI/price four-quadrant positioning filter can be backtested
-        # later. Piggybacks the universe already in hand (no extra API call), throttled +
-        # size-capped, wrapped so it can never break the scan.
-        try:
-            from pathiel.agents.oi_logger import append_oi
-            append_oi(universe)
-        except Exception as _oie:
-            logger.debug(f"[oi-logger] append failed (non-fatal): {_oie}")
-
         # ---------------------------------------------------------------- #
         # SLOTS-FULL GATE: stop paying to look when nothing can be bought.
         #
         # Every slot occupied means max_concurrent refuses whatever the scan
-        # finds — but the refusal happens at the END, after the candle fetches,
-        # after news_surge_short has called coin_catalyst() (one Google News
-        # fetch PER COIN), and after research() has spent a Claude call on each
-        # survivor. The system paid full price for a verdict it could not act on.
-        #
-        # With a 24h hold and 3 slots that is most of the day: the book fills in
-        # the morning and every later cycle re-derives candidates it must refuse.
+        # finds — but the refusal happens at the END, after the candle fetches
+        # and after research() has spent a Claude call on each survivor. The
+        # system paid full price for a verdict it could not act on.
         #
         # What still runs, deliberately:
         #   - monitor_exits, ABOVE this line, so open positions are still managed
         #     and still close on their stop or timeout. Gating exits would strand
         #     capital in a position nothing was watching.
-        #   - the recorders below (data_logger, unlock, social_trending), which
-        #     append the funding/OI panel every research script reads. Skipping
-        #     those would leave a hole in the history for exactly the periods the
-        #     book was fully deployed - a silent survivorship bias in every
-        #     future backtest, and the most expensive kind of saving.
+        #   - the data_logger recorder below, which appends the funding/OI panel
+        #     the dashboard's funding-heat view reads. Skipping it would leave a
+        #     hole in that history for every period the slots were full.
         # ---------------------------------------------------------------- #
         _slots = int(read_agent_config().get("max_concurrent", 0) or 0)
         _entry_budget_open = _slots <= 0 or len(_book_positions) < _slots
@@ -817,92 +660,18 @@ while True:
             results = []
             logger.info(
                 f"[slots-full] {len(positions)}/{_slots} positions open — skipping "
-                f"scan, books and AI research until a slot frees. Exits and the "
+                f"scan and AI research until a slot frees. Exits and the "
                 f"data panel still run.")
             log_event({"event": "slots_full_skip",
                        "open_positions": len(positions), "max_concurrent": _slots,
                        "coins": [str(p_.get("coin")) for p_ in positions]})
 
-        # neg_funding_fade RIPPED 2026-07-12 (operator refuted-rule): fixed
-        # grader read it -2.0%/ep net of funding forward; the original +EV
-        # claims were cluster double-counting. Ledger history stays graded.
-
-        # Majors-swing book (operator-designed 2026-07-09): trend + pullback-resume
-        # LONGS on the fixed deep-liquidity allowlist (BTC/ETH/SOL/AAVE + xyz:SP500/
-        # xyz:XYZ100) at equity_fraction x leverage sizing. UNVALIDATED entry — starts
-        # shadow_only=true and must earn a VALIDATED forward verdict from
-        # scripts/shadow_status.py before any live flip. Daily bars, 6h candle TTL.
-        # unlock_short_runin (VALIDATED n=14, EV25 +3.75%, halves +0.71/+7.06,
-        # mc_p=0.0375): short inside the 48-72h pre-unlock window, exit AT the
-        # event.
-        try:
-            if _entry_budget_open:
-                _unlock_short_maybe_run(read_agent_config(), universe, positions,
-                                        _book_execute)
-        except Exception as _use:
-            logger.warning(f"[unlock-short-live] cycle failed (non-fatal): {_use}")
-
-        # news_surge_short (VALIDATED n=255, EV25 +1.24%, halves +0.58/+2.16,
-        # mc_p=0.0005): short a breaking Google News coverage surge.
-        try:
-            if _entry_budget_open:
-                _news_surge_short_maybe_run(read_agent_config(), results,
-                                            positions, _book_execute)
-        except Exception as _nsse:
-            logger.warning(f"[news-surge-short] pass failed (non-fatal): {_nsse}")
-
-        # news_surge_multi (VALIDATED n=230, EV25 +1.87%, halves +1.50/+2.50,
-        # mc_p=0.0005): the same surge measured across 15 pooled firehoses.
-        try:
-            if _entry_budget_open:
-                _news_surge_multi_maybe_run(read_agent_config(), results, positions,
-                                            _book_execute)
-        except Exception as _nsme:
-            logger.warning(f"[news-surge-multi] pass failed (non-fatal): {_nsme}")
-
-        # xs_reversal (VALIDATED n=1995, EV25 +2.474%, all four time quartiles
-        # positive, bootstrap p=0.0000 clustered on snapshot): short the top
-        # decile of 3d cross-sectional return, but only where funding has been
-        # off the venue baseline. Runs AFTER data_logger has had cycles to fill
-        # the panel it reads; on a cold state directory it simply declines to
-        # rank and takes nothing. See findings/W-XSR1_cross_sectional_reversal.md
-        try:
-            if _entry_budget_open:
-                _xs_reversal_maybe_run(read_agent_config(), universe, positions,
-                                       _book_execute)
-        except Exception as _xsr:
-            logger.warning(f"[xs-reversal] pass failed (non-fatal): {_xsr}")
-
         # Data-collection logger — appends a throttled funding/OI snapshot of the universe (ZERO added
-        # API — reuses the already-fetched `universe`) for the forward data frontier (funding-carry /
-        # OI-divergence backtests once ~1-2 weeks of history accrue).
+        # API — reuses the already-fetched `universe`) for the dashboard's funding-heat panel.
         try:
             _with_deadline(lambda: _data_logger_maybe_log(read_agent_config(), universe), 60, None, "data-logger")
         except Exception as _dle:
             logger.warning(f"[data-logger] failed (non-fatal): {_dle}")
-
-        # Unlock calendar refresh + the run-in signal. The T-1d recorder arm was
-        # removed 2026-08-30 (validated but no capital path); what remains feeds
-        # unlock_short_runin below, which trades it.
-        try:
-            _with_deadline(lambda: _unlock_maybe_record(universe, read_agent_config()), 60, None, "unlock-recorder")
-        except Exception as _ure:
-            # This feeds the calendar the LIVE unlock_short_live book reads —
-            # its siblings on this pass (unlock-short-live, news-surge-*,
-            # data-logger) already log at warning; this one was the odd one
-            # out at debug.
-            logger.warning(f"[unlock-recorder] pass failed (non-fatal): {_ure}")
-
-        # social_trending (VALIDATED n=185, EV25 +0.89%, halves +0.54/+1.50,
-        # mc_p=0.0005). Records always; trades when its own shadow_only is off.
-        try:
-            _with_deadline(
-                lambda: _social_trending_maybe_record(
-                    read_agent_config() and universe, read_agent_config(),
-                    positions, _book_execute),
-                90, None, "social-trending")
-        except Exception as _stre:
-            logger.warning(f"[social-trending] pass failed (non-fatal): {_stre}")
 
         # Per-cycle heartbeat — proof of life even when nothing triggers.
         # `coin_scores` carries the composite score for each trigger so the
@@ -953,23 +722,6 @@ while True:
                 pass
 
             if coin in held_coins:
-                # BOOK-OWNED positions are exempt from AI close-checks
-                # (2026-07-19): each book's validated structure owns its exits
-                # (rebalance clock / hold_days timeout / wide stop). An AI
-                # CLOSE on an xs basket leg would break the 5-day hold the
-                # edge was validated on — same failure class as the DSL
-                # policy leak fixed the same day. Main-engine legacy holds
-                # (no claim) keep the AI close path per the standing order.
-                try:
-                    _claim_owner = get_claims_registry().owner_of(coin)
-                except Exception:
-                    _claim_owner = None
-                if _claim_owner:
-                    log_event({"event": "ta_skip", "coin": coin,
-                               "signal": "BOOK_OWNED_HOLD",
-                               "score": round(float(score), 1),
-                               "trigger_score": round(float(score), 1)})
-                    continue
                 # Held position: research only every held_research_interval_min
                 # so the AI can still issue a CLOSE without paying for a "hold"
                 # PASS on every scan. (A re-entry is gate-blocked anyway.)
@@ -1017,12 +769,11 @@ while True:
                 # NEW positions from an AI verdict are gone — which also means
                 # the loop no longer pays for research on coins it will not
                 # trade.
-                # There is no discretionary entry path any more. Entries come
-                # from the books; this loop scans, reviews open positions, and
-                # manages exits. A scanned coin that no book claimed is normal
-                # operation, not a refusal — logging it as one put a deleted
-                # feature's name at the top of the decision funnel ~3,900 times
-                # a day and buried the gates that actually stopped a trade.
+                # There is no discretionary entry path any more, and the
+                # autonomous strategy books were retired 2026-10-23 (operator
+                # decision: pathiel is a headless desk — Claude places trades
+                # through the MCP server). This loop only scans, reviews open
+                # positions, and manages exits; it never opens a new position.
                 # Counted for the scan summary, never emitted as an event.
                 _unclaimed += 1
                 continue
@@ -1137,10 +888,10 @@ while True:
                            "error": f"{type(e).__name__}: {detail}"})
 
         if _unclaimed:
-            logger.info(f"[scan] {_unclaimed} scanned coin(s) claimed by no book — "
-                        f"entries come from books only (W-ME1)")
+            logger.info(f"[scan] {_unclaimed} scanned coin(s) triggered — this loop "
+                        f"has no entry path (headless desk, 2026-10-23)")
 
-        # Second DSL pass with fresh mids (audit 2026-07-10): the scan+books
+        # Second DSL pass with fresh mids (audit 2026-07-10): the scan
         # phase takes 20-100s, so a breach right after the first pass waited a
         # full period (measured overshoot median +0.26% spot, tail +3.16%).
         # One extra allMids fetch (weight 2) halves the worst-case reaction.

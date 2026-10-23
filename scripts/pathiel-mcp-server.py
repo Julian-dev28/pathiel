@@ -1126,8 +1126,7 @@ def handle_config(params: Dict[str, Any]) -> str:
         "max_crypto_long_correlated", "cooldown_min", "held_research_interval_min",
         "loss_cooldown_min", "min_ai_close_hold_min",
         "override_max_daily_extension_pct", "sl_atr_mult",
-        "backup_sl_max_frac_of_liq", "strategy_book_notional_usd",
-        "strategy_book_equity_frac", "short_notional_usd",
+        "backup_sl_max_frac_of_liq", "short_notional_usd",
         "coin_allowlist", "coin_blocklist",
     ]
     _NESTED_KEYS = [
@@ -1159,10 +1158,10 @@ def handle_config(params: Dict[str, Any]) -> str:
             return json.dumps({"status": "error", "error": f"{key} must be an object"})
         updates[key] = obj
 
-    # Any other key already in the live config (strategy books such as
-    # xs_reversal, risk_profile, ...) is accepted too, as the tool contract
-    # promises. Before this, those keys were dropped silently and the call
-    # still returned the unchanged config, which read as success.
+    # Any other key already in the live config (risk_profile, a hand-added
+    # experiment block, ...) is accepted too, as the tool contract promises.
+    # Before this, those keys were dropped silently and the call still
+    # returned the unchanged config, which read as success.
     _handled = set(_DIRECT_KEYS) | set(_NESTED_KEYS) | {"runner_mover_surface_enabled"}
     unknown = []
     for key, val in params.items():

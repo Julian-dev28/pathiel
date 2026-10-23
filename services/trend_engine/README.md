@@ -136,9 +136,13 @@ numbers so it cannot narrate a confident call over a coin flip.
 
 ## Lane RECORDERS — the scoreboard
 
-Forward-grades every shadow book through
+Forward-grades every shadow ledger through
 `pathiel.agents.shadow_ledger.grade_records` (real candles, net of
-funding) — the same path `scripts/shadow_status.py` uses, so the numbers agree.
+funding) — the same grading function every other consumer of that module
+uses, so the numbers agree. (The seven autonomous strategy books this once
+graded nightly via `scripts/autonomous_cycle.py`/`scripts/shadow_status.py`
+are retired, 2026-10-23 — this lane now grades whatever the live
+shadow ledger holds, e.g. executor.py's `thin_short_relax` experiment.)
 
 Per book: signals, resolved, pending, EV%/signal at 12bps and 25bps, win rate
 with a Wilson interval, **first-half vs second-half EV** (a positive average

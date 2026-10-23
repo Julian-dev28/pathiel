@@ -12,7 +12,6 @@ Warnings do not affect the exit code.
 from __future__ import annotations
 
 import argparse
-import json
 import os
 import subprocess
 import sys
@@ -22,7 +21,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 # .env.local carries PATHIEL_STATE_DIR. Load it BEFORE importing anything that
-# resolves a state path, or every book reads as empty from the wrong directory.
+# resolves a state path, or every state read comes back empty from the wrong directory.
 sys.path.insert(0, str(ROOT / "scripts"))
 import _state_env  # noqa: E402
 
@@ -89,8 +88,10 @@ def _live_limits():
 
 
 def check_capital(r: Report) -> None:
-    # Per-trade feasibility replaced the global equity floor (services/risk):
-    # the question is whether ANY enabled book can place a trade right now.
+    # Per-trade feasibility (services/risk): can the one tradeable path —
+    # bookless main-engine / MCP-submitted entries, the only trader on the
+    # wallet since the strategy books were retired 2026-10-23 — place a
+    # trade right now at this equity.
     cfg, eq, lim = _live_limits()
     if lim.can_trade:
         r.ok("equity", f"${eq:.2f}: {lim.headline}")
@@ -98,105 +99,26 @@ def check_capital(r: Report) -> None:
         r.block("equity", f"${eq:.2f}: {lim.headline}",
                 "fund the account, or pick a different risk preset on /account")
     if cfg.get("mode") != "LIVE":
-        r.warn("mode", f"{cfg.get('mode')} — books will not trade until mode is LIVE")
+        r.warn("mode", f"{cfg.get('mode')} — entries blocked until mode is LIVE "
+                        "(exits still monitored)")
     else:
         r.ok("mode", "LIVE")
 
 
-def check_books(r: Report) -> None:
-    import importlib
-    import pathiel.dashboard as db
-    spec = importlib.util.spec_from_file_location(
-        "autonomous_cycle", ROOT / "scripts" / "autonomous_cycle.py")
-    ac = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(ac)
-
-    books = db._KNOWN_BOOK_NAMES
-    if not books:
-        r.block("books", "no books registered", "nothing can trade")
-        return
-    ungoverned = sorted(set(books) - set(ac._SWITCHES))
-    if ungoverned:
-        r.block("book switches", f"{ungoverned} cannot be demoted by the grader",
-                "add a _SWITCHES entry in scripts/autonomous_cycle.py")
-    else:
-        r.ok("book switches", f"{len(books)} books, all demotable")
-
-    # every live book must import — a broken import means the loop cannot start
-    broken = []
-    for mod in ("news_surge_short_live", "news_surge_multi",
-                "social_trending_recorder", "unlock_short_live"):
-        try:
-            importlib.import_module(f"pathiel.agents.{mod}")
-        except Exception as exc:
-            broken.append(f"{mod}: {str(exc)[:60]}")
-    if broken:
-        r.block("book imports", "; ".join(broken),
-                "the trading loop imports these at module scope and cannot start")
-    else:
-        r.ok("book imports", "all live books import")
-
-
-def check_book_reachability(r: Report) -> None:
-    """Can the live books actually fire under the current allowlist?
-
-    W-FUND1: the majors allowlist blocked 92-100% of every book's historical
-    signals, and 100% of unlock_short_runin's. A book that is live, validated
-    and structurally unable to fire is the shadow state wearing a live badge —
-    and it is invisible until someone funds the account and waits.
-    """
-    import pathiel.dashboard as db
-    from pathiel.agents import shadow_ledger as SL
-    from pathiel.agents.config_store import read_agent_config
-    from pathiel.agents.universe import in_allowlist
-
-    allow = read_agent_config().get("coin_allowlist") or []
-    if not allow:
-        r.ok("book reachability", "no allowlist — books trade their own universe")
-        return
-    worst = []
-    for book in sorted(db._KNOWN_BOOK_NAMES):
-        path = SL._book_path(book)
-        if not os.path.exists(path):
-            continue
-        coins = []
-        with open(path) as fh:
-            for line in fh:
-                line = line.strip()
-                if line:
-                    try:
-                        coins.append(json.loads(line)["coin"])
-                    except Exception:
-                        continue
-        if not coins:
-            continue
-        ok = sum(1 for c in coins if in_allowlist(c, allow))
-        pct = 100 * ok / len(coins)
-        if pct < 25:
-            worst.append(f"{book} {pct:.0f}%")
-    if worst:
-        r.block("book reachability",
-                f"allowlist blocks most signals: {', '.join(worst)}",
-                "clear coin_allowlist (volume floors still gate liquidity), or "
-                "delete the books that cannot fire — see W-FUND1")
-    else:
-        r.ok("book reachability", "books can fire under the allowlist")
-
-
 def check_margin_headroom(r: Report) -> None:
-    """Which enabled books can trade at this equity, from the same derived
-    limits the executor enforces."""
+    """Can the main-engine entry path trade at this equity, from the same
+    derived limits the executor enforces (services/risk/books.py's
+    main_engine_spec — the one BookSpec left since the strategy books were
+    retired 2026-10-23)."""
     _cfg, eq, lim = _live_limits()
-    enabled = [b for b in lim.books if b.enabled]
-    able = [b for b in enabled if b.can_trade]
-    detail = (f"{len(able)} of {len(enabled)} enabled books can trade, "
-              f"{lim.max_open_positions} position(s) at a time")
-    blocked = [f"{b.book} (needs ${b.needs_equity_usd:,.0f})" for b in enabled
-               if not b.can_trade and b.needs_equity_usd]
+    able = [b for b in lim.books if b.enabled and b.can_trade]
+    detail = f"{len(able)} of {len(lim.books)} can trade, {lim.max_open_positions} position(s) at a time"
+    blocked = [f"{b.book} (needs ${b.needs_equity_usd:,.0f})" for b in lim.books
+               if b.enabled and not b.can_trade and b.needs_equity_usd]
     if blocked:
-        r.warn("book capacity", detail + "; waiting on equity: " + ", ".join(blocked))
+        r.warn("trade capacity", detail + "; waiting on equity: " + ", ".join(blocked))
     else:
-        r.ok("book capacity", detail)
+        r.ok("trade capacity", detail)
 
 
 def check_feed(r: Report) -> None:
@@ -297,8 +219,7 @@ def main(argv=None) -> int:
     argparse.ArgumentParser(description=__doc__).parse_args(argv)
     print(f"\n{DIM}pathiel — live readiness{OFF}\n")
     r = Report()
-    for check in (check_secrets, check_brain, check_capital, check_books,
-                  check_book_reachability, check_margin_headroom,
+    for check in (check_secrets, check_brain, check_capital, check_margin_headroom,
                   check_feed, check_disk, check_processes, check_watchers):
         try:
             check(r)

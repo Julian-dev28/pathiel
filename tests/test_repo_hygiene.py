@@ -227,12 +227,13 @@ NOT_CLEANUP_OWNED = {"executor.py", "sizing.py", "risk_gates.py", "hyperfeed.py"
 
 ENTRY_POINT_FILES = (
     ROOT / "scripts" / "trading_loop.py",
-    ROOT / "scripts" / "autonomous_cycle.py",
     ROOT / "pathiel" / "server.py",
     ROOT / "pathiel" / "dashboard.py",
     ROOT / "pathiel" / "__main__.py",
     ROOT / "scripts" / "pathiel-mcp-server.py",   # Claude's trading surface (bracket)
 )
+# scripts/autonomous_cycle.py (graded/promoted the strategy books) was
+# removed with the books themselves — headless desk, 2026-10-23.
 
 
 def _pathiel_agents_imports(source: str) -> Set[str]:
@@ -260,19 +261,37 @@ def _pathiel_agents_imports(source: str) -> Set[str]:
     return found
 
 
+def _all_agent_module_names() -> Dict[str, Path]:
+    """Every pathiel/agents/*.py, including NOT_CLEANUP_OWNED — used only to
+    TRACE imports (see test below), never to decide what must be reachable."""
+    return {p.stem: p for p in AGENTS_DIR.glob("*.py") if p.name != "__init__.py"}
+
+
 def _agent_module_names() -> Dict[str, Path]:
-    return {p.stem: p for p in AGENTS_DIR.glob("*.py")
-            if p.name != "__init__.py" and p.name not in NOT_CLEANUP_OWNED}
+    return {name: path for name, path in _all_agent_module_names().items()
+            if path.name not in NOT_CLEANUP_OWNED}
 
 
 def test_every_cleanup_owned_agent_module_is_reachable():
     modules = _agent_module_names()
-    sources: Dict[str, str] = {}
-    for name, path in modules.items():
+    # Trace through EVERY agent module's source, including NOT_CLEANUP_OWNED
+    # (executor.py, sizing.py, risk_gates.py, hyperfeed.py): those files are
+    # out of scope for WHICH modules they themselves must be, but a cleanup-
+    # owned module they import (e.g. executor.py -> book_params.py,
+    # shadow_ledger.py) is genuinely reachable and must not be flagged dead
+    # just because the entry point's import of it is one hop further than
+    # this BFS used to look. Not tracing into them was the actual bug: it
+    # made book_params.py/shadow_ledger.py look unreachable from 2026-10-23
+    # onward even though pathiel.agents.executor.maybe_execute calls both on
+    # every live trade — the headless-desk cleanup's own deletions (killing
+    # scripts/autonomous_cycle.py, the one file that imported book_params.py
+    # directly) were the first change to expose it.
+    all_sources: Dict[str, str] = {}
+    for name, path in _all_agent_module_names().items():
         try:
-            sources[name] = path.read_text(encoding="utf-8")
+            all_sources[name] = path.read_text(encoding="utf-8")
         except OSError:
-            sources[name] = ""
+            all_sources[name] = ""
 
     # BFS from every entry point's direct pathiel.agents.* imports, following
     # agent-to-agent imports transitively (e.g. shadow_ledger imports
@@ -287,8 +306,8 @@ def test_every_cleanup_owned_agent_module_is_reachable():
         reachable |= frontier
         next_frontier: Set[str] = set()
         for name in frontier:
-            if name in sources:
-                next_frontier |= _pathiel_agents_imports(sources[name])
+            if name in all_sources:
+                next_frontier |= _pathiel_agents_imports(all_sources[name])
         frontier = next_frontier - reachable
 
     unreachable = sorted(set(modules) - reachable)

@@ -67,19 +67,18 @@ def _clamp(v: float, lo: float, hi: float) -> float:
 def _representative_stop_pct(cfg: Dict[str, Any]) -> float:
     """Median stop_pct, FULLY RESOLVED through book_params()'s existing
     precedence (book override > top-level default > floor), across every
-    book in the real seven-book roster that is currently enabled and not
+    book in `RISK_SCALED_BOOK_NAMES` that is currently enabled and not
     shadow-demoted.
 
-    Deliberately reuses book_params() rather than scanning each book's dict
-    for a literal "stop_pct" key: several real books (xs_reversal,
-    social_trending, unlock_short in the live config as of this wave) carry
-    NO explicit stop_pct override and resolve through the top-level/floor
-    fallback instead — scanning raw keys would silently skip exactly the
-    books most likely to be the ones actually trading, and favor whichever
-    books happen to set an explicit override (which, in the live config,
-    were the two DISABLED news_surge books). Falls back to
-    book_params.py's own FLOOR_STOP_PCT (15.0) only when no book in the
-    roster is both present and enabled.
+    `RISK_SCALED_BOOK_NAMES` is permanently empty since the headless-desk
+    cleanup (2026-10-23: the seven autonomous strategy books are retired),
+    so this loop never finds a candidate any more and always falls through
+    to `cfg.get("default_stop_pct")` / book_params.py's own FLOOR_STOP_PCT
+    (15.0) — which is also the correct answer now, since there is no book
+    config left to average. The book-aware path stays rather than being
+    deleted: a legacy config from before this cleanup can still carry old
+    per-book blocks on disk, and if `RISK_SCALED_BOOK_NAMES` is ever
+    repopulated this resumes working without further changes here.
     """
     vals = []
     for name in RISK_SCALED_BOOK_NAMES:

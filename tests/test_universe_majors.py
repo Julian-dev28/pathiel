@@ -114,30 +114,14 @@ def test_the_restriction_is_documented_as_capacity_not_edge():
 
 
 # ── the degraded-feed entry gate, end to end through the loop's own path ─────
-
-def test_the_book_execute_path_blocks_on_a_degraded_feed():
-    """The gate has to sit where the money actually flows.
-
-    It used to live only in _fresh_entry_preblock_reason — the main_engine entry
-    preflight — so it guarded a path that (W-ME1) could not fire on the majors
-    universe, while the four books that DO trade went through unguarded. When
-    main_engine's entries were deleted the gate moved to _book_execute, the
-    single choke point every book passes.
-
-    Checked by source inspection rather than import, because importing
-    trading_loop starts the live loop.
-    """
-    import pathlib
-    src = (pathlib.Path(__file__).resolve().parents[1]
-           / "scripts" / "trading_loop.py").read_text()
-    start = src.index("def _book_execute")
-    end = src.index("\ndef ", start + 1)
-    body = src[start:end]
-    assert "_scan_is_trustworthy()" in body, (
-        "the degraded-feed gate is not in the book execute path — an exchange "
-        "outage would again read as a quiet market for the books that trade")
-    assert "degraded_feed" in body
-
+#
+# test_the_book_execute_path_blocks_on_a_degraded_feed (pinned _book_execute,
+# the single choke point every strategy book passed through) is removed:
+# the strategy books and _book_execute itself are retired (headless desk,
+# 2026-10-23) and trading_loop.py has no entry path left at all — there is
+# nothing left for a degraded-feed gate to guard inside that file. The MCP
+# server's own entry surface (scan/research/execute) is a separate agent's
+# lane; see tests/test_mcp_overhaul.py for its coverage.
 
 def test_the_dust_floor_guards_every_book():
     """The other half of what the deleted preflight used to cover. The floor
