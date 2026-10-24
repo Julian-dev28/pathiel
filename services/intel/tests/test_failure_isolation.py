@@ -56,7 +56,7 @@ def test_slow_source_is_cut_off_by_the_global_deadline_not_blocking_forever(oil_
         time.sleep(2.0)
         return [], None
 
-    patched = tuple(slow_fetch if fn is news.fetch_gdelt else fn for fn in news.ATOMIC_FETCHERS)
+    patched = tuple(slow_fetch if fn is news.fetch_google_news else fn for fn in news.ATOMIC_FETCHERS)
     monkeypatch.setattr(news, "ATOMIC_FETCHERS", patched)
     t0 = time.time()
     packet = api.build_packet(oil_spec, now=T0)

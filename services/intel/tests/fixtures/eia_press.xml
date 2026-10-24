@@ -1,0 +1,133 @@
+<?xml version="1.0" encoding="ISO-8859-1" ?> 
+<?xml-stylesheet href="/rss/rss.xsl" type="text/xsl" media="screen"?>
+<rss version="2.0">
+<channel>
+	<title>EIA: Press Releases</title>
+	<link>http://www.eia.gov/pressroom/releases.php</link>
+	<description>Press Releases from the Energy Information Administration</description>
+	<language>en-us</language>
+	<lastBuildDate>Tue, 06 Oct 2026 12:00:00 EST</lastBuildDate>
+	<webMaster>wmaster@eia.gov</webMaster>
+	
+	<image>
+		<title>EIA logo</title>
+		<url>http://www.eia.gov/global/images/logos/eia_logo_250.png</url>
+		<link>http://www.eia.gov/</link>
+		<description>US Energy Information Administration</description>
+	</image>
+
+
+
+		<item>
+		<title>EIA expects a mixed picture for winter fuel costs this year </title>
+		<link>/pressroom/releases/press593.php</link>
+		<guid isPermaLink="true">/pressroom/releases/press593.php</guid>
+		<pubDate>Tue, 06 Oct 2026 12:00:00 EST</pubDate>
+		<description>In the 2026-27 Winter Fuels Outlook, released alongside the October Short-Term Energy Outlook (STEO), the U.S. Energy Information Administration (EIA) expects U.S. households that primarily heat with natural gas or propane - about half of households - will spend less on energy expenses this winter than last winter. By contrast, households that primarily use electricity or heating oil for space heating are expected to spend more.  </description>
+		</item>
+
+
+		<item>
+		<title>EIA expects record electricity generation in 2026 and 2027 </title>
+		<link>/pressroom/releases/press592.php</link>
+		<guid isPermaLink="true">/pressroom/releases/press592.php</guid>
+		<pubDate>Wed, 09 Sep 2026 12:00:00 EST</pubDate>
+		<description>The U.S. Energy Information Administration (EIA) expects U.S. electricity generation will grow 2.2% to a record 4,368 billion kilowatthours (BkWh) this year. EIA expects an additional 1.7% growth in electricity generation next year.   </description>
+		</item>
+
+
+
+		<item>
+		<title>EIA expects highest natural gas inventories in a decade heading into winter </title>
+		<link>/pressroom/releases/press591.php</link>
+		<guid isPermaLink="true">/pressroom/releases/press591.php</guid>
+		<pubDate>Tue, 11 Aug 2026 12:00:00 EST</pubDate>
+		<description>The U.S. Energy Information Administration expects natural gas inventories will increase to 3,985 billion cubic feet (Bcf) in October, the most gas in inventories ahead of the winter heating season since 2016.  </description>
+		</item>
+
+
+
+		<item>
+		<title>EIA increases global oil production forecast after the opening of the Strait of Hormuz  </title>
+		<link>/pressroom/releases/press590.php</link>
+		<guid isPermaLink="true">/pressroom/releases/press590.php</guid>
+		<pubDate>Tue, 7 Jul 2026 12:00:00 EST</pubDate>
+		<description>The U.S. Energy Information Administration published its July Short-Term Energy Outlook (STEO), increasing its expectations for global oil production.   </description>
+		</item>
+
+
+
+		<item>
+		<title>EIA expects a drop in global oil demand will limit price increases from Hormuz disruptions</title>
+		<link>/pressroom/releases/press589.php</link>
+		<guid isPermaLink="true">/pressroom/releases/press589.php</guid>
+		<pubDate>Tue, 9 Jun 2026 12:00:00 EST</pubDate>
+		<description>The U.S. Energy Information Administration published its June Short-Term Energy Outlook (STEO), reducing its expectation for global oil demand in 2026. High fuel prices, reduced fuel availability, and government initiatives are curbing oil consumption this year, particularly in Asia, resulting in the world consuming 1 million fewer barrels of oil each day on average than it did last year. The reduced demand could limit crude oil price increases resulting from near-term disruptions in the flow of oil out of the Middle East through the Strait of Hormuz.</description>
+		</item>
+
+
+
+		<item>
+		<title>EIA updates forecast amid continued Mideast disruption; will publish new energy security datasets</title>
+		<link>/pressroom/releases/press588.php</link>
+		<guid isPermaLink="true">/pressroom/releases/press588.php</guid>
+		<pubDate>Tue, 12 May 2026 12:00:00 EST</pubDate>
+		<description>The U.S. Energy Information Administration published its May Short-Term Energy Outlook, reflecting a continued disruption to Middle Eastern oil flows.</description>
+		</item>
+
+
+		<item>
+		<title>EIA releases the Annual Energy Outlook 2026</title>
+		<link>/pressroom/releases/press587.php</link>
+		<guid isPermaLink="true">/pressroom/releases/press587.php</guid>
+		<pubDate>Wed, 8 Apr 2026 15:00:00 EST</pubDate>
+		<description>The Annual Energy Outlook 2026 (AEO2026) explores medium- and long-term alternative futures in the United States through 2050. AEO2026 enables the public to explore a suite of alternative pathways for our energy future depending on assumptions made about markets, technological breakthroughs, and policy. It includes a narrative report, as well as the full set of data tables and visualizations, assumptions and methodologies, and detailed descriptions of the 11 cases we ran to explore these alternative futures.</description>
+		</item>
+
+		<item>
+		<title>Hormuz closure and related production outages are key drivers in EIA's latest forecast</title>
+		<link>/pressroom/releases/press586.php</link>
+		<guid isPermaLink="true">/pressroom/releases/press586.php</guid>
+		<pubDate>Tue, 7 Apr 2026 12:00:00 EST</pubDate>
+		<description>The U.S. Energy Information Administration published its April Short Term Energy Outlook this week, examining the implications of the closure of the Strait of Hormuz.</description>
+		</item>
+
+
+		<item>
+		<title>EIA launches pilot survey on energy use at data centers</title>
+		<link>/pressroom/releases/press585.php</link>
+		<guid isPermaLink="true">/pressroom/releases/press585.php</guid>
+		<pubDate>Wed, 25 Mar 2026 11:00:00 EST</pubDate>
+		<description>EIA is launching three voluntary pilot field studies to evaluate energy consumption in data centers, with web-based pilot surveys in Texas and Washington state as well as in-person interviews in Northern Virginia and Washington, DC.</description>
+		</item>
+		
+		
+
+		<item>
+		<title>EIA releases latest Short-Term Energy Outlook amid Middle East conflict</title>
+		<link>/pressroom/releases/press584.php</link>
+		<guid isPermaLink="true">/pressroom/releases/press584.php</guid>
+		<pubDate>Tue, 10 Mar 2026 12:00:00 EST</pubDate>
+		<description>Crude oil price movements. The Brent crude oil spot price has risen sharply following the onset of military action in the Middle East. Brent settled at $94 per barrel (b) on March 9, up about 50% from the beginning of the year and the highest since September 2023. Crude oil prices have risen as petroleum shipments through the Strait of Hormuz have fallen, and some Middle East oil production has been shut in.  </description>
+		</item>
+
+
+	<item>
+		<title>EIA raises natural gas price forecast following increased heating demand amid severe winter weather</title>
+		<link>/pressroom/releases/press583.php</link>
+		<guid isPermaLink="true">/pressroom/releases/press583.php</guid>
+		<pubDate>Tue, 10 Feb 2026 12:00:00 EST</pubDate> 
+		<description>Natural gas prices rose sharply in January, averaging $7.72 per million British thermal units (MMBtu), as cold weather increased heating demand, reduced production, and led to record storage withdrawals during Winter Storm Fern. The drawdown for the week ending January 30 was the largest weekly net withdrawal recorded in the history of EIA's Weekly Natural Gas Storage Report. </description>
+	</item>
+	
+	
+	<item>
+		<title>EIA forecasts strongest four-year growth in U.S. electricity demand since 2000, fueled by data centers</title>
+		<link>/pressroom/releases/press582.php</link>
+		<guid isPermaLink="true">/pressroom/releases/press582.php</guid>
+		<pubDate>Tue, 13 Jan 2026 12:00:00 EST</pubDate> 
+		<description>The U.S. Energy Information Administration (EIA) published its first energy-sector forecasts through 2027 in the January Short-Term Energy Outlook (STEO).</description>
+	</item>
+
+</channel>
+</rss>     

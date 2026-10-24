@@ -44,8 +44,9 @@ def build_spec() -> DeskSpec:
         news_queries=[
             "crude oil price", "Strait of Hormuz", "OPEC+", "EIA crude inventories",
             "natural gas price", "Iran oil exports", "Russia oil exports",
-            # Last on purpose: GDELT takes only the first 6 phrases, and Iran
-            # must stay in them; Google News takes 8, so this one still reaches it.
+            # Eight phrases: services/intel/sources/news.py sends one Google
+            # News request per phrase (GNEWS_MAX_QUERIES = 8) plus one broad
+            # OR query over the first eight, so every phrase here is searched.
             "Brent crude",
         ],
         policy_topics=[

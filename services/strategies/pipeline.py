@@ -142,6 +142,27 @@ def load_cached_intel(desk_id: str) -> Optional[IntelPacket]:
     return IntelPacket.model_validate(raw) if raw else None
 
 
+def cached_intel_age_s(desk_id: str, *, now: Optional[float] = None) -> Optional[float]:
+    """Seconds since the intel packet was last written, None if never."""
+    try:
+        mtime = os.path.getmtime(_intel_cache_path(desk_id))
+    except OSError:
+        return None
+    return max(0.0, (time.time() if now is None else now) - mtime)
+
+
+def build_and_cache_intel(spec: DeskSpec) -> Tuple[Optional[IntelPacket], Optional[str]]:
+    """Rebuild and cache the intel packet alone — headlines, policy, odds,
+    catalysts, hard data — without touching the thesis. refresh() still
+    does the full chain; this is what facade's background worker calls so
+    the Desk page's headlines stay minutes old between refreshes instead
+    of as old as the last thesis rewrite."""
+    intel, note = _load_intel(spec)
+    if intel is not None:
+        save_intel(spec.id, intel)
+    return intel, note
+
+
 def build_and_cache_analytics(spec: DeskSpec, **kwargs: Any) -> DeskAnalytics:
     """The one path to a fresh DeskAnalytics — used by both refresh() and
     facade.get_brief(), so there is exactly one way this number gets built."""

@@ -25,9 +25,17 @@ dashboard server's Hyperliquid budget, a live rebuild on every page view took
                                          from services/strategies/candle_store)
 
 Rebuilds run on ONE background worker, one desk at a time, so six stale
-desks never stampede the rate budget. Intel and thesis still come from
-whatever the last refresh() cached/wrote: fetching intel and calling the
-(billable) thesis provider are refresh()'s job, not brief's.
+desks never stampede the rate budget. The thesis still comes from whatever
+the last refresh() wrote: calling the (billable) thesis provider is
+refresh()'s job, not brief's.
+
+Intel (headlines, odds, policy, catalysts, hard data) is revalidated the
+same way, separately from the thesis: a cached packet older than
+INTEL_MAX_AGE_S is served at once and rebuilt by the same worker
+(pipeline.build_and_cache_intel), no LLM call involved. Before 2026-10-24
+only refresh() ever rebuilt the packet, so the Desk page's headlines were
+as old as the last thesis rewrite — 16 hours, measured that day — while
+every news source carried a 10-minute TTL that nothing exercised.
 """
 from __future__ import annotations
 
@@ -38,7 +46,7 @@ import time
 import uuid
 from collections import deque
 from datetime import datetime, timedelta, timezone
-from typing import Callable, Deque, List, Optional, Tuple
+from typing import Callable, Deque, Dict, Iterable, List, Optional, Set, Tuple
 
 from contracts.strategies.models import (
     Catalyst, DeskAnalytics, DeskBrief, DeskCard, DeskSpec, IntelPacket, Point, RefreshJob,
@@ -60,6 +68,7 @@ logger = logging.getLogger(__name__)
 BRIEF_MAX_AGE_S = 900.0     # a brief serves cached analytics this young without a rebuild
 CARD_MAX_AGE_S = 3600.0     # the overview queues a background rebuild past this age
 STALE_AFTER_S = 3 * 3600.0  # past this age the brief says so in `stale`, not just `refreshing`
+INTEL_MAX_AGE_S = 1800.0    # a cached intel packet older than this is rebuilt in the background
 
 
 def _env_float(name: str, default: float) -> float:
@@ -80,6 +89,7 @@ def _background_enabled() -> bool:
 # replace it with `lambda fn: fn()` to drain synchronously.
 _LOCK = threading.Lock()
 _PENDING: Deque[str] = deque()
+_WHY: Dict[str, Set[str]] = {}   # desk id -> {"analytics", "intel"}: what the queued job rebuilds
 _ACTIVE: Optional[str] = None
 _WORKER_RUNNING = False
 
@@ -97,33 +107,54 @@ def _drain() -> None:
                 _WORKER_RUNNING = False
                 return
             desk_id = _PENDING.popleft()
+            why = _WHY.pop(desk_id, set()) or {"analytics"}
             _ACTIVE = desk_id
         spec = desks.get_spec(desk_id)
         if spec is None:
             continue
-        t0 = time.monotonic()
-        try:
-            # Background priority: a page view or a clicked refresh goes
-            # first (2026-10-19: a clicked BTC refresh sat behind this queue).
-            with background_priority():
-                pipeline.build_and_cache_analytics(spec)
-            logger.info(f"[strategies.facade] {desk_id}: analytics rebuilt in the background "
-                        f"in {time.monotonic() - t0:.1f}s")
-        except Exception as exc:  # noqa: BLE001 - one desk failing must not stop the queue
-            logger.warning(f"[strategies.facade] {desk_id}: background analytics rebuild failed "
-                           f"after {time.monotonic() - t0:.1f}s: {exc}")
+        if "analytics" in why:
+            t0 = time.monotonic()
+            try:
+                # Background priority: a page view or a clicked refresh goes
+                # first (2026-10-19: a clicked BTC refresh sat behind this queue).
+                with background_priority():
+                    pipeline.build_and_cache_analytics(spec)
+                logger.info(f"[strategies.facade] {desk_id}: analytics rebuilt in the background "
+                            f"in {time.monotonic() - t0:.1f}s")
+            except Exception as exc:  # noqa: BLE001 - one desk failing must not stop the queue
+                logger.warning(f"[strategies.facade] {desk_id}: background analytics rebuild failed "
+                               f"after {time.monotonic() - t0:.1f}s: {exc}")
+        if "intel" in why:
+            t0 = time.monotonic()
+            try:
+                intel, note = pipeline.build_and_cache_intel(spec)
+                if intel is None:
+                    logger.warning(f"[strategies.facade] {desk_id}: background intel rebuild "
+                                   f"skipped: {note}")
+                else:
+                    logger.info(f"[strategies.facade] {desk_id}: intel rebuilt in the background "
+                                f"in {time.monotonic() - t0:.1f}s "
+                                f"({len(intel.headlines)} headlines, "
+                                f"{len(intel.sources_failed)} source(s) failed)")
+            except Exception as exc:  # noqa: BLE001 - same rule: never stop the queue
+                logger.warning(f"[strategies.facade] {desk_id}: background intel rebuild failed "
+                               f"after {time.monotonic() - t0:.1f}s: {exc}")
 
 
-def revalidate(desk_id: str, *, urgent: bool = False) -> bool:
-    """Queue a background analytics rebuild for one desk. Idempotent: a desk
-    already queued or being rebuilt is not queued twice (urgent moves it to
-    the front). Returns True when a rebuild for this desk is queued or
-    running after the call, False when the worker is disabled."""
+def revalidate(desk_id: str, *, urgent: bool = False,
+               what: Iterable[str] = ("analytics",)) -> bool:
+    """Queue a background rebuild for one desk. `what` names the parts:
+    "analytics" (the default, venue reads) and/or "intel" (headlines, odds,
+    policy, catalysts, hard data; no LLM). Idempotent: a desk already queued
+    is not queued twice, its reasons are merged (urgent moves it to the
+    front). Returns True when a rebuild for this desk is queued or running
+    after the call, False when the worker is disabled."""
     global _WORKER_RUNNING
     if not _background_enabled():
         return False
     start = False
     with _LOCK:
+        _WHY.setdefault(desk_id, set()).update(what)
         if desk_id != _ACTIVE:
             if desk_id in _PENDING:
                 if urgent:
@@ -192,6 +223,7 @@ def list_cards() -> List[DeskCard]:
     call often (an overview page polling this should never trigger a live
     HL read)."""
     now = datetime.now(timezone.utc)
+    intel_max_age = _env_float("PATHIEL_DESK_INTEL_MAX_AGE_S", INTEL_MAX_AGE_S)
     cards: List[DeskCard] = []
     for spec in desks.list_specs():
         age = pipeline.cached_analytics_age_s(spec.id)
@@ -199,6 +231,9 @@ def list_cards() -> List[DeskCard]:
         if result is None or age is None or age > _env_float("PATHIEL_DESK_CARD_MAX_AGE_S", CARD_MAX_AGE_S):
             revalidate(spec.id)   # background, single worker; this call never waits on it
         intel = pipeline.load_cached_intel(spec.id)
+        intel_age = pipeline.cached_intel_age_s(spec.id)
+        if intel is not None and intel_age is not None and intel_age > intel_max_age:
+            revalidate(spec.id, what=("intel",))   # headlines/odds only, no thesis rewrite
         thesis = journal.latest_thesis(spec.id)
         track = trade_grading.track_record_for_desk(spec.id)
         primary = _primary_instrument(spec)
@@ -278,13 +313,24 @@ def get_brief(desk_id: str, *, max_age_s: Optional[float] = None, wait: bool = F
 
     result, refreshing, stale = _analytics_for_brief(spec, max_age, wait)
     intel = pipeline.load_cached_intel(desk_id)
+    intel_age = pipeline.cached_intel_age_s(desk_id)
+    intel_max_age = _env_float("PATHIEL_DESK_INTEL_MAX_AGE_S", INTEL_MAX_AGE_S)
     history = journal.list_theses(desk_id)
     thesis = history[0] if history else None
     track = trade_grading.enrich_track_record(grader.aggregate_track_record(history), desk_id)
 
     if intel is None:
         stale.append("intel: never fetched (run refresh)")
-    elif intel.sources_failed:
+    elif intel_age is not None and intel_age > intel_max_age:
+        # Served as-is, rebuilt behind the page (no thesis rewrite, no LLM).
+        # Only a packet past STALE_AFTER_S earns a visible note: half an
+        # hour of headline age is normal between refreshes, half a day is not.
+        queued = revalidate(desk_id, urgent=True, what=("intel",))
+        if intel_age > STALE_AFTER_S:
+            stale.append(f"intel: {intel_age / 3600:.0f} h old"
+                         + (" (headlines refreshing in the background)" if queued
+                            else " (run refresh)"))
+    if intel is not None and intel.sources_failed:
         # A missing free API key (EIA_API_KEY/FRED_API_KEY/CONGRESS_API_KEY)
         # skips its source cleanly and lands here as "...API_KEY_missing" —
         # visible before this fix only inside intel.sources_failed itself,

@@ -1,16 +1,10 @@
-"""News headlines: GDELT DOC 2.0, Google News RSS, oilprice.com RSS (oil
-desks only), and a crypto RSS (crypto desks only). Every parser here was
-built against a REAL captured response — see tests/fixtures/ — not against
-assumed schema.
+"""News headlines: Google News RSS (one broad OR query plus one request per
+desk query phrase), Yahoo Finance quote headlines, EIA's own two feeds,
+Investing.com commodities, oilprice.com RSS (oil desks only), and a crypto
+RSS (crypto desks only). Every parser here was built against a REAL
+captured response — see tests/fixtures/ — not against assumed schema.
 
 Verified live 2026-10-17:
-  GDELT      api.gdeltproject.org/api/v2/doc/doc  — works, but this
-             sandbox's shared egress IP hit "429 ... limit to one request
-             every 5 seconds" on most attempts even single-threaded with a
-             10-20s gap between calls; one request in several succeeded.
-             Treated as a best-effort source: one retry, short internal
-             pacing, and a clean sources_failed entry on 429 rather than
-             ever blocking the rest of the packet on it.
   Google News news.google.com/rss/search            — reliable, HTTP 200.
   oilprice.com oilprice.com/rss/main                — reliable, HTTP 200.
                (/rss and /rss/latest-energy-news both 404 — /rss/main is
@@ -19,6 +13,30 @@ Verified live 2026-10-17:
                (coindesk.com/arc/outboundfeeds/rss/ 308-redirects and was
                dropped in favor of Cointelegraph, which the brief allows:
                "a crypto RSS (CoinDesk or similar)".)
+
+Verified live 2026-10-24 (all HTTP 200, each under 1.5s):
+  Yahoo Finance feeds.finance.yahoo.com/rss/2.0/headline?s=BZ=F,CL=F,NG=F
+               — 19 items, newest 1h old; one request covers every symbol.
+  EIA          eia.gov/rss/todayinenergy.xml (20 items) and
+               eia.gov/rss/press_rss.xml (12 items). pubDate carries a
+               double space and "EST"; email.utils parses both.
+  Investing.com investing.com/rss/news_11.rss (commodities, 10 items).
+               pubDate is "YYYY-MM-DD HH:MM:SS" (not RFC 822), handled by
+               _parse_rss_pubdate's fallback, taken as UTC.
+  Google News per-phrase: a quoted phrase plus `when:2d` returns a fresh,
+               phrase-specific list (14 items for "OPEC+") where the single
+               8-phrase OR query returned a mixed bag capped at 30.
+  Refused automated readers (HTTP 403), so NOT used: opec.org press RSS,
+               iea.org news RSS, ukmto.org advisories, state.gov press.
+               Treasury's press feeds hung past 12s; centcom.mil's RSS
+               endpoint returned an empty body.
+
+GDELT (api.gdeltproject.org/api/v2/doc/doc) is no longer in
+ATOMIC_FETCHERS. Measured 2026-10-24: a successful call took 21s and every
+second call was a 429 ("limit requests to one every 5 seconds"), against a
+12s whole-packet deadline — it could never answer in time, and it showed up
+in every brief as `news:gdelt:timeout`. `fetch_gdelt` stays importable for
+the online smoke test and anyone who wants to run it by hand.
 """
 from __future__ import annotations
 
@@ -37,6 +55,26 @@ GDELT_URL = "https://api.gdeltproject.org/api/v2/doc/doc"
 GOOGLE_NEWS_URL = "https://news.google.com/rss/search"
 OILPRICE_URL = "https://oilprice.com/rss/main"
 CRYPTO_RSS_URL = "https://cointelegraph.com/rss"
+YAHOO_RSS_URL = "https://feeds.finance.yahoo.com/rss/2.0/headline"
+EIA_TODAY_IN_ENERGY_URL = "https://www.eia.gov/rss/todayinenergy.xml"
+EIA_PRESS_URL = "https://www.eia.gov/rss/press_rss.xml"
+INVESTING_COMMODITIES_URL = "https://www.investing.com/rss/news_11.rss"
+
+# Google News per-phrase fan-out: one request per desk query phrase, each
+# restricted to the last two days so a quiet phrase does not pad the list
+# with week-old reprints. Capped so a desk with a long query list cannot
+# fan out into dozens of requests per packet.
+GNEWS_RECENCY = "when:2d"
+GNEWS_MAX_QUERIES = 8
+
+# Yahoo Finance quote symbols for the perps this desk trades. Commodity and
+# index coins need an explicit map; a crypto coin is "<COIN>-USD" and a
+# plain equity ticker is itself. Anything else is skipped, never guessed.
+_YAHOO_SYMBOLS = {
+    "BRENTOIL": "BZ=F", "CL": "CL=F", "NATGAS": "NG=F",
+    "GOLD": "GC=F", "SILVER": "SI=F",
+    "SP500": "^GSPC", "XYZ100": "^NDX", "JP225": "^N225", "KR200": "^KS200",
+}
 
 
 def query_phrases(spec: DeskSpec) -> List[str]:
@@ -46,12 +84,20 @@ def query_phrases(spec: DeskSpec) -> List[str]:
 # ── RSS (shared parse: Google News / oilprice.com / Cointelegraph) ──────
 
 def _parse_rss_pubdate(raw: Optional[str]) -> Optional[datetime]:
+    """RFC 822 first (Google News, Yahoo, oilprice, EIA), then the plain
+    "YYYY-MM-DD HH:MM:SS" Investing.com emits, read as UTC. Anything else
+    is None: a headline with no date is scored as undated, never guessed."""
     if not raw:
         return None
+    raw = raw.strip()
     try:
         dt = parsedate_to_datetime(raw)
         return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
     except (TypeError, ValueError):
+        pass
+    try:
+        return datetime.strptime(raw, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+    except ValueError:
         return None
 
 
@@ -112,6 +158,112 @@ def fetch_google_news(spec: DeskSpec, *, max_items: int = 30) -> Tuple[List[Dict
         items = parse_rss_items(text, split_source_from_title=True)
     except ET.ParseError:
         return [], "news:google_news:bad_xml"
+    return items[:max_items], None
+
+
+def _make_gnews_query_fetcher(index: int):
+    """One Google News request for the desk's `index`-th news query phrase,
+    quoted and restricted to the last two days. Built as a named function
+    (not a functools.partial) so api.py's `_fn_key` gives each its own
+    cache file and its own `sources_failed` entry, and so each runs in its
+    own thread like every other ATOMIC_FETCHERS entry."""
+    def fetch(spec: DeskSpec, *, max_items: int = 20) -> Tuple[List[Dict], Optional[str]]:
+        queries = list(spec.news_queries)[:GNEWS_MAX_QUERIES]
+        if index >= len(queries):
+            return [], None
+        q = f'"{queries[index]}" {GNEWS_RECENCY}'
+        url = f"{GOOGLE_NEWS_URL}?q={quote(q)}&hl=en-US&gl=US&ceid=US:en"
+        text, err = http_client.fetch_text(url, timeout_s=5.0, retries=0)
+        if err:
+            return [], f"news:google_news_q{index}:{err}"
+        try:
+            items = parse_rss_items(text, split_source_from_title=True)
+        except ET.ParseError:
+            return [], f"news:google_news_q{index}:bad_xml"
+        return items[:max_items], None
+
+    fetch.__name__ = fetch.__qualname__ = f"fetch_google_news_q{index}"
+    fetch.__doc__ = f"Google News RSS for news_queries[{index}], last two days."
+    return fetch
+
+
+GOOGLE_NEWS_QUERY_FETCHERS = tuple(_make_gnews_query_fetcher(i) for i in range(GNEWS_MAX_QUERIES))
+
+
+def yahoo_symbols(spec: DeskSpec) -> List[str]:
+    """Yahoo Finance symbols for this desk's instruments, in instrument
+    order, deduped. See _YAHOO_SYMBOLS for the rule."""
+    crypto = desk_rules.crypto_tickers()
+    out: List[str] = []
+    for inst in spec.instruments:
+        coin = inst.coin.split(":", 1)[-1].upper()
+        if coin in _YAHOO_SYMBOLS:
+            sym = _YAHOO_SYMBOLS[coin]
+        elif coin in crypto:
+            sym = f"{coin}-USD"
+        elif coin.isalpha() and 1 <= len(coin) <= 5:
+            sym = coin
+        else:
+            continue
+        if sym not in out:
+            out.append(sym)
+    return out
+
+
+def fetch_yahoo_quotes(spec: DeskSpec, *, max_items: int = 25) -> Tuple[List[Dict], Optional[str]]:
+    """Yahoo Finance's per-quote headline feed, one request for every symbol
+    this desk trades. Items carry no <source>; Yahoo is the aggregator, so
+    the source is "Yahoo Finance" (tier 2 in scoring.py)."""
+    symbols = yahoo_symbols(spec)
+    if not symbols:
+        return [], None
+    url = f"{YAHOO_RSS_URL}?s={quote(','.join(symbols), safe=',=^-')}&region=US&lang=en-US"
+    text, err = http_client.fetch_text(url, timeout_s=6.0)
+    if err:
+        return [], f"news:yahoo_quotes:{err}"
+    try:
+        items = parse_rss_items(text, default_source="Yahoo Finance")
+    except ET.ParseError:
+        return [], "news:yahoo_quotes:bad_xml"
+    return items[:max_items], None
+
+
+def _fetch_eia_feed(spec: DeskSpec, url: str, key: str, max_items: int) -> Tuple[List[Dict], Optional[str]]:
+    if not desk_rules.is_natgas_desk(spec):   # oil desks and the gas desk, see desk_rules
+        return [], None
+    text, err = http_client.fetch_text(url, timeout_s=6.0)
+    if err:
+        return [], f"news:{key}:{err}"
+    try:
+        items = parse_rss_items(text, default_source="EIA")
+    except ET.ParseError:
+        return [], f"news:{key}:bad_xml"
+    return items[:max_items], None
+
+
+def fetch_eia_today_in_energy(spec: DeskSpec, *, max_items: int = 20) -> Tuple[List[Dict], Optional[str]]:
+    """EIA's daily Today in Energy articles: the primary source for US
+    refinery runs, inventories and production context. Tier 1."""
+    return _fetch_eia_feed(spec, EIA_TODAY_IN_ENERGY_URL, "eia_today_in_energy", max_items)
+
+
+def fetch_eia_press(spec: DeskSpec, *, max_items: int = 12) -> Tuple[List[Dict], Optional[str]]:
+    """EIA press releases: STEO publication notices and outlook headlines."""
+    return _fetch_eia_feed(spec, EIA_PRESS_URL, "eia_press", max_items)
+
+
+def fetch_investing_commodities(spec: DeskSpec, *, max_items: int = 20) -> Tuple[List[Dict], Optional[str]]:
+    """Investing.com's commodities news feed (oil, gas, metals desks)."""
+    if not (desk_rules.is_oil_desk(spec) or desk_rules.is_natgas_desk(spec)
+            or desk_rules.is_metals_desk(spec)):
+        return [], None
+    text, err = http_client.fetch_text(INVESTING_COMMODITIES_URL, timeout_s=6.0)
+    if err:
+        return [], f"news:investing_commodities:{err}"
+    try:
+        items = parse_rss_items(text, default_source="Investing.com")
+    except ET.ParseError:
+        return [], "news:investing_commodities:bad_xml"
     return items[:max_items], None
 
 
@@ -221,10 +373,20 @@ def fetch_gdelt(spec: DeskSpec, *, max_records: int = 30) -> Tuple[List[Dict], O
 
 # ── orchestrator ─────────────────────────────────────────────────────
 # One callable per network source, each `(spec) -> (List[Dict], Optional[str])`.
-# api.py fans every one of these out to its own thread so a slow/retrying
-# source (GDELT in particular) cannot serialize behind the others — see
-# api.py's module docstring for the 15s cold-build budget this exists for.
-ATOMIC_FETCHERS = (fetch_google_news, fetch_gdelt, fetch_oilprice, fetch_crypto_rss)
+# api.py fans every one of these out to its own thread so a slow source
+# cannot serialize behind the others — see api.py's module docstring for
+# the cold-build budget this exists for. GDELT is deliberately absent (see
+# the module docstring: 21s per answer against a 12s packet deadline).
+ATOMIC_FETCHERS = (
+    fetch_google_news,
+    *GOOGLE_NEWS_QUERY_FETCHERS,
+    fetch_yahoo_quotes,
+    fetch_eia_today_in_energy,
+    fetch_eia_press,
+    fetch_investing_commodities,
+    fetch_oilprice,
+    fetch_crypto_rss,
+)
 
 
 def score_and_dedup(raw_items: List[Dict[str, Any]], spec: DeskSpec,

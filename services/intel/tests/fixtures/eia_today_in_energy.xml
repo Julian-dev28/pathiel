@@ -1,0 +1,162 @@
+<?xml version="1.0" encoding="ISO-8859-1" ?>
+<?xml-stylesheet href="rss.xsl" type="text/xsl" media="screen"?>
+<rss version="2.0">
+	<channel>
+		<title>Today in Energy</title>
+		<link>http://www.eia.gov/todayinenergy</link>
+		<description>Short, timely articles with graphics on energy facts, issues, and trends.</description>
+		<language>en-us</language>
+		<lastBuildDate>Thu, 22 Oct 2026 09:00:00 EST</lastBuildDate>
+		<webMaster>wmaster@eia.gov</webMaster>
+
+		<image>
+		<title>EIA logo</title>
+		<url>http://www.eia.gov/global/images/logos/eia_logo_250.png</url>
+		<link>http://www.eia.gov/</link>
+		<description>U.S. Energy Information Administration</description>
+		</image>
+		
+		<item>
+		<title>U.S. refineries have been running at very high rates in 2026</title>
+		<link>https://www.eia.gov/todayinenergy/detail.php?id=68344</link>
+		<pubDate>Thu, 22 Oct 2026  09:00:00 EST</pubDate>
+		<description>The U.S. refinery fleet has run at higher-than-normal rates this year, with refinery utilization averaging more than 95% of capacity between May and September, the highest for those months since 1998. Tight global product supplies this year have boosted margins for petroleum products, particularly for diesel, incentivizing the increased run rates.</description>
+		</item>
+		
+		<item>
+		<title>Hybrid sales rise while battery electric sales remain lower after tax credit expiration</title>
+		<link>https://www.eia.gov/todayinenergy/detail.php?id=68325</link>
+		<pubDate>Mon, 19 Oct 2026  09:00:00 EST</pubDate>
+		<description>In the third quarter of 2026 (3Q26), 23% of new light-duty vehicles sold in the United States were hybrid electric, battery electric, or plug-in hybrid electric vehicles, down slightly from 24% in 3Q25. Between 3Q25 and 3Q26, hybrid electric vehicles continued to gain market share, reaching 16% of light-duty vehicle sales. Growth of hybrid electric vehicle sales has slowed this quarter as the average transaction price for a new vehicle passed $50,000-the first time this price has been reached so far this year, according to Kelley Blue Book. </description>
+		</item>
+		
+		<item>
+		<title>U.S. small-scale solar generation has quadrupled in the last decade</title>
+		<link>https://www.eia.gov/todayinenergy/detail.php?id=68324</link>
+		<pubDate>Fri, 16 Oct 2026  09:00:00 EST</pubDate>
+		<description>We estimate that U.S. generation from small-scale or rooftop solar photovoltaic systems (smaller than 1 megawatt of capacity) has increased from 18,812 gigawatthours (GWh) to 92,979 GWh over the last decade. The four states with the highest generation of small-scale solar in the country-California, Arizona, Texas, and Florida-are in regions with more abundant solar resources. Even though it is in a region with lower solar resources, New York ranks as the fifth-largest rooftop solar generation producer as a result of capacity growth supported by technology improvements and state incentives.</description>
+		</item>
+
+		
+		
+		<item>
+		<title>PJM, ERCOT, and SWPP all set peak load records this summer</title>
+		<link>https://www.eia.gov/todayinenergy/detail.php?id=68305</link>
+		<pubDate>Thu, 15 Oct 2026 09:00:00 EST</pubDate>
+		<description>Three regional transmission organizations (RTOs) set records for peak hourly load this past summer, according to data reported on Form EIA-930 and presented in the Hourly Electric Grid Monitor.</description>
+		</item>
+		
+		<item>
+		<title>Monthly wind generation in ISO-NE is about 68% higher than last year</title>
+		<link>https://www.eia.gov/todayinenergy/detail.php?id=68304</link>
+		<pubDate>Wed, 14 Oct 2026 09:00:00 EST</pubDate>
+		<description>Monthly wind generation in the first nine months of 2026 was an average of 68% higher compared with the same period in 2025 in ISO New England (ISO-NE).</description>
+		</item>
+		
+		<item>
+		<title>Category 2 Hurricane Isaias nears landfall, leading to production shut-ins</title>
+		<link>https://www.eia.gov/todayinenergy/detail.php?id=68284</link>
+		<pubDate>Fri, 09 Oct  09:00:00 EST</pubDate>
+		<description>As of 4:00 a.m. central time on October 9, the National Oceanic and Atmospheric Administration expects Hurricane Isaias to make landfall on the Gulf Coast late Friday or early Saturday, creating the potential for significant disruptions to energy infrastructure. Hurricane Isaias is the first hurricane of the 2026 Atlantic season and will be the largest storm system to make landfall in the region since Hurricane Helene in September 2024.</description>
+		</item>
+		
+		<item>
+		<title>Mixed outlook for energy expenditures this winter</title>
+		<link>https://www.eia.gov/todayinenergy/detail.php?id=68264</link>
+		<pubDate>Wed, 07 Oct 2026  09:00:00 EST</pubDate>
+		<description>We expect energy expenditures this winter to vary because of diverging trends in energy prices among fuels and regional variation in forecast temperatures. We expect that lower prices for natural gas and propane will drive decreases in expenditures this year for the half of U.S. households heating with those fuels. Higher prices for electricity and heating oil drive increased expenditures for households heating with those fuels in our forecast.</description>
+		</item>
+		
+		<item>
+		<title>Crude oil prices and refinery margins generally increased throughout the third quarter</title>
+		<link>https://www.eia.gov/todayinenergy/detail.php?id=68245</link>
+		<pubDate>Mon, 05 Oct 2026  09:00:00 EST</pubDate>
+		<description>Petroleum markets in the third quarter of 2026 (3Q26) were characterized by increasing prices for crude oil and petroleum products amid persistent conflict in the Middle East.</description>
+		</item>
+		
+		<item>
+		<title>U.S. natural gas production reached a record high in July 2026</title>
+		<link>https://www.eia.gov/todayinenergy/detail.php?id=68225</link>
+		<pubDate>Fri, 02 Oct 2026  09:00:00 EST</pubDate>
+		<description>U.S. natural gas production hit an all-time high in July 2026, driven primarily by increased output in the Permian Basin, according to our latest Natural Gas Monthly.</description>
+		</item>
+		
+		<item>
+		<title>U.S. exports of propane reached records in the first half of 2026</title>
+		<link>https://www.eia.gov/todayinenergy/detail.php?id=68244</link>
+		<pubDate>Thu, 01 Oct 2026  09:00:00 EST</pubDate>
+		<description>U.S. propane exports increased to 2 million barrels per day (b/d) in the first half of 2026, 11% more than during the same period in 2025. Increased U.S. propane production and changing trade flows, particularly increased exports to India and other countries in South Asia, drove propane exports to a record high of 2.1 million (b/d) in April 2026. Since then, total propane exports, including exports to India, have continued at levels well above the five-year average.</description>
+		</item>
+		
+		<item>
+		<title>U.S. electricity use for electric vehicles increasing at a slower pace in 2026</title>
+		<link>https://www.eia.gov/todayinenergy/detail.php?id=68224</link>
+		<pubDate>Wed, 30 Sep 2026  09:00:00 EST</pubDate>
+		<description>We estimate light-duty electric vehicles in the United States consumed 8% more electricity during the first six months of 2026 than in the last half of 2025 (2H25) in our Monthly Energy Review, down from the 13-24% growth seen in six-month periods in recent years. The slowing electric vehicle electricity consumption growth followed a decline in sales after U.S. federal tax credits expired in September 2025. Overall, U.S. light-duty electric vehicle electricity use has more than doubled since 1H23, totaling nearly 14 billion kilowatthours in 1H26.</description>
+		</item>
+		
+		<item>
+		<title>Henry Hub natural gas prices this summer were 6% lower than last summer</title>
+		<link>https://www.eia.gov/todayinenergy/detail.php?id=68204</link>
+		<pubDate>Fri, 25 Sep 2026  09:00:00 EST</pubDate>
+		<description>The Henry Hub natural gas spot price averaged $2.93 per million British thermal units from June through August, 6% less than the same period last year. Prices were lower this summer despite exceptionally hot weather that increased electricity demand for air conditioning. Natural gas-fired power plants often help meet higher demand during such periods.</description>
+		</item>
+
+		<item>
+		<title>Public companies produce most U.S. crude oil and natural gas</title>
+		<link>https://www.eia.gov/todayinenergy/detail.php?id=68184</link>
+		<pubDate>Tue, 22 Sep 2026  09:00:00 EST</pubDate>
+		<description>Publicly traded companies represent a tiny share of the total number of companies producing crude oil and natural gas in the United States, but they make up a large share of U.S. production. In 2025, publicly traded companies accounted for just 2% of about 12,000 oil and natural gas producers but produced 68% of the crude oil and natural gas in the Lower 48 states.</description>
+		</item>
+		
+		<item>
+		<title>What goes into diesel prices?</title>
+		<link>https://www.eia.gov/todayinenergy/detail.php?id=68164</link>
+		<pubDate>Fri, 18 Sep 2026  09:00:00 EST</pubDate>
+		<description>The price of distillate fuel oil, often sold as diesel, is driven by the price of crude oil, retail margins, distribution costs, taxes, and crack spreads, the indicator we use for refining margins. Tight global supplies of distillate fuel oil and elevated crude oil prices have driven prices higher in recent months.</description>
+		</item>
+
+		<item>
+		<title>Corpus Christi LNG expansion makes facility the second-largest in the United States</title>
+		<link>https://www.eia.gov/todayinenergy/detail.php?id=68144</link>
+		<pubDate>Tue, 15 Sep 2026  09:00:00 EST</pubDate>
+		<description>On August 28, 2026, Cheniere Energy, Inc., completed its Corpus Christi Liquefaction Stage 3 Project (CCL Stage 3) in Texas, taking custody and control of the seventh and last liquefied natural gas (LNG) train in the project.</description>
+		</item>
+		
+		<item>
+		<title>United States on track for record crude oil production in 2026</title>
+		<link>https://www.eia.gov/todayinenergy/detail.php?id=68125</link>
+		<pubDate>Thu, 10 Sep 2026  09:00:00 EST</pubDate>
+		<description>We forecast U.S. crude oil production will average 13.8 million barrels per day (b/d) in 2026, surpassing the previous record of 13.7 million b/d set in 2025, in our latest Short-Term Energy Outlook (STEO).</description>
+		</item>
+		
+		<item>
+		<title>New England natural gas prices have been trading near record discounts to Henry Hub</title>
+		<link>https://www.eia.gov/todayinenergy/detail.php?id=68124</link>
+		<pubDate>Wed, 09 Sep 2026  09:00:00 EST</pubDate>
+		<description>Low-cost Appalachian and Canadian natural gas supplies coupled with lower-than-usual regional consumption have pushed down natural gas prices at a major New England pricing hub in recent months to trade at a discount to the widely cited U.S. benchmark, Henry Hub.</description>
+		</item>
+		
+		<item>
+		<title>Elevated crack spreads and crude oil prices contribute to higher prices at the pump</title>
+		<link>https://www.eia.gov/todayinenergy/detail.php?id=68104</link>
+		<pubDate>Fri, 04 Sep 2026  09:00:00 EST</pubDate>
+		<description>What are crack spreads and why are they elevated? Crack spreads are indicators of the profitability of refining crude oil into petroleum products such as gasoline and diesel. One common crack spread is calculated by subtracting the spot market price of a gallon of crude oil from the wholesale price of a gallon of refined product. Since May, the gasoline crack spread in New York Harbor has averaged about $1 per gallon (gal) higher than in 2025, when the crack spread peaked around 60 cents/gal. Gasoline crack spreads are elevated primarily because of tight gasoline supplies globally. </description>
+		</item>
+		
+		<item>
+		<title>Weekly average load in ERCOT continues near record high</title>
+		<link>https://www.eia.gov/todayinenergy/detail.php?id=68084</link>
+		<pubDate>Thu, 03 Sep 2026 09:00:00 EST</pubDate>
+		<description>Sustained high temperatures have contributed to persistently high electricity demand in the Electric Reliability Council of Texas (ERCOT), the regional transmission organization for most of the state.</description>
+		</item>	
+		
+		<item>
+		<title>U.S. LNG exports rose 23% in the first half of 2026 because of higher capacity</title>
+		<link>https://www.eia.gov/todayinenergy/detail.php?id=68064</link>
+		<pubDate>Tue, 01 Sep 2026 09:00:00 EST</pubDate>
+		<description>U.S. liquefied natural gas (LNG) exports averaged 17.4 billion cubic feet per day (Bcf/d) in the first six months of the year, 23% more than the same period in 2025, according to our Natural Gas Monthly. In our latest Short-Term Energy Outlook, we estimate U.S. LNG exports will average 17.3 Bcf/d in the second half of 2026 (2H26) before rising to 18.7 Bcf/d in 1H27.</description>
+		</item>
+		
+	</channel>
+</rss>

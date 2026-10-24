@@ -28,8 +28,8 @@ gated oilprice.com and the crypto RSS feed before this branch.
 
 | source | desk(s) | key | sample (from a real fixture) |
 |---|---|---|---|
-| `sources/news.py` | all | none | GDELT / Google News / oilprice.com / Cointelegraph RSS |
-| `sources/policy.py` | all | `CONGRESS_API_KEY` (bills only; Federal Register + OFAC need none) | Federal Register, OFAC recent actions |
+| `sources/news.py` | all | none | Google News (one broad OR query plus one request per desk phrase, `when:2d`), Yahoo Finance quote headlines (`BZ=F,CL=F,NG=F` for oil), EIA Today in Energy + EIA press (oil, gas), Investing.com commodities (oil, gas, metals), oilprice.com (oil), Cointelegraph (crypto). GDELT dropped 2026-10-24: 21s per answer and a 429 every second call against a 12s packet deadline. opec.org, iea.org, ukmto.org and state.gov refuse automated readers (403) and are not used. |
+| `sources/policy.py` | all | `CONGRESS_API_KEY` (bills only; Federal Register + OFAC need none) | Federal Register, OFAC recent actions (one 11s attempt: the page takes 10s, measured 2026-10-24) |
 | `sources/predictions.py` | all | none | Polymarket / Kalshi odds |
 | `sources/positioning.py` | oil, metals, btc, indices | none | `WTI non-commercial net long: 100,343 (chg +1,283) pct1y=0.67 as_of 2026-10-13` |
 | `sources/catalysts.py` | all | none | EIA/API/FOMC/CPI calendar, NHC storms, token unlocks, earnings estimate |

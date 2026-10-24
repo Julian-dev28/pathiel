@@ -126,13 +126,14 @@ def test_ofac_http_failure_propagates(monkeypatch):
     assert items == [] and err == "policy:ofac:timeout"
 
 
-def test_ofac_uses_a_timeout_that_keeps_two_attempts_under_the_packet_budget(monkeypatch):
-    """Regression for the real `policy.fetch_ofac:timeout_budget_exceeded`
-    failure: http_client's DEFAULT_TIMEOUT (connect=4s, read=6s) times two
-    attempts plus the 1s retry backoff can cost ~21s on a slow
-    treasury.gov page, well over build_packet's 12s FETCH_DEADLINE_S.
-    fetch_ofac must pass an explicit timeout small enough that even two
-    attempts stay comfortably inside that budget."""
+def test_ofac_makes_one_attempt_with_a_timeout_the_slow_page_can_actually_meet(monkeypatch):
+    """2026-10-24: ofac.treasury.gov/recent-actions answers in 10.1s to
+    10.3s every time (HTTP 200, 44KB). The earlier fix (4s timeout, one
+    retry) was sized for a flaky fast page and so failed on every refresh,
+    leaving `policy:ofac:timeout` in every brief for days. The only shape
+    that works is a single attempt with a timeout above the page's real
+    latency and below build_packet's 12s FETCH_DEADLINE_S."""
+    from services.intel import api
     captured = {}
 
     def fake(url, **kw):
@@ -140,7 +141,8 @@ def test_ofac_uses_a_timeout_that_keeps_two_attempts_under_the_packet_budget(mon
         return "<html></html>", None
     monkeypatch.setattr(http_client, "fetch_text", fake)
     policy.fetch_ofac(_spec_with_topics(["x"]))
-    assert captured["timeout_s"] <= 5.0, "two attempts at this timeout plus 1s backoff must stay under 12s"
+    assert captured["retries"] == 0, "a retry would be a second 10s wait past the deadline"
+    assert 10.5 <= captured["timeout_s"] < api.FETCH_DEADLINE_S
 
 
 # ── congress.gov bills ─────────────────────────────────────────────

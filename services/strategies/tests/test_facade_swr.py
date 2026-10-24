@@ -22,6 +22,7 @@ def worker(monkeypatch):
     monkeypatch.setenv("PATHIEL_DESK_BACKGROUND_REFRESH", "1")
     monkeypatch.setenv("PATHIEL_DESK_WARMUP", "1")
     monkeypatch.setattr(facade, "_PENDING", facade.deque())
+    monkeypatch.setattr(facade, "_WHY", {})
     monkeypatch.setattr(facade, "_ACTIVE", None)
     monkeypatch.setattr(facade, "_WORKER_RUNNING", False)
     started = []

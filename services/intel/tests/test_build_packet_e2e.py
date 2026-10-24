@@ -51,8 +51,18 @@ def _router_json(url: str, **kw):
 
 
 def _router_text(url: str, **kw):
+    if "news.google.com" in url and "when%3A2d" in url:
+        return fixture_text("google_news_query_opec.xml"), None   # the per-phrase fan-out
     if "news.google.com" in url:
         return fixture_text("google_news_oil.xml"), None
+    if "feeds.finance.yahoo.com" in url:
+        return fixture_text("yahoo_quote_headlines_oil.xml"), None
+    if "eia.gov/rss/todayinenergy" in url:
+        return fixture_text("eia_today_in_energy.xml"), None
+    if "eia.gov/rss/press" in url:
+        return fixture_text("eia_press.xml"), None
+    if "investing.com/rss" in url:
+        return fixture_text("investing_commodities.xml"), None
     if "oilprice.com" in url:
         return fixture_text("oilprice_main.xml"), None
     if "cointelegraph.com" in url:
@@ -108,6 +118,17 @@ def test_build_packet_oil_desk_is_valid_and_populated(oil_spec, monkeypatch):
     # congress.gov / EIA keys unset -> each must be named, never silently empty
     assert any("CONGRESS_API_KEY" in f for f in packet.sources_failed)
     assert any("EIA_API_KEY" in f for f in packet.sources_failed)
+
+
+def test_build_packet_oil_desk_headlines_span_the_2026_10_24_feeds(oil_spec):
+    """Yahoo Finance quote headlines, EIA's two feeds, Investing.com
+    commodities and the per-phrase Google News requests all land in one
+    packet and survive dedup; GDELT is gone from the fetcher list, so it can
+    neither contribute nor fail."""
+    packet = build_packet(oil_spec, now=T0)
+    sources = {h.source for h in packet.headlines}
+    assert {"Yahoo Finance", "EIA", "Investing.com", "OilPrice.com", "EnergyNow.com"} <= sources
+    assert not any("gdelt" in f for f in packet.sources_failed)
 
 
 def test_build_packet_oil_desk_venue_datapoints_are_real(oil_spec):

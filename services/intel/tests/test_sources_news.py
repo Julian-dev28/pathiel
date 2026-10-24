@@ -232,3 +232,141 @@ def test_score_and_dedup_sinks_a_bare_instrument_token_headline(oil_spec):
     assert by_title["Brent crude tops $11"].relevance >= 0.9
     assert by_title["Brent falls as Iran'"].relevance >= 0.8
     assert heads[-1] is sitcom
+
+
+# ── 2026-10-24 feeds: Yahoo Finance, EIA, Investing.com, per-phrase Google News ─
+
+def _spec(desk_id: str, *coins: str, queries=()) -> DeskSpec:
+    return DeskSpec(id=desk_id, name=desk_id, tagline="t",
+                     instruments=[Instrument(coin=c, label=c.split(":")[-1]) for c in coins],
+                     news_queries=list(queries))
+
+
+def test_parse_yahoo_quote_headlines_real_fixture():
+    items = news.parse_rss_items(fixture_text("yahoo_quote_headlines_oil.xml"),
+                                 default_source="Yahoo Finance")
+    assert len(items) == 19
+    assert all(i["source"] == "Yahoo Finance" for i in items)
+    assert all(i["published_at"] is not None for i in items)
+
+
+def test_parse_eia_feeds_real_fixtures_handle_double_space_and_est_dates():
+    today = news.parse_rss_items(fixture_text("eia_today_in_energy.xml"), default_source="EIA")
+    press = news.parse_rss_items(fixture_text("eia_press.xml"), default_source="EIA")
+    assert len(today) == 20 and len(press) == 12
+    dated = [i for i in today + press if i["published_at"] is not None]
+    assert all(i["published_at"].tzinfo is not None for i in dated)
+    # One real row in the capture has no year ("Fri, 09 Oct  09:00:00 EST"):
+    # it stays undated rather than being guessed into some year.
+    assert len(dated) == len(today) + len(press) - 1
+    assert today[0]["title"].startswith("U.S. refineries")
+
+
+def test_parse_investing_commodities_real_fixture_plain_date_read_as_utc():
+    items = news.parse_rss_items(fixture_text("investing_commodities.xml"),
+                                 default_source="Investing.com")
+    assert len(items) == 10
+    assert items[0]["published_at"] == datetime(2026, 10, 24, 20, 34, 17, tzinfo=timezone.utc)
+
+
+def test_parse_rss_pubdate_fallback_and_garbage():
+    assert news._parse_rss_pubdate("2026-10-24 20:34:17") == datetime(
+        2026, 10, 24, 20, 34, 17, tzinfo=timezone.utc)
+    assert news._parse_rss_pubdate("Sat, 24 Oct 2026 21:00:00 +0000").tzinfo is not None
+    assert news._parse_rss_pubdate("yesterday-ish") is None
+    assert news._parse_rss_pubdate(None) is None
+
+
+def test_parse_google_news_per_query_real_fixture_splits_source():
+    items = news.parse_rss_items(fixture_text("google_news_query_opec.xml"),
+                                 split_source_from_title=True)
+    assert len(items) == 14
+    assert items[0]["source"] == "EnergyNow.com"
+    assert not items[0]["title"].endswith("EnergyNow.com")
+
+
+def test_google_news_query_fetchers_one_quoted_phrase_each_with_recency(monkeypatch):
+    from urllib.parse import quote
+    seen = []
+
+    def fake(url, **kw):
+        seen.append((url, kw))
+        return fixture_text("google_news_query_opec.xml"), None
+    monkeypatch.setattr(http_client, "fetch_text", fake)
+    spec = _oil_spec()
+    q0 = news.GOOGLE_NEWS_QUERY_FETCHERS[0]
+    items, err = q0(spec)
+    assert err is None and len(items) == 14
+    url, kw = seen[0]
+    assert quote(f'"{spec.news_queries[0]}" when:2d') in url
+    assert kw["retries"] == 0 and kw["timeout_s"] <= 6.0
+    assert q0.__name__ == "fetch_google_news_q0"
+
+
+def test_google_news_query_fetcher_beyond_the_desks_queries_is_a_noop(monkeypatch):
+    called = []
+    monkeypatch.setattr(http_client, "fetch_text", lambda *a, **k: called.append(1))
+    spec = _oil_spec()
+    items, err = news.GOOGLE_NEWS_QUERY_FETCHERS[len(spec.news_queries)](spec)
+    assert items == [] and err is None and not called
+
+
+def test_google_news_query_fetchers_have_distinct_names_for_distinct_cache_keys():
+    names = [f.__name__ for f in news.GOOGLE_NEWS_QUERY_FETCHERS]
+    assert len(set(names)) == len(names) == news.GNEWS_MAX_QUERIES
+
+
+def test_yahoo_symbols_per_desk_type():
+    assert news.yahoo_symbols(_spec("oil", "xyz:BRENTOIL", "xyz:CL", "xyz:NATGAS")) == ["BZ=F", "CL=F", "NG=F"]
+    assert news.yahoo_symbols(_spec("metals", "xyz:GOLD", "xyz:SILVER")) == ["GC=F", "SI=F"]
+    assert news.yahoo_symbols(_btc_spec()) == ["BTC-USD"]
+    assert news.yahoo_symbols(_spec("ai", "xyz:NVDA", "xyz:MU")) == ["NVDA", "MU"]
+    assert news.yahoo_symbols(_spec("odd", "xyz:ZZZZZZ")) == []   # unmapped: skipped, never guessed
+
+
+def test_fetch_yahoo_quotes_requests_every_symbol_in_one_call(monkeypatch):
+    seen = []
+
+    def fake(url, **kw):
+        seen.append(url)
+        return fixture_text("yahoo_quote_headlines_oil.xml"), None
+    monkeypatch.setattr(http_client, "fetch_text", fake)
+    items, err = news.fetch_yahoo_quotes(_spec("oil", "xyz:BRENTOIL", "xyz:CL", "xyz:NATGAS"))
+    assert err is None and len(items) == 19
+    assert len(seen) == 1 and "s=BZ=F,CL=F,NG=F" in seen[0]
+
+
+def test_fetch_yahoo_quotes_skips_a_desk_with_no_mappable_symbol(monkeypatch):
+    called = []
+    monkeypatch.setattr(http_client, "fetch_text", lambda *a, **k: called.append(1))
+    assert news.fetch_yahoo_quotes(_spec("odd", "xyz:ZZZZZZ")) == ([], None)
+    assert not called
+
+
+def test_eia_feeds_fire_for_oil_and_gas_desks_not_for_btc(monkeypatch):
+    monkeypatch.setattr(http_client, "fetch_text",
+                         lambda url, **k: (fixture_text("eia_today_in_energy.xml"
+                                                        if "todayinenergy" in url else "eia_press.xml"), None))
+    gas = _spec("gas", "xyz:NATGAS")
+    assert len(news.fetch_eia_today_in_energy(_oil_spec())[0]) == 20
+    assert len(news.fetch_eia_press(gas)[0]) == 12
+    assert news.fetch_eia_today_in_energy(_btc_spec()) == ([], None)
+    assert news.fetch_eia_press(_btc_spec()) == ([], None)
+
+
+def test_investing_commodities_fires_for_oil_and_metals_not_for_btc(monkeypatch):
+    monkeypatch.setattr(http_client, "fetch_text",
+                         lambda *a, **k: (fixture_text("investing_commodities.xml"), None))
+    assert len(news.fetch_investing_commodities(_oil_spec())[0]) == 10
+    assert len(news.fetch_investing_commodities(_spec("metals", "xyz:GOLD"))[0]) == 10
+    assert news.fetch_investing_commodities(_btc_spec()) == ([], None)
+
+
+def test_atomic_fetchers_drop_gdelt_and_carry_the_new_feeds():
+    names = [f.__name__ for f in news.ATOMIC_FETCHERS]
+    assert "fetch_gdelt" not in names
+    for expected in ("fetch_google_news", "fetch_google_news_q0", "fetch_google_news_q7",
+                     "fetch_yahoo_quotes", "fetch_eia_today_in_energy", "fetch_eia_press",
+                     "fetch_investing_commodities", "fetch_oilprice", "fetch_crypto_rss"):
+        assert expected in names
+    assert len(set(names)) == len(names), "api.py keys caches and failures by function name"

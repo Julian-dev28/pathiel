@@ -138,3 +138,34 @@ def test_online_sec_edgar_earnings():
     cats, err = catalysts.fetch_earnings_catalysts(spec, dt.datetime.now(dt.timezone.utc))
     assert err is None
     assert isinstance(cats, list)
+
+
+# ── 2026-10-24 feeds ──────────────────────────────────────────────────
+
+def test_online_yahoo_quote_headlines():
+    items, err = news.fetch_yahoo_quotes(_oil_spec())
+    assert err is None and len(items) > 0
+
+
+def test_online_eia_feeds():
+    today, err1 = news.fetch_eia_today_in_energy(_oil_spec())
+    press, err2 = news.fetch_eia_press(_oil_spec())
+    assert err1 is None and err2 is None
+    assert len(today) > 0 and len(press) > 0
+
+
+def test_online_investing_commodities():
+    items, err = news.fetch_investing_commodities(_oil_spec())
+    assert err is None and len(items) > 0
+
+
+def test_online_google_news_per_phrase():
+    items, err = news.GOOGLE_NEWS_QUERY_FETCHERS[0](_oil_spec())
+    assert err is None and isinstance(items, list)
+
+
+def test_online_ofac_answers_inside_its_own_timeout():
+    """The page takes ~10s; a failure here means treasury.gov got slower
+    than OFAC_TIMEOUT_S and the brief will show policy:ofac:timeout again."""
+    items, err = policy.fetch_ofac(_oil_spec())
+    assert err is None and len(items) > 0
