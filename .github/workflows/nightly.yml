@@ -1,0 +1,55 @@
+name: Nightly (online smoke + evals)
+
+# The commit gate (ci.yml) is offline by construction. This job is the other
+# lane CLAUDE.md asks for: the periodic, network-touching checks that prove
+# the free feeds the desk reads still answer today, and that the two scored
+# evals still clear their thresholds. Read-only: nothing here signs or
+# places an order, and no key is required (EIA/FRED/Congress sources report
+# a missing key as a named failure, which the smoke tests accept).
+on:
+  schedule:
+    - cron: "17 6 * * *"   # 06:17 UTC daily, after the US session's feeds settle
+  workflow_dispatch:
+
+jobs:
+  online:
+    name: Feeds and evals (Python 3.13)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: requirements.lock
+
+      - name: Install (pinned)
+        run: |
+          pip install -r requirements.lock
+          pip install -e . --no-deps
+
+      # Every intel source, against the real endpoint: reachable, parses,
+      # shaped right. A 429 or a slow page shows up here first, days before
+      # it would show up as "intel: N source(s) down" on the Desk page.
+      - name: Intel sources, live
+        run: |
+          export PATHIEL_STATE_DIR="$(mktemp -d)"
+          pytest -m online services/intel/tests/test_online_smoke.py -rs -q
+
+      # Scored evals, offline (real captured fixtures): headline ranking
+      # precision@10 and hard-number catalyst coverage. Thresholds live in
+      # each script; a drop below one fails the job.
+      - name: Intel evals
+        run: |
+          export PATHIEL_STATE_DIR="$(mktemp -d)"
+          python -m services.intel.evals.eval_precision
+          python -m services.intel.evals.eval_coverage
+
+      # Walk-forward liquidation check of the leverage-ladder verdicts, live
+      # Hyperliquid candles (public /info, read-only).
+      - name: Verdict backtest eval
+        run: |
+          export PATHIEL_STATE_DIR="$(mktemp -d)"
+          python -m services.strategies.evals.verdict_backtest --desk oil

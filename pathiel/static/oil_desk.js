@@ -387,14 +387,44 @@ function fmtAge(iso) {
   return `${Math.round(m / 1440)}d ago`;
 }
 
+/** A failed-source key like "policy:ofac:timeout" or
+ *  "news.fetch_gdelt:timeout_budget_exceeded" -> "ofac timeout". */
+function failedSourceLabel(key) {
+  const parts = String(key).split(':');
+  const src = (parts.length > 1 ? parts[1] : parts[0]).replace(/^fetch_/, '').replace(/_/g, ' ');
+  const why = parts.length > 2 ? parts.slice(2).join(' ').replace(/_/g, ' ') : (parts.length > 1 ? '' : '');
+  return [src, why].filter(Boolean).join(' ');
+}
+
+/** One line under the headlines: packet age, headline count, the feeds it
+ *  came from (top six by count), and every feed that failed this build in
+ *  red. The six headlines above are the top of a list this line sizes. */
+function renderIntelSources(intel, heads) {
+  if (!intel) return '';
+  const counts = {};
+  for (const h of heads) {
+    const s = h.source || 'no source';   // never the word "unknown" on the page
+    counts[s] = (counts[s] || 0) + 1;
+  }
+  const ranked = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+  const top = ranked.slice(0, 6).map(([s, n]) => `<span class="src-chip" title="${esc(s)}">${esc(s)} <b>${n}</b></span>`).join('');
+  const more = ranked.length > 6 ? `<span class="src-more">+${ranked.length - 6} more</span>` : '';
+  const failed = (intel.sources_failed || []).map(f => `<span class="chip chip-red" title="${esc(f)}">${esc(failedSourceLabel(f))}</span>`).join('');
+  const age = intel.as_of ? fmtAge(intel.as_of) : '';
+  const lead = `${heads.length} headline${heads.length === 1 ? '' : 's'} from ${ranked.length} source${ranked.length === 1 ? '' : 's'}${age ? ` · packet ${age}` : ''}`;
+  const failLead = failed ? `<span class="src-failed-label">failed:</span>${failed}` : `<span class="src-ok">all feeds answered</span>`;
+  return `<div class="src-line"><span class="src-lead">${esc(lead)}</span>${top}${more}</div><div class="src-line">${failLead}</div>`;
+}
+
 function renderIntel(brief, loadError) {
   const chips = document.getElementById('catalyst-chips');
   const headlines = document.getElementById('headlines-list');
   const odds = document.getElementById('odds-list');
+  const sources = document.getElementById('intel-sources');
   show('intel-loading', false); show('intel-error', false); show('intel-empty', false);
 
   if (loadError) {
-    chips.innerHTML = ''; headlines.innerHTML = ''; odds.innerHTML = '';
+    chips.innerHTML = ''; headlines.innerHTML = ''; odds.innerHTML = ''; sources.innerHTML = '';
     setErrorDetail('intel', loadError);
     return;
   }
@@ -405,7 +435,7 @@ function renderIntel(brief, loadError) {
   const marketOdds = (intel && intel.odds) || [];
 
   if (!catalysts.length && !heads.length && !marketOdds.length) {
-    chips.innerHTML = ''; headlines.innerHTML = ''; odds.innerHTML = '';
+    chips.innerHTML = ''; headlines.innerHTML = ''; odds.innerHTML = ''; sources.innerHTML = '';
     show('intel-empty', true);
     return;
   }
@@ -425,6 +455,8 @@ function renderIntel(brief, loadError) {
       <a class="headline-title" href="${esc(h.url)}" target="_blank" rel="noopener">${esc(h.title)}</a>
       <span class="headline-meta">${esc([h.source, h.published_at ? fmtAge(h.published_at) : ''].filter(Boolean).join(' · '))}</span>
     </div>`).join('');
+
+  sources.innerHTML = renderIntelSources(intel, heads);
 
   odds.innerHTML = [...marketOdds].sort((a, b) => (b.volume_usd || 0) - (a.volume_usd || 0)).slice(0, INTEL_CAP).map(o => `
     <div class="odds-row">

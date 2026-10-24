@@ -11,7 +11,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.11", "3.12"]
+        # 3.13 is what the desk runs on (the operator's .venv, 2026-10-25);
+        # 3.11 is the floor pyproject declares. A green matrix that skips the
+        # production interpreter is not evidence about production.
+        python-version: ["3.11", "3.12", "3.13"]
     steps:
       - uses: actions/checkout@v4
 

@@ -42,6 +42,20 @@ def test_the_call_card_is_structured_with_a_text_fallback(client):
     assert "`stale: ${" not in JS
 
 
+def test_the_headlines_block_names_its_feeds_and_failures(client):
+    """2026-10-25: five feeds were added to services/intel and two failing
+    ones fixed, and the Desk page showed none of it — six headlines, no
+    source summary, no failed-feed note. The block now carries a sources
+    line: packet age, headline count, top feeds by count, failed feeds in
+    red (from IntelPacket.sources_failed), or "all feeds answered"."""
+    body = client.get("/").text
+    assert 'id="intel-sources"' in body
+    assert "function renderIntelSources" in JS and "intel.sources_failed" in JS
+    assert "all feeds answered" in JS and "chip chip-red" in JS
+    # the failed-source key shape the intel service emits renders readably
+    assert "function failedSourceLabel" in JS
+
+
 def test_the_leverage_line_explains_itself(client):
     body = client.get("/").text
     assert 'id="line-liq-label"' in body and "Stop uses of the way to liquidation" in body

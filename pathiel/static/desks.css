@@ -333,6 +333,16 @@
 .headline-row:last-child{ border-bottom:0; }
 .headline-title{ flex:1 1 320px; color:var(--ink); }
 .headline-meta{ color:var(--ink-3); font-size:11.5px; white-space:nowrap; }
+/* Feeds line under the headlines (2026-10-25): which sources answered,
+   how old the packet is, and any feed that failed this build. */
+.intel-sources{ margin:8px 0 10px; display:flex; flex-direction:column; gap:6px; }
+.src-line{ display:flex; flex-wrap:wrap; align-items:center; gap:6px; font-size:11.5px; color:var(--ink-3); }
+.src-lead{ margin-right:4px; }
+.src-chip{ border:1px solid var(--rule); border-radius:999px; padding:1px 8px; color:var(--ink-2); }
+.src-chip b{ font-weight:600; color:var(--ink); }
+.src-more{ color:var(--ink-3); }
+.src-failed-label{ color:var(--down); font-weight:600; }
+.src-ok{ color:var(--ink-3); }
 .odds-row{ display:flex; gap:10px; align-items:baseline; font-size:13px; padding:6px 0; }
 .odds-q{ flex:1 1 320px; color:var(--ink-2); }
 .odds-p{ font-variant-numeric:tabular-nums; font-weight:600; }
