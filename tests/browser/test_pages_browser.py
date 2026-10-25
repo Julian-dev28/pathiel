@@ -62,8 +62,10 @@ ABOVE_FOLD_ELEMENT = {
     # needs_onboarding=true here, so "/" shows onboarding's welcome card
     # (pathiel/templates/oil_desk.html's #onboarding-root), not the Desk
     # page underneath it. That IS "the call first" for this state: the
-    # connect button, not a net-asset-value of zero.
-    "/": "#onb-connect",
+    # welcome card's title telling the user where the account comes from
+    # (2026-10-25: the connect button went with the wallet picker), not a
+    # net-asset-value of zero.
+    "/": "#onboard-welcome .page-title",
 }
 
 EXPECTED_NAV = [
