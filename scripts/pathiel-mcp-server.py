@@ -119,7 +119,7 @@ def _make_stub_handler(tool_name: str):
 
 # What a client model reads at connect time (MCP initialize "instructions").
 # Short on purpose: it rides in every session's context.
-SERVER_INSTRUCTIONS = """pathiel: a headless trading desk on live Hyperliquid. Real money. Claude is the trader; there is no autonomous bot. Active desks (config active_desks): oil (primary), metals, ai, gas; btc, top5 and indices exist but are off.
+SERVER_INSTRUCTIONS = """pathiel: a headless trading desk on live Hyperliquid. Real money. Claude is the trader; there is no autonomous bot. Active desks: config active_desks (oil only since 2026-10-25; coin_allowlist holds orders to oil coins). Other desks exist but are off.
 
 Start here
 - desk_list, then desk_brief {desk} for that desk's call. Quick mode is short markdown, call first, with "Your size" for the active account. The Desk page (http://localhost:8000/) shows the same call as a card plus the open position with margin in use.
@@ -1149,6 +1149,18 @@ def handle_config(params: Dict[str, Any]) -> str:
                 return None
         return val if isinstance(val, dict) else None
 
+    def _as_list(key: str, val: Any) -> Any:
+        # Same for list fields the schema does not type (active_desks, ...).
+        # 2026-10-25: {"active_desks": '["oil"]'} was saved as the STRING
+        # '["oil"]', and every reader of active_desks got a string of 7
+        # characters instead of one desk.
+        if isinstance(val, str):
+            try:
+                val = json.loads(val)
+            except ValueError:
+                return None
+        return val if isinstance(val, list) else None
+
     for key in _NESTED_KEYS:
         if key not in params or params[key] is None:
             continue
@@ -1173,6 +1185,10 @@ def handle_config(params: Dict[str, Any]) -> str:
             val = _as_object(key, val)
             if val is None:
                 return json.dumps({"status": "error", "error": f"{key} must be an object"})
+        elif isinstance(config[key], list):
+            val = _as_list(key, val)
+            if val is None:
+                return json.dumps({"status": "error", "error": f"{key} must be a list"})
         updates[key] = val
     if unknown:
         # Fail loud and write nothing: a typo must never look like a saved change.

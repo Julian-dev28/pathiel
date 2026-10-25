@@ -217,11 +217,14 @@ def test_leverage_switch_is_keyboard_operable(server, browser):
     page.close()
 
 
-def test_leverage_switch_makes_no_network_call(server, browser):
-    """The measurable outcome: a leverage switch updates every figure with no
-    network call (and therefore comfortably under the 50ms budget — a
-    pure DOM write against data already in memory has no realistic way to
-    miss a wall-clock budget measured in tens of milliseconds)."""
+def test_leverage_switch_repaints_from_memory_and_only_asks_for_the_call_line(server, browser):
+    """The measurable outcome: a leverage switch updates every ladder figure
+    from data already in memory (a pure DOM write, comfortably under the
+    50ms budget). The ONE request it may make is the fire-and-forget
+    GET /api/desks/{id}/line that prices the call's own stop at the new
+    leverage (desks.js paintCallLine); nothing else goes over the wire.
+    2026-10-25: this test still demanded zero requests from before that line
+    existed, and the fixture app answered the line with a 404."""
     page, _ = open_page(browser, DESKTOP_VP)
     page.goto(server + "/desk/oil", wait_until="networkidle")
     page.wait_for_selector("#lev-card:not([hidden])", timeout=5000)
@@ -229,11 +232,13 @@ def test_leverage_switch_makes_no_network_call(server, browser):
     requests: list[str] = []
     page.on("request", lambda r: requests.append(r.url))
     page.check("#lev-opt-10")
+    assert page.inner_text("#lev-liq-px") == "91.700"     # repainted before any response could land
     page.wait_for_timeout(100)
     page.check("#lev-opt-20")
     page.wait_for_timeout(100)
     assert page.inner_text("#lev-liq-px") == "96.790"
-    assert requests == [], f"leverage switch triggered network requests: {requests}"
+    others = [u for u in requests if "/api/desks/oil/line" not in u]
+    assert others == [], f"leverage switch triggered network requests beyond the call line: {others}"
     page.close()
 
 

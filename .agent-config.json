@@ -1,7 +1,10 @@
 {
   "mode": "LIVE",
   "enable_hip3": true,
-  "coin_allowlist": [],
+  "coin_allowlist": [
+    "xyz:BRENTOIL",
+    "xyz:CL"
+  ],
   "coin_blocklist": [],
   "hip3_dex_allowlist": [
     "xyz"
@@ -17,9 +20,6 @@
     "max_bumped_risk_pct": 100
   },
   "active_desks": [
-    "oil",
-    "metals",
-    "ai",
-    "gas"
+    "oil"
   ]
 }

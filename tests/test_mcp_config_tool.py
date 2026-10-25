@@ -159,3 +159,24 @@ def test_mcp_config_accepts_nested_objects_sent_as_json_strings():
         assert bad["status"] == "error"
     finally:
         config_store.write_agent_config({"mode": "OFF"})
+
+
+def test_mcp_config_accepts_list_fields_sent_as_json_strings():
+    """2026-10-25: {"active_desks": '["oil"]'} (the only way an untyped
+    param reaches the tool from some clients) was saved as the string
+    '["oil"]'. A list field in the live config takes a JSON list string, and
+    refuses anything that is not a list, writing nothing."""
+    from pathiel.agents import config_store
+
+    mcp = _load_mcp_named("pathiel_mcp_server_config_list_string_test")
+    try:
+        config_store.write_agent_config({"mode": "OFF", "active_desks": ["oil", "metals"]})
+        out = json.loads(mcp.handle_config({"active_desks": '["oil"]'}))
+        assert out["active_desks"] == ["oil"]
+        assert config_store.read_agent_config()["active_desks"] == ["oil"]
+        for bad in ("oil", '{"desk": "oil"}', "not json"):
+            res = json.loads(mcp.handle_config({"active_desks": bad}))
+            assert res["status"] == "error" and "must be a list" in res["error"], bad
+        assert config_store.read_agent_config()["active_desks"] == ["oil"]
+    finally:
+        config_store.write_agent_config({"mode": "OFF"})

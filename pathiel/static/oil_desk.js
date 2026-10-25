@@ -237,15 +237,55 @@ async function loadLine() {
 
 // ── 2. WALLETS ───────────────────────────────────────────────────────────────
 
+// Unfilled entry orders, with the stop and target place_bracket attached.
+// 2026-10-25: a resting NVDA bracket held the account's one slot for hours
+// while this page said "No open positions"; the operator had nowhere to see
+// it. A resting entry is not a position, but it is money reserved and a slot
+// taken, so it gets its own table.
+function fmtUtcTime(ms) {
+  if (!ms) return '—';
+  const d = new Date(Number(ms));
+  return isNaN(d.getTime()) ? '—' : d.toISOString().slice(11, 16) + 'Z';
+}
+
+function renderRestingEntries(resting) {
+  const rows = resting.map(o => `
+    <tr>
+      <td>${esc(o.dex)}</td>
+      <td>${esc(o.coin)}</td>
+      <td><span class="badge ${SIDE_CLASS[o.side] || ''}">${esc(o.side)}</span></td>
+      <td class="num">${esc(o.size)}</td>
+      <td class="num">${fmtPrice(o.limit_px)}</td>
+      <td class="num">${fmtPrice(o.mark_px)}</td>
+      <td class="num">${o.to_fill_pct != null ? (o.to_fill_pct > 0 ? '+' : '') + o.to_fill_pct.toFixed(2) + '%' : '—'}</td>
+      <td>${(o.stop_px || []).map(fmtPrice).join(', ') || '—'}</td>
+      <td>${(o.tp_px || []).map(fmtPrice).join(', ') || '—'}</td>
+      <td class="num">${fmtMoney(o.notional_usd)}</td>
+      <td>${fmtUtcTime(o.placed_at_ms)}</td>
+      <td>${o.covered ? '' : '<span class="badge b-fail">NO STOP</span>'}</td>
+    </tr>`).join('');
+  return `<div class="sec-label" style="margin-top:12px">Resting ${resting.length === 1 ? 'entry' : 'entries'} (not filled)</div>
+    <div class="scroll-x"><table>
+      <thead><tr><th>Dex</th><th>Coin</th><th>Side</th><th class="num">Size</th><th class="num">Limit</th><th class="num">Mark</th><th class="num">Limit vs mark</th>
+        <th>Stop</th><th>Target</th><th class="num">Notional</th><th>Placed</th><th></th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>`;
+}
+
 function renderWalletAccount(account, snapshot) {
   const equity = (snapshot.accounts || []).reduce((sum, a) => sum + (a.equity_usd || 0), 0);
   const marginUsed = (snapshot.accounts || []).reduce((sum, a) => sum + (a.margin_used_usd || 0), 0);
   const positions = (snapshot.accounts || []).flatMap(a => (a.positions || []).map(p => ({ ...p, dex: a.dex })));
+  const resting = (snapshot.accounts || []).flatMap(a => (a.resting_entries || []).map(o => ({ ...o, dex: a.dex })));
+  const stranded = (snapshot.accounts || []).reduce((n, a) => n + (a.stranded_orders || 0), 0);
   const naked = snapshot.any_naked;
   // A watch-only wallet earns a card only while it holds something: flat, it
   // is noise next to the trading account (operator, 2026-10-24). It reappears
   // with the NAKED check the moment a hand-placed position shows up.
-  if (account.mode === 'watch' && !positions.length && !(snapshot.errors || []).length) return '';
+  if (account.mode === 'watch' && !positions.length && !resting.length && !(snapshot.errors || []).length) return '';
+  const restingBlock = resting.length ? renderRestingEntries(resting) : '';
+  const strandedNote = stranded
+    ? `<div class="note warn">${stranded} reduce-only order${stranded === 1 ? '' : 's'} with no position behind ${stranded === 1 ? 'it' : 'them'}; the next tick's bracket_sweep cancels ${stranded === 1 ? 'it' : 'them'}.</div>` : '';
   // Equity, margin tied up in positions, and what is still free to deploy.
   const marginLine = `<div class="note">Equity ${esc(fmtMoney(equity))} · Margin in use ${esc(fmtMoney(marginUsed))}`
     + (equity > 0 ? ` (${Math.round(marginUsed / equity * 100)}%)` : '')
@@ -268,8 +308,11 @@ function renderWalletAccount(account, snapshot) {
     ? `<div class="note muted">Last good read ${Math.round(snapshot.stale_s)}s ago; the venue has not answered since.</div>` : '';
 
   if (!positions.length) {
-    const body = failed ? failed : `<div class="note">Equity ${esc(fmtMoney(equity))}. No open positions.</div>`;
-    return `<div class="card" style="margin-bottom:14px">${head}${body}${stale}</div>`;
+    const flatNote = resting.length
+      ? `<div class="note">Equity ${esc(fmtMoney(equity))}. No open position; the resting ${resting.length === 1 ? 'entry' : 'entries'} below ${resting.length === 1 ? 'holds' : 'hold'} the account's one slot until it fills or is cancelled.</div>`
+      : `<div class="note">Equity ${esc(fmtMoney(equity))}. No open positions.</div>`;
+    const body = failed ? failed : flatNote;
+    return `<div class="card" style="margin-bottom:14px">${head}${body}${strandedNote}${restingBlock}${stale}</div>`;
   }
 
   const rows = positions.map(p => `
@@ -298,7 +341,7 @@ function renderWalletAccount(account, snapshot) {
         <th class="num">Lev</th><th class="num">Margin</th><th class="num">Liq</th><th class="num">Dist</th><th class="num">uPnL</th>
         <th>Stop</th><th>Target</th><th></th></tr></thead>
       <tbody>${rows}</tbody>
-    </table></div></div>`;
+    </table></div>${strandedNote}${restingBlock}</div>`;
 }
 
 async function loadWallets() {

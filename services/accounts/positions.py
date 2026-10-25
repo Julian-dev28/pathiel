@@ -56,11 +56,59 @@ def _mark_fields(side: str, entry: float, mark: Optional[float], stops: List[Any
     return out
 
 
+def _resting_entries(orders: List[Dict[str, Any]], mids: Optional[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """The entry orders that have not filled: every open order that is not
+    reduce-only and not a trigger, with the stop and take-profit children
+    place_bracket attached to it. 2026-10-25: the Desk page said "No open
+    positions" while a resting NVDA bracket held the account's one slot, and
+    the operator had nowhere to see it. `to_fill_pct` is signed from the
+    mark: negative means the limit sits below the mark (a long waiting for a
+    dip), positive above it."""
+    out: List[Dict[str, Any]] = []
+    for o in orders:
+        if o.get("reduceOnly") or o.get("isTrigger"):
+            continue
+        if "Limit" not in str(o.get("orderType", "")):
+            continue
+        coin = o.get("coin")
+        px = _f(o.get("limitPx"))
+        sz = _f(o.get("sz"))
+        if not coin or not px or not sz:
+            continue
+        kids = o.get("children") or []
+        stops = [k.get("triggerPx") for k in kids if "Stop" in str(k.get("orderType", ""))]
+        tps = [k.get("triggerPx") for k in kids if "Take Profit" in str(k.get("orderType", ""))]
+        mark = _f((mids or {}).get(coin))
+        ts = o.get("timestamp")
+        out.append({
+            "coin": coin, "side": "long" if o.get("side") == "B" else "short",
+            "size": sz, "limit_px": px, "oid": o.get("oid"),
+            "placed_at_ms": int(ts) if ts else None,
+            "notional_usd": round(px * sz, 2), "mark_px": mark,
+            "to_fill_pct": (round((px - mark) / mark * 100, 3) if mark else None),
+            "stop_px": stops, "tp_px": tps, "covered": bool(stops),
+        })
+    return out
+
+
+def _stranded_orders(orders: List[Dict[str, Any]], position_coins: set) -> int:
+    """Reduce-only orders that protect nothing: no position on their coin and
+    not a child of a resting entry (frontendOpenOrders lists a bracket's
+    children both nested under the parent and at top level). The next tick's
+    bracket_sweep cancels them; the page says they exist."""
+    child_oids = {k.get("oid") for o in orders if not o.get("reduceOnly") for k in (o.get("children") or [])}
+    return sum(1 for o in orders
+               if o.get("reduceOnly") and o.get("coin") not in position_coins and o.get("oid") not in child_oids)
+
+
 def assess(state: Dict[str, Any], orders: List[Dict[str, Any]], dex: str = "",
            mids: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Positions with their protection. `naked` is true for any position whose
     reduce-only stop orders cover less than its size. With `mids` (coin -> mark)
-    each position also carries mark_px, pnl_pct, to_stop_pct, to_tp_pct, r_now."""
+    each position also carries mark_px, pnl_pct, to_stop_pct, to_tp_pct, r_now.
+    `resting_entries` are the unfilled entry orders (with their bracket
+    children) and `stranded_orders` counts reduce-only orders protecting
+    nothing."""
     ms = state.get("marginSummary") or {}
     positions = []
     for row in state.get("assetPositions") or []:
@@ -102,7 +150,9 @@ def assess(state: Dict[str, Any], orders: List[Dict[str, Any]], dex: str = "",
             # the operator wants the whole stake in the position and asked to see it)
             "margin_used_usd": margin_used,
             "margin_used_pct": round(margin_used / equity * 100, 1) if equity > 0 else None,
-            "any_naked": any(p["naked"] for p in positions)}
+            "any_naked": any(p["naked"] for p in positions),
+            "resting_entries": _resting_entries(orders, mids),
+            "stranded_orders": _stranded_orders(orders, {p["coin"] for p in positions})}
 
 
 # ------------------------------------------------------------------ live leg

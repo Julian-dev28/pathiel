@@ -44,7 +44,8 @@ def test_only_reduce_only_stops_count_and_other_coins_are_ignored():
 def test_flat_account_and_short_side():
     assert assess({"marginSummary": {}, "assetPositions": []}, []) == {
         "dex": "main", "equity_usd": 0.0, "notional_usd": 0.0, "positions": [],
-        "margin_used_usd": 0.0, "margin_used_pct": None, "any_naked": False}
+        "margin_used_usd": 0.0, "margin_used_pct": None, "any_naked": False,
+        "resting_entries": [], "stranded_orders": 0}
     short = {"marginSummary": {}, "assetPositions": [{"position": {
         "coin": "BTC", "szi": "-0.01", "entryPx": "80000", "liquidationPx": None, "leverage": 5}}]}
     p = assess(short, [])["positions"][0]

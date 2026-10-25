@@ -31,6 +31,54 @@ def _patch_venue(monkeypatch, fn):
     monkeypatch.setattr(hlc, "_http_post_strict", fn)
 
 
+# ── resting entries and stranded orders (2026-10-25) ─────────────────────────
+# The real frontendOpenOrders shape for the NVDA bracket that held the slot
+# while the Desk page said "No open positions": the parent limit with its two
+# children nested, and the same two children repeated at top level.
+_STOP = {"coin": "xyz:NVDA", "side": "A", "limitPx": "210.9", "sz": "4.925", "oid": 585448554239,
+         "timestamp": 1792949522502, "triggerCondition": "Price below 210.9", "isTrigger": True,
+         "triggerPx": "210.9", "children": [], "isPositionTpsl": False, "reduceOnly": True,
+         "orderType": "Stop Market", "origSz": "4.925", "tif": None, "cloid": None}
+_TP = {**_STOP, "limitPx": "212.79", "oid": 585448554240, "triggerCondition": "Price above 212.79",
+       "triggerPx": "212.79", "orderType": "Take Profit Market"}
+_ENTRY = {"coin": "xyz:NVDA", "side": "B", "limitPx": "211.6", "sz": "4.925", "oid": 585448554238,
+          "timestamp": 1792949522502, "triggerCondition": "N/A", "isTrigger": False, "triggerPx": "0.0",
+          "children": [_STOP, _TP], "isPositionTpsl": False, "reduceOnly": False, "orderType": "Limit",
+          "origSz": "4.925", "tif": "Gtc", "cloid": None}
+NVDA_OPEN_ORDERS = [_TP, _STOP, _ENTRY]
+FLAT_STATE = {"marginSummary": {"accountValue": "57.88", "totalNtlPos": "0.0"}, "assetPositions": []}
+
+
+def test_assess_lists_a_resting_bracket_entry_with_its_children():
+    out = positions.assess(FLAT_STATE, NVDA_OPEN_ORDERS, "xyz", mids={"xyz:NVDA": "213.275"})
+    assert out["positions"] == []
+    assert out["stranded_orders"] == 0                      # the children belong to the entry
+    [r] = out["resting_entries"]
+    assert r["coin"] == "xyz:NVDA" and r["side"] == "long" and r["size"] == 4.925
+    assert r["limit_px"] == 211.6 and r["oid"] == 585448554238
+    assert r["stop_px"] == ["210.9"] and r["tp_px"] == ["212.79"] and r["covered"] is True
+    assert r["notional_usd"] == pytest.approx(1042.13, abs=0.01)
+    assert r["mark_px"] == 213.275
+    assert r["to_fill_pct"] == pytest.approx((211.6 - 213.275) / 213.275 * 100, abs=1e-3)  # negative: below mark
+    assert r["placed_at_ms"] == 1792949522502
+
+
+def test_assess_counts_a_reduce_only_order_with_no_position_as_stranded():
+    # The sibling a stop leaves behind after it fires, before bracket_sweep runs.
+    out = positions.assess(FLAT_STATE, [_TP], "xyz")
+    assert out["resting_entries"] == []
+    assert out["stranded_orders"] == 1
+    # ...but a reduce-only order protecting a live position is not stranded
+    out2 = positions.assess(XYZ_STATE, XYZ_ORDERS, "xyz")
+    assert out2["stranded_orders"] == 0 and out2["resting_entries"] == []
+
+
+def test_assess_without_mids_leaves_the_resting_mark_fields_none():
+    [r] = positions.assess(FLAT_STATE, [_ENTRY], "xyz")["resting_entries"]
+    assert r["mark_px"] is None and r["to_fill_pct"] is None
+    assert r["covered"] is True
+
+
 # ── dex discovery ────────────────────────────────────────────────────────────
 def test_dexes_with_margin_includes_funded_main_and_funded_hip3(monkeypatch):
     _patch_state(monkeypatch, {"dex_equity": {"": 10.0, "xyz": 34.58, "km": 0.0},

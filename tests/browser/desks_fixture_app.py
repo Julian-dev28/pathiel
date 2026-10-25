@@ -546,6 +546,21 @@ def create_app() -> FastAPI:
     async def desk_page(desk_id: str) -> HTMLResponse:
         return HTMLResponse(desk_html)
 
+    # desks.js asks which desks are active (the tab row) and for the call's
+    # leverage line on every switch. Declared BEFORE /api/desks/{desk_id} so
+    # "active" is not read as a desk id. 2026-10-25: both were 404 here, and
+    # Chromium logs every 404 as a console error, so all 24 zero-console-error
+    # tests in this file were red for a fixture gap, not a page bug. An empty
+    # active list keeps the single-desk layout every assertion was written
+    # against; a not-ok line keeps the line box hidden.
+    @app.get("/api/desks/active")
+    async def active_desks() -> dict:
+        return {"active_desks": [], "default_desk": "oil"}
+
+    @app.get("/api/desks/{desk_id}/line")
+    async def call_line(desk_id: str, leverage: float = 20.0) -> dict:
+        return {"ok": False, "reason": "fixture app: the leverage line is not modelled here"}
+
     @app.get("/api/desks", response_model=List[DeskCard])
     async def list_desks() -> List[DeskCard]:
         return [card_for(did) for did in DESK_ORDER]

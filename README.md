@@ -223,7 +223,7 @@ visitor's account; `connected_wallets` says so in its own response
 
 | Path | Page | What it shows |
 |---|---|---|
-| `/` | Desk | The active desk's call as a card (from `quick_fields`), a banner when the call drifts from the open position, one row per wallet with entry/mark/P&L/R/leverage/margin/liquidation/stop/target (a flat watch-only wallet gets no row), Levels, headlines and catalysts, the loop log, the track record |
+| `/` | Desk | The active desk's call as a card (from `quick_fields`), a banner when the call drifts from the open position, one row per wallet with entry/mark/P&L/R/leverage/margin/liquidation/stop/target (a flat watch-only wallet gets no row), the wallet's resting bracket entries with their stop and target (an unfilled entry holds the account's one slot, so it is shown even when there is no position), Levels, headlines and catalysts, the loop log, the track record |
 | `/desk/{id}` | Thesis | The full reading room for one desk: the call, a leverage picker (5/10/20x, same 20x line as `/`), scenarios, bull vs bear, what changes the call, desk school, track record, make-your-own-call |
 | `/account` | Account | Connect or switch a Hyperliquid account, risk preset with a live preview |
 
