@@ -31,6 +31,11 @@ if _ENV_FILE.exists():
 
 # The dashboard reads live equity when the loop heartbeat is stale; gate tests
 # must not reach Hyperliquid. Tests that cover the live path enable it with a mock.
+# Local mode now also requires the Host header to name this machine (the
+# DNS-rebinding check in services/auth/integration.py). Starlette's TestClient
+# sends Host: testserver, so the test session lists it as a local name; the
+# rebinding tests clear this to exercise the production default.
+os.environ.setdefault("PATHIEL_LOCAL_HOSTNAMES", "testserver")
 os.environ.setdefault("PATHIEL_DASHBOARD_LIVE_EQUITY", "0")
 os.environ.setdefault("PATHIEL_DESK_BACKGROUND_REFRESH", "0")
 os.environ.setdefault("PATHIEL_DESK_WARMUP", "0")

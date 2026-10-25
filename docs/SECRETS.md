@@ -45,6 +45,19 @@ the same primitive.
 | `PATHIEL_AUTH_DB` | Where users and sessions live. Defaults to `$PATHIEL_STATE_DIR/auth.db` | No |
 | `PATHIEL_PUBLIC_DASHBOARD` | `1` reopens the account routes for a private single-operator box | No |
 
+### Network surface (security review 2026-10-25)
+
+See `docs/security/SUPPLY_CHAIN_2026-10-25.md` for why each exists.
+
+| var | Purpose | Default |
+|---|---|---|
+| `PATHIEL_METRICS_TOKEN` | **Secret.** When set, `/metrics` requires `Authorization: Bearer <token>`. Set it on any internet-facing deploy (Fly); `k8s/servicemonitor.yaml` shows the scraper side | unset: `/metrics` open |
+| `PATHIEL_CORS_ORIGINS` | Comma-separated exact origins allowed to read the API cross-site. `*` is refused | unset: no CORS headers, same-origin only |
+| `PATHIEL_API_DOCS` | `1` re-enables `/docs`, `/redoc`, `/openapi.json` on a deployment | on locally, off on any deployment |
+| `PATHIEL_MAX_BODY_BYTES` | Request-body ceiling; larger bodies get 413 | 1048576 (1 MiB) |
+| `PATHIEL_LOCAL_HOSTNAMES` | Extra Host names local mode accepts besides localhost / 127.0.0.1 / ::1 (the DNS-rebinding check) | none |
+| `PATHIEL_TRUST_FORWARDED_FOR` | `1` makes rate limits key on the rightmost `X-Forwarded-For` entry off a deployment (behind your own proxy). Deployments do this already | unset |
+
 What is stored, and what deliberately is not: session tokens and login nonces
 are persisted as **SHA-256 only**, never the value the client holds. A leaked
 database file — a backup on a laptop, a snapshot in object storage — is not a

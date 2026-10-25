@@ -97,6 +97,7 @@ REGISTRY: Tuple[SecretSpec, ...] = (
     SecretSpec("HYPERLIQUID_MASTER_PRIVATE_KEY", "master account private key — treasury transfers only", "local_only"),
     SecretSpec("BRAVE_API_KEY", "Brave Search API key — news context for research (optional)", "optional"),
     SecretSpec("HYDROMANCER_API_KEY", "Hydromancer data-plane API key (research/backfill only)", "optional"),
+    SecretSpec("PATHIEL_METRICS_TOKEN", "bearer token /metrics requires when set (internet-facing deploys)", "optional"),
 )
 
 

@@ -126,12 +126,11 @@ neither spoofable the way a header is:
    because the browser is local, even though the page that triggered it is
    `https://evil.example`. This is a known, named attack class against local
    tools that trust "it came from loopback" alone (Ollama's and Docker
-   Desktop's local APIs have both shipped exactly this bug), and
-   `pathiel/server.py` currently runs CORS wide open
-   (`allow_origins=["*"]`), which does not leak the session cookie
-   (`allow_credentials=False`) but puts nothing at all in front of a
-   cross-site mutating request that relies on source IP alone — which is
-   what local mode would be without this check. `Origin` is not a header
+   Desktop's local APIs have both shipped exactly this bug). CORS does not
+   help here: it decides who may READ a response, not who may send the
+   request. (`pathiel/server.py` ran `allow_origins=["*"]` until 2026-10-25
+   and now sends no CORS headers unless `PATHIEL_CORS_ORIGINS` names an
+   origin.) `Origin` is not a header
    page script can set; the browser sets it to the calling page's own
    origin and will not lie. So: present and not a loopback host (exact
    match on `localhost` / `127.0.0.1` / `::1`, any port — not a prefix or
@@ -142,6 +141,24 @@ neither spoofable the way a header is:
    `test_is_local_mode_false_for_a_loopback_peer_with_a_cross_site_origin` in
    `tests/test_integration.py` is the regression test for this; it is the
    single most important test in this diff.
+
+3. **The `Host` check inside `is_local_mode`** (2026-10-25), the
+   DNS-rebinding case the Origin check cannot see. A page on
+   `evil.example` re-points its own name at 127.0.0.1; the browser then
+   treats requests to it as same-origin, so a GET carries no `Origin` at
+   all, and the TCP peer really is loopback. The `Host` header still says
+   `evil.example`. So local mode also requires `request.url.hostname` to be
+   a loopback name (plus any listed in `PATHIEL_LOCAL_HOSTNAMES`; the test
+   session adds `testserver`). Host is attacker-writable from curl, which is
+   why it is one more necessary condition and never a sufficient one.
+   `test_is_local_mode_false_for_a_dns_rebinding_page` is its regression
+   test.
+
+Rate limits on `/auth/verify` and the accounts connect routes key on
+`integration.client_key`: the TCP peer, or behind an edge proxy (any
+deployment marker, or `PATHIEL_TRUST_FORWARDED_FOR=1`) the rightmost
+`X-Forwarded-For` entry, the one the proxy appended. They keyed on the
+leftmost entry until 2026-10-25, which the caller writes.
 
 `deps._is_local` (the Host-header heuristic) is untouched and still used only
 for the `Secure` cookie flag. The two checks are kept deliberately separate —

@@ -35,7 +35,7 @@ def client(stub_live_analytics):
     strategies_api._JOBS.clear()
     app = FastAPI()
     app.include_router(strategies_api.router)
-    return TestClient(app)
+    return TestClient(app, client=("127.0.0.1", 50000))   # local mode: the operator on his box
 
 
 def _poll_job(client: TestClient, job_id: str, timeout_s: float = 5.0) -> dict:

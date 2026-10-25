@@ -44,10 +44,13 @@ class _BareRequest:
     Request; this is for testing the decision in isolation from any HTTP
     stack."""
 
-    def __init__(self, client_host, headers=None, cookies=None):
+    def __init__(self, client_host, headers=None, cookies=None, host="127.0.0.1"):
         self.client = _Client(client_host) if client_host is not None else None
         self.headers = headers or {}
         self.cookies = cookies or {}
+        # The Host the caller addressed (request.url.hostname on a real
+        # Request). Defaults to the loopback name the operator's browser uses.
+        self.url = SimpleNamespace(hostname=host)
 
 
 # ── is_loopback_peer: the non-spoofable signal ──────────────────────────────
@@ -146,6 +149,68 @@ def test_is_local_mode_false_for_a_loopback_peer_with_a_cross_site_origin():
     """
     req = _BareRequest("127.0.0.1", headers={"origin": "https://evil.example"})
     assert integration.is_local_mode(req) is False
+
+
+@pytest.mark.parametrize("host", ["evil.example", "127.0.0.1.nip.io", "attacker.localhost.evil"])
+def test_is_local_mode_false_for_a_dns_rebinding_page(monkeypatch, host):
+    """Security review 2026-10-25. A page on evil.example re-points its own
+    name at 127.0.0.1. The browser now thinks the server IS evil.example, so
+    a GET is same-origin and carries no Origin header: the Origin check above
+    has nothing to reject and the TCP peer really is loopback. The Host the
+    browser sends is the one thing left that names the attacker."""
+    monkeypatch.delenv("PATHIEL_LOCAL_HOSTNAMES", raising=False)
+    assert integration.is_local_mode(_BareRequest("127.0.0.1", host=host)) is False
+
+
+@pytest.mark.parametrize("host", ["127.0.0.1", "localhost", "::1", "LOCALHOST"])
+def test_is_local_mode_true_for_every_loopback_host_name(monkeypatch, host):
+    monkeypatch.delenv("PATHIEL_LOCAL_HOSTNAMES", raising=False)
+    assert integration.is_local_mode(_BareRequest("127.0.0.1", host=host)) is True
+
+
+def test_dns_rebinding_over_real_http_cannot_read_a_gated_route(monkeypatch):
+    """Same check end to end on a real ASGI stack: loopback peer, no Origin,
+    Host: evil.example:8000 is refused; Host: 127.0.0.1:8000 is local."""
+    monkeypatch.delenv("PATHIEL_LOCAL_HOSTNAMES", raising=False)
+    app = FastAPI()
+
+    @app.get("/x")
+    def x(request: Request):
+        return {"local": integration.is_local_mode(request)}
+
+    rebound = TestClient(app, client=("127.0.0.1", 5000), base_url="http://evil.example:8000")
+    assert rebound.get("/x").json() == {"local": False}
+    own = TestClient(app, client=("127.0.0.1", 5000), base_url="http://127.0.0.1:8000")
+    assert own.get("/x").json() == {"local": True}
+
+
+def test_extra_local_hostnames_come_from_env(monkeypatch):
+    monkeypatch.setenv("PATHIEL_LOCAL_HOSTNAMES", "pathiel.test, other.test")
+    assert integration.is_local_mode(_BareRequest("127.0.0.1", host="pathiel.test")) is True
+    assert integration.is_local_mode(_BareRequest("127.0.0.1", host="evil.example")) is False
+
+
+# ── client_key: what a rate limit buckets on ────────────────────────────────
+
+def test_client_key_ignores_forwarded_for_on_a_local_box(monkeypatch):
+    """No proxy in front of the operator's Mac, so every X-Forwarded-For entry
+    was written by the caller. Keying on it let one client reset its own
+    login rate-limit bucket per request."""
+    for k in integration._DEPLOYMENT_MARKERS:
+        monkeypatch.delenv(k, raising=False)
+    monkeypatch.delenv("PATHIEL_TRUST_FORWARDED_FOR", raising=False)
+    req = _BareRequest("198.51.100.7", headers={"x-forwarded-for": "1.2.3.4"})
+    assert integration.client_key(req) == "198.51.100.7"
+
+
+def test_client_key_takes_the_proxy_appended_entry_behind_an_edge_proxy(monkeypatch):
+    """Behind Fly's or an ingress's proxy the peer is the proxy; the entry
+    the proxy appended (the rightmost) is the real client. The leftmost is
+    whatever the client claimed."""
+    monkeypatch.setenv("FLY_APP_NAME", "pathiel")
+    req = _BareRequest("10.0.0.2", headers={"x-forwarded-for": "6.6.6.6, 203.0.113.9"})
+    assert integration.client_key(req) == "203.0.113.9"
+    assert integration.client_key(_BareRequest("10.0.0.2")) == "10.0.0.2"
 
 
 def test_is_local_mode_false_for_a_forged_host_header_over_a_real_remote_connection():
@@ -405,7 +470,8 @@ def test_local_mode_is_off_on_any_deployment_even_for_a_loopback_peer(monkeypatc
     from services.auth import integration
     for m in integration._DEPLOYMENT_MARKERS:
         monkeypatch.delenv(m, raising=False)
-    req = SimpleNamespace(client=SimpleNamespace(host="127.0.0.1", port=1234), headers={})
+    req = SimpleNamespace(client=SimpleNamespace(host="127.0.0.1", port=1234), headers={},
+                          url=SimpleNamespace(hostname="127.0.0.1"))
     monkeypatch.setattr(integration.deps, "is_loopback_peer", lambda r: True)
     assert integration.is_local_mode(req) is True
     monkeypatch.setenv(marker, "1")

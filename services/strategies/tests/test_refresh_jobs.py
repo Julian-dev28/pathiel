@@ -52,7 +52,7 @@ def slow(monkeypatch, stub_live_analytics):
     monkeypatch.setattr(facade, "refresh", fake)
     app = FastAPI()
     app.include_router(strategies_api.router)
-    yield TestClient(app), fake
+    yield TestClient(app, client=("127.0.0.1", 50000)), fake   # local mode
     fake.release.set()
     strategies_api._JOBS.clear()
 

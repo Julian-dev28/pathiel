@@ -64,8 +64,10 @@ _MAX_ATTEMPTS, _WINDOW_S = 20, 300
 
 
 def _client(request: Request) -> str:
-    return (request.headers.get("x-forwarded-for", "").split(",")[0].strip()
-            or (request.client.host if request.client else "unknown"))
+    # Not the leftmost X-Forwarded-For entry: the caller writes that one, so
+    # keying on it let anyone reset their own bucket per request. See
+    # services.auth.integration.client_key.
+    return integration.client_key(request)
 
 
 def _rate_limit(request: Request) -> None:
