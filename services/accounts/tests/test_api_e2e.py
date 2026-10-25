@@ -406,21 +406,37 @@ def test_prepare_is_rate_limited(clients, monkeypatch, tmp_path):
 
 
 def test_rate_limit_is_keyed_per_client_not_global(clients, monkeypatch, tmp_path):
-    """Two logical clients, kept in local mode (no session plumbing needed)
-    via a real loopback TCP peer, distinguished only by X-Forwarded-For —
-    exactly the signal _client() in services/accounts/api.py keys on."""
+    """Two clients on two real TCP peers (a fresh deployment's bootstrap
+    window lets an anonymous prepare through): one exhausting its bucket
+    must not lock out the other."""
     monkeypatch.setenv("PATHIEL_STATE_DIR", str(tmp_path))
     from services.accounts import api as accounts_api
     monkeypatch.setattr(accounts_api, "_MAX_ATTEMPTS", 1)
     wallet = EthAccount.create()
-    c = clients.loopback()
-    headers_a = {"x-forwarded-for": "203.0.113.20"}
-    headers_b = {"x-forwarded-for": "203.0.113.21"}
+    a, b = clients.remote(addr="203.0.113.20"), clients.remote(addr="203.0.113.21")
     body = {"main_address": wallet.address, "label": "A"}
 
-    assert c.post("/api/accounts/agent/prepare", json=body, headers=headers_a).status_code == 200
-    assert c.post("/api/accounts/agent/prepare", json=body, headers=headers_a).status_code == 429
-    assert c.post("/api/accounts/agent/prepare", json=body, headers=headers_b).status_code == 200
+    assert a.post("/api/accounts/agent/prepare", json=body).status_code == 200
+    assert a.post("/api/accounts/agent/prepare", json=body).status_code == 429
+    assert b.post("/api/accounts/agent/prepare", json=body).status_code == 200
+
+
+def test_a_made_up_forwarded_for_does_not_reset_the_bucket(clients, monkeypatch, tmp_path):
+    """Security review 2026-10-25: _client() keyed on the LEFTMOST
+    X-Forwarded-For entry, which the caller writes. A fresh fake address per
+    request was a fresh bucket per request, so the limit limited nothing."""
+    monkeypatch.setenv("PATHIEL_STATE_DIR", str(tmp_path))
+    for k in ("KUBERNETES_SERVICE_HOST", "FLY_APP_NAME", "VERCEL", "RENDER",
+              "RAILWAY_ENVIRONMENT", "PATHIEL_TRUST_FORWARDED_FOR"):
+        monkeypatch.delenv(k, raising=False)
+    from services.accounts import api as accounts_api
+    monkeypatch.setattr(accounts_api, "_MAX_ATTEMPTS", 1)
+    c = clients.remote(addr="203.0.113.30")
+    body = {"main_address": EthAccount.create().address, "label": "A"}
+    assert c.post("/api/accounts/agent/prepare", json=body,
+                  headers={"x-forwarded-for": "10.9.9.1"}).status_code == 200
+    assert c.post("/api/accounts/agent/prepare", json=body,
+                  headers={"x-forwarded-for": "10.9.9.2"}).status_code == 429
 
 
 # ── public mode is single-operator (integrator, 2026-10-17) ───────────────────

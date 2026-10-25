@@ -20,7 +20,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
@@ -72,6 +72,21 @@ def running_job(desk_id: str) -> Optional[RefreshJob]:
 
 class RefreshBody(BaseModel):
     force: bool = False
+
+
+def _require_operator_or_local(request: Request) -> None:
+    """Gate for the routes that WRITE desk state or spend a model call.
+
+    Open until 2026-10-25 (security review, docs/security/SUPPLY_CHAIN_2026-10-25.md
+    finding P0-1). POST /theses saves a thesis, and the newest thesis of ANY
+    author is the call /api/desks/{id} and the MCP desk_brief serve to the
+    trader, so an anonymous POST rewrote the live desk's call: from the
+    internet on a deployment, and from any web page the operator had open
+    while CORS was "*". POST /refresh spent one model call per click. The
+    loop log is Claude's own trade journal. Same gate as accounts and risk:
+    local mode, else the deployment's operator."""
+    from services.auth.integration import require_operator_or_local
+    require_operator_or_local(request)
 
 
 def _unknown_desk(desk_id: str) -> HTTPException:
@@ -146,7 +161,8 @@ def get_desk_brief(desk_id: str) -> DeskBrief:
 
 
 @router.post("/api/desks/{desk_id}/refresh", response_model=RefreshJob)
-def post_refresh(desk_id: str, body: RefreshBody = RefreshBody()) -> RefreshJob:
+def post_refresh(request: Request, desk_id: str, body: RefreshBody = RefreshBody()) -> RefreshJob:
+    _require_operator_or_local(request)
     if desks.get_spec(desk_id) is None:
         raise _unknown_desk(desk_id)
 
@@ -210,7 +226,8 @@ def get_theses(desk_id: str) -> List[Thesis]:
 
 
 @router.post("/api/desks/{desk_id}/theses", response_model=Thesis)
-def post_thesis(desk_id: str, body: UserThesisIn) -> Thesis:
+def post_thesis(request: Request, desk_id: str, body: UserThesisIn) -> Thesis:
+    _require_operator_or_local(request)
     try:
         return facade.submit_user_thesis(desk_id, body)
     except desks.UnknownDeskError:
@@ -271,12 +288,14 @@ def get_desk_levels(desk_id: str) -> Dict[str, object]:
 
 
 @router.get("/api/desks/{desk_id}/log")
-def get_desk_log(desk_id: str, n: int = Query(30, ge=1, le=500)) -> Dict[str, object]:
+def get_desk_log(request: Request, desk_id: str,
+                 n: int = Query(30, ge=1, le=500)) -> Dict[str, object]:
     """The last `n` lines of this desk's loop progress log (env
     PATHIEL_<DESK>_LOG, e.g. PATHIEL_OIL_LOG, default /tmp/oil-loop/progress.log
     for desk_id "oil" and /tmp/<desk>-loop/progress.log otherwise). An empty
     `lines` list — including when the file does not exist yet, or this desk
     has no loop at all — means "no ticks yet", not an error."""
+    _require_operator_or_local(request)
     if desks.get_spec(desk_id) is None:
         raise _unknown_desk(desk_id)
     return {"lines": desk_log.read_desk_log(desk_id, n)}

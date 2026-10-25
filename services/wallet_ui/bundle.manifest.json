@@ -1,9 +1,48 @@
 {
-  "sourceHash": "1f1cb6f20fa7467a2f0a452ba5903484b2ac0469c1d47b61f85a39d2d6de98f4",
+  "sourceHash": "83fa287c844e52e044aed40aeb65512990de3878a16ef8df8069dc9d63637482",
   "artifacts": [
     "wallet.js",
     "wallet.css"
   ],
+  "artifactSha256": {
+    "wallet.js": "dd7009a9e546574c872025403ff844c786d6db07ebdf469f17fb4ab33653371b",
+    "wallet.css": "c2427222f368f5598690acc17e99c0659f91092515ce99d6d1daf2c75a8d5d2b"
+  },
   "builtBytes": 3133745,
+  "bundledPackages": [
+    "@adraffy/ens-normalize@1.11.1",
+    "@noble/curves@1.9.1",
+    "@noble/hashes@1.8.0",
+    "@rainbow-me/rainbowkit@2.2.11",
+    "@tanstack/query-core@5.102.8",
+    "@tanstack/react-query@5.102.8",
+    "@vanilla-extract/css@1.20.1",
+    "@vanilla-extract/dynamic@2.1.5",
+    "@vanilla-extract/private@1.0.9",
+    "@vanilla-extract/sprinkles@1.6.5",
+    "@wagmi/core@2.22.1",
+    "abitype@1.2.3",
+    "clsx@2.1.1",
+    "cuer@0.0.3",
+    "eventemitter3@5.0.1",
+    "get-nonce@1.0.1",
+    "mipd@0.0.7",
+    "ox@0.14.44",
+    "qr@0.7.0",
+    "react-dom@18.3.1",
+    "react-remove-scroll-bar@2.3.8",
+    "react-remove-scroll@2.7.2",
+    "react-style-singleton@2.2.3",
+    "react@18.3.1",
+    "scheduler@0.23.2",
+    "tslib@2.8.1",
+    "ua-parser-js@2.0.10",
+    "use-callback-ref@1.3.3",
+    "use-sidecar@1.1.3",
+    "use-sync-external-store@1.4.0",
+    "viem@2.56.3",
+    "wagmi@2.19.5",
+    "zustand@5.0.0"
+  ],
   "note": "Regenerate with `npm run build` in services/wallet_ui, then commit."
 }

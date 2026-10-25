@@ -240,6 +240,7 @@ Tuning knobs with code defaults, by module. Override only with a reason:
 | Auth | `PATHIEL_AUTH_DOMAIN`, `PATHIEL_AUTH_URI`, `PATHIEL_AUTH_CHAIN_ID`, `PATHIEL_AUTH_DB`, `PATHIEL_AUTH_NONCE_SECRET`, `PATHIEL_AUTH_STATELESS_NONCE`, `PATHIEL_AUTH_STATELESS_SESSION`, `PATHIEL_AUTH_NO_BOOTSTRAP_OPERATOR`, `PATHIEL_PUBLIC_DASHBOARD`, `PATHIEL_DISABLE_LOCAL_MODE`, `PATHIEL_INSECURE_COOKIES`, `PATHIEL_DATABASE_URL` | `services/auth` |
 | Vault | `PATHIEL_VAULT_PASSPHRASE`, `PATHIEL_VAULT_FAST_KDF` | `services/accounts` |
 | HTTP rate limit | `PATHIEL_RATE_LIMIT_PER_MIN`, `PATHIEL_RATE_LIMIT_BURST`, `PATHIEL_DASHBOARD_READONLY` | `pathiel/server.py` |
+| HTTP hardening (2026-10-25 review) | `PATHIEL_CORS_ORIGINS` (exact origins, default none), `PATHIEL_MAX_BODY_BYTES` (default 1 MiB), `PATHIEL_API_DOCS` (`1` to serve /docs on a deployment), `PATHIEL_METRICS_TOKEN` (bearer for /metrics, a secret), `PATHIEL_LOCAL_HOSTNAMES`, `PATHIEL_TRUST_FORWARDED_FOR` | `pathiel/server.py`, `services/auth/integration.py` |
 | Logs and disk | `PATHIEL_LOG_DIR`, `PATHIEL_LOG_MAX_BYTES`, `PATHIEL_LOG_BACKUP_COUNT`, `PATHIEL_LOG_DIR_MAX_BYTES`, `PATHIEL_LOG_ROTATE_INTERVAL_SEC`, `PATHIEL_LOG_JSON`, `PATHIEL_DISK_FREE_WARN_MB`, `PATHIEL_DISK_FREE_CRITICAL_MB` | `pathiel/log_setup.py`, `scripts/log_rotate.py` |
 | Backups | `PATHIEL_BACKUP_DIR`, `PATHIEL_BACKUP_KEEP` | `scripts/backup_state.py` |
 | MCP server (operator machine only) | `PATHIEL_MCP_MAX_CONCURRENT`, `PATHIEL_MCP_TOOL_TIMEOUT_S`, `PATHIEL_MCP_MAX_OUTPUT_CHARS` | `scripts/pathiel-mcp-server.py` |

@@ -345,11 +345,14 @@ What leaves the machine and what does not, and the checks that enforce it.
 | The test gate makes no network calls and starts from an empty venue cache, so a warm cache on one machine cannot hide a leak CI would hit | `conftest.py` refuses every non-loopback host and errors the test at teardown |
 | Dependencies are pinned (`requirements.lock`, `services/wallet_ui/package-lock.json`); CI installs from the locks | `.github/workflows/ci.yml` |
 
+| Desk writes (`POST /api/desks/{id}/theses`, `/refresh`) and the loop log are gated: local mode, else the deployment's operator. Local mode needs a loopback peer, a loopback Host and a loopback Origin, which closes DNS rebinding | `services/strategies/api.py`, `services/auth/integration.py`; `tests/test_http_hardening.py` |
+| No wildcard CORS; bodies capped at 1 MiB; API docs off on any deployment; `/metrics` can require a bearer token | `pathiel/server.py` (`PATHIEL_CORS_ORIGINS`, `PATHIEL_MAX_BODY_BYTES`, `PATHIEL_API_DOCS`, `PATHIEL_METRICS_TOKEN`) |
+| The image runs as uid 10001, installs from the hashed lock with `--require-hashes`, and npm never runs install scripts (`.npmrc`, CI). The committed `wallet.js` rebuilds byte for byte from the lockfile | `Dockerfile`, `docker-entrypoint.sh`, `services/wallet_ui/build.mjs --verify`, `scripts/supply_chain_check.py`, `tests/test_supply_chain.py` |
+
 The inventory of every secret, who reads it and how to rotate it is
-`docs/SECRETS.md`. A supply-chain review of the Node and Python dependency
-graph against the autumn 2026 npm compromises is in progress on its own
-branch; its report lands under `docs/security/` and this section will link
-it.
+`docs/SECRETS.md`. The supply-chain and web-service review of 2026-10-25,
+with every finding, its fix and what is still open, is
+`docs/security/SUPPLY_CHAIN_2026-10-25.md`.
 
 ## Running it
 

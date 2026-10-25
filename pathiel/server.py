@@ -168,13 +168,124 @@ def _prewarm_size_specs() -> None:
 
 # ── App ────────────────────────────────────────────────────────────────────────
 
-app = FastAPI(title="Pathiel-Trader", version=__version__, lifespan=lifespan)
+def _api_docs_enabled() -> bool:
+    """/docs, /redoc and /openapi.json print every route and body shape. Handy
+    on the operator's own box, a free map for anyone on an internet-facing
+    one, so they are off on any deployment (the same markers that turn local
+    mode off) unless PATHIEL_API_DOCS=1 asks for them."""
+    from services.auth.integration import deployed_environment
+    if os.environ.get("PATHIEL_API_DOCS") == "1":
+        return True
+    return not deployed_environment()
 
-# Wildcard origins + credentials=True is invalid per the CORS spec and would be
-# silently rejected by browsers. Token auth happens via X-Operator-Token /
-# ?token=, neither of which is a credential the browser auto-sends, so we don't
-# need credentialed CORS. Keep wildcard origins for tool/curl access; flip
-# credentials off so a future cookie-auth flow can't be abused cross-origin.
+
+_DOCS = _api_docs_enabled()
+app = FastAPI(title="Pathiel-Trader", version=__version__, lifespan=lifespan,
+              docs_url="/docs" if _DOCS else None,
+              redoc_url="/redoc" if _DOCS else None,
+              openapi_url="/openapi.json" if _DOCS else None)
+
+
+def cors_origins() -> list:
+    """Origins allowed to READ this API cross-site: PATHIEL_CORS_ORIGINS,
+    comma separated, default none.
+
+    This was allow_origins=["*"] with allow_methods/allow_headers "*" until
+    2026-10-25. Nothing needs it: the pages are same-origin, and curl, the
+    MCP server and the scheduler are not browsers, so CORS never applied to
+    them. What "*" did do was let any web page the operator had open read
+    every ungated GET on 127.0.0.1:8000 and pass the preflight for a JSON
+    POST, which is how an anonymous page could write the desk's thesis
+    (docs/security/SUPPLY_CHAIN_2026-10-25.md, P0-1). "*" is refused here
+    even when configured: a wildcard is the setting this replaced."""
+    raw = os.environ.get("PATHIEL_CORS_ORIGINS", "")
+    out = []
+    for origin in (o.strip().rstrip("/") for o in raw.split(",")):
+        if not origin:
+            continue
+        if origin == "*" or not origin.startswith(("https://", "http://")):
+            logger.error(f"[server] PATHIEL_CORS_ORIGINS entry {origin!r} ignored: "
+                         f"name an exact origin like https://desk.example.com")
+            continue
+        out.append(origin)
+    return out
+
+
+# Request bodies are small JSON here (the biggest legitimate one is a user
+# thesis, a few KB). uvicorn sets no ceiling of its own, so one anonymous
+# POST of a few hundred MB to an open route (/auth/verify, /api/risk/preview)
+# was read into memory in full before validation could refuse it.
+_MAX_BODY_BYTES_DEFAULT = 1024 * 1024
+
+
+class _BodyTooLarge(HTTPException):
+    """An HTTPException on purpose: FastAPI turns any other exception raised
+    while it reads a body into a generic 400, and re-raises HTTPExceptions
+    as they are, so a chunked body over the limit answers 413 too."""
+
+    def __init__(self, limit: int):
+        super().__init__(status_code=413, detail=f"request body too large (limit {limit} bytes)")
+
+
+class _BodySizeLimit:
+    """Pure ASGI: 413 for a declared Content-Length over the ceiling, and for
+    a chunked body the moment it crosses it (counted as it is received, never
+    buffered here). PATHIEL_MAX_BODY_BYTES overrides the 1 MiB default."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+        try:
+            limit = int(os.environ.get("PATHIEL_MAX_BODY_BYTES", _MAX_BODY_BYTES_DEFAULT))
+        except ValueError:
+            limit = _MAX_BODY_BYTES_DEFAULT
+        for name, value in scope.get("headers", []):
+            if name == b"content-length":
+                try:
+                    declared = int(value)
+                except ValueError:
+                    declared = limit + 1
+                if declared > limit:
+                    return await self._reject(send, limit)
+        seen = 0
+        started = False
+
+        async def counting_receive():
+            nonlocal seen
+            message = await receive()
+            if message["type"] == "http.request":
+                seen += len(message.get("body", b""))
+                if seen > limit:
+                    raise _BodyTooLarge(limit)
+            return message
+
+        async def tracking_send(message):
+            nonlocal started
+            if message["type"] == "http.response.start":
+                started = True
+            await send(message)
+
+        try:
+            await self.app(scope, counting_receive, tracking_send)
+        except _BodyTooLarge:
+            if not started:
+                await self._reject(send, limit)
+
+    @staticmethod
+    async def _reject(send, limit):
+        body = b'{"detail":"request body too large (limit %d bytes)"}' % limit
+        await send({"type": "http.response.start", "status": 413,
+                    "headers": [(b"content-type", b"application/json"),
+                                (b"content-length", str(len(body)).encode())]})
+        await send({"type": "http.response.body", "body": body})
+
+
+# Registered first, so it is the innermost of the middlewares below: the
+# security-headers pass, registered later, still wraps its 413.
+app.add_middleware(_BodySizeLimit)
 
 # Optional hard read-only mode: PATHIEL_DASHBOARD_READONLY=1 refuses every
 # mutating request (all mutators here are POSTs) regardless of token — for
@@ -226,7 +337,7 @@ async def _readonly_guard(request: Request, call_next):
 #   registered under that prefix, so it comes out here rather than gating
 #   a path nothing answers.
 _GATED_PREFIXES = ("/api/dashboard", "/api/hl")
-_OPEN_PREFIXES = ("/api/health", "/auth/", "/static", "/docs", "/openapi.json")
+_OPEN_PREFIXES = ("/api/health", "/auth/", "/static", "/docs", "/redoc", "/openapi.json")
 
 
 @app.middleware("http")
@@ -340,13 +451,17 @@ class _RevalidatedStatic(StaticFiles):
 
 app.mount("/static", _RevalidatedStatic(directory=_STATIC_DIR), name="static")
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# No CORS headers at all unless an origin is configured: the browser's
+# same-origin default is the policy. See cors_origins().
+_CORS_ORIGINS = cors_origins()
+if _CORS_ORIGINS:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_CORS_ORIGINS,
+        allow_credentials=False,
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+        allow_headers=["Content-Type", "Authorization", "X-Operator-Token"],
+    )
 
 
 # ── Internal helpers ──────────────────────────────────────────────────────────
@@ -837,9 +952,20 @@ def health_system(response: Response):
 
 
 @app.get("/metrics")
-def metrics():
-    """Prometheus scrape target. Unauthenticated (like /api/health) so the
-    scraper needs no operator token; reads local state only — never hits HL."""
+def metrics(request: Request):
+    """Prometheus scrape target; reads local state only, never hits HL.
+
+    Open by default (like /api/health) so a scraper needs nothing. It does
+    carry drawdown, LIVE mode and can-trade, so an internet-facing deploy
+    sets PATHIEL_METRICS_TOKEN and the scraper sends it as
+    `Authorization: Bearer <token>` (k8s/servicemonitor.yaml says where)."""
+    import hmac
+    expected = os.environ.get("PATHIEL_METRICS_TOKEN", "")
+    if expected:
+        auth = request.headers.get("authorization", "")
+        provided = auth[7:].strip() if auth.startswith("Bearer ") else ""
+        if not hmac.compare_digest(provided, expected):
+            raise HTTPException(status_code=401, detail="metrics token required")
     body, content_type = render_metrics()
     return Response(content=body, media_type=content_type)
 

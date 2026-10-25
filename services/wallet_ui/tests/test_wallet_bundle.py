@@ -43,6 +43,26 @@ def test_manifest_is_committed():
     recorded = json.loads(MANIFEST.read_text())
     assert recorded["sourceHash"]
     assert set(recorded["artifacts"]) == {"wallet.js", "wallet.css"}
+    # Since 2026-10-25: the built files' own digests and the packages that
+    # ship, so --check can catch a hand edit and --verify a changed tree.
+    assert set(recorded["artifactSha256"]) == {"wallet.js", "wallet.css"}
+    assert recorded["bundledPackages"]
+
+
+def test_bundle_reproduces_from_the_lockfile():
+    """`build.mjs --verify`: rebuild into a temp dir and require byte-identical
+    output and the same shipped-package list. Under a second. The proof that the
+    committed minified bundle is what the locked dependencies produce."""
+    missing = _toolchain_missing()
+    if missing:
+        if os.environ.get("CI"):
+            pytest.fail(f"the wallet-bundle reproducibility check cannot run on CI: {missing}")
+        pytest.skip(missing)
+    result = subprocess.run(
+        ["node", "build.mjs", "--verify"],
+        cwd=WALLET_UI, capture_output=True, text=True, timeout=180,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
 
 
 def _toolchain_missing() -> str:
@@ -63,9 +83,11 @@ def _toolchain_missing() -> str:
 def test_bundle_is_not_stale():
     """The whole reason a build artifact is allowed in the tree.
 
-    `build.mjs --check` hashes every file under src/ plus package.json and
-    build.mjs, and compares that to the hash recorded when the bundle was
-    written. Editing a source without rebuilding fails here.
+    `build.mjs --check` hashes every file under src/ plus package.json,
+    package-lock.json and build.mjs, and both built files, and compares them
+    to what was recorded when the bundle was written. Editing a source or
+    bumping a locked dependency without rebuilding fails here, and so does a
+    hand edit to wallet.js.
 
     Skipped where the toolchain is absent — a fresh clone before `npm ci` —
     but NEVER on CI. A guard on a committed artifact that quietly skips itself

@@ -19,3 +19,9 @@ spec:
     - port: http
       path: /metrics
       interval: 30s
+      # If pathiel-secrets sets PATHIEL_METRICS_TOKEN, /metrics answers 401
+      # without it. Uncomment so the scraper sends it (the secret must live
+      # in the ServiceMonitor's namespace):
+      # bearerTokenSecret:
+      #   name: pathiel-secrets
+      #   key: PATHIEL_METRICS_TOKEN

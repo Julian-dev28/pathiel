@@ -81,6 +81,49 @@ def _origin_is_loopback(origin: str) -> bool:
     return host.lower() in _LOOPBACK_HOSTNAMES
 
 
+def _local_hostnames() -> set:
+    """Hostnames the request's own Host header may carry in local mode: the
+    loopback names, plus any listed in PATHIEL_LOCAL_HOSTNAMES (comma
+    separated; the test session adds Starlette TestClient's "testserver")."""
+    import os
+    extra = {h.strip().lower() for h in os.environ.get("PATHIEL_LOCAL_HOSTNAMES", "").split(",")
+             if h.strip()}
+    return _LOOPBACK_HOSTNAMES | extra
+
+
+def _host_is_local(request: Request) -> bool:
+    """Does the Host the browser addressed name this machine?
+
+    This is the DNS-rebinding check (security review 2026-10-25). A page on
+    https://evil.example can re-point its own hostname at 127.0.0.1 after it
+    loads. The browser then treats requests to it as SAME-origin, so a GET
+    carries no Origin header at all and the Origin check below has nothing to
+    reject, while the TCP peer really is 127.0.0.1. The one thing the attacker
+    cannot change is the Host header: the browser sends the name it resolved,
+    evil.example. Host alone proves nothing (curl can write any Host), which
+    is why it is an ADDITIONAL necessary condition here, never a sufficient
+    one."""
+    return (request.url.hostname or "").lower() in _local_hostnames()
+
+
+def client_key(request: Request) -> str:
+    """The key a per-client rate limit buckets on.
+
+    The TCP peer, unless this process sits behind an edge proxy (any
+    deployment marker, or PATHIEL_TRUST_FORWARDED_FOR=1), in which case the
+    RIGHTMOST X-Forwarded-For entry: the one that proxy appended itself.
+    Every entry to its left was written by the caller. Keying on the leftmost
+    entry, as both login rate limits did until 2026-10-25, let any caller
+    reset their own bucket by sending a fresh made-up address per request."""
+    import os
+    peer = (request.client.host if request.client else "") or "unknown"
+    if deployed_environment() or os.environ.get("PATHIEL_TRUST_FORWARDED_FOR"):
+        hops = [h.strip() for h in request.headers.get("x-forwarded-for", "").split(",") if h.strip()]
+        if hops:
+            return hops[-1]
+    return peer
+
+
 def _open_session(address: str, request: Request, response: Response) -> tuple[User, str]:
     """Shared by `/auth/verify` and `issue_session_for_address` so the two
     doors can never drift apart: a wallet proven by SIWE and a wallet proven
@@ -175,11 +218,10 @@ def is_local_mode(request: Request) -> bool:
     it is `https://evil.example`. This is a known, named attack class against
     local dev servers and tools that trust "it came from loopback" alone
     (Ollama's and Docker Desktop's APIs have both shipped exactly this bug).
-    `pathiel/server.py` currently runs CORS wide open
-    (`allow_origins=["*"]`), which does not by itself leak a session cookie
-    (`allow_credentials=False`), but puts no obstacle at all in front of a
-    cross-site POST that relies on nothing but source IP for its authority —
-    which is precisely what local mode would be without this check.
+    `pathiel/server.py` ran CORS wide open (`allow_origins=["*"]`) until
+    2026-10-25 and now sends no CORS headers unless PATHIEL_CORS_ORIGINS
+    names an origin, but this check must not depend on that: a CORS policy
+    decides who may READ a response, not who may send the request.
 
     So: if `Origin` is present on the request at all, it must itself name a
     loopback host (`localhost` / `127.0.0.1` / `::1`, any port). `Origin` is
@@ -194,6 +236,8 @@ def is_local_mode(request: Request) -> bool:
     if deployed_environment():
         return False
     if not deps.is_loopback_peer(request):
+        return False
+    if not _host_is_local(request):
         return False
     origin = request.headers.get("origin", "")
     if origin and not _origin_is_loopback(origin):
