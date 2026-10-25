@@ -93,7 +93,10 @@ DirectionAt = Callable[[int], Optional[Direction]]
 
 @dataclass(frozen=True)
 class Params:
-    stop_buffer: float = 0.25          # $ beyond the 8h edge (swept: 0.10/0.25/0.50)
+    stop_buffer: float = 0.50          # $ beyond the 8h edge. 0.25 until 2026-10-25; the first
+                                       # 30-day run's sweep (0.10/0.25/0.50) found 0.50 the only
+                                       # setting that turned the always-long control positive,
+                                       # and the operator widened the live rule to match.
     slippage: float = 0.0003           # stop fill slippage, fraction of price (swept: 0.02%/0.05%)
     leverage: float = 20.0             # swept: 10x/20x
     max_leverage: float = 20.0         # venue max for xyz:BRENTOIL

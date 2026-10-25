@@ -15,7 +15,7 @@ for oil (30 for the other desks). Stripped of prose it is:
 |---|---|---|
 | direction | the desk thesis's call (long/short) and its invalidation line | `services/thesis` (model call) |
 | entry | a resting limit at a pullback to the 8h or 24h range edge in the thesis direction, or a breakout retest; never at market above the thesis entry | `scripts/oil_levels.py`, operator rule |
-| stop | beyond the structure the entry leans on (the 8h/24h low for a long), never widened | SKILL.md |
+| stop | 0.50 beyond the structure the entry leans on on Brent, about two 1h ATR14 (widened from "just beyond" after the first run, 2026-10-25), never widened once placed | `.claude/agents/desk-tick.md` |
 | target | the next structure (8h/24h high, then the thesis's targets) | SKILL.md |
 | gate | reward/risk at least 1.5R to the first target | `pathiel/agents/bracket.py` (`min_r`) |
 | leverage | up to 20x isolated; the stop must sit inside half the distance to liquidation | `check_leverage` in bracket.py, `--lev 20` |

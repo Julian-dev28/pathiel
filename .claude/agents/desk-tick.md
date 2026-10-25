@@ -69,8 +69,12 @@ ToolSearch call: `select:mcp__pathiel__desk_brief,mcp__pathiel__bracket_sweep,mc
      and fall through.
    - **Flat, slot free, nothing resting:** one setup in the thesis
      direction, anchored on structure: a pullback to the 8h or 24h range
-     edge, or a breakout retest. Stop beyond the structure, target at the
-     next structure, `--check` must say ok. `place_bracket {coin, entry_px,
+     edge, or a breakout retest. Stop 0.50 beyond the structure on Brent,
+     about two 1h ATR14 (the 2026-10-25 backtest: a stop right under the
+     edge, 0.10 to 0.25, lost on every setting; 0.50 was the only buffer
+     that turned the direction-blind control positive); the same two-ATR
+     distance on another desk's instrument. Target at the next structure,
+     `--check` must say ok. `place_bracket {coin, entry_px,
      stop_px, tp_px}` with `entry_px` set (resting limit). Let the tool
      size it. No setup: no trade, one clause why.
 6. **Log.** Append one line to `/tmp/oil-loop/progress.log` (create the

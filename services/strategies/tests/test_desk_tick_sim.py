@@ -47,7 +47,9 @@ def test_pullback_fills_and_stops():
         # entry in the same bar it just stopped out of.
         _c15(hour24 + 2 * FIFTEEN_MS, 98.3, 98.9, 98.2, 98.3),
     ]
-    params = Params(taker_fee=0.0, maker_fee=0.0, slippage=0.0)
+    # stop_buffer pinned: the default moved 0.25 -> 0.50 on 2026-10-25 and
+    # this scenario's bars are built around a 98.75 stop.
+    params = Params(taker_fee=0.0, maker_fee=0.0, slippage=0.0, stop_buffer=0.25)
     run = simulate(c15, c1h, const_direction("long"), params)
 
     assert run.rested == 1

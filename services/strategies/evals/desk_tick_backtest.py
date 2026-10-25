@@ -58,7 +58,7 @@ DAILY_SIGN_EXTRA_LOOKBACK_DAYS = 25  # extra 1h history fetched so day 1 of the 
 DEFAULT_THESES_DIR = os.environ.get("PATHIEL_OIL_THESES_DIR", "")
 DEFAULT_PROGRESS_LOG = os.environ.get("PATHIEL_OIL_PROGRESS_LOG", "/tmp/oil-loop/progress.log")
 
-SWEEP_STOP_BUFFERS = (0.10, 0.25, 0.50)
+SWEEP_STOP_BUFFERS = (0.10, 0.25, 0.50, 0.75, 1.00)   # 0.75/1.00 added 2026-10-25: is 0.50 the knee?
 SWEEP_SLIPPAGE = (0.0002, 0.0005)
 SWEEP_LEVERAGE = (10.0, 20.0)
 

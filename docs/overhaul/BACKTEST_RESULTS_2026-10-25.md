@@ -206,3 +206,79 @@ not in the entry/exit mechanics being replayed here.
    loop loses; put it back (journaled) and the same mechanics, on the
    same tape, turn positive. Keep measuring thesis quality where it
    already is (`desk_grade`, `grade-everything`), not here.
+
+---
+
+## Rerun, same day: the stop buffer widened to 0.50 (now the live rule)
+
+Operator, after the first run: "do it, widen the stop buffer and rerun."
+Three things changed before this rerun, all in the same commit:
+
+| where | before | after |
+|---|---|---|
+| `.claude/agents/desk-tick.md` step 5 (the loop's own brackets) | "stop beyond the structure" | stop 0.50 beyond the structure on Brent, about two 1h ATR14; the same two-ATR distance on another desk |
+| `services/thesis/prompt.py` (the thesis writer's stop rule) | "just beyond a real structural edge" | beyond by about two 1h ATR14 (0.50 on Brent), not right under it |
+| `desk_tick_sim.Params.stop_buffer` (the simulator's default) | 0.25 | 0.50 |
+
+Same 30-day window, same cache, same equity, fees and leverage. The sweep
+also gained 0.75 and 1.00 to see whether 0.50 is the knee.
+
+### Headline, before and after
+
+| run | trades | win rate | expectancy R (net of fees and funding) | expectancy $ | final equity from $64 | max DD |
+|---|---|---|---|---|---|---|
+| always-long, 0.25 | 67 | 11.9% | -0.27 | -$0.71 | $16 | 86.0% |
+| **always-long, 0.50** | 47 | 21.3% | **+0.14** | -$0.55 | **$38** | 78.4% |
+| always-short, 0.25 | 71 | 1.4% | -1.29 | -$0.89 | $1 | 98.5% |
+| always-short, 0.50 | 47 | 6.4% | -0.90 | -$1.34 | $1 | 98.6% |
+| daily-sign, 0.25 | 81 | 11.1% | -0.58 | -$0.73 | $5 | 95.7% |
+| daily-sign, 0.50 | 57 | 21.1% | -0.28 | -$0.99 | $7 | 95.4% |
+| journaled, 0.25 | 7 | 28.6% | +1.58 | +$3.65 | $90 | 19.5% |
+| journaled, 0.50 | 6 | 50.0% | +1.86 | +$11.25 | $132 | 26.6% |
+
+Fees, 0.50 run: always-long $16.05 on a gross of -$9.59 (fees are 1.7x
+the gross loss), always-short $10.69, daily-sign $9.70, journaled $3.39
+(4.8% of gross). Funding stays under 0.1% everywhere. The 20x rule refused
+nothing; no run liquidated.
+
+### Read the long control carefully
+
+Positive mean R and negative dollars on the same run is not a
+contradiction, it is sequencing under full-port compounding: the early
+trades lost at full size, the later wins landed on a smaller stack. The R
+figure is the rule's per-trade quality and the one to compare across
+settings; the dollar figure is this particular path. Halving the dollar
+loss (final equity $16 to $38) is the honest size of the improvement.
+
+### Is 0.50 the knee?
+
+Always-long, slippage 0.02% (leverage does not move R):
+
+| stop buffer | trades | win rate | expectancy R |
+|---|---|---|---|
+| 0.10 | 85 | 5.9% | -0.23 |
+| 0.25 | 67 | 11.9% | -0.23 |
+| **0.50** | 47 | 21.3% | **+0.15** |
+| 0.75 | 35 | 25.7% | +0.08 |
+| 1.00 | 23 | 26.1% | +0.07 |
+
+Yes for longs: 0.50 is the best setting and wider only trades fewer times
+for less. Always-short improves monotonically with the buffer (-1.83,
+-1.25, -0.88, -0.72, -0.66) and never clears zero, so the short side's
+problem is direction on this tape, not the stop. Slippage still costs 0.03
+to 0.05R per row at 0.50.
+
+### What this means for the loop
+
+- The live rule is now 0.50 on Brent. The open position's stop is not
+  touched: a stop is never widened once placed.
+- The mechanics still do not make money on their own. At 0.50 the long
+  control is break-even to slightly positive in R and negative in dollars
+  after fees; the edge remains the direction call. Fees are the next lever
+  (maker entries only, fewer and larger brackets), not leverage and not the
+  20x rule.
+- The journaled run (6 trades, +1.86R, $64 to $132) is the only series
+  that compounds, and it is still one week of one thesis writer.
+
+Machine-readable output of the rerun: `/tmp/desk-backtest-050/report.json`
+and `/tmp/desk-backtest-050/trades_<run>.csv`.
