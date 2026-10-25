@@ -339,3 +339,8 @@ Verdict: the hourly loop is the operator's call for usage and attention, not a
 performance choice. On 30 days it costs roughly half the journaled return. The
 number to watch is the live journaled R per trade over the next ten trades; under
 +0.5R on the hourly clock, go back to 15m (one cron change).
+
+**Reverted the same night.** On seeing the table above the operator went back to the
+15-minute clock ("go back to 15 minute clock"). Live rule: tick every 15 minutes,
+structure and invalidation on closed 1h candles, 20x. `Params.tick_minutes` stays so
+the two clocks keep being compared in the nightly eval.

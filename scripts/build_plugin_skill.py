@@ -27,8 +27,8 @@ PY = '"${CLAUDE_PLUGIN_ROOT}/scripts/pathiel-py"'
 # shape; update the rule here on purpose rather than let the plugin copy
 # silently diverge.
 SKILL_RULES = (
-    ("Run on a schedule with /loop 1h /desk-tick oil. Live money on the pathiel wallet.",
-     "Run on a schedule with /loop 1h /pathiel:desk-tick oil. Live money on the connected "
+    ("Run on a schedule with /loop 15m /desk-tick oil. Live money on the pathiel wallet.",
+     "Run on a schedule with /loop 15m /pathiel:desk-tick oil. Live money on the connected "
      "Hyperliquid account.", 1),
     ("`python3 scripts/desk_slot.py", f"`{PY} scripts/desk_slot.py", 1),
     ("`subagent_type` `desk-tick`", "`subagent_type` `pathiel:desk-tick`", 1),
