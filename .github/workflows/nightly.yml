@@ -53,3 +53,11 @@ jobs:
         run: |
           export PATHIEL_STATE_DIR="$(mktemp -d)"
           python -m services.strategies.evals.verdict_backtest --desk oil
+
+      # 30-day desk-tick mechanics backtest (plan: docs/overhaul/BACKTEST_PLAN_2026-10-25.md).
+      # Live Hyperliquid candles/funding (public /info, read-only); fails if
+      # the always-long/always-short mechanics-only control run liquidates.
+      - name: Desk-tick backtest eval
+        run: |
+          export PATHIEL_STATE_DIR="$(mktemp -d)"
+          python -m services.strategies.evals.desk_tick_backtest --out-dir /tmp/desk-backtest
