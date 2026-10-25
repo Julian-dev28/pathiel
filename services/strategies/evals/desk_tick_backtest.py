@@ -61,6 +61,7 @@ DEFAULT_PROGRESS_LOG = os.environ.get("PATHIEL_OIL_PROGRESS_LOG", "/tmp/oil-loop
 SWEEP_STOP_BUFFERS = (0.10, 0.25, 0.50, 0.75, 1.00)   # 0.75/1.00 added 2026-10-25: is 0.50 the knee?
 SWEEP_SLIPPAGE = (0.0002, 0.0005)
 SWEEP_LEVERAGE = (10.0, 20.0)
+TICK_MINUTES = (15, 60)             # 15m: the loop until 2026-10-25; 60: the hourly loop since
 
 
 # ── direction series builders ───────────────────────────────────────────────
@@ -308,30 +309,38 @@ def main(argv: Optional[List[str]] = None) -> int:
     theses = D.load_journaled_theses(args.theses_dir)
     daily_sign_at, n_signal_days, n_no_signal_days = build_daily_sign_direction(c1h_long)
 
-    base = Params()
+    # Two clocks: the 15m tick the loop ran on until 2026-10-25 and the 1h
+    # tick it runs on since ("change the strategy to hourly, keep leverage at
+    # 20x"). The hourly rows are the live strategy; the 15m rows stay so the
+    # change itself is measured, not assumed.
     rows: List[Dict[str, Any]] = []
-    rows.append(run_one("always_long", c15_window, c1h_window, always_direction("long"), base,
-                        funding, args.out_dir))
-    rows.append(run_one("always_short", c15_window, c1h_window, always_direction("short"), base,
-                        funding, args.out_dir))
-    rows.append(run_one("daily_sign", c15_window, c1h_window, daily_sign_at, base, funding, args.out_dir))
-    if theses:
-        j_report = run_one("journaled", c15_window, c1h_window, journaled_direction(theses), base,
-                           funding, args.out_dir)
-        rows.append(j_report)
-    else:
-        rows.append({"name": "journaled", "n_trades": 0, "note": f"no theses found under {args.theses_dir}"})
+    for tick in TICK_MINUTES:
+        base = Params(tick_minutes=tick)
+        sfx = "" if tick == 15 else f"_{tick}m"
+        rows.append(run_one(f"always_long{sfx}", c15_window, c1h_window, always_direction("long"), base,
+                            funding, args.out_dir))
+        rows.append(run_one(f"always_short{sfx}", c15_window, c1h_window, always_direction("short"), base,
+                            funding, args.out_dir))
+        rows.append(run_one(f"daily_sign{sfx}", c15_window, c1h_window, daily_sign_at, base, funding, args.out_dir))
+        if theses:
+            rows.append(run_one(f"journaled{sfx}", c15_window, c1h_window, journaled_direction(theses), base,
+                                funding, args.out_dir))
+        else:
+            rows.append({"name": f"journaled{sfx}", "n_trades": 0, "note": f"no theses found under {args.theses_dir}"})
+    base = Params(tick_minutes=TICK_MINUTES[0])
 
     sweep_rows: List[Dict[str, Any]] = []
-    for side in ("always_long", "always_short"):
-        for sb in SWEEP_STOP_BUFFERS:
-            for sl in SWEEP_SLIPPAGE:
-                for lev in SWEEP_LEVERAGE:
-                    p = Params(stop_buffer=sb, slippage=sl, leverage=lev, max_leverage=max(lev, 20.0))
-                    run = simulate(c15_window, c1h_window, always_direction("long" if side == "always_long" else "short"), p)
-                    rep = aggregate(f"sweep_{side}_sb{sb}_sl{sl}_lev{lev:g}", run)
-                    rep.update(side=side, stop_buffer=sb, slippage=sl, leverage=lev)
-                    sweep_rows.append(rep)
+    for tick in TICK_MINUTES:
+        for side in ("always_long", "always_short"):
+            for sb in SWEEP_STOP_BUFFERS:
+                for sl in SWEEP_SLIPPAGE:
+                    for lev in SWEEP_LEVERAGE:
+                        p = Params(stop_buffer=sb, slippage=sl, leverage=lev, max_leverage=max(lev, 20.0),
+                                   tick_minutes=tick)
+                        run = simulate(c15_window, c1h_window, always_direction("long" if side == "always_long" else "short"), p)
+                        rep = aggregate(f"sweep_{side}_sb{sb}_sl{sl}_lev{lev:g}_t{tick}", run)
+                        rep.update(side=side, stop_buffer=sb, slippage=sl, leverage=lev, tick_minutes=tick)
+                        sweep_rows.append(rep)
 
     calibration = None
     if not args.no_calibration:

@@ -11,7 +11,8 @@ re-implementing them, so the backtest and the live tool cannot drift apart.
 
 Clock and lookahead
 --------------------
-One tick per 15m bar, oldest first. At tick `t` (a bar's OPEN time):
+One tick per 15m bar (`Params.tick_minutes` 15) or per 1h bar (60, the
+hourly loop since 2026-10-25), oldest first. At tick `t` (a bar's OPEN time):
   - structural levels (8h/24h/48h range, ATR14) are built from 1h candles
     whose CLOSE time (`c.t + HOUR_MS`) is `<= t` — i.e. strictly already
     closed, mirroring `scripts/oil_levels.py`'s `closed_only`.
@@ -107,6 +108,8 @@ class Params:
     free_margin_floor: float = 0.10    # place_bracket's 10% free-margin floor
     atr_rest_frac: float = 0.25        # rest an entry within this many ATR of the edge
     atr_cancel_frac: float = 1.0       # cancel a resting entry beyond this many ATR from mid
+    tick_minutes: int = 15             # one decision per 15m bar (the loop until 2026-10-25) or per
+                                       # 1h bar (60: the hourly loop the operator switched to that day)
 
 
 # ── outputs ──────────────────────────────────────────────────────────────
@@ -265,7 +268,13 @@ def simulate(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], direct
     initial_size = 0.0          # the size the position opened with, for R-multiple risk
     seen_1h_close: set = set()
 
-    for bar in c15:
+    # The tick series: one decision per 15m bar, or per 1h bar for the hourly
+    # loop (2026-10-25). With 1h ticks every tick lands on a 1h close, so the
+    # invalidation check and funding settle on every tick; stop and target
+    # fills read the 1h bar's high/low, the same conservative intrabar rule.
+    ticks = c1h if params.tick_minutes >= 60 else c15
+
+    for bar in ticks:
         if run.liquidated:
             break
         t = bar.t
@@ -448,7 +457,7 @@ def simulate(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], direct
     # show it without it skewing trade count / win rate / expectancy.
     if position is not None and not run.liquidated:
         side_sign = 1.0 if position.side == "long" else -1.0
-        last_px = c15[-1].c if c15 else position.avg_entry
+        last_px = ticks[-1].c if ticks else position.avg_entry
         run.open_position_at_end = {
             "side": position.side, "size": position.size, "entry_px": position.avg_entry,
             "mark_px": last_px, "unrealized_pnl_usd": side_sign * (last_px - position.avg_entry) * position.size,

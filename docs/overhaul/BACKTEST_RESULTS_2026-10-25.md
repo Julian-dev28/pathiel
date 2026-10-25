@@ -309,3 +309,33 @@ carry it, 20x loses 40% of the stack in a month where 5x finishes ahead and
 10x finishes flat. 10x keeps three quarters of the journaled upside ($97 of
 $132 over $64) and turns the mechanics-only worst case from -40% into
 break-even; 5x caps the upside at +25% for a worst case of +8%.
+
+## Hourly clock (2026-10-25, evening): "change the strategy to hourly, keep leverage at 20x"
+
+The loop moved from one tick per 15m bar to one tick per 1h bar. `Params.tick_minutes`
+(15 or 60) replays either clock on the same 30 days of xyz:BRENTOIL (2026-09-25 to
+2026-10-25), stop buffer 0.50, 20x, slippage 0.03%, starting equity $64. Same six
+journaled theses as the morning run. Report: `/tmp/desk-backtest-hourly/report.json`,
+trades in `/tmp/desk-backtest-hourly/trades_<run>.csv`.
+
+| run | 15m clock | 1h clock |
+|---|---|---|
+| journaled theses | 6 trades, 50% win, +1.86R, $64 -> $131.51 | 4 trades, 25% win, +0.55R, $64 -> $69.34 |
+| always long (control) | 47 trades, +0.14R, $38.37 | 26 trades, -0.33R, $19.40 |
+| always short (control) | 47 trades, -0.90R, $1.22 | 18 trades, -0.38R, $26.53 |
+| daily sign | 57 trades, -0.28R, $7.33 | 33 trades, -0.65R, $7.53 |
+
+What the hourly clock changes: about half as many fills (a pullback that touches the
+8h low inside an hour and leaves again is seen once, at the hourly open, not four
+times), and a stop and target that are judged on the 1h bar's high and low, so a wick
+inside the hour that would have stopped the 15m loop still stops the hourly one,
+while a fill and a stop in the same hour count as a stop (the conservative read).
+On this sample the hourly clock keeps the direction edge (journaled stays positive)
+but gives up most of its size: +0.55R on 4 trades against +1.86R on 6. The buffer
+sweep at 20x is noisier on the hourly clock (0.10 and 0.75 beat 0.50 on 22 to 29
+trades each); nothing in it is large enough to move the live 0.50 rule.
+
+Verdict: the hourly loop is the operator's call for usage and attention, not a
+performance choice. On 30 days it costs roughly half the journaled return. The
+number to watch is the live journaled R per trade over the next ten trades; under
++0.5R on the hourly clock, go back to 15m (one cron change).

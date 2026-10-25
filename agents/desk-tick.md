@@ -16,6 +16,14 @@ add at market above the thesis entry. Every number comes from a tool or a
 script, never from mental arithmetic. The scripts below run through the plugin's own Python from the plugin
 root; no checkout is needed.
 
+The loop is HOURLY (operator, 2026-10-25: "change the strategy to hourly,
+keep leverage at 20x"; it ran every 15 minutes before). Every decision is
+read off the last CLOSED 1h candle: the invalidation check, the structure
+(8h/24h/48h range, ATR14 on 1h bars), whether a resting entry is still on
+its edge. A wick inside the current hour is not a close and decides nothing.
+Between ticks the resting stop and target orders do the guarding, so an
+entry never goes on without both attached.
+
 If the `mcp__pathiel__*` tools are deferred, load the ones you need with one
 ToolSearch call: `select:mcp__pathiel__desk_brief,mcp__pathiel__bracket_sweep,mcp__pathiel__place_bracket,mcp__pathiel__cancel_order,mcp__pathiel__close_position`.
 
@@ -40,7 +48,8 @@ ToolSearch call: `select:mcp__pathiel__desk_brief,mcp__pathiel__bracket_sweep,mc
    COVERED" means a leveraged position is naked: `close_position` it in the
    same tick, sweep again, and say so in your report.
 3. **Levels.** `"${CLAUDE_PLUGIN_ROOT}/scripts/pathiel-py" scripts/oil_levels.py --coin COIN`: mid, last closed
-   1h candle, 8h/24h/48h range, ATR14, 15m micro range.
+   1h candle, 8h/24h/48h range, ATR14 (the script also prints a 15m micro
+   range; the hourly loop does not trade off it).
    `"${CLAUDE_PLUGIN_ROOT}/scripts/pathiel-py" scripts/oil_levels.py --check ENTRY STOP TP --lev 20` judges a
    level: the R gate and the 20x line.
 4. **Account slot.** Step 0 already answered it: a free slot or ours.

@@ -254,6 +254,56 @@ def test_no_lookahead():
     assert run_a.trades[0].exit_reason != run_b.trades[0].exit_reason   # the only thing allowed to differ
 
 
+# ── hourly ticks (2026-10-25: "change the strategy to hourly") ──────────────
+
+def _hourly_scenario():
+    """Warm-up [99,101] then three 1h bars: rest at the 8h low, fill on the
+    next bar, stop on the one after. The same shape as the 15m scenario
+    above, one tick per hour."""
+    c1h = _warmup_1h()
+    hour24 = 24 * HOUR_MS
+    c1h += [
+        Candle(t=hour24 + 0 * HOUR_MS, o=99.3, h=99.3, l=99.3, c=99.3, v=1.0),   # mid near the 8h low -> rest at 99
+        Candle(t=hour24 + 1 * HOUR_MS, o=99.2, h=99.3, l=98.9, c=99.0, v=1.0),   # low through 99 -> fills
+        Candle(t=hour24 + 2 * HOUR_MS, o=98.3, h=98.9, l=98.2, c=98.3, v=1.0),   # low through the 98.75 stop
+    ]
+    return c1h
+
+
+def test_hourly_ticks_run_on_the_1h_bars_and_ignore_the_15m_series():
+    c1h = _hourly_scenario()
+    params = Params(taker_fee=0.0, maker_fee=0.0, slippage=0.0, stop_buffer=0.25, tick_minutes=60)
+    run = simulate([], c1h, const_direction("long"), params)          # no 15m bars at all
+    assert len(run.equity_curve) == len(c1h)                          # one tick per 1h bar
+    assert run.rested == 1 and run.filled == 1 and len(run.trades) == 1
+    t = run.trades[0]
+    assert t.entry_px == pytest.approx(99.0) and t.stop_px == pytest.approx(98.75)
+    assert t.exit_reason == "stop"
+    assert t.entry_time == 25 * HOUR_MS and t.exit_time == 26 * HOUR_MS   # fill and exit on later bars, never the rest bar
+    # a 15m series, when given, changes nothing on the hourly clock
+    hour24 = 24 * HOUR_MS
+    noise15 = [_c15(hour24 + i * FIFTEEN_MS, 50.0, 50.0, 50.0, 50.0) for i in range(12)]
+    run2 = simulate(noise15, c1h, const_direction("long"), params)
+    assert [(x.entry_px, x.exit_px, x.exit_reason) for x in run2.trades] == \
+        [(t.entry_px, t.exit_px, t.exit_reason)]
+
+
+def test_hourly_ticks_keep_the_no_lookahead_property():
+    c1h = _hourly_scenario()
+    params = Params(taker_fee=0.0, maker_fee=0.0, slippage=0.0, stop_buffer=0.25, tick_minutes=60)
+    stop_version = c1h
+    target_version = c1h[:-1] + [Candle(t=26 * HOUR_MS, o=99.5, h=101.2, l=99.4, c=101.0, v=1.0)]
+    run_a = simulate([], stop_version, const_direction("long"), params)
+    run_b = simulate([], target_version, const_direction("long"), params)
+    assert run_a.trades[0].entry_time == run_b.trades[0].entry_time
+    assert run_a.trades[0].entry_px == run_b.trades[0].entry_px
+    assert run_a.trades[0].exit_reason != run_b.trades[0].exit_reason
+
+
+def test_default_clock_is_still_the_15m_tick():
+    assert Params().tick_minutes == 15
+
+
 # ── bonus: liquidation is reachable (the eval's exit-1 check depends on it) ─
 
 def test_liquidation_ends_run_and_zeroes_equity():

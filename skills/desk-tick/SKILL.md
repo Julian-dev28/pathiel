@@ -1,6 +1,6 @@
 ---
 name: desk-tick
-description: One tick of a desk's trading loop on pathiel, for the desk id given as the argument (oil, metals, ai, gas). Slot check here, then the desk-tick agent (Opus 5.5, medium effort) runs sweep, levels, brief, one decision, one log line. Run on a schedule with /loop 15m /pathiel:desk-tick oil. Live money on the connected Hyperliquid account.
+description: One tick of a desk's trading loop on pathiel, for the desk id given as the argument (oil, metals, ai, gas). Slot check here, then the desk-tick agent (Opus 5.5, medium effort) runs sweep, levels, brief, one decision, one log line. Run on a schedule with /loop 1h /pathiel:desk-tick oil. Live money on the connected Hyperliquid account.
 ---
 
 <!-- GENERATED from .claude/skills/desk-tick/SKILL.md by scripts/build_plugin_skill.py. Edit the source, then rerun it. -->
@@ -8,9 +8,11 @@ description: One tick of a desk's trading loop on pathiel, for the desk id given
 
 One tick for desk `$ARGUMENTS` (default `oil` if empty). Two parts: the slot
 check runs here because it is one script call, and the tick itself runs in
-the `desk-tick` agent so the session's own model is not spent on a
-15-minute loop (operator, 2026-10-25: "fable is valuable and the tick is
-eating my usage").
+the `desk-tick` agent so the session's own model is not spent on the loop
+(operator, 2026-10-25: "fable is valuable and the tick is eating my
+usage"). The loop is hourly since 2026-10-25 ("change the strategy to
+hourly, keep leverage at 20x"); every decision reads the last closed 1h
+candle.
 
 1. **Slot first.** `"${CLAUDE_PLUGIN_ROOT}/scripts/pathiel-py" scripts/desk_slot.py --desk $ARGUMENTS`.
    If `slot` is `held` and `mine` is false, another desk's coin holds the
