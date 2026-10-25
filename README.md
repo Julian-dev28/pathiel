@@ -249,21 +249,19 @@ Hyperliquid, the model, or the exchange is a plain `def` (FastAPI's thread
 pool) rather than `async def`; `tests/test_no_blocking_on_the_event_loop.py`
 checks every route module.
 
-## Connecting an account
+## The account
 
-There is no sign-in gate for the operator's own box. Three ways to connect a
-Hyperliquid account (`services/accounts/api.py`):
+There is no sign-in gate for the operator's own box. The account is the
+agent wallet in `.env.local` (`~/.pathiel/.env.local` for the plugin):
+`HYPERLIQUID_WALLET_ADDRESS` and `HYPERLIQUID_PRIVATE_KEY` for an agent
+wallet created in the Hyperliquid app (More, API), `HYPERLIQUID_MASTER_ADDRESS`
+for the account it acts for. An agent key can trade and can never withdraw;
+the master key stays in your wallet. The Account page shows it as the
+active account and lets you pick a risk preset with a live preview.
 
-- **Connect your wallet** (recommended). One signature approves a trading
-  key pathiel generates and keeps encrypted at rest (`services/accounts/vault.py`).
-  That key can trade but can never withdraw; the main key never leaves your
-  wallet.
-- **Use an API key** made on app.hyperliquid.xyz/API.
-- **Watch an address**: read-only, no key needed.
-
-Then pick a risk preset with a live preview and you are trading. Existing
-`.env.local` keys keep working and appear as the read-only "From .env.local"
-account. `services/accounts/positions.py` skips any dex holding under
+The browser wallet picker (connect, API key, watch an address) was removed
+on 2026-10-25; `docs/WALLET_UI_RESTORE.md` has what it was and how to bring
+it back. `services/accounts/positions.py` skips any dex holding under
 `DUST_USD` ($1) with no position, so a wallet spread across six dexes reads
 one dex instead of six; a failed read never reports as a flat account, and
 the last good snapshot serves while a fresh one is fetched.
@@ -343,12 +341,12 @@ What leaves the machine and what does not, and the checks that enforce it.
 | Live-money MCP tools (`place_bracket`, `bracket_sweep`, `close_position`, `set_leverage`, `cancel_order`, `config` with arguments) run only on an explicit ask in the conversation; one position per account; stop inside half the distance to liquidation | the MCP server's instructions, `pathiel/agents/bracket.py`, `services/risk` |
 | Nothing secret in the image, the k8s ConfigMap or any tracked file; the k8s Secret is created from the operator's shell | `DEPLOY.md`, `k8s/secret.example.yaml`, `tests/test_deploy_config.py` |
 | The test gate makes no network calls and starts from an empty venue cache, so a warm cache on one machine cannot hide a leak CI would hit | `conftest.py` refuses every non-loopback host and errors the test at teardown |
-| Dependencies are pinned (`requirements.lock`, `services/wallet_ui/package-lock.json`); CI installs from the locks | `.github/workflows/ci.yml` |
+| Dependencies are pinned in `requirements.lock` with hashes; CI and the image install from it with `--require-hashes`. There is no Node in the repo since 2026-10-25 | `.github/workflows/ci.yml`, `scripts/supply_chain_check.py` |
 
 | Desk writes (`POST /api/desks/{id}/theses`, `/refresh`) and the loop log are gated: local mode, else the deployment's operator. Local mode needs a loopback peer, a loopback Host and a loopback Origin, which closes DNS rebinding | `services/strategies/api.py`, `services/auth/integration.py`; `tests/test_http_hardening.py` |
 | No wildcard CORS; bodies capped at 1 MiB; API docs off on any deployment; `/metrics` can require a bearer token | `pathiel/server.py` (`PATHIEL_CORS_ORIGINS`, `PATHIEL_MAX_BODY_BYTES`, `PATHIEL_API_DOCS`, `PATHIEL_METRICS_TOKEN`) |
-| The operator token travels in the `X-Operator-Token` header only, never in a URL; on a deployment nobody becomes operator by signing in first, the role is granted with `scripts/grant_operator.py` | `pathiel/dashboard.py`, `k8s/configmap.yaml`; `tests/test_operator_auth.py`, `tests/test_deploy_config.py` |
-| The image runs as uid 10001, installs from the hashed lock with `--require-hashes`, and npm never runs install scripts (`.npmrc`, CI). The committed `wallet.js` rebuilds byte for byte from the lockfile | `Dockerfile`, `docker-entrypoint.sh`, `services/wallet_ui/build.mjs --verify`, `scripts/supply_chain_check.py`, `tests/test_supply_chain.py` |
+| The image runs as uid 10001 and never as root; the entrypoint drops privileges before the app starts | `Dockerfile`, `docker-entrypoint.sh`, `tests/test_deploy_config.py` |
+| Writes off the operator's machine need a signed-in operator; there is no shared token. On a deployment nobody becomes operator by signing in first, the role is granted with `scripts/grant_operator.py` | `pathiel/dashboard.py`, `k8s/configmap.yaml`; `tests/test_operator_auth.py`, `tests/test_risk_panel.py` |
 
 The inventory of every secret, who reads it and how to rotate it is
 `docs/SECRETS.md`. The supply-chain and web-service review of 2026-10-25,

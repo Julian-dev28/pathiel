@@ -44,9 +44,8 @@ SCAN_DIRS = ("pathiel", "scripts", "services")
 # Own deploy unit, own Dockerfile or host — never bundled into the image,
 # so their imports must not force a COPY line into it.
 #   pathiel_data_api  own Dockerfile + Postgres deps
-#   wallet_ui        an npm package built to a static asset; its Python tests
 #                    boot a server against a built file, not the image
-EXCLUDE_PREFIXES = ("services/pathiel_data_api", "services/wallet_ui")
+EXCLUDE_PREFIXES = ("services/pathiel_data_api",)
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
@@ -208,19 +207,6 @@ def test_the_not_yet_built_allowlist_is_still_needed():
     for pkg in sorted(_NOT_YET_BUILT_BY_ANOTHER_SWARM_AGENT):
         assert not (Path(__file__).resolve().parents[1] / pkg.replace(".", "/")).is_dir(), (
             f"{pkg} now exists on disk -- remove it from the allowlist above")
-
-
-def test_dockerfile_does_not_bundle_wallet_ui():
-    """services/wallet_ui is an npm package, not part of the running app.
-
-    Its only output is pathiel/static/wallet.js, which ships inside pathiel/. The
-    sources and its 644 MB of node_modules have no business in the image.
-    """
-    copies = _dockerfile_copy_sources()
-    assert not any(c.startswith("services/wallet_ui") for c in copies), (
-        "the image copies services/wallet_ui — only its built asset, "
-        "pathiel/static/wallet.js, belongs in the image"
-    )
 
 
 def test_dockerfile_does_not_bundle_pathiel_data_api():

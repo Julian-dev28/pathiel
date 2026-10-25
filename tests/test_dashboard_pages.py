@@ -950,18 +950,12 @@ def test_the_single_operator_escape_hatch_is_explicit(monkeypatch):
     assert TestClient(app).get("/api/dashboard/positions").status_code == 200
 
 
-def test_every_page_keeps_the_wallet_connect_mount(client):
-    """Wave-2 onboarding (2026-10-17): sign-in is retired from the UI.
-    PathielAuth — the sign-in chip, the full-page 401 gate, signIn/signOut,
-    the on-demand RainbowKit loader — is deleted outright, not replaced.
-    Wallet-connect IS the identity now (contracts/accounts/models.py);
-    GET /api/session answers "who is this" with no login step at all in
-    local mode.
-
-    What survives, and what this test checks instead: every page still
-    loads the shared script and still carries the ONE mount point
-    services/wallet_ui's bundle renders into — the two things this file
-    owns that the shared contract (SWARM_RULES section 10) actually needs.
+def test_every_page_loads_the_shared_script_and_no_wallet_picker(client):
+    """Wave-2 onboarding (2026-10-17) retired sign-in from the UI; 2026-10-25
+    retired the browser wallet picker (services/wallet_ui) with it, since the
+    live desk's account comes from .env.local and the registry held no
+    connected account. Every page still loads the shared script; no page
+    carries the picker's mount, loader, or bundle.
     """
     js = open(os.path.join(os.path.dirname(os.path.dirname(__file__)),
                            "pathiel", "static", "pathiel.js")).read()
@@ -971,9 +965,9 @@ def test_every_page_keeps_the_wallet_connect_mount(client):
     for path in ("/", "/account"):
         body = client.get(path).text
         assert "pathiel.js" in body, f"{path} does not load the shared script"
-        assert "masthead-right" in body, f"{path} has nowhere to put the wallet mount"
-        assert 'id="wallet-connect-root"' in body, (
-            f"{path} has nowhere for the wallet picker to mount")
+        assert 'id="wallet-connect-root"' not in body, f"{path} still has the wallet picker mount"
+        assert "wallet.js" not in body and "wallet.css" not in body, f"{path} still loads the bundle"
+    assert "loadWalletUI" not in js and "openWallet" not in js and "PathielWallet" not in js
 
 
 def test_no_sign_in_ui_survives_anywhere(client):
@@ -982,17 +976,12 @@ def test_no_sign_in_ui_survives_anywhere(client):
     one shared script every page loads — not just hidden, not just
     unreferenced from one page.
 
-    loadWalletUI is NOT on this list: services/wallet_ui/tests/
-    test_wallet_bundle.py's test_bundle_is_not_loaded_on_page_load requires
-    the ~3MB bundle stay out of every template's <script> tags, so the
-    on-demand loader survives sign-in's retirement — PathielSession.
-    openWallet(view) still calls it, just to reach window.PathielWallet.
-    open(view) instead of the old openConnectModal()/signIn()."""
+    (2026-10-25: the on-demand wallet loader this docstring used to exempt is
+    gone too, with the bundle it loaded.)"""
     js = open(os.path.join(os.path.dirname(os.path.dirname(__file__)),
                            "pathiel", "static", "pathiel.js")).read()
     for gone in ("auth-chip", "auth-gate", "PathielAuth", "signIn", "signOut", "my-account"):
         assert gone not in js, f"pathiel.js still references {gone}"
-    assert "loadWalletUI" in js, "the on-demand wallet-bundle loader was removed, not just renamed"
     for name, html in _template_files():
         for gone in ("auth-chip", "auth-gate", "auth-card", "id=\"my-account\""):
             assert gone not in html, f"{name} still has {gone}"
@@ -1160,7 +1149,7 @@ def test_account_page_has_the_active_card_and_risk_editor():
     books are gone (docs/overhaul/DESK_UI_2026-10-23.md)."""
     html = dict(_template_files())["account.html"]
     for needed in ("account-card", "acct-label", "acct-address", "acct-mode", "acct-equity",
-                   "acct-blockers", "acct-switch", "security-note",
+                   "acct-blockers", "acct-source-note", "security-note",
                    "risk-preset-seg", "risk-advanced", "adv-risk-pct", "adv-daily-pct",
                    "adv-max-lev", "adv-max-pos", "risk-save"):
         assert f'id="{needed}"' in html, f"/account is missing #{needed}"
@@ -1186,8 +1175,8 @@ def test_account_page_live_preview_has_no_reload_anywhere():
     reload.' Every control that changes the profile re-POSTs
     /api/risk/preview and rewrites the DOM in place — no form submit, no
     location.reload, no location.href assignment anywhere on the page
-    (the only navigation is PathielSession.openWallet, and the one redirect
-    for needs_onboarding, which this test does not touch)."""
+    (the one redirect for needs_onboarding is the only navigation, and this
+    test does not touch it)."""
     html = dict(_template_files())["account.html"]
     assert "<form" not in html, "/account uses a <form> — that submits and reloads"
     assert html.count("fetch('/api/risk/preview'") >= 1

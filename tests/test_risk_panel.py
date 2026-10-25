@@ -200,8 +200,8 @@ def test_the_desk_page_carries_no_off_switch_and_no_operator_token(client):
     auto-trader (POST /api/agent/config {mode: OFF}) behind an operator-token
     popover. 2026-10-24 the operator asked for both leftovers gone: the bot
     it switched off no longer exists, and the page has no token-gated action
-    left (local reads need no token). The endpoint itself stays token-gated,
-    see test_the_stop_endpoint_is_closed_in_both_configurations."""
+    left (local reads need no token). The endpoint itself stays gated,
+    see test_the_stop_endpoint_is_closed_to_remote_callers."""
     from pathlib import Path
     body = client.get("/").text
     for leftover in ('id="stop-trading-btn"', "Operator token", 'id="token-pop"', 'id="status-pill"', "Offline"):
@@ -210,41 +210,24 @@ def test_the_desk_page_carries_no_off_switch_and_no_operator_token(client):
     assert "pathiel-op-token" not in js and "X-Operator-Token" not in js
 
 
-def test_the_stop_endpoint_is_closed_in_both_configurations(monkeypatch):
-    """The off switch must be unreachable without the operator token in BOTH
-    states, and the two states are different code paths:
-
-      - token configured, none or a wrong one supplied -> 401
-      - no PATHIEL_OPERATOR_TOKEN at all                 -> 503, surface disabled
-
-    The second is the one that matters on a fresh box. It fails CLOSED, and this
-    test exists to keep it that way: a future refactor that made a missing token
-    mean "no auth required" would open a live kill switch to the internet.
-
-    The root conftest loads the real .env.local into os.environ, so the token is
-    usually present here and absent on CI. Both are pinned explicitly rather
-    than left to the environment.
-
-    2026-10-23 (wave 2): the STOP TRADING button (and this test) moved from
-    POST /api/agent/stop (deleted with the rest of the retired autonomous
-    engine's start/stop surface) to POST /api/agent/config {"mode": "OFF"} —
-    the same endpoint the relabeled off switch actually calls
-    (pathiel/static/oil_desk.js), gated by the same operator-token dependency.
-    """
-    from pathiel.server import app as real_app
-    client = TestClient(real_app)
-    body = {"mode": "OFF"}
-
+def test_the_stop_endpoint_is_closed_to_remote_callers(monkeypatch):
+    """POST /api/agent/config flips the live mode. Until 2026-10-25 a shared
+    PATHIEL_OPERATOR_TOKEN header opened it to any machine caller; the token
+    is gone (nothing used it), so off the operator's own box the route is
+    closed to everyone but a signed-in operator, whatever the environment
+    holds. Local mode is covered by tests/test_operator_auth.py."""
+    from services.auth import integration
+    for k in integration._DEPLOYMENT_MARKERS:
+        monkeypatch.delenv(k, raising=False)
     monkeypatch.setenv("PATHIEL_OPERATOR_TOKEN", "a-token-that-is-set")
-    assert client.post("/api/agent/config", json=body).status_code == 401
-    assert client.post("/api/agent/config", json=body,
-                       headers={"X-Operator-Token": "wrong"}).status_code == 401
-
+    from pathiel.server import app as real_app
+    remote = TestClient(real_app, client=("203.0.113.9", 4444))
+    body = {"mode": "OFF"}
+    assert remote.post("/api/agent/config", json=body).status_code == 401
+    assert remote.post("/api/agent/config", json=body,
+                       headers={"X-Operator-Token": "a-token-that-is-set"}).status_code == 401
     monkeypatch.delenv("PATHIEL_OPERATOR_TOKEN", raising=False)
-    r = client.post("/api/agent/config", json=body)
-    assert r.status_code == 503, "a missing token must close the surface, not open it"
-    assert client.post("/api/agent/config", json=body,
-                       headers={"X-Operator-Token": "anything"}).status_code == 503
+    assert remote.post("/api/agent/config", json=body).status_code == 401
 
 
 def test_a_partial_dex_blip_does_not_invent_a_drawdown(monkeypatch):

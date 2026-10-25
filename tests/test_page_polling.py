@@ -15,7 +15,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 PAGES = sorted((ROOT / "pathiel" / "templates").glob("*.html")) + [
-    p for p in sorted((ROOT / "pathiel" / "static").glob("*.js")) if p.name != "wallet.js"]
+    p for p in sorted((ROOT / "pathiel" / "static").glob("*.js"))]
 
 # Re-render from data already on the page; no request.
 UI_ONLY = {"foldAged", "setPageMeta"}

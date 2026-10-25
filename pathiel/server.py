@@ -51,7 +51,7 @@ from fastapi.staticfiles import StaticFiles                           # noqa: E4
 from pathiel.metrics import render_metrics                      # noqa: E402
 
 from pathiel import __version__, dashboard, session_log         # noqa: E402
-from pathiel.dashboard import _require_operator                 # noqa: E402
+from pathiel.dashboard import _require_operator_role            # noqa: E402
 from pathiel.agents.config_store import (                       # noqa: E402
     read_agent_config,
     update_agent_config,
@@ -460,7 +460,7 @@ if _CORS_ORIGINS:
         allow_origins=_CORS_ORIGINS,
         allow_credentials=False,
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
-        allow_headers=["Content-Type", "Authorization", "X-Operator-Token"],
+        allow_headers=["Content-Type", "Authorization"],
     )
 
 
@@ -513,19 +513,19 @@ def _hip3_on() -> bool:
 # tests/test_no_blocking_on_the_event_loop.py.
 
 
-@app.get("/api/agent/session-log", dependencies=[Depends(_require_operator)])
+@app.get("/api/agent/session-log", dependencies=[Depends(_require_operator_role)])
 def get_session_log():
     """GET /api/agent/session-log — last 50 log entries."""
     return JSONResponse(content=session_log.tail(50))
 
 
-@app.get("/api/agent/config", dependencies=[Depends(_require_operator)])
+@app.get("/api/agent/config", dependencies=[Depends(_require_operator_role)])
 def get_config():
     """GET /api/agent/config — read the agent config."""
     return JSONResponse(content=read_agent_config())
 
 
-@app.post("/api/agent/config", dependencies=[Depends(_require_operator)])
+@app.post("/api/agent/config", dependencies=[Depends(_require_operator_role)])
 async def update_config(request: Request):
     """POST /api/agent/config — merge new values into the agent config."""
     body = await _json_object(request)
@@ -549,7 +549,7 @@ def _merge_config(body: Dict[str, Any]) -> Dict[str, Any]:
 # ── HL endpoints ──────────────────────────────────────────────────────────────
 
 
-@app.get("/api/hl/account", dependencies=[Depends(_require_operator)])
+@app.get("/api/hl/account", dependencies=[Depends(_require_operator_role)])
 def get_account():
     """GET /api/hl/account — perp + spot account state."""
     user = resolve_user_address()
@@ -617,7 +617,7 @@ def get_candles(
         raise HTTPException(500, str(e))
 
 
-@app.get("/api/hl/portfolio", dependencies=[Depends(_require_operator)])
+@app.get("/api/hl/portfolio", dependencies=[Depends(_require_operator_role)])
 def get_portfolio():
     """GET /api/hl/portfolio — positions and equity."""
     user = resolve_user_address()
@@ -681,7 +681,7 @@ def get_orderbook(coin: str = Query("BTC")):
         raise HTTPException(500, str(e))
 
 
-@app.post("/api/hl/place-order", dependencies=[Depends(_require_operator)])
+@app.post("/api/hl/place-order", dependencies=[Depends(_require_operator_role)])
 async def place_order(request: Request):
     """POST /api/hl/place-order — manual order with ATR-based SL/TP brackets."""
     body = await _json_object(request)
@@ -784,7 +784,7 @@ def _place_order(body: Dict[str, Any]) -> Dict[str, Any]:
         raise HTTPException(500, str(e))
 
 
-@app.post("/api/hl/close-position", dependencies=[Depends(_require_operator)])
+@app.post("/api/hl/close-position", dependencies=[Depends(_require_operator_role)])
 async def close_position(request: Request):
     """POST /api/hl/close-position — close an open position for a coin."""
     body = await _json_object(request)
@@ -843,7 +843,7 @@ def _close_position(body: Dict[str, Any]) -> Dict[str, Any]:
         raise HTTPException(500, str(e))
 
 
-@app.post("/api/hl/cancel-order", dependencies=[Depends(_require_operator)])
+@app.post("/api/hl/cancel-order", dependencies=[Depends(_require_operator_role)])
 async def cancel_order(request: Request):
     """POST /api/hl/cancel-order — cancel an order by OID."""
     body = await _json_object(request)

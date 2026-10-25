@@ -1,16 +1,17 @@
-"""Auth on the operator surface: 21 endpoints, several of which move real money.
+"""Auth on the operator surface after 2026-10-25: there is no shared token.
 
-Three gaps, all cheap to close and all closed here:
-  - `!=` on a secret returns early at the first differing byte and leaks the
-    token prefix through response timing
-  - no failure ceiling: an unlimited-attempt endpoint on the public internet is
-    a token that gets guessed eventually
-  - no audit trail: a leaked token would leave no record of what was done
+Until then a static PATHIEL_OPERATOR_TOKEN header opened 21 endpoints, several
+of which move real money, to "machine callers" (the scheduler, the supervisor,
+smoke checks). Every one of those callers is gone, the MCP server calls the
+Python in-process, and the operator works from local mode (loopback peer,
+loopback Host, loopback Origin). So the gate is now exactly two doors:
 
-The load-bearing subtlety is in the lockout. Refusing a VALID token during a
-lockout would let anyone spraying wrong guesses from a shared egress IP lock the
-operator out of their own kill switch — turning a brute-force defence into a
-denial of service on the one control that must never be unreachable.
+  local mode                  -> allowed, no credential
+  a signed-in operator        -> allowed
+  anyone else, any header     -> 401
+
+A removed token is one less secret to provision, rotate and leak, and one
+less way a deployment could be driven from outside.
 """
 from __future__ import annotations
 
@@ -19,192 +20,80 @@ from fastapi.testclient import TestClient
 
 import pathiel.dashboard as db
 from pathiel.server import app
+from services.auth import integration
 
-TOKEN = "correct-horse-battery-staple"
-
-
-@pytest.fixture
-def client(monkeypatch):
-    monkeypatch.setenv("PATHIEL_OPERATOR_TOKEN", TOKEN)
-    with db._AUTH_LOCK:
-        db._AUTH_FAILURES.clear()
-    return TestClient(app)
-
-
-# The mutating, operator-gated endpoint these tests exercise generically.
-# 2026-10-23 (wave 2): /api/agent/stop (the retired autonomous loop's stop
-# control) is gone; the STOP TRADING button's actual endpoint, same auth
-# path, is POST /api/agent/config.
+# A mutating, operator-gated endpoint: POST /api/agent/config flips the live
+# mode (the old STOP TRADING button's endpoint).
 _MUTATING_PATH = "/api/agent/config"
 _MUTATING_BODY = {"mode": "OFF"}
 
 
-def _wrong(c, n=1):
-    for _ in range(n):
-        r = c.post(_MUTATING_PATH, json=_MUTATING_BODY, headers={"X-Operator-Token": "nope"})
-    return r
+@pytest.fixture
+def not_deployed(monkeypatch):
+    for k in integration._DEPLOYMENT_MARKERS:
+        monkeypatch.delenv(k, raising=False)
+    monkeypatch.delenv("PATHIEL_DASHBOARD_READONLY", raising=False)
+    monkeypatch.delenv("PATHIEL_PUBLIC_DASHBOARD", raising=False)
 
 
-# ── the basics ───────────────────────────────────────────────────────────────
-
-def test_a_wrong_token_is_rejected(client):
-    assert _wrong(client).status_code == 401
+def _remote():
+    return TestClient(app, client=("203.0.113.9", 4444), raise_server_exceptions=False)
 
 
-def test_a_missing_token_fails_closed(client, monkeypatch):
-    monkeypatch.delenv("PATHIEL_OPERATOR_TOKEN", raising=False)
-    assert client.post(_MUTATING_PATH, json=_MUTATING_BODY).status_code == 503
+def _local():
+    return TestClient(app, client=("127.0.0.1", 4444), raise_server_exceptions=False)
 
 
-def test_the_comparison_is_constant_time():
-    """A plain != leaks the token prefix through timing."""
-    import inspect
-    src = inspect.getsource(db._require_operator)
-    assert "compare_digest" in src
-    assert "provided != expected" not in src
-
-
-# ── the ceiling ──────────────────────────────────────────────────────────────
-
-def test_repeated_wrong_tokens_hit_a_ceiling(client):
-    _wrong(client, db._AUTH_MAX_FAILURES)
-    assert _wrong(client).status_code == 429
-
-
-def test_a_correct_token_still_works_during_a_lockout(client):
-    """The property that keeps a brute-force defence from becoming a denial of
-    service on the kill switch."""
-    _wrong(client, db._AUTH_MAX_FAILURES + 2)
-    r = client.post(_MUTATING_PATH, json=_MUTATING_BODY, headers={"X-Operator-Token": TOKEN})
-    assert r.status_code != 429, (
-        "a valid token was refused during lockout — anyone spraying guesses "
-        "from a shared IP could lock the operator out of their own kill switch")
-
-
-def test_a_successful_auth_clears_the_counter(client):
-    _wrong(client, db._AUTH_MAX_FAILURES - 1)
-    client.post(_MUTATING_PATH, json=_MUTATING_BODY, headers={"X-Operator-Token": TOKEN})
-    assert _wrong(client).status_code == 401, "the counter was not cleared"
-
-
-def test_the_failure_table_cannot_grow_without_bound(client, monkeypatch):
-    """A spray from many source addresses must not exhaust memory."""
-    now = 1000.0
-    for i in range(db._AUTH_CLIENTS_MAX + 50):
-        db._note_auth_failure(f"10.0.0.{i}", now)
-    assert len(db._AUTH_FAILURES) <= db._AUTH_CLIENTS_MAX
-
-
-def test_old_failures_stop_counting(client):
-    import time
-    now = time.time()
-    db._note_auth_failure("1.2.3.4", now - db._AUTH_WINDOW_S - 1)
-    assert db._auth_failures("1.2.3.4", now) == 0
-
-
-# ── the audit trail ──────────────────────────────────────────────────────────
-
-def test_a_mutating_action_is_audited(client, monkeypatch):
-    seen = []
-    monkeypatch.setattr(db.session_log, "append", lambda e: seen.append(e))
-    client.post(_MUTATING_PATH, json=_MUTATING_BODY, headers={"X-Operator-Token": TOKEN})
-    actions = [e for e in seen if e.get("event") == "operator_action"]
-    assert any(e["action"] == "authorized" for e in actions)
-    assert actions[0]["path"] == _MUTATING_PATH
-
-
-def test_a_failed_attempt_is_audited(client, monkeypatch):
-    seen = []
-    monkeypatch.setattr(db.session_log, "append", lambda e: seen.append(e))
-    _wrong(client)
-    assert any(e.get("action") == "auth_failed" for e in seen)
-
-
-def test_reads_are_not_audited(client, monkeypatch):
-    """Auditing every authenticated GET would bury the actions that matter under
-    dashboard polling."""
-    seen = []
-    monkeypatch.setattr(db.session_log, "append", lambda e: seen.append(e))
-    client.get("/api/dashboard/summary", headers={"X-Operator-Token": TOKEN})
-    assert not [e for e in seen if e.get("action") == "authorized"]
-
-
-def test_the_audit_never_blocks_the_action(client, monkeypatch):
-    """An audit-log failure must not be the reason a kill switch does not
-    fire."""
-    def boom(_e):
-        raise OSError("disk full")
-
-    monkeypatch.setattr(db.session_log, "append", boom)
-    r = client.post(_MUTATING_PATH, json=_MUTATING_BODY, headers={"X-Operator-Token": TOKEN})
-    assert r.status_code != 500
-
-
-def test_the_audit_records_no_token(client, monkeypatch):
-    seen = []
-    monkeypatch.setattr(db.session_log, "append", lambda e: seen.append(e))
-    client.post(_MUTATING_PATH, json=_MUTATING_BODY, headers={"X-Operator-Token": TOKEN})
-    assert TOKEN not in str(seen)
-
-
-# ── local mode skips the session gate (wave 2, 2026-10-17) ────────────────────
-
-def test_session_gate_skipped_for_local_mode(monkeypatch):
-    """Connecting an account replaced sign-in. A request local mode accepts
-    reads account data without a session; anything else still gets 401."""
-    from fastapi.testclient import TestClient
+def test_the_operator_on_his_own_box_needs_no_credential(not_deployed, monkeypatch):
     import pathiel.server as srv
-    from services.auth import integration
-    from pathiel.client import account_snapshot
-    for m in integration._DEPLOYMENT_MARKERS:
-        monkeypatch.delenv(m, raising=False)
-    # A request the gate lets through reads the account; keep it off the venue.
-    monkeypatch.setattr(account_snapshot, "FETCH", lambda *a, **kw: {
-        "equity": 0.0, "asset_positions": [], "dex_equity": {"": 0.0}, "queried_dexes": {""}})
-    monkeypatch.setattr(account_snapshot, "LIST_DEXES", lambda: [])
-    remote = TestClient(srv.app, client=("203.0.113.5", 50000))
-    r = remote.get("/api/dashboard/positions")
-    assert r.status_code == 401 and r.json().get("auth_required") is True
-    local = TestClient(srv.app, client=("127.0.0.1", 50000))
-    r = local.get("/api/dashboard/positions")
-    assert r.status_code != 401
-    r = local.get("/api/dashboard/positions", headers={"Origin": "https://evil.example"})
-    assert r.status_code == 401
-
-
-def test_accounts_router_is_mounted_and_session_answers_anonymously():
-    from fastapi.testclient import TestClient
-    import pathiel.server as srv
-    r = TestClient(srv.app, client=("203.0.113.9", 50000)).get("/api/session")
-    assert r.status_code == 200
-    body = r.json()
-    assert body["local_mode"] is False and body["address"] is None
-
-
-def test_risk_router_is_mounted_and_preview_works_locally():
-    from fastapi.testclient import TestClient
-    import pathiel.server as srv
-    from services.auth import integration
-    import os
-    if any(os.environ.get(m) for m in integration._DEPLOYMENT_MARKERS):
-        return
-    r = TestClient(srv.app, client=("127.0.0.1", 50000)).post(
-        "/api/risk/preview", json={"equity_usd": 15.21, "profile": {"preset": "auto"}})
+    monkeypatch.setattr(srv, "update_agent_config", lambda updates: {"mode": "OFF", **updates})
+    r = _local().post(_MUTATING_PATH, json=_MUTATING_BODY, headers={"Origin": "http://127.0.0.1:8000"})
     assert r.status_code == 200, r.text
-    body = r.json()
-    assert body["preset_applied"] == "starter" and body["headline"]
 
 
-# ── the token travels in a header, never in the URL ──────────────────────────
+def test_a_remote_caller_is_refused(not_deployed):
+    assert _remote().post(_MUTATING_PATH, json=_MUTATING_BODY).status_code == 401
 
-def test_a_query_string_token_is_refused_and_counted(client):
-    """Security review 2026-10-25, P3-4: `?token=` landed the kill-switch
-    credential in browser history, proxy logs and Referer headers. Only the
-    X-Operator-Token header is read now; a correct token in the query string
-    is a wrong guess like any other."""
-    r = client.post(f"{_MUTATING_PATH}?token={TOKEN}", json=_MUTATING_BODY)
+
+def test_a_cross_site_page_on_the_operators_box_is_refused(not_deployed):
+    """Loopback peer (the operator's own browser) but a foreign Origin: a
+    page on evil.example POSTing to 127.0.0.1 must not be local mode."""
+    r = _local().post(_MUTATING_PATH, json=_MUTATING_BODY, headers={"Origin": "https://evil.example"})
     assert r.status_code == 401
-    with db._AUTH_LOCK:
-        assert sum(len(v) for v in db._AUTH_FAILURES.values()) == 1
-    ok = client.post(_MUTATING_PATH, json=_MUTATING_BODY, headers={"X-Operator-Token": TOKEN})
-    assert ok.status_code == 200, ok.text
+
+
+def test_no_header_or_query_string_opens_the_gate_any_more(not_deployed, monkeypatch):
+    """The old token, in the header or the URL, buys nothing even when the
+    environment still carries one."""
+    monkeypatch.setenv("PATHIEL_OPERATOR_TOKEN", "correct-horse-battery-staple")
+    c = _remote()
+    assert c.post(_MUTATING_PATH, json=_MUTATING_BODY,
+                  headers={"X-Operator-Token": "correct-horse-battery-staple"}).status_code == 401
+    assert c.post(f"{_MUTATING_PATH}?token=correct-horse-battery-staple",
+                  json=_MUTATING_BODY).status_code == 401
+
+
+def test_the_token_code_is_gone():
+    """No `_require_operator`, no lockout table, no token comparison: a
+    future "just read the header again" has nothing to hang off."""
+    assert not hasattr(db, "_require_operator")
+    assert not hasattr(db, "_AUTH_FAILURES")
+    src = open(db.__file__).read()
+    assert "X-Operator-Token" not in src
+    assert 'query_params.get("token")' not in src
+
+
+def test_every_operator_route_uses_the_role_gate():
+    """The eight server.py routes that used the token now share the one gate
+    the dashboard's house-account routes use."""
+    import ast
+    import pathlib
+    src = (pathlib.Path(db.__file__).resolve().parent / "server.py").read_text()
+    tree = ast.parse(src)
+    gated = 0
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and getattr(node.func, "id", None) == "Depends":
+            if node.args and getattr(node.args[0], "id", None) == "_require_operator_role":
+                gated += 1
+    assert gated == 8, gated
+    assert "_require_operator)" not in src

@@ -285,3 +285,13 @@ it), `pathiel_data.db` (the live api_keys store).
     PATHIEL_STATE_DIR="$(mktemp -d)" .venv/bin/python -m pytest -q -p no:cacheprovider
     .venv/bin/python scripts/preflight_secrets.py
     curl -s http://127.0.0.1:8000/api/health/system
+
+## Addendum, same day: the wallet connect UI and the operator token
+
+Operator: "delete it, not even sure if operator token is needed no?". Gone:
+`services/wallet_ui` (498 npm packages, the repo's only Node tree), the 3.1 MB
+committed `wallet.js` and `wallet.css`, the Trading wallet modal's hooks on
+every page, the Node steps in CI, the npm half of the supply-chain checks, and
+`PATHIEL_OPERATOR_TOKEN` (no caller left; writes off the operator's machine
+need a signed-in operator). The account is the agent wallet in `.env.local`.
+Restore instructions: `docs/WALLET_UI_RESTORE.md`.

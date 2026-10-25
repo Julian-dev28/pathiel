@@ -686,9 +686,6 @@ async function startOilDesk() {
     await loadPreview();
   }
 
-  document.getElementById('onb-connect').addEventListener('click', () => PathielSession.openWallet('choose'));
-  document.getElementById('onb-watch').addEventListener('click', () => PathielSession.openWallet('watch'));
-
   document.getElementById('onb-save').addEventListener('click', async (e) => {
     const btn = e.currentTarget;
     btn.disabled = true;
@@ -712,24 +709,12 @@ async function startOilDesk() {
     showOilDesk();
   });
 
-  // True only while this load is showing the welcome card — so a later
-  // account SWITCH (which also fires this event, with needs_onboarding
-  // already false) never yanks an already-onboarded visitor back into the
-  // wizard. See the shared hook contract, SWARM_RULES section 10.
-  let wasOnboarding = false;
-
-  document.addEventListener('pathiel:account-changed', (e) => {
-    const session = e.detail || {};
-    if (wasOnboarding && !session.needs_onboarding) {
-      wasOnboarding = false;
-      enterRiskStep();
-    }
-  });
-
+  // 2026-10-25: no wallet picker, so no pathiel:account-changed event. The
+  // welcome card tells the user to set .env.local and restart; the next
+  // load sees the account and either resumes the risk step or shows the desk.
   (async function initOnboarding() {
     const session = await PathielSession.get();
-    wasOnboarding = !!session.needs_onboarding;
-    if (wasOnboarding) { showWizard(1); return; }
+    if (session.needs_onboarding) { showWizard(1); return; }
     if (localStorage.getItem(RESUME_KEY) === '2') { await enterRiskStep(); return; }
     showOilDesk();
   })();

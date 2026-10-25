@@ -48,6 +48,3 @@ scratchpad/
 # Postgres-backed dependency set — never bundled into this image, so it does
 # not need to be part of this build context either.
 services/pathiel_data_api/
-# services/wallet_ui's node_modules is a build-time dependency of the committed
-# wallet.js bundle, never a runtime one.
-services/wallet_ui/node_modules/

@@ -24,8 +24,7 @@ Never print the value of any key, ever. Names only.
    Then tell the user to open `~/.pathiel/.env.local` and fill in
    `HYPERLIQUID_WALLET_ADDRESS` and `HYPERLIQUID_PRIVATE_KEY` (an agent wallet
    created in the Hyperliquid UI under More, API; never the master key),
-   `HYPERLIQUID_MASTER_ADDRESS` (the account the agent acts for) and
-   `PATHIEL_OPERATOR_TOKEN` (any random string, `openssl rand -hex 16`).
+   and `HYPERLIQUID_MASTER_ADDRESS` (the account the agent acts for).
    The intel keys (`EIA_API_KEY`, `FRED_API_KEY`, `CONGRESS_API_KEY`) are
    optional and free. Wait for the user to say the file is filled in.
 

@@ -29,7 +29,6 @@
       <a href="/account" data-nav="/account" class="nav-link">Account</a>
     </nav>
     <div class="masthead-right">
-      <div id="wallet-connect-root"></div>
       <button id="discreet-toggle" type="button" class="icon-btn"
               title="Blur all cash amounts. Percentages stay visible.">Hide amounts</button>
     </div>
@@ -50,13 +49,12 @@
 
     <section id="onboard-welcome" class="onboard-step card" data-step="1">
       <div class="sec-label">Get started</div>
-      <h1 class="page-title">Connect your Hyperliquid account</h1>
-      <p class="page-sub">pathiel trades through an agent key it generates for you.
-        Your main wallet key never leaves your wallet and can never withdraw.</p>
-      <div class="onboard-actions">
-        <button type="button" id="onb-connect" class="btn go">Connect your Hyperliquid account</button>
-        <button type="button" id="onb-watch" class="btn">Watch an address</button>
-      </div>
+      <h1 class="page-title">Point pathiel at your Hyperliquid account</h1>
+      <p class="page-sub">Create an agent wallet in the Hyperliquid app (More, API), put its address
+        and key plus your main address in <code>.env.local</code> (the plugin reads
+        <code>~/.pathiel/.env.local</code>; <code>/pathiel:setup</code> walks you through it),
+        then restart. An agent key can trade and can never withdraw; the master key stays
+        in your wallet. This page picks up the account on its next load.</p>
     </section>
 
     <section id="onboard-risk" class="onboard-step card" data-step="2" hidden>

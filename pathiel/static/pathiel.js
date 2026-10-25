@@ -247,9 +247,9 @@ function clampProse(root) {
  * failure falls back to "nothing gates this page": every caller gets a
  * SessionInfo-shaped object either way and never needs its own try/catch.
  *
- * `openWallet(view)` and the `pathiel:account-changed` listener are the two
- * shared hooks wallet-ui's bundle and this file's consumers (pathiel.js
- * itself, landing.html's onboarding wizard, account.html) agree on.
+ * 2026-10-25: the browser wallet picker (services/wallet_ui) is gone. The
+ * account comes from .env.local (or ~/.pathiel/.env.local for the plugin),
+ * so nothing on a page connects, switches or signs in any more.
  */
 const PathielSession = (function () {
   const FALLBACK = Object.freeze({
@@ -267,71 +267,6 @@ const PathielSession = (function () {
       cached = FALLBACK;
     }
     return cached;
-  }
-
-  /* Any connect, switch or removal invalidates the cache AND re-renders the
-   * "trading is off" banner below — one place reacts, every page's own
-   * script just reads e.detail (already the new SessionInfo; no re-fetch
-   * needed) for whatever it wants to do next. */
-  document.addEventListener('pathiel:account-changed', (e) => {
-    cached = e.detail || null;
-    renderTradeBanner();
-  });
-
-  /* ── loading the wallet picker ──────────────────────────────────────────
-   *
-   * The bundle (services/wallet_ui) is ~3 MB over the wire against ~30 KB
-   * for this whole file (services/wallet_ui/bundle.manifest.json has the
-   * exact byte count), so it is fetched on demand rather than on page
-   * load: a visitor who never opens the picker never pays for it — see
-   * services/wallet_ui/tests/test_wallet_bundle.py's
-   * test_bundle_is_not_loaded_on_page_load, which fails the build outright
-   * if any template loads it eagerly instead.
-   */
-  let walletLoading = null;
-
-  function loadWalletUI() {
-    if (walletLoading) return walletLoading;
-    walletLoading = new Promise((resolve, reject) => {
-      const css = document.createElement('link');
-      css.rel = 'stylesheet';
-      css.href = '/static/wallet.css';
-      document.head.appendChild(css);
-
-      const js = document.createElement('script');
-      js.src = '/static/wallet.js';
-      js.defer = true;
-      js.onload = () => resolve();
-      // Reset the latch so a second click retries rather than hanging
-      // forever on a request that failed once.
-      js.onerror = () => { walletLoading = null; reject(new Error('could not load the wallet picker')); };
-      document.head.appendChild(js);
-    });
-    return walletLoading;
-  }
-
-  /* window.PathielWallet.open(view) is the bundle's own entry point once
-   * loaded (contracts/accounts/models.py's "choose" | "connect" | "apikey"
-   * | "watch"). openConnectModal() survives only as a temporary alias on
-   * the bundle's side — this file calls .open() directly, never the
-   * alias. Checks for an already-defined window.PathielWallet first
-   * (tests/browser/test_onboarding_browser.py's stub installs one before
-   * any page script runs) so a page that somehow already has it loaded
-   * never re-injects the ~3MB bundle a second time. */
-  async function openWallet(view) {
-    if (!(window.PathielWallet && typeof window.PathielWallet.open === 'function')) {
-      try {
-        await loadWalletUI();
-      } catch (e) {
-        console.warn('[pathiel] could not load the wallet UI:', e);
-        return;
-      }
-    }
-    if (window.PathielWallet && typeof window.PathielWallet.open === 'function') {
-      window.PathielWallet.open(view);
-    } else {
-      console.warn('[pathiel] wallet UI loaded but did not define open()');
-    }
   }
 
   /* ── "everywhere else": why trading is off, in dollars ──────────────────
@@ -363,10 +298,9 @@ const PathielSession = (function () {
     if (!el) return;
     const session = await get();
     if (session.needs_onboarding) {
-      el.innerHTML = '<span>Connect your Hyperliquid account to start trading.</span>' +
-        '<button type="button" class="btn go" id="trade-banner-connect">Connect</button>';
+      el.innerHTML = '<span>No Hyperliquid account yet: put the agent wallet in .env.local '
+        + '(or ~/.pathiel/.env.local for the plugin) and restart.</span>';
       el.hidden = false;
-      document.getElementById('trade-banner-connect').onclick = () => openWallet('choose');
       return;
     }
     if (session.can_trade) { el.hidden = true; return; }
@@ -383,5 +317,5 @@ const PathielSession = (function () {
 
   document.addEventListener('DOMContentLoaded', () => { renderTradeBanner(); });
 
-  return { get, openWallet, renderTradeBanner };
+  return { get, renderTradeBanner };
 })();

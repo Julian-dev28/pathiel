@@ -64,8 +64,7 @@ jobs:
         run: |
           export PATHIEL_STATE_DIR="$(mktemp -d)"
           python -m services.strategies.evals.desk_tick_backtest --out-dir /tmp/desk-backtest
-      # OSV advisories for every npm package that ships in
-      # pathiel/static/wallet.js and every pin in requirements.lock. The
+      # OSV advisories for every pin in requirements.lock. The
       # commit gate runs the same script offline; this is the half that needs
       # the network. A new advisory on something we ship fails the night it
       # is published, not the day someone happens to run npm audit.

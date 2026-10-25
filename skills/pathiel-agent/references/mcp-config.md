@@ -9,7 +9,7 @@ Worth stating plainly, because the answer is not obvious and the security
 consequence is real: **the MCP server calls `pathiel` in-process**. It does not
 make HTTP requests to `pathiel.server`, so none of the 2026-09-04 web auth
 applies to it — no wallet sign-in, no session cookie, no operator role, no
-`PATHIEL_OPERATOR_TOKEN`, no CSP.
+CSP.
 
 What gates it instead is the filesystem. It reads `.env.local` for the trading
 key and `.agent-config.json` for the risk caps, so **anyone who can run this
@@ -78,8 +78,8 @@ HYPERLIQUID_PRIVATE_KEY=0x...
 # PATHIEL_LLM_MODEL=...            # optional: pin the local Claude Code model services/llm uses
 ```
 
-The web auth vars (`PATHIEL_AUTH_DOMAIN`, `PATHIEL_PUBLIC_DASHBOARD`,
-`PATHIEL_OPERATOR_TOKEN`) are **not** read by this process. They belong to
+The web auth vars (`PATHIEL_AUTH_DOMAIN`, `PATHIEL_PUBLIC_DASHBOARD`)
+are **not** read by this process. They belong to
 `pathiel.server`; see `services/auth/README.md`.
 
 ## Testing Tools

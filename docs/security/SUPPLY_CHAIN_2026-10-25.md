@@ -251,3 +251,19 @@ cd services/wallet_ui && npm ci --ignore-scripts && npm audit signatures && node
 ## Status, later the same day
 
 Done by the operator's session after the merge: the dev venv reinstalled from the hashed lock (certifi 2026.10.23, urllib3 2.8.0) and the server restarted on it; `npm ci --ignore-scripts` in `services/wallet_ui`; `chmod -R go-rwx logs`; Node 22.22.0 -> 22.23.4 (`brew upgrade node@22`); P2-6 and P3-4 fixed as above. P3-5 (wagmi 3) is on hold: the wallet connect flow has no registered account on the live desk (the active account comes from `.env.local`), so the operator is deciding whether to upgrade it or remove `services/wallet_ui` altogether.
+
+## Status, end of day: P3-5 closed by removal, the operator token retired
+
+The operator chose to remove the wallet connect UI rather than upgrade it
+("not even sure if operator token is needed no?"). `services/wallet_ui`, the
+committed `wallet.js`/`wallet.css`, the Node steps in CI and the npm half of
+`scripts/supply_chain_check.py` are gone, which takes the 32 transitive npm
+advisories (P3-5) to zero and removes the repo's only Node dependency tree.
+`docs/WALLET_UI_RESTORE.md` records what it was and how to bring it back.
+
+`PATHIEL_OPERATOR_TOKEN` is retired with it: its machine callers were already
+deleted, the MCP server calls the Python in-process, and the operator works
+from local mode, so the eight routes it gated now use the same gate as the
+house-account routes (local mode, else a signed-in operator, else 401). One
+fewer secret in the registry, the k8s Secret, the env template and the plugin
+setup. `tests/test_operator_auth.py` pins the new door; S8 and P3-4 are moot.

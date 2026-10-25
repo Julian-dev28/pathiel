@@ -43,12 +43,9 @@ def _tracked_files() -> List[str]:
 
 # ── 1. no tracked binaries, nothing oversized ───────────────────────────────
 
-# wallet.js (a committed, checked build artifact — see
-# services/wallet_ui/README.md and the CI "Verifying .. wallet-bundle"
-# step) is the largest legitimate tracked file today at ~3.1MB. 5MB leaves
-# headroom for that to grow without false-firing on the one thing that is
-# supposed to be big, while still catching an accidentally committed model
-# weight, archive, or media file.
+# 5MB catches an accidentally committed model weight, archive, or media
+# file. (Until 2026-10-25 the committed wallet.js bundle, ~3.1MB, was the
+# one legitimate big file; it is gone with services/wallet_ui.)
 MAX_TRACKED_FILE_BYTES = 5 * 1024 * 1024
 
 # Nothing tracked today needs to be binary (checked 2026-10-17: every

@@ -52,41 +52,6 @@ jobs:
       - name: No machine-bound absolute paths
         run: python scripts/check_no_absolute_paths.py
 
-      # pathiel/static/wallet.js is a build artifact committed to the repo,
-      # which is safe only because `build.mjs --check` fails when it is stale.
-      # That check needs esbuild, so CI has to install it — without this the
-      # test ran, could not find the package, and failed for a reason that had
-      # nothing to do with whether the bundle was current.
-      - name: Set up Node
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4.4.0
-        with:
-          node-version: "22"
-          cache: npm
-          cache-dependency-path: services/wallet_ui/package-lock.json
-
-      # --ignore-scripts: no dependency's install hook runs on this runner.
-      # Lifecycle scripts are how Shai-Hulud (2025) and MALFEX (2026) ran on
-      # install; nothing in this tree needs one (esbuild's binary comes from
-      # its optional @esbuild/linux-x64 package). services/wallet_ui/.npmrc
-      # sets the same default for a developer's `npm ci`.
-      - name: Install wallet-bundle toolchain
-        working-directory: services/wallet_ui
-        run: npm ci --ignore-scripts
-
-      # Every installed tarball carries a valid npm registry signature
-      # (fails on a tampered or mirror-substituted package).
-      - name: Verify npm registry signatures
-        working-directory: services/wallet_ui
-        run: npm audit signatures
-
-      # Rebuild the bundle from the lockfile and require it to be byte-identical
-      # to the committed pathiel/static/wallet.js + wallet.css, shipping exactly
-      # the packages bundle.manifest.json lists. The gate suite's --check only
-      # compares hashes; this proves the committed bytes came from the sources.
-      - name: Wallet bundle reproduces from the lockfile
-        working-directory: services/wallet_ui
-        run: node build.mjs --verify
-
       # pytest's addopts deselects the `online` and `live` markers, so this runs
       # only the offline suite — no network, no real-money orders, CI-safe.
       # -rs prints the reason for every skip. Without it the summary says

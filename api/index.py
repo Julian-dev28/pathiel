@@ -49,7 +49,6 @@ _FORBIDDEN = (
     "PRIVATE_KEY_HEX",
     "HYPERLIQUID_ACCOUNT_ADDRESS",
     "HL_ACCOUNT_ADDRESS",
-    "PATHIEL_OPERATOR_TOKEN",
 )
 _present = [k for k in _FORBIDDEN if os.environ.get(k)]
 

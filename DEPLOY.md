@@ -45,7 +45,6 @@ pass `-e` flags to `docker run` from your shell environment.
 | `HYPERLIQUID_WALLET_ADDRESS` | **Required** | The agent wallet that signs orders |
 | `HYPERLIQUID_PRIVATE_KEY` | **Required** | That wallet's key. The money key |
 | `HYPERLIQUID_MASTER_ADDRESS` | **Required** | The account the agent wallet acts for |
-| `PATHIEL_OPERATOR_TOKEN` | **Required** | Bearer token for machine callers of the mutating routes. Missing = those routes 503 closed |
 | `EIA_API_KEY`, `FRED_API_KEY`, `CONGRESS_API_KEY` | Optional | `services/intel` data sources. A missing key skips that source and the desk brief's `stale` list says so |
 | `HYPERLIQUID_MASTER_PRIVATE_KEY` | **Never in a container** | `scripts/treasury.py` only, on the operator's machine. `scripts/preflight_secrets.py --deploy` fails if it is set |
 
@@ -94,7 +93,7 @@ import services.strategies.api, services.intel.api, services.accounts.api, servi
 print('ok')"
 
 # The server boots and both pages render inside the container.
-docker run --rm -e PATHIEL_OPERATOR_TOKEN=t pathiel:local python3 -c "
+docker run --rm pathiel:local python3 -c "
 from fastapi.testclient import TestClient
 from pathiel.server import app
 c = TestClient(app)
@@ -110,7 +109,6 @@ docker volume create pathiel_data
 docker run -d --name pathiel -p 8000:8000 \
   -v pathiel_data:/data \
   -e HYPERLIQUID_WALLET_ADDRESS -e HYPERLIQUID_PRIVATE_KEY -e HYPERLIQUID_MASTER_ADDRESS \
-  -e PATHIEL_OPERATOR_TOKEN \
   -e PATHIEL_AUTH_DOMAIN=localhost:8000 \
   -e PATHIEL_STATE_READONLY=1 -e PATHIEL_HL_RATE_REFILL_PER_SEC=2 -e PATHIEL_HL_RATE_CAPACITY=60 \
   pathiel:local
@@ -135,7 +133,6 @@ kubectl create secret generic pathiel-secrets -n pathiel \
   --from-literal=HYPERLIQUID_WALLET_ADDRESS="$HYPERLIQUID_WALLET_ADDRESS" \
   --from-literal=HYPERLIQUID_PRIVATE_KEY="$HYPERLIQUID_PRIVATE_KEY" \
   --from-literal=HYPERLIQUID_MASTER_ADDRESS="$HYPERLIQUID_MASTER_ADDRESS" \
-  --from-literal=PATHIEL_OPERATOR_TOKEN="$(openssl rand -hex 16)"
 kubectl apply -k k8s/                      # namespace, configmap, service, statefulset
 kubectl -n pathiel rollout status statefulset/pathiel
 kubectl -n pathiel port-forward svc/pathiel 8000:8000
@@ -160,9 +157,8 @@ What the manifests encode, and what `tests/test_deploy_config.py` and
   kubectl -n pathiel exec pathiel-0 -c web -- python3 scripts/grant_operator.py 0xYourWallet
   ```
 
-  Machine callers of the operator routes send the token in the
-  `X-Operator-Token` header only; `?token=` is refused (it would land in
-  logs and browser history).
+  Off the operator's own machine every write route is closed to anyone
+  but a signed-in operator; there is no shared token (removed 2026-10-25).
 
 ## Health
 

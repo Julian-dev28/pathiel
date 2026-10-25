@@ -153,7 +153,6 @@ async def x(request: Request):
 
 # ── runtime: the work runs on a worker thread ───────────────────────────────
 
-TOKEN = "loop-test-token"
 ADDR = "0x" + "ab" * 20
 
 
@@ -208,7 +207,6 @@ def calls(monkeypatch):
 
     c = Calls()
     _no_deployment(monkeypatch)
-    monkeypatch.setenv("PATHIEL_OPERATOR_TOKEN", TOKEN)
     monkeypatch.setattr(srv, "resolve_user_address", lambda: ADDR)
     account = {"equity": 15.21, "total_ntl": 0.0, "spot_balances": [],
                "queried_dexes": {"", "xyz"}, "dex_equity": {"": 0.01, "xyz": 15.2},
@@ -270,7 +268,7 @@ ROUTES = [
 @pytest.mark.parametrize("method,path,body,expected", ROUTES, ids=[f"{m} {p}" for m, p, _, _ in ROUTES])
 def test_each_route_does_its_blocking_work_off_the_loop(calls, method, path, body, expected):
     import pathiel.server as srv
-    r = _local_client(srv.app).request(method, path, json=body, headers={"X-Operator-Token": TOKEN})
+    r = _local_client(srv.app).request(method, path, json=body)
     assert r.status_code in (200, 503), (path, r.status_code, r.text[:300])   # 503: an unhealthy system check
     assert expected <= calls.names(), f"{path} never reached {sorted(expected - calls.names())}"
     assert calls.on_loop() == [], f"{path} blocked the event loop in {calls.on_loop()}"
@@ -280,7 +278,7 @@ def test_the_account_route_answers_json(calls):
     """/api/hl/account returned 500 on every call: the state carries a set
     (queried_dexes) and json.dumps refuses sets."""
     import pathiel.server as srv
-    r = _local_client(srv.app).get("/api/hl/account", headers={"X-Operator-Token": TOKEN})
+    r = _local_client(srv.app).get("/api/hl/account")
     assert r.status_code == 200, r.text
     assert sorted(r.json()["queried_dexes"]) == ["", "xyz"]
 

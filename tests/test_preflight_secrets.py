@@ -34,7 +34,6 @@ _SPEC.loader.exec_module(pf)
 FAKE_AGENT_WALLET = "0xAAAA000000000000000000000000000000AAAA"
 FAKE_MASTER_ADDR = "0xBBBB000000000000000000000000000000BBBB"
 FAKE_PRIVATE_KEY = "0xFAKEPRIVATEKEYNOTREAL0000000000000000000000000000000000000001"
-FAKE_OPERATOR_TOKEN = "faketoken1234567890abcdef"
 
 
 def _complete_env(**overrides: str) -> Dict[str, str]:
@@ -42,7 +41,6 @@ def _complete_env(**overrides: str) -> Dict[str, str]:
         "HYPERLIQUID_WALLET_ADDRESS": FAKE_AGENT_WALLET,
         "HYPERLIQUID_MASTER_ADDRESS": FAKE_MASTER_ADDR,
         "HYPERLIQUID_PRIVATE_KEY": FAKE_PRIVATE_KEY,
-        "PATHIEL_OPERATOR_TOKEN": FAKE_OPERATOR_TOKEN,
     }
     base.update(overrides)
     return base
@@ -87,7 +85,7 @@ def test_required_present_fails_when_missing():
     assert "HYPERLIQUID_WALLET_ADDRESS" in failed
     assert "HYPERLIQUID_PRIVATE_KEY" in failed
     assert "HYPERLIQUID_MASTER_ADDRESS" in failed
-    assert "PATHIEL_OPERATOR_TOKEN" in failed
+    assert "PATHIEL_OPERATOR_TOKEN" not in failed, "removed 2026-10-25; not a secret this app reads"
 
 
 def test_required_present_passes_with_complete_synthetic_env():
@@ -140,7 +138,7 @@ def _write_vault_registry(tmp_path: Path, *, active_id="acc_1", accounts=None) -
 
 def test_required_present_satisfied_by_a_connected_vault_account_with_no_env_vars(tmp_path):
     state_dir = _write_vault_registry(tmp_path)
-    env = {"PATHIEL_STATE_DIR": str(state_dir), "PATHIEL_OPERATOR_TOKEN": FAKE_OPERATOR_TOKEN}
+    env = {"PATHIEL_STATE_DIR": str(state_dir)}
     findings = pf.check_required_present(env)
     for name in ("HYPERLIQUID_WALLET_ADDRESS", "HYPERLIQUID_PRIVATE_KEY", "HYPERLIQUID_MASTER_ADDRESS"):
         matches = [f for f in findings if f.name == name]
@@ -155,13 +153,13 @@ def test_required_present_still_fails_when_vault_account_is_watch_mode(tmp_path)
         "mode": "watch", "source": "watch", "created_at": "2026-10-17T12:00:00+00:00",
         "verified_at": None, "agent_name": None,
     }])
-    env = {"PATHIEL_STATE_DIR": str(state_dir), "PATHIEL_OPERATOR_TOKEN": FAKE_OPERATOR_TOKEN}
+    env = {"PATHIEL_STATE_DIR": str(state_dir)}
     findings = pf.check_required_present(env)
     assert "HYPERLIQUID_WALLET_ADDRESS" in _names_with_status(findings, "FAIL")
 
 
 def test_required_present_ignores_a_missing_or_malformed_vault_file(tmp_path):
-    env = {"PATHIEL_STATE_DIR": str(tmp_path / "nope"), "PATHIEL_OPERATOR_TOKEN": FAKE_OPERATOR_TOKEN}
+    env = {"PATHIEL_STATE_DIR": str(tmp_path / "nope")}
     findings = pf.check_required_present(env)
     assert "HYPERLIQUID_WALLET_ADDRESS" in _names_with_status(findings, "FAIL")
 
@@ -474,7 +472,7 @@ def test_index_scan_values_exclude_public_addresses():
     2026-10-25: the master address in a tracked SKILL.md failed every run."""
     env = _complete_env()
     scanned = pf._index_scan_values(env)
-    assert "HYPERLIQUID_PRIVATE_KEY" in scanned and "PATHIEL_OPERATOR_TOKEN" in scanned
+    assert "HYPERLIQUID_PRIVATE_KEY" in scanned and "HYPERLIQUID_MASTER_PRIVATE_KEY" in scanned
     assert not any(name.endswith("_ADDRESS") for name in scanned)
     assert FAKE_MASTER_ADDR not in scanned.values() and FAKE_AGENT_WALLET not in scanned.values()
 
@@ -548,8 +546,7 @@ def test_main_passes_end_to_end_with_a_clean_synthetic_repo(tmp_path, monkeypatc
 
     assert rc == 0
     assert "PREFLIGHT: PASS" in captured.out
-    for v in (FAKE_PRIVATE_KEY, FAKE_OPERATOR_TOKEN):
-        assert v not in captured.out
+    assert FAKE_PRIVATE_KEY not in captured.out
 
 
 # ── env file parsing / precedence ──────────────────────────────────────────────

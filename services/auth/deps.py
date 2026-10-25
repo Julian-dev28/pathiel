@@ -7,11 +7,9 @@ Two audiences, one door:
 
 Both resolve to the same `User`, so no route has to care which it got.
 
-The legacy `PATHIEL_OPERATOR_TOKEN` still works and is still checked in
-`pathiel.dashboard._require_operator`. It is a shared, static, per-deployment
-secret: fine for one operator on one box, useless the moment there is more than
-one human, because it cannot say who acted. It is retained for the machine paths
-(the scheduler, the supervisor, smoke checks) and is not a login.
+The legacy `PATHIEL_OPERATOR_TOKEN` (a shared, static, per-deployment secret
+for machine callers) was removed 2026-10-25: its callers were gone, the MCP
+server calls the Python directly, and the operator works from local mode.
 
 A third audience exists now, with no door at all: `is_loopback_peer` below
 identifies a caller whose request itself arrived from this machine, so

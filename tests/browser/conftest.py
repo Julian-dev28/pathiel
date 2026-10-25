@@ -1,9 +1,8 @@
 """Shared fixtures for the tests/browser/ e2e suite.
 
 One server per test session, reused by every page's tests, rather than each
-file booting (and ~1s-waiting-on) its own copy. The boot sequence mirrors
-services/wallet_ui/tests/test_wallet_flow_browser.py's `server` fixture
-exactly: a fresh, empty state dir, the read APIs open, every write closed,
+file booting (and ~1s-waiting-on) its own copy. The boot sequence: a
+fresh, empty state dir, the read APIs open, every write closed,
 and every live-looking env var scrubbed out of the child rather than trust
 that none is set (this worktree carries no .env.local, but the check costs
 one dict comprehension and the next worktree that runs this suite might not
@@ -47,7 +46,6 @@ ROOT = Path(__file__).resolve().parents[2]
 _FORBIDDEN_ENV = (
     "HYPERLIQUID_PRIVATE_KEY", "PRIVATE_KEY_HEX",
     "HYPERLIQUID_ACCOUNT_ADDRESS", "HL_ACCOUNT_ADDRESS",
-    "PATHIEL_OPERATOR_TOKEN",
 )
 
 
@@ -115,10 +113,8 @@ def browser() -> Iterator[Browser]:
     the asyncio loop" the moment it is entered, which is what happened both
     when each file in THIS directory tried to open its own, and — the reason
     this is module-scoped rather than session-scoped — when a session-wide
-    instance here was still open by the time pytest moved on to
-    services/wallet_ui/tests/test_wallet_flow_browser.py (that file owns an
-    identical fixture, independently, for the same reason: it predates this
-    directory and runs standalone too). Module scope tears this one down
+    instance here was still open by the time pytest moved on to the next
+    browser module with its own fixture. Module scope tears this one down
     before collection leaves `tests/browser/`, so the two never overlap in
     the same process — the cost is one extra Chromium launch for this
     directory's second test module, versus a hard collision whenever both

@@ -96,7 +96,6 @@ REGISTRY: Tuple[SecretSpec, ...] = (
     SecretSpec("HYPERLIQUID_WALLET_ADDRESS", "agent/API wallet address that signs orders", "always"),
     SecretSpec("HYPERLIQUID_PRIVATE_KEY", "agent/API wallet private key — signs orders", "always"),
     SecretSpec("HYPERLIQUID_MASTER_ADDRESS", "master account public address (funds live here)", "always"),
-    SecretSpec("PATHIEL_OPERATOR_TOKEN", "bearer token gating the dashboard operator surface", "always"),
     SecretSpec("HYPERLIQUID_MASTER_PRIVATE_KEY", "master account private key — treasury transfers only", "local_only"),
     SecretSpec("PATHIEL_METRICS_TOKEN", "bearer token /metrics requires when set (internet-facing deploys)", "optional"),
 )

@@ -5,13 +5,10 @@ pathiel.dashboard routes, the real contracts/accounts + contracts/risk
 fixtures, a small internally-consistent risk-preview stand-in for anything
 the committed fixtures don't cover exactly).
 
-window.PathielWallet is never the real wallet-ui bundle here — it is a
-stub this file injects (see `wallet_stub_page`), which records every
-open(view) call and exposes a way to fire pathiel:account-changed with a
-crafted SessionInfo, exactly per SWARM_RULES section 10's shared-hook
-contract. That is deliberate: this agent proves its OWN wiring (the right
-view opens, the event is handled correctly, the right body gets PUT) without
-needing wallet-ui's real modal to exist in this worktree.
+2026-10-25: the wallet picker and its pathiel:account-changed event are
+gone (docs/WALLET_UI_RESTORE.md), so the first-run tests that drove the
+wizard through a stubbed window.PathielWallet went with them. What is left
+is the Account page and the shared chrome.
 
 Chromium only, boots its own server on this agent's assigned port band
 (8840-8849, per this agent's task brief). Deselected from the default
@@ -44,20 +41,6 @@ ROOT = Path(__file__).resolve().parents[2]
 PORT_BAND = range(8840, 8850)   # this agent's assigned band — never a random OS-ephemeral port
 DESKTOP_VP = {"width": 1280, "height": 800}
 MOBILE_VP = {"width": 375, "height": 812}
-
-# The stub the shared hook contract asks for (SWARM_RULES section 10):
-# "a stub window.PathielWallet that records open() calls and can fire
-# pathiel:account-changed". Installed via add_init_script so it exists
-# before ANY page script runs, on every navigation in the context.
-_WALLET_STUB_JS = """
-window.PathielWallet = {
-  _opens: [],
-  open(view) { window.PathielWallet._opens.push(view); },
-};
-window.__fireAccountChanged = (detail) => {
-  document.dispatchEvent(new CustomEvent('pathiel:account-changed', { detail }));
-};
-"""
 
 SESSION_READY = json.loads((ROOT / "contracts" / "accounts" / "fixtures" / "session_ready.json").read_text())
 
@@ -129,106 +112,15 @@ def seed(server: str, scenario: str) -> None:
 
 
 def open_page(browser: Browser, viewport: dict | None = None) -> tuple[Page, list[str]]:
-    """A fresh context with the wallet stub pre-installed, plus a live list
-    of every console error / uncaught exception — same "zero console
-    errors" contract test_desks_browser.py's open_page() checks."""
+    """A fresh context plus a live list of every console error / uncaught
+    exception — same "zero console errors" contract
+    test_desks_browser.py's open_page() checks."""
     context = browser.new_context(viewport=viewport or DESKTOP_VP)
-    context.add_init_script(_WALLET_STUB_JS)
     page = context.new_page()
     issues: list[str] = []
     page.on("pageerror", lambda e: issues.append(f"pageerror: {e}"))
     page.on("console", lambda m: issues.append(f"console.{m.type}: {m.text}") if m.type == "error" else None)
     return page, issues
-
-
-def fire_account_changed(page: Page, detail: dict) -> None:
-    page.evaluate("d => window.__fireAccountChanged(d)", detail)
-
-
-# ── first run: one welcome card, two actions ───────────────────────────────
-
-def test_first_run_shows_one_welcome_card_with_two_actions(server, browser):
-    seed(server, "fresh")
-    page, issues = open_page(browser)
-    page.goto(server + "/", wait_until="load", timeout=20000)
-    page.locator("#onboard-welcome").wait_for(state="visible", timeout=5000)
-
-    assert page.locator("#onboard-risk").is_hidden()
-    assert page.locator("#onboard-done").is_hidden()
-    assert page.locator("#dashboard-main").is_hidden(), (
-        "the ordinary (all-zero) dashboard is showing instead of the welcome card")
-
-    assert page.locator("#onb-connect").is_visible()
-    assert page.locator("#onb-watch").is_visible()
-    assert "Connect your Hyperliquid account" in page.locator("#onboard-welcome").inner_text()
-
-    page.locator("#onb-connect").click()
-    assert page.evaluate("window.PathielWallet._opens") == ["choose"]
-    page.locator("#onb-watch").click()
-    assert page.evaluate("window.PathielWallet._opens") == ["choose", "watch"]
-
-    assert not issues, f"console issues on first run: {issues}"
-    page.context.close()
-
-
-# ── the wizard, end to end ───────────────────────────────────────────────────
-
-def test_onboarding_wizard_preset_change_updates_preview_and_save_puts_the_right_body(server, browser):
-    seed(server, "fresh")
-    page, issues = open_page(browser)
-    page.goto(server + "/", wait_until="load", timeout=20000)
-    page.locator("#onboard-welcome").wait_for(state="visible", timeout=5000)
-
-    page.locator("#onb-connect").click()
-    fire_account_changed(page, SESSION_READY)   # simulates the modal completing a connect
-
-    page.locator("#onboard-risk").wait_for(state="visible", timeout=5000)
-    assert page.locator("#dashboard-main").is_hidden()
-    page.locator(".preset-card").first.wait_for(state="visible", timeout=5000)
-    assert page.locator(".preset-card").count() == 4
-
-    # equity $15.21 (summary_trade.json) auto-resolves to "starter" —
-    # contracts/risk/fixtures/limits_15.json's own preset_applied.
-    starter = page.locator('.preset-card[data-preset="starter"]')
-    starter.wait_for(state="visible", timeout=5000)
-    assert "on" in (starter.get_attribute("class") or ""), "starter is not pre-selected"
-    before = page.locator("#onb-max-positions").inner_text()
-    assert before == "1"
-
-    page.locator('.preset-card[data-preset="pro"]').click()
-    page.locator("#onb-max-positions").filter(has_text="5").wait_for(timeout=5000)
-    assert page.locator('.preset-card[data-preset="pro"]').get_attribute("class").find("on") >= 0
-    assert "on" not in (page.locator('.preset-card[data-preset="starter"]').get_attribute("class") or "")
-
-    with page.expect_request(lambda r: r.url.endswith("/api/risk/profile") and r.method == "PUT") as req_info:
-        page.locator("#onb-save").click()
-    assert json.loads(req_info.value.post_data) == {"preset": "pro"}
-
-    page.locator("#onboard-done").wait_for(state="visible", timeout=5000)
-    assert "You" in page.locator("#onboard-done").inner_text()
-    assert page.locator("#onb-goto-desks").get_attribute("href") == "/desks"
-
-    assert not issues, f"console issues during the wizard: {issues}"
-    page.context.close()
-
-
-def test_low_equity_message_at_5(server, browser):
-    seed(server, "low_equity")
-    page, issues = open_page(browser)
-    page.goto(server + "/", wait_until="load", timeout=20000)
-    page.locator("#onboard-welcome").wait_for(state="visible", timeout=5000)
-    page.locator("#onb-connect").click()
-    fire_account_changed(page, {**SESSION_READY, "can_trade": False})
-
-    page.locator("#onboard-risk").wait_for(state="visible", timeout=5000)
-    callout = page.locator("#onb-low-equity")
-    callout.wait_for(state="visible", timeout=5000)
-    text = callout.inner_text()
-    assert "to place your first trade" in text, text
-    assert "$1" in text, f"expected the $6 floor minus $5 equity ({text!r})"
-
-    assert not issues, f"console issues at $5 equity: {issues}"
-    page.context.close()
 
 
 # ── /account: preset switching + advanced fields, no reload ─────────────────

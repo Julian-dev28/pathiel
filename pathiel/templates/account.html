@@ -19,8 +19,6 @@
       <a href="/account" data-nav="/account" class="nav-link">Account</a>
     </nav>
     <div class="masthead-right">
-      <!-- services/wallet_ui mounts its connect/account UI here. -->
-      <div id="wallet-connect-root"></div>
     </div>
   </div>
 </div>
@@ -34,9 +32,8 @@
 
   <!-- Off the local machine, every route this page calls except
        /api/risk/preview needs the deployment's operator
-       (services/auth/integration.py's require_operator_or_local);
-       connecting a wallet is what grants that. Hidden by default — in
-       local mode (the normal case) this never shows. -->
+       (services/auth/integration.py's require_operator_or_local). Hidden
+       by default: in local mode (the normal case) this never shows. -->
   <div id="risk-auth-notice" class="callout callout-amber" hidden></div>
 
   <section class="section" id="account-section">
@@ -76,7 +73,7 @@
         </div>
       </div>
       <div class="onboard-actions">
-        <button type="button" id="acct-switch" class="btn">Switch or add account</button>
+        <div class="page-sub" id="acct-source-note">The account comes from <code>.env.local</code> (or <code>~/.pathiel/.env.local</code> for the plugin). Change it there and restart.</div>
       </div>
       <div id="security-note" class="security-note" hidden></div>
     </div>
@@ -247,17 +244,15 @@ function setSectionState(prefix, state) {
 
 // Off the local machine, GET/PUT /api/risk/profile, GET /api/risk/limits
 // and every /api/accounts route need the deployment's operator
-// (services/auth/integration.py's require_operator_or_local — 401 "connect
-// the operator wallet first", 403 "this deployment has one operator...").
-// Connecting a wallet is what grants that, so this is rare in practice;
-// shown plainly with the backend's own reason rather than reinventing a
-// sign-in flow. /api/risk/preview stays open and never hits this.
+// (services/auth/integration.py's require_operator_or_local). A deployment
+// is read-only for everyone else, so this is rare in practice; shown
+// plainly with the backend's own reason. /api/risk/preview stays open.
 async function handleAuthError(r) {
   if (r.status !== 401 && r.status !== 403) return false;
   let detail = null;
   try { detail = (await r.json()).detail; } catch { /* body wasn't JSON */ }
   const el = document.getElementById('risk-auth-notice');
-  el.textContent = detail || 'Connect the operator wallet to manage this account.';
+  el.textContent = detail || 'This account can only be managed from the operator\'s own machine.';
   el.hidden = false;
   return true;
 }
@@ -378,8 +373,8 @@ function renderAccountCard(s) {
   // actual signal.
   const note = document.getElementById('security-note');
   if (a && a.source === 'env') {
-    note.textContent = 'Security: your main wallet key is present on this box (the legacy .env.local setup). ' +
-      'Connecting with an agent key instead means it never has to be.';
+    note.textContent = 'Security: the key in .env.local should be an agent wallet (Hyperliquid app, More, API), ' +
+      'never the master key. An agent key can trade and can never withdraw.';
     note.hidden = false;
   } else {
     note.hidden = true;
@@ -402,12 +397,6 @@ async function loadAccount() {
   }
 }
 
-document.getElementById('acct-switch').addEventListener('click', () => PathielSession.openWallet('choose'));
-
-document.addEventListener('pathiel:account-changed', () => {
-  loadAccount();
-  loadRiskLimits();
-});
 
 (async function init() {
   const session = await PathielSession.get();

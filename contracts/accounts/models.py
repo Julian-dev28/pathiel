@@ -15,7 +15,8 @@ Three ways in:
 
 Owned by services/accounts (registry, key vault, approval, HTTP routes).
 services/auth issues the session after a successful connect.
-services/wallet_ui renders the modal; pathiel templates render onboarding.
+The browser modal (services/wallet_ui) was removed 2026-10-25; the active
+account is the env-sourced one, and these routes stay for scripted use.
 
 Routes (services/accounts/api.py):
   GET    /api/session                       -> SessionInfo
