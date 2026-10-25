@@ -4,10 +4,23 @@ on:
   push:
   pull_request:
 
+# The job reads the repo and nothing else. Without this block GITHUB_TOKEN gets
+# the repository's default, which can be read/write on every scope: a step
+# compromised through a dependency could then push, tag or open releases.
+permissions:
+  contents: read
+
+# Actions are pinned to a full commit SHA, not a tag. A tag is a pointer the
+# action's owner (or whoever holds their token) can move; tj-actions/changed-
+# files (March 2025, CVE-2025-30066) moved every tag to a payload that printed
+# runner secrets. The comment names the release the SHA was taken from;
+# tests/test_supply_chain.py fails on any `uses:` that is not a 40-hex SHA.
+
 jobs:
   test:
     name: Tests (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -16,10 +29,10 @@ jobs:
         # production interpreter is not evidence about production.
         python-version: ["3.11", "3.12", "3.13"]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
 
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5.6.0
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
@@ -45,15 +58,34 @@ jobs:
       # test ran, could not find the package, and failed for a reason that had
       # nothing to do with whether the bundle was current.
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4.4.0
         with:
           node-version: "22"
           cache: npm
           cache-dependency-path: services/wallet_ui/package-lock.json
 
+      # --ignore-scripts: no dependency's install hook runs on this runner.
+      # Lifecycle scripts are how Shai-Hulud (2025) and MALFEX (2026) ran on
+      # install; nothing in this tree needs one (esbuild's binary comes from
+      # its optional @esbuild/linux-x64 package). services/wallet_ui/.npmrc
+      # sets the same default for a developer's `npm ci`.
       - name: Install wallet-bundle toolchain
         working-directory: services/wallet_ui
-        run: npm ci
+        run: npm ci --ignore-scripts
+
+      # Every installed tarball carries a valid npm registry signature
+      # (fails on a tampered or mirror-substituted package).
+      - name: Verify npm registry signatures
+        working-directory: services/wallet_ui
+        run: npm audit signatures
+
+      # Rebuild the bundle from the lockfile and require it to be byte-identical
+      # to the committed pathiel/static/wallet.js + wallet.css, shipping exactly
+      # the packages bundle.manifest.json lists. The gate suite's --check only
+      # compares hashes; this proves the committed bytes came from the sources.
+      - name: Wallet bundle reproduces from the lockfile
+        working-directory: services/wallet_ui
+        run: node build.mjs --verify
 
       # pytest's addopts deselects the `online` and `live` markers, so this runs
       # only the offline suite — no network, no real-money orders, CI-safe.

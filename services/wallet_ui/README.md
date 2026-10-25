@@ -89,16 +89,37 @@ produce a single static file would put a second toolchain in the deploy path for
 nothing.
 
 The cost of that is drift, and `build.mjs --check` is what makes it safe. It
-hashes every file in `src/` plus `package.json` and `build.mjs`, compares against
+hashes every file in `src/` plus `package.json`, `package-lock.json` and
+`build.mjs`, and the sha256 of both built files, compares against
 `bundle.manifest.json`, and fails. `test_wallet_bundle.py` runs it, so a stale
-bundle breaks the commit gate rather than breaking sign-in in production.
+or hand-edited bundle breaks the commit gate rather than breaking sign-in in
+production. `build.mjs --verify` (CI, after `npm ci --ignore-scripts`)
+rebuilds into a temp dir and requires the result to be byte-identical to the
+committed files, with exactly the packages `bundledPackages` lists.
+
+## Supply chain (2026-10-25)
+
+`docs/security/SUPPLY_CHAIN_2026-10-25.md` has the full review. The rules it
+left here:
+
+- `.npmrc` sets `ignore-scripts=true`: no dependency's install hook runs, on
+  CI or on a laptop. Nothing needs one; `scripts/supply_chain_check.py` fails
+  if a package outside its four known names starts declaring one.
+- `package.json` names exact versions, equal to the lockfile's. Upgrade one
+  package on purpose (`npm install <pkg>@<version>`), never by range drift,
+  and prefer a version at least 7 days old: the 2025 chalk/debug hijack was
+  live for about two hours.
+- `bundle.manifest.json` `bundledPackages` is the list of packages whose code
+  reaches the browser (33 today). A dependency bump that changes it shows up
+  in the diff by name; review that line before committing.
 
 ## Working on it
 
 ```
-npm install
-npm run build        # writes ../../pathiel/static/wallet.{js,css} + the manifest
-npm run check        # what the gate test runs
+npm ci --ignore-scripts   # exact lockfile, no install scripts (.npmrc says so too)
+npm run build             # writes ../../pathiel/static/wallet.{js,css} + the manifest
+npm run check             # what the gate test runs
+node build.mjs --verify   # what CI runs: byte-identical rebuild from the lockfile
 ```
 
 Commit `pathiel/static/wallet.js`, `pathiel/static/wallet.css` and
