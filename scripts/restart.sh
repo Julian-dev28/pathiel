@@ -25,6 +25,13 @@
 
 set -euo pipefail
 
+# Files the processes started here create (logs/*.log, state files, the
+# session log) are the operator's alone: no group or world read. They carry
+# wallet addresses, positions and order history, and logs/ was 644 before
+# this (security review 2026-10-25). Existing files keep their mode; run
+# `chmod -R go-rwx logs .state` once to tighten those.
+umask 077
+
 # Resolve project root from this script's location so the command works
 # regardless of CWD.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

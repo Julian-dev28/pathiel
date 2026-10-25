@@ -1,23 +1,39 @@
-FROM python:3.11-slim AS base
+# Base image pinned by digest (the multi-arch index for python:3.11-slim,
+# Debian 13, resolved 2026-10-25). A tag is a pointer Docker Hub can move; the
+# digest is the bytes. Bump it on purpose:
+#   docker buildx imagetools inspect python:3.11-slim | grep Digest
+FROM python:3.11-slim@sha256:b7a9e5f6a93d6d4a31f129bbd4bdee69efccb6ded0fb230d78aafaf37af98377 AS base
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PIP_NO_CACHE_DIR=1
 
+# The app runs as this user, never as root (security review 2026-10-25).
+# docker-entrypoint.sh starts as root only where it has to (a Fly volume is
+# mounted root-owned), hands /data to this user, and drops to it with setpriv
+# before exec. k8s sets runAsUser to the same uid, so there not even the
+# entrypoint has root.
+RUN groupadd --system --gid 10001 pathiel \
+ && useradd --system --uid 10001 --gid pathiel --home-dir /app --shell /usr/sbin/nologin pathiel
+
 WORKDIR /app
 
-# Install deps first so `pip install` is cached across code changes. hatchling
-# only needs pyproject.toml + pathiel/__init__.py (it reads the package
-# version from __init__.py) to resolve the full dependency set — including
-# `requests` and `websocket-client`, which pyproject.toml never lists
-# directly but which land anyway as transitive deps of hyperliquid-python-sdk
-# (verified 2026-08-29: `pip show hyperliquid-python-sdk` -> Requires:
-# eth-account, eth-utils, msgpack, requests, websocket-client). No compiler
-# needed on this base image — every dependency ships a manylinux wheel.
+# Install deps first so `pip install` is cached across code changes.
+#
+# From requirements.lock, hash-checked, then the package itself with
+# --no-deps. Until 2026-10-25 this was a bare `pip install -e .`, which
+# resolved the RANGES in pyproject.toml fresh on every build: the image ran
+# whatever PyPI served that day, not the set CI tested, and nothing checked a
+# single file's hash. (requests and websocket-client still arrive as
+# transitive deps of hyperliquid-python-sdk; the lock lists them.) The lock
+# also carries the dev extras (pytest, ruff); they cost a few MB and keep one
+# lock for CI and prod. No compiler needed: every pin ships a manylinux wheel.
+COPY requirements.lock ./
+RUN pip install --require-hashes -r requirements.lock
 COPY pyproject.toml ./
 COPY pathiel/__init__.py pathiel/__init__.py
-RUN pip install -e .
+RUN pip install --no-deps -e .
 
 # Copy every top-level source package a managed process actually imports at
 # runtime. `scripts/restart.sh` is the source of truth for what runs:
@@ -37,6 +53,11 @@ RUN pip install -e .
 # runtime), `docs/`, `tests/`, and `skills/` are excluded via .dockerignore;
 # see that file for the full list and why.
 COPY pathiel/ pathiel/
+# The shared pydantic contracts every service imports at module load
+# (pathiel.agents.config_store -> contracts.risk.models on the server's
+# first import). Missing until 2026-10-25: the image built fine and
+# `python -m pathiel.server` died with ModuleNotFoundError.
+COPY contracts/ contracts/
 COPY scripts/ scripts/
 COPY services/trend_engine/ services/trend_engine/
 # Auth is on the request path for every gated route, so a missing copy here is
@@ -79,6 +100,12 @@ COPY conftest.py ./
 # scripts/scheduler.py symlink workaround this section used to carry is
 # dropped the same wave: scheduler.py itself is deleted.
 
+# HOME on the volume: pathiel/client/universe.py caches under ~/.pathiel and
+# scripts/backup_state.py defaults to ~/pathiel-backups. As root HOME was
+# /root; the app user may not write there, and on k8s the root filesystem is
+# read-only, so the one writable, persistent place is /data.
+ENV HOME=/data/home
+
 ENV SESSION_LOG_PATH=/data/session-log.jsonl \
     PATHIEL_AGENT_CONFIG_FILE=/data/.agent-config.json \
     PATHIEL_STATE_DIR=/data/.state \
@@ -111,7 +138,12 @@ ENV AI_BRAIN_PROVIDER=openrouter
 # Every managed process shares this one bootstrap step (see the script for
 # why) before running its real command.
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
-RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+RUN chmod 0755 /usr/local/bin/docker-entrypoint.sh \
+ && mkdir -p /app/logs /data/.state /data/home \
+ && chown -R pathiel:pathiel /app/logs /data
+# Source stays root-owned and read-only to the app user: code that is
+# compromised at runtime cannot rewrite itself for the next restart. Only
+# /app/logs (log_rotate.py) and /data (state) are the app's to write.
 ENTRYPOINT ["docker-entrypoint.sh"]
 
 EXPOSE 8000

@@ -31,12 +31,18 @@ spec:
         prometheus.io/port: "8000"
         prometheus.io/path: "/metrics"
     spec:
-      # fsGroup so the mounted PVC is group-writable for state files. No
-      # container here sets runAsUser (they all run as the image's default,
-      # root), so this is currently a no-op — kept for forward compat if a
-      # future hardening pass adds a non-root user to the Dockerfile.
+      # Non-root everywhere (security review 2026-10-25). uid/gid 10001 is the
+      # Dockerfile's `pathiel` user; fsGroup makes the PVC group-writable for
+      # it, so docker-entrypoint.sh never needs root here. The pod gets no
+      # service-account token: nothing in it talks to the k8s API.
+      automountServiceAccountToken: false
       securityContext:
-        fsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         # ── web: FastAPI dashboard + JSON API + /metrics ──────────────────────
         - name: web
@@ -46,6 +52,11 @@ spec:
           # (docker-entrypoint.sh), which bootstraps /data/.state then execs
           # `args`. See Dockerfile "Runtime state" for why that step exists.
           args: ["python3", "-m", "pathiel.server"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
           env:
             # Mirrors scripts/restart.sh's start_server(): a throttled HL
             # token bucket and readonly state mode for the dashboard process.
@@ -66,6 +77,10 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /data
+            - name: logs
+              mountPath: /app/logs
+            - name: tmp
+              mountPath: /tmp
           # Readiness answers "should traffic go here", so it uses the DEEP
           # check: a pod whose AI brain is unusable or whose disk is low
           # should not be presented as a working system.
@@ -96,8 +111,9 @@ spec:
         # ── rotator: scripts/log_rotate.py --daemon ─────────────────────────────
         # Truncates logs/*.log in place on an interval so a long-lived pod's
         # logs/ doesn't grow unbounded; see pathiel/log_setup.py for the
-        # policy. Logs live in the container's own writable layer,
-        # deliberately NOT on the shared /data volume — log history isn't
+        # policy. Logs live on the pod's `logs` emptyDir (the root filesystem
+        # is read-only since 2026-10-25), deliberately NOT on the shared /data
+        # volume: log history isn't
         # state that needs the same backup/rollback guarantees as .state/,
         # and keeping it off the volume keeps the one singleton-sensitive
         # PVC smaller. No probe: a process crash is the failure signal
@@ -106,11 +122,23 @@ spec:
           image: pathiel:local
           imagePullPolicy: IfNotPresent
           args: ["python3", "scripts/log_rotate.py", "--daemon"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
           envFrom:
             - configMapRef:
                 name: pathiel-config
             - secretRef:
                 name: pathiel-secrets
+          # readOnlyRootFilesystem: the logs it truncates live on an emptyDir
+          # shared with web, not in the image layer.
+          volumeMounts:
+            - name: logs
+              mountPath: /app/logs
+            - name: tmp
+              mountPath: /tmp
           resources:
             requests:
               cpu: "10m"
@@ -118,6 +146,15 @@ spec:
             limits:
               cpu: "100m"
               memory: "128Mi"
+      volumes:
+        # Writable scratch for a read-only root filesystem. logs/ is shared
+        # by web and rotator so the rotator sees what web writes.
+        - name: logs
+          emptyDir:
+            sizeLimit: 1Gi
+        - name: tmp
+          emptyDir:
+            sizeLimit: 256Mi
   volumeClaimTemplates:
     - metadata:
         name: data

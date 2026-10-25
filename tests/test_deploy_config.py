@@ -36,6 +36,7 @@ FLY_TOML = ROOT / "fly.toml"
 STATEFULSET = ROOT / "k8s" / "statefulset.yaml"
 CONFIGMAP = ROOT / "k8s" / "configmap.yaml"
 RESTART_SH = ROOT / "scripts" / "restart.sh"
+ENTRYPOINT = ROOT / "docker-entrypoint.sh"
 
 # Directories actually scanned for imports (mirrors what a managed process
 # can reach at runtime). services/pathiel_data_api is its own deploy unit —
@@ -72,7 +73,7 @@ def _dockerfile_copy_sources() -> list[str]:
 
 
 _IMPORT_RE = re.compile(
-    r"^\s*(?:from|import)\s+(pathiel|services)(?:\.([a-zA-Z0-9_]+))?"
+    r"^\s*(?:from|import)\s+(pathiel|services|contracts)(?:\.([a-zA-Z0-9_]+))?"
 )
 
 
@@ -98,8 +99,13 @@ def _imported_top_level_packages() -> set[str]:
                 if not m:
                     continue
                 top, sub = m.group(1), m.group(2)
-                if top == "pathiel":
-                    found.add("pathiel")
+                if top in ("pathiel", "contracts"):
+                    # contracts/ was missing from this scan, and from the
+                    # image, until 2026-10-25: pathiel.agents.config_store
+                    # imports contracts.risk.models at module load, so the
+                    # built image died on `python -m pathiel.server` with
+                    # ModuleNotFoundError before serving a single request.
+                    found.add(top)
                 elif top == "services" and sub:
                     found.add(f"services.{sub}")
     return found
@@ -239,9 +245,60 @@ def test_dockerfile_installs_the_package_before_copying_source():
     `COPY pathiel/ ...` / `COPY services/...` lines, or every source
     change invalidates the (slow) dependency-install layer."""
     text = _dockerfile_text()
-    install_at = text.index("pip install -e .")
+    install_at = text.index("RUN pip install --require-hashes -r requirements.lock")
     bulk_copy_at = text.index("COPY pathiel/ pathiel/")
     assert install_at < bulk_copy_at
+
+
+def _run_lines() -> list[str]:
+    return [ln.strip() for ln in _dockerfile_text().splitlines() if ln.strip().startswith("RUN ")]
+
+
+def test_dockerfile_installs_only_the_hashed_lock():
+    """Security review 2026-10-25: the image ran a bare `pip install -e .`,
+    a fresh resolve of pyproject's ranges with no hash checked. Every pip
+    install in the image now comes from requirements.lock in hash-checking
+    mode, and the package itself goes in with --no-deps."""
+    pip_runs = [ln for ln in _run_lines() if "pip install" in ln]
+    assert "RUN pip install --require-hashes -r requirements.lock" in pip_runs
+    for ln in pip_runs:
+        assert "--require-hashes -r requirements.lock" in ln or "--no-deps" in ln, ln
+
+
+def test_the_base_image_is_pinned_by_digest():
+    froms = [ln for ln in _dockerfile_text().splitlines() if ln.startswith("FROM ")]
+    assert froms and all(re.search(r"@sha256:[0-9a-f]{64}\b", f) for f in froms), froms
+
+
+# ── never root ───────────────────────────────────────────────────────────────
+
+def test_the_image_has_a_non_root_app_user():
+    text = _dockerfile_text()
+    assert "useradd --system --uid 10001" in text
+
+
+def test_the_entrypoint_drops_root_before_running_anything():
+    """The image may START as root (a Fly volume mounts root-owned and only
+    root can hand it over), but the entrypoint must leave root before it
+    execs the process, and drop every capability on the way."""
+    sh = ENTRYPOINT.read_text()
+    root_branch = sh[sh.index('if [ "$(id -u)" = "0" ]'):sh.index("fi\n")]
+    assert "exec setpriv --reuid=\"$APP_USER\" --regid=\"$APP_USER\"" in root_branch
+    assert "--no-new-privs" in root_branch and "--bounding-set=-all" in root_branch
+    # The only exec reachable as root is that setpriv one.
+    before_drop = sh[:sh.index('if [ "$(id -u)" = "0" ]')]
+    assert "exec " not in before_drop.replace("# ", "#")
+
+
+def test_k8s_pods_run_non_root_with_no_privileges():
+    text = STATEFULSET.read_text()
+    for needle in ("runAsNonRoot: true", "runAsUser: 10001", "fsGroup: 10001",
+                   "automountServiceAccountToken: false", "type: RuntimeDefault"):
+        assert needle in text, needle
+    n_containers = len(_k8s_container_names())
+    assert text.count("allowPrivilegeEscalation: false") == n_containers
+    assert text.count('drop: ["ALL"]') == n_containers
+    assert text.count("readOnlyRootFilesystem: true") == n_containers
 
 
 # ── .dockerignore ────────────────────────────────────────────────────────────
@@ -363,3 +420,12 @@ def test_k8s_configmap_and_fly_env_declare_the_same_shared_config():
             f"fly.toml [env] sets {key}={value!r} but k8s/configmap.yaml "
             f"does not set the same value for it."
         )
+
+
+def test_restart_sh_sets_a_private_umask():
+    """Logs and state the local processes write carry addresses, positions
+    and order history; they were created world-readable (644) until the
+    2026-10-25 review. The umask must be set before anything is started."""
+    text = RESTART_SH.read_text()
+    assert re.search(r"(?m)^umask 077$", text)
+    assert text.index("umask 077") < text.index("nohup env")
