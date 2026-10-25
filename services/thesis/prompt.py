@@ -624,7 +624,9 @@ def build_repair_prompt(errors: List[str], *, full_context: Optional[str] = None
         f"{bullet_errors}\n\n"
         "Fix every issue above and return the corrected JSON, matching the same "
         "schema. Keep every field that was not flagged exactly as it was. Do not "
-        "introduce any new issue."
+        "introduce any new issue. For a number flagged as not grounded, delete "
+        "the number (rewrite the sentence without it); do not replace it with "
+        "another number, however well you can derive it."
     )
     if full_context:
         body += f"\n\nFor reference, here is the market data again:\n\n{full_context}"

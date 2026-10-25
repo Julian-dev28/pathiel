@@ -217,6 +217,18 @@ def _call_distance_pool(call: Call, spec: DeskSpec, analytics: DeskAnalytics) ->
             for v in (d, abs(d)):
                 pool.add(round(v, 6))
                 pool.add(round(v * 100.0, 4))
+            # The same distance in price units ("4.60 above entry", "$5.75 to
+            # the target"): 2026-10-25, two refreshes in one day were rejected
+            # for a number of this kind and the desk kept serving a dead call.
+            pool.add(round(abs(px - ref), 4))
+    # R multiples on the call's own prices ("pays 1.6R", "7.7R to 116"): the
+    # quick brief prints exactly this number, so the model repeating it is
+    # arithmetic on validated prices, not an invented fact.
+    if call.entry_px and call.stop_px and call.entry_px != call.stop_px:
+        risk = abs(call.entry_px - call.stop_px)
+        for t in call.targets:
+            pool.add(round(abs(t - call.entry_px) / risk, 4))
+        pool.add(round(risk, 4))
     return pool
 
 

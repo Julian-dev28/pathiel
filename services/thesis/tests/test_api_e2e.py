@@ -283,6 +283,34 @@ def test_a_timeout_is_not_retried(oil, monkeypatch):
     assert thesis.id == oil.thesis.id
 
 
+# -- a validator rejection leaves its drafts on disk (2026-10-25) ----------------
+
+
+def test_a_double_rejection_saves_both_drafts_and_their_errors(oil, monkeypatch, tmp_path):
+    import json as _json
+    import os as _os
+    bad = _bad_probabilities_json(oil)
+    _install(monkeypatch, [_result(bad), _result(bad, session_id=None)])
+    thesis = api.write_thesis(oil.spec, oil.analytics, oil.intel, oil.thesis)
+    assert thesis.id == oil.thesis.id                     # prev re-served
+    d = api.rejected_drafts_dir()
+    assert d.startswith(str(tmp_path))                    # the test's own state dir, never the live one
+    files = sorted(_os.listdir(d))
+    assert len(files) == 1 and files[0].startswith("oil-")
+    saved = _json.load(open(_os.path.join(d, files[0])))
+    assert saved["desk_id"] == "oil"
+    assert len(saved["rounds"]) == 2
+    assert saved["rounds"][0]["draft"] == bad
+    assert saved["rounds"][1]["errors"] and "probabilit" in saved["rounds"][1]["errors"][0].lower()
+
+
+def test_a_happy_path_saves_no_rejected_draft(oil, monkeypatch):
+    import os as _os
+    _install(monkeypatch, [_result(_draft_json(oil))])
+    api.write_thesis(oil.spec, oil.analytics, oil.intel, oil.thesis)
+    assert not _os.path.isdir(api.rejected_drafts_dir())
+
+
 def test_write_thesis_never_raises_regardless_of_what_the_llm_does(oil, monkeypatch):
     """Unlike the scripted tests above, these fakes never run out - the
     point is that write_thesis degrades no matter how long the LLM keeps

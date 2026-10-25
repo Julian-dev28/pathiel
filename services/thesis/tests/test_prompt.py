@@ -255,6 +255,15 @@ def test_build_repair_prompt_without_context_is_short_and_lists_every_error():
     assert prompt_mod.estimate_tokens(text) < 150
 
 
+def test_build_repair_prompt_tells_the_model_to_delete_ungrounded_numbers():
+    """A repair that swaps one derived number for another fails the same
+    rule again (2026-10-25: two paid rejections in one day). Deleting the
+    number is the one fix that always converges."""
+    text = prompt_mod.build_repair_prompt(["bull[2].text mentions 4.8, which is not grounded in analytics or intel"])
+    assert "delete the number" in text
+    assert "do not replace it with another number" in text
+
+
 def test_build_repair_prompt_with_context_includes_it():
     text = prompt_mod.build_repair_prompt(["bad thing"], full_context="MARKET SNAPSHOT: mid 99")
     assert "bad thing" in text

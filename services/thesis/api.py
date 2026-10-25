@@ -21,7 +21,9 @@ fallback, never an exception the caller has to handle.
 """
 from __future__ import annotations
 
+import json
 import logging
+import os
 from typing import List, Optional, Tuple
 
 from pydantic import ValidationError
@@ -84,6 +86,7 @@ def write_thesis(
                 reason = "validator rejected after repair: " + "; ".join(errors2)
                 usage = _combine_usage(calls, skipped_reason=reason)
                 _print_token_report(spec, usage, incremental=incremental, n_calls=len(calls))
+                _record_rejection(spec, now, [(result1.text, errors), (result2.text, errors2)])
                 return _degrade(spec, analytics, intel, prev, reason, now)
             draft = draft2
 
@@ -166,6 +169,35 @@ def _run_repair(
         timeout_s=DEFAULT_TIMEOUT_S,
         effort=thesis_effort(),
     )
+
+
+def rejected_drafts_dir() -> str:
+    return os.path.join(os.environ.get("PATHIEL_STATE_DIR") or ".", "thesis", "rejected")
+
+
+def _record_rejection(spec: DeskSpec, now, rounds: List[Tuple[str, List[str]]]) -> Optional[str]:
+    """Write the drafts the validator rejected, with their errors, to
+    ``$PATHIEL_STATE_DIR/thesis/rejected/<desk>-<utc>.json``.
+
+    A rejection costs about a dollar and leaves the desk serving its old
+    call; before 2026-10-25 the only trace was a warning line on the stderr
+    of whichever process ran the refresh (lost when that process is the MCP
+    server), so "bull[2].text mentions 4.8, which is not grounded" could not
+    be checked against the sentence that said it. Never raises: a trace that
+    cannot be written is logged, not fatal."""
+    try:
+        os.makedirs(rejected_drafts_dir(), exist_ok=True)
+        path = os.path.join(rejected_drafts_dir(), f"{spec.id}-{now:%Y%m%dT%H%M%S}.json")
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump({
+                "desk_id": spec.id, "rejected_at": now.isoformat(),
+                "rounds": [{"draft": text, "errors": errs} for text, errs in rounds],
+            }, fh, indent=1)
+        logger.warning(f"[thesis] {spec.id}: rejected drafts saved to {path}")
+        return path
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"[thesis] {spec.id}: could not save rejected drafts: {exc}")
+        return None
 
 
 def _degrade(spec, analytics, intel, prev, reason, now) -> Thesis:

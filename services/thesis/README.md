@@ -18,7 +18,10 @@ gate) -> on failure, one repair round, resuming the first call's session so
 the repair message stays short -> on a second failure, degrade to `prev`
 (annotated with why) or a flat zero-confidence fallback if there is no
 `prev` (fallback.py; services/strategies/pipeline.py then keeps the prior
-file untouched and logs the refresh as `degraded`, not `written`) -> on
+file untouched and logs the refresh as `degraded`, not `written`; both
+rejected drafts and their errors are saved to
+`$PATHIEL_STATE_DIR/thesis/rejected/<desk>-<utc>.json`, since a warning on
+the MCP server's stderr is lost) -> on
 success, assemble the full contract Thesis
 deterministically (assemble.py: ids, timestamps, catalysts, leverage
 verdicts, resolved sources, payload hashes, usage - never from the model).

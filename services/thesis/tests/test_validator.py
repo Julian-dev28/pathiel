@@ -593,6 +593,24 @@ def test_call_distance_from_mid_is_grounded(oil):
     assert errs and "37.77" in errs[0]
 
 
+def test_call_distance_in_price_units_and_r_multiples_are_grounded(oil):
+    """2026-10-25: two refreshes in one day were rejected for arithmetic on
+    the call's own prices. "$4.60 above entry" and "pays 7.7R" are not
+    invented facts; a number unrelated to any of them still fails."""
+    call = oil.thesis.call
+    target = call.targets[0]
+    dollars = abs(target - call.entry_px)
+    r_mult = abs(target - call.entry_px) / abs(call.entry_px - call.stop_px)
+    text = f"Target {target} sits {dollars:.2f} above entry and pays {r_mult:.1f}R."
+    errs = validator.check_numbers_grounded(
+        call=call, bull=[Point(text=text, source_ids=[])], bear=[], lessons=oil.thesis.lessons,
+        what_changes_my_mind=[], leverage_reasons=[], spec=oil.spec, analytics=oil.analytics,
+        intel=oil.intel)
+    assert errs == [], errs
+    pool = validator._call_distance_pool(call, oil.spec, oil.analytics)
+    assert not validator._is_grounded(r_mult * 10 + 37.0, pool)   # an unrelated number is still out
+
+
 def test_unsigned_thousands_shorthand_is_grounded(oil):
     """Eval 2026-10-17: COT change -10403 written as "fell 10.4k contracts"."""
     pool = validator.build_ground_truth_pool(oil.analytics, oil.intel)
