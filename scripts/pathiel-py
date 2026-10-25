@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# Run a pathiel script with the plugin's own Python, from the plugin root,
+# with keys and state resolved to ~/.pathiel. The plugin's desk-tick skill
+# uses it: "${CLAUDE_PLUGIN_ROOT}/scripts/pathiel-py" scripts/desk_slot.py --desk oil
+set -euo pipefail
+. "$(cd "$(dirname "$0")" && pwd)/_plugin_env.sh"
+pathiel_prepare
+cd "$PATHIEL_ROOT"
+exec "$PATHIEL_VENV/bin/python" "$@"

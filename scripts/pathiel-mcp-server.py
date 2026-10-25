@@ -19,8 +19,10 @@ Transport (run()): the main thread reads stdin; every tools/call runs on a
 worker thread with a deadline, so a slow call never blocks the others and
 always gets exactly one answer. See "concurrent transport" below.
 
-Run as: python scripts/pathiel-mcp-server.py
-Automatically loads .env.local from the project root if present.
+Run as: python scripts/pathiel-mcp-server.py (a checkout), or through
+scripts/pathiel-mcp (the Claude Code plugin, which builds its own venv and
+points PATHIEL_ENV_FILE and PATHIEL_STATE_DIR at ~/.pathiel).
+Automatically loads the operator's env file (see scripts/_state_env.py).
 Live smoke over the real transport: python scripts/mcp_smoke.py
 """
 
@@ -34,15 +36,16 @@ import traceback
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, List, Optional, Tuple
 
-# Auto-load .env.local from project root
-_env_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '.env.local')
-if os.path.exists(_env_path):
-    with open(_env_path) as f:
-        for line in f:
-            line = line.strip()
-            if line and not line.startswith('#') and '=' in line:
-                key, _, val = line.partition('=')
-                os.environ.setdefault(key.strip(), val.strip())
+# Auto-load the operator's env file: $PATHIEL_ENV_FILE, else <root>/.env.local,
+# else ~/.pathiel/.env.local (a Claude Code plugin install, where the plugin
+# root is a cache directory that cannot hold keys). One loader for every
+# standalone script: scripts/_state_env.py.
+_SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
+if _SCRIPTS_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPTS_DIR)
+import _state_env  # noqa: E402
+
+_state_env.load_env_local(os.path.dirname(_SCRIPTS_DIR))
 
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

@@ -1,0 +1,17 @@
+{
+  "name": "pathiel",
+  "description": "pathiel: a headless trading desk on Hyperliquid where Claude is the trader.",
+  "owner": {
+    "name": "Julian Martinez",
+    "url": "https://github.com/Julian-dev28"
+  },
+  "plugins": [
+    {
+      "name": "pathiel",
+      "source": "./",
+      "description": "Trade Hyperliquid perps from Claude Code: 59 MCP tools (desk briefs, bracket orders with an exact stop and target, risk sizing, account reads), the desk-tick skill, and /pathiel:setup.",
+      "category": "productivity",
+      "keywords": ["hyperliquid", "trading", "perps", "mcp"]
+    }
+  ]
+}

@@ -135,6 +135,50 @@ in order:
    entry, or place one new bracket anchored on structure. No setup, no trade.
 6. **One log line** to `/tmp/oil-loop/progress.log`.
 
+## Install as a Claude Code plugin
+
+The second way to run pathiel, with no checkout and no local web server:
+Claude in the terminal is the trader, Hyperliquid's own app is the dashboard.
+
+```
+/plugin install pathiel --marketplace Julian-dev28/pathiel
+/pathiel:setup
+```
+
+Or from a shell: `claude plugin marketplace add Julian-dev28/pathiel` then
+`claude plugin install pathiel@pathiel`.
+
+`/pathiel:setup` builds a private Python environment (under the plugin data
+dir, kept across updates), creates `~/.pathiel/.env.local` from
+`.env.local.example` for you to fill in, checks the keys with
+`scripts/preflight_secrets.py` without printing them, connects the MCP
+server and runs the read-only smoke. After that:
+
+| you type | what happens |
+|---|---|
+| `desk_brief {desk: "oil"}` (or ask Claude for the oil call) | the current thesis, with "Your size" for your account |
+| `/pathiel:desk-tick oil` | one tick of the loop: slot, brief, sweep, levels, one decision, one log line |
+| `/loop 15m /pathiel:desk-tick oil` | the loop for this session |
+| `place_bracket {...}` | one order with an exact stop and target, sized by your risk profile; Claude asks before every live-money call |
+
+Where things live for a plugin install:
+
+| what | where | why |
+|---|---|---|
+| keys | `~/.pathiel/.env.local` (0600) | the plugin root is a cache Claude Code replaces on update; keys never go there and never leave your machine |
+| state (theses, journals, intel cache) | `~/.pathiel/state` | same reason |
+| config (`mode`, risk profile, active desks) | `~/.pathiel/.agent-config.json` | starts in mode OFF |
+| Python environment | `$CLAUDE_PLUGIN_DATA/venv` | rebuilt only when `requirements.lock` changes |
+
+The web Desk page (`python -m pathiel.server`) is not part of the plugin.
+It needs a checkout: see "Running it" above.
+
+For maintainers: `skills/desk-tick/SKILL.md` is generated from the project
+skill `.claude/skills/desk-tick/SKILL.md` by `scripts/build_plugin_skill.py`
+(the gate fails when the copy is stale), `scripts/pathiel-mcp` and
+`scripts/pathiel-py` are the plugin's entry points, and `claude plugin
+validate .` checks the manifests.
+
 ## MCP server
 
 `scripts/pathiel-mcp-server.py` exposes **59 tools over stdio**. The full

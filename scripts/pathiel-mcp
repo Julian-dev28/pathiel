@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# The pathiel MCP server as a Claude Code plugin entry point.
+#
+# .claude-plugin/plugin.json runs this as "${CLAUDE_PLUGIN_ROOT}/scripts/pathiel-mcp".
+# It builds the Python environment on first use (into $CLAUDE_PLUGIN_DATA, which
+# survives plugin updates), points the code at ~/.pathiel for keys and state,
+# then execs scripts/pathiel-mcp-server.py over stdio. Nothing is written to
+# stdout before the exec: that channel is the MCP transport.
+#
+#   scripts/pathiel-mcp --bootstrap   build the environment and exit (what
+#                                     /pathiel:setup runs, so the first real
+#                                     start is instant)
+set -euo pipefail
+. "$(cd "$(dirname "$0")" && pwd)/_plugin_env.sh"
+pathiel_prepare
+if [ "${1:-}" = "--bootstrap" ]; then
+  echo "pathiel: ready. python=$PATHIEL_VENV/bin/python env=$PATHIEL_ENV_FILE state=$PATHIEL_STATE_DIR" >&2
+  exit 0
+fi
+cd "$PATHIEL_ROOT"
+exec "$PATHIEL_VENV/bin/python" scripts/pathiel-mcp-server.py "$@"

@@ -23,9 +23,13 @@ def _load_env_local_early() -> None:
     for the trading_loop (which loads env earlier) but broken for the
     server. Loading here, before the imports below, fixes it.
     """
-    candidates = [".env.local",
-                  os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env.local")]
-    for p in candidates:
+    # Same precedence as scripts/_state_env.py: an explicit PATHIEL_ENV_FILE,
+    # the checkout's .env.local, then ~/.pathiel/.env.local (a plugin install).
+    candidates = [os.path.expanduser(os.environ.get("PATHIEL_ENV_FILE") or ""),
+                  ".env.local",
+                  os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env.local"),
+                  os.path.expanduser(os.path.join("~", ".pathiel", ".env.local"))]
+    for p in [c for c in candidates if c]:
         if os.path.exists(p):
             with open(p) as f:
                 for line in f:
