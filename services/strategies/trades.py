@@ -52,10 +52,13 @@ call" is itself the finding, not a reason to skip writing anything.
 from __future__ import annotations
 
 import os
+import time
 from datetime import datetime, timezone
-from typing import Any, Callable, Dict, List, Optional, Sequence
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
-from contracts.strategies.models import AccountTradeGrade, Call, DeskSpec, ThesisTrades, TrackRecord
+from contracts.strategies.models import (
+    AccountTradeGrade, Call, DeskSpec, OpenWindowTrades, ThesisTrades, TrackRecord,
+)
 from pathiel.agents.atomic_io import write_json_atomic
 
 from services.strategies import desks, grader, journal
@@ -227,8 +230,12 @@ def list_thesis_trades(desk_id: str) -> List[ThesisTrades]:
 
 def grade_due(*, fills_fetcher: Optional[FillsFetcher] = None, now: Optional[datetime] = None,
              desk_id: Optional[str] = None) -> int:
-    """Grade trades for every graded-or-expired thesis that has no trades
-    file yet, across every desk with a journal on disk (or just `desk_id`).
+    """Grade trades for every thesis whose WINDOW HAS CLOSED and that has no
+    trades file yet, across every desk with a journal on disk (or just
+    `desk_id`). A window is closed when the thesis is graded, has expired,
+    or has been superseded by a newer thesis (its window ends at that
+    thesis's created_at, so nothing more can land in it: 2026-10-25, before
+    this a superseded call's fills waited up to a week for its own expiry).
     Idempotent: a thesis with a trades file already saved is skipped, so
     calling this twice in a row grades 0 the second time -- same contract as
     grader.grade_all_due. Call this AFTER grade_due() in the same sweep (the
@@ -245,7 +252,8 @@ def grade_due(*, fills_fetcher: Optional[FillsFetcher] = None, now: Optional[dat
         theses = sorted(journal.list_theses(d_id), key=lambda t: t.created_at)
         spec = desks.get_spec(d_id)
         for i, thesis in enumerate(theses):
-            due = thesis.grade is not None or thesis.expires_at <= now
+            superseded = i + 1 < len(theses) and theses[i + 1].created_at <= now
+            due = thesis.grade is not None or thesis.expires_at <= now or superseded
             if not due or get_thesis_trades(d_id, thesis.id) is not None:
                 continue
             next_created_at = theses[i + 1].created_at if i + 1 < len(theses) else None
@@ -256,31 +264,104 @@ def grade_due(*, fills_fetcher: Optional[FillsFetcher] = None, now: Optional[dat
     return graded
 
 
+# ── the open window: the latest thesis, summed live ─────────────────────────
+#
+# A thesis's trades reach disk only once its window closes. Until then the
+# fills the account made under it (the stop that fired an hour ago) would be
+# invisible on the Desk page for up to a week (operator, 2026-10-25: "seems
+# like we were stopped out shouldnt you update"). So the latest thesis is
+# summed live at read time, never persisted, and cached per desk for a short
+# TTL so the Desk page's poll does not spend the venue budget on it.
+
+OPEN_WINDOW_TTL_S = 60.0
+_OPEN_WINDOW_CACHE: Dict[Tuple[str, str], Tuple[float, Optional[OpenWindowTrades]]] = {}
+
+
+def open_window_trades(thesis, spec: Optional[DeskSpec], accounts: Sequence[Any],
+                       fills_fetcher: FillsFetcher, *, now: Optional[datetime] = None) -> OpenWindowTrades:
+    """Every account's fills under `thesis` over [created_at, now], summed
+    with the same per-account math grade_account_fills uses. Pure apart from
+    the fetcher; nothing is written."""
+    now = now or datetime.now(timezone.utc)
+    start_ms = int(thesis.created_at.timestamp() * 1000)
+    end_ms = int(now.timestamp() * 1000)
+    n_fills = 0
+    realized = 0.0
+    for account in accounts:
+        fills = fills_fetcher(account.main_address, start_ms, end_ms) or []
+        g = grade_account_fills(account, thesis.call, spec, fills, start_ms, end_ms)
+        n_fills += g.n_fills
+        realized += g.realized_pnl_usd
+    return OpenWindowTrades(thesis_id=thesis.id, since=thesis.created_at, computed_at=now,
+                            n_fills=n_fills, realized_pnl_usd=round(realized, 6))
+
+
+def open_window_stats(desk_id: str, *, fills_fetcher: Optional[FillsFetcher] = None,
+                      now: Optional[datetime] = None, ttl_s: Optional[float] = None,
+                      clock: Callable[[], float] = time.monotonic) -> Optional[OpenWindowTrades]:
+    """The live roll-up for `desk_id`'s latest thesis, or None when the desk
+    has no thesis or the latest one's trades are already on disk (closed
+    window). Cached per (state dir, desk) for OPEN_WINDOW_TTL_S seconds (env
+    PATHIEL_OPEN_WINDOW_TTL_S). Never raises: a venue error means None this
+    round, the same as "nothing yet", and the next round tries again."""
+    ttl = ttl_s if ttl_s is not None else float(os.environ.get("PATHIEL_OPEN_WINDOW_TTL_S", OPEN_WINDOW_TTL_S))
+    key = (journal.strategies_dir(), desk_id)
+    t = clock()
+    hit = _OPEN_WINDOW_CACHE.get(key)
+    if hit is not None and t - hit[0] < ttl:
+        return hit[1]
+    result: Optional[OpenWindowTrades] = None
+    try:
+        thesis = journal.latest_thesis(desk_id)
+        if thesis is not None and get_thesis_trades(desk_id, thesis.id) is None:
+            from services.accounts.view import list_all_accounts
+            result = open_window_trades(thesis, desks.get_spec(desk_id), list_all_accounts(),
+                                        fills_fetcher or default_fills_fetcher, now=now)
+    except Exception:  # noqa: BLE001 - a read-side roll-up never takes the Desk page down
+        result = None
+    _OPEN_WINDOW_CACHE[key] = (t, result)
+    return result
+
+
+def clear_open_window_cache() -> None:
+    _OPEN_WINDOW_CACHE.clear()
+
+
 # ── TrackRecord enrichment ──────────────────────────────────────────────────
 
-def _aggregate_trade_stats(desk_id: str) -> Dict[str, Any]:
-    """realized_pnl_usd/n_trades/follow_rate flattened across every account's
-    AccountTradeGrade for every ThesisTrades row this desk has on disk.
-    n_trades counts fills (not theses): "how many trades were placed
-    following these calls." follow_rate is the plain mean of every account's
-    own follow_rate across every graded thesis (unweighted by fill count --
-    one call that twenty fills chased badly should not drown out three calls
-    that were each followed cleanly)."""
+_UNSET: Any = object()
+
+
+def _aggregate_trade_stats(desk_id: str, *, open_window: Any = _UNSET) -> Dict[str, Any]:
+    """realized_pnl_usd/n_trades flattened across every account's
+    AccountTradeGrade for every ThesisTrades row this desk has on disk, plus
+    the open window (the latest thesis, summed live; pass `open_window` to
+    skip the lookup). n_trades counts fills (not theses): "how many trades
+    were placed following these calls." follow_rate is the plain mean of
+    every account's own follow_rate across every closed window (unweighted
+    by fill count -- one call that twenty fills chased badly should not drown
+    out three calls that were each followed cleanly); the open window is left
+    out of it because a follow rate needs the whole window."""
     all_accounts = [a for tt in list_thesis_trades(desk_id) for a in tt.accounts]
-    if not all_accounts:
-        return {"n_trades": 0, "realized_pnl_usd": None, "follow_rate": None}
+    ow = open_window_stats(desk_id) if open_window is _UNSET else open_window
+    live_fills = ow.n_fills if ow is not None else 0
+    live_pnl = ow.realized_pnl_usd if ow is not None else 0.0
+    if not all_accounts and not live_fills:
+        return {"n_trades": 0, "realized_pnl_usd": None, "follow_rate": None, "open_window": ow}
     follows = [a.follow_rate for a in all_accounts if a.follow_rate is not None]
     return {
-        "n_trades": sum(a.n_fills for a in all_accounts),
-        "realized_pnl_usd": round(sum(a.realized_pnl_usd for a in all_accounts), 6),
+        "n_trades": sum(a.n_fills for a in all_accounts) + live_fills,
+        "realized_pnl_usd": round(sum(a.realized_pnl_usd for a in all_accounts) + live_pnl, 6),
         "follow_rate": (sum(follows) / len(follows)) if follows else None,
+        "open_window": ow,
     }
 
 
-def enrich_track_record(track: TrackRecord, desk_id: str) -> TrackRecord:
+def enrich_track_record(track: TrackRecord, desk_id: str, *, open_window: Any = _UNSET) -> TrackRecord:
     """A thesis-only TrackRecord (grader.aggregate_track_record /
-    grader.track_record_for_desk), plus this desk's trade-grading roll-up."""
-    return track.model_copy(update=_aggregate_trade_stats(desk_id))
+    grader.track_record_for_desk), plus this desk's trade roll-up: closed
+    windows from disk and the open window summed live."""
+    return track.model_copy(update=_aggregate_trade_stats(desk_id, open_window=open_window))
 
 
 def track_record_for_desk(desk_id: str) -> TrackRecord:

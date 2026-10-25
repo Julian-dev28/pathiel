@@ -248,7 +248,118 @@ def test_grade_due_scoped_to_one_desk(monkeypatch):
 
 def test_aggregate_trade_stats_empty_desk_is_all_none():
     stats = T._aggregate_trade_stats("oil")
-    assert stats == {"n_trades": 0, "realized_pnl_usd": None, "follow_rate": None}
+    assert stats == {"n_trades": 0, "realized_pnl_usd": None, "follow_rate": None, "open_window": None}
+
+
+# ── a superseded thesis is due before its own expiry ─────────────────────────
+
+def test_grade_due_grades_a_superseded_thesis_before_it_expires(monkeypatch):
+    """2026-10-25: the window of a call that a newer call replaced ends at the
+    newer call's created_at. Nothing more can land in it, so it is graded in
+    the next sweep instead of waiting up to a week for its own expiry."""
+    monkeypatch.setattr("services.accounts.view.list_all_accounts", lambda: [_account()])
+    old = make_thesis(desk_id="oil", thesis_id="old", created_at=T0, horizon_days=30)
+    new = make_thesis(desk_id="oil", thesis_id="new", created_at=T0 + timedelta(days=2),
+                      horizon_days=30)
+    journal.save_thesis(old)
+    journal.save_thesis(new)
+    now = T0 + timedelta(days=3)
+
+    assert T.grade_due(fills_fetcher=lambda u, s, e: [], now=now) == 1   # `old` only
+    assert T.get_thesis_trades("oil", "old").window_end == new.created_at
+    assert T.get_thesis_trades("oil", "new") is None                     # still the open window
+    assert T.grade_due(fills_fetcher=lambda u, s, e: [], now=now) == 0   # idempotent
+
+
+# ── the open window: the latest thesis, summed live ─────────────────────────
+
+def test_open_window_stats_sums_the_latest_thesis_live(monkeypatch):
+    """The stop that fired an hour ago counts now, not at the thesis's expiry."""
+    monkeypatch.setattr("services.accounts.view.list_all_accounts", lambda: [_account()])
+    thesis = make_thesis(desk_id="oil", created_at=T0, horizon_days=7)
+    journal.save_thesis(thesis)
+    t_ms = int(T0.timestamp() * 1000)
+    fills = [_fill(side="B", dir_="Open Long", t=t_ms + 1, fee=0.5),
+             _fill(side="A", dir_="Close Long", t=t_ms + 2, closed_pnl=-5.0, fee=0.5)]
+    now = T0 + timedelta(days=1)
+
+    ow = T.open_window_stats("oil", fills_fetcher=lambda u, s, e: fills, now=now)
+    assert ow.thesis_id == thesis.id and ow.since == T0 and ow.computed_at == now
+    assert ow.n_fills == 2
+    assert ow.realized_pnl_usd == pytest.approx(-6.0)   # (0 + -5) - (0.5 + 0.5)
+
+    # enrichment folds it in (served from the cache: no fetcher passed here)
+    track = T.enrich_track_record(TrackRecord(n_graded=0), "oil")
+    assert track.n_trades == 2
+    assert track.realized_pnl_usd == pytest.approx(-6.0)
+    assert track.follow_rate is None          # the open window never feeds follow_rate
+    assert track.open_window == ow
+
+
+def test_open_window_adds_to_closed_windows(monkeypatch):
+    monkeypatch.setattr("services.accounts.view.list_all_accounts", lambda: [_account()])
+    old = make_thesis(desk_id="oil", thesis_id="old", created_at=T0, horizon_days=30)
+    new = make_thesis(desk_id="oil", thesis_id="new", created_at=T0 + timedelta(days=2), horizon_days=30)
+    journal.save_thesis(old)
+    journal.save_thesis(new)
+    ms = lambda dt: int(dt.timestamp() * 1000)  # noqa: E731
+    fills = [_fill(side="B", dir_="Open Long", t=ms(T0) + 1, fee=1.0),
+             _fill(side="A", dir_="Close Long", t=ms(T0) + 2, closed_pnl=10.0, fee=1.0),   # old window
+             _fill(side="B", dir_="Open Long", t=ms(new.created_at) + 1, fee=1.0),
+             _fill(side="A", dir_="Close Long", t=ms(new.created_at) + 2, closed_pnl=-4.0, fee=1.0)]  # open
+    now = T0 + timedelta(days=3)
+    fetcher = lambda u, s, e: fills  # noqa: E731
+
+    T.grade_due(fills_fetcher=fetcher, now=now)                        # closes `old`
+    ow = T.open_window_stats("oil", fills_fetcher=fetcher, now=now)    # `new`, live
+    track = T.enrich_track_record(TrackRecord(n_graded=0), "oil", open_window=ow)
+    assert track.n_trades == 4
+    assert track.realized_pnl_usd == pytest.approx(8.0 + (-6.0))
+    assert track.follow_rate == pytest.approx(1.0)                     # from `old` only
+
+
+def test_open_window_is_none_once_the_latest_window_is_on_disk(monkeypatch):
+    monkeypatch.setattr("services.accounts.view.list_all_accounts", lambda: [_account()])
+    thesis = make_thesis(desk_id="oil", created_at=T0, horizon_days=1)
+    journal.save_thesis(thesis)
+    now = thesis.expires_at + timedelta(hours=1)
+    T.grade_due(fills_fetcher=lambda u, s, e: [], now=now)
+    assert T.open_window_stats("oil", fills_fetcher=lambda u, s, e: [], now=now) is None
+
+
+def test_open_window_stats_is_cached_per_desk_and_expires(monkeypatch):
+    monkeypatch.setattr("services.accounts.view.list_all_accounts", lambda: [_account()])
+    thesis = make_thesis(desk_id="oil", created_at=T0, horizon_days=7)
+    journal.save_thesis(thesis)
+    calls = []
+
+    def fetcher(u, s, e):
+        calls.append(1)
+        return []
+
+    clock = [100.0]
+    tick = lambda: clock[0]  # noqa: E731
+    T.open_window_stats("oil", fills_fetcher=fetcher, now=T0, clock=tick)
+    T.open_window_stats("oil", fills_fetcher=fetcher, now=T0, clock=tick)
+    assert len(calls) == 1                                  # second read served from the cache
+    clock[0] += T.OPEN_WINDOW_TTL_S + 1
+    T.open_window_stats("oil", fills_fetcher=fetcher, now=T0, clock=tick)
+    assert len(calls) == 2                                  # TTL passed: fetched again
+    assert T.open_window_stats("btc", fills_fetcher=fetcher, now=T0, clock=tick) is None  # no thesis
+    assert len(calls) == 2
+
+
+def test_open_window_stats_never_raises(monkeypatch):
+    monkeypatch.setattr("services.accounts.view.list_all_accounts", lambda: [_account()])
+    thesis = make_thesis(desk_id="oil", created_at=T0, horizon_days=7)
+    journal.save_thesis(thesis)
+
+    def boom(u, s, e):
+        raise RuntimeError("venue down")
+
+    assert T.open_window_stats("oil", fills_fetcher=boom, now=T0) is None
+    track = T.enrich_track_record(TrackRecord(n_graded=0), "oil")
+    assert track.n_trades == 0 and track.realized_pnl_usd is None
 
 
 def test_enrich_track_record_sums_across_theses(monkeypatch):

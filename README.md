@@ -197,7 +197,7 @@ read the same tools.
 | `desk_brief` | One desk's current call; quick mode is short markdown, full mode is the structured brief |
 | `desk_refresh` | Write a new thesis (news, then one local model call); skipped unless stale or forced |
 | `desk_submit_call` | Record your own trade call, journaled alongside the machine's theses |
-| `desk_track_record` | Graded-thesis track record: hit rate, mean Brier, mean return |
+| `desk_track_record` | Graded-thesis track record (hit rate, mean Brier, mean return) plus the account's fills and realized P&L: closed thesis windows from disk, the open window summed live (`open_window`) |
 | `desk_grade` | Grade expired theses, then accounts' trades against each call |
 | `account_overview` | Active account's equity, where it sits (every dex), positions, can-trade |
 | `accounts` | Registered accounts, which is active |

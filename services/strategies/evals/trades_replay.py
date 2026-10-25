@@ -71,16 +71,24 @@ def replay(thesis: Optional[Thesis] = None, fills_payload: Optional[Dict[str, An
     start_ms = int(thesis.created_at.timestamp() * 1000)
     end_ms = int(thesis.expires_at.timestamp() * 1000)
     grade = T.grade_account_fills(account, thesis.call, None, fills, start_ms, end_ms)
+    # The live roll-up the Desk page shows while a window is still open must
+    # land on the same totals the closed-window grade lands on once it closes
+    # (same fills, same math): replay it as if `now` were the expiry.
+    live = T.open_window_trades(thesis, None, [account], lambda u, s, e: fills, now=thesis.expires_at)
 
     checks = {
         "found_trades": grade.n_fills > 0,
         "opens_plus_closes_account_for_every_fill": grade.n_opens + grade.n_closes == grade.n_fills,
         "every_fill_landed_in_the_thesis_window": True,   # grade_account_fills itself enforces this
+        "open_window_roll_up_matches_the_closed_grade": (
+            live.n_fills == grade.n_fills
+            and abs(live.realized_pnl_usd - grade.realized_pnl_usd) < 1e-6),
     }
     return {
         "thesis_id": thesis.id, "desk_id": thesis.desk_id, "instrument": thesis.call.instrument,
         "window_start": thesis.created_at.isoformat(), "window_end": thesis.expires_at.isoformat(),
         "account": account.main_address, "grade": grade.model_dump(mode="json"),
+        "open_window": live.model_dump(mode="json"),
         "checks": checks, "passed": all(checks.values()),
     }
 

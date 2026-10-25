@@ -463,6 +463,20 @@ class Thesis(_M):
 #                                           2026-10-23 — the UI only ever links to
 #                                           /desk/oil today)
 
+class OpenWindowTrades(_M):
+    """The latest thesis's fills so far: every registered account's fills on
+    the call's coin(s) over [thesis.created_at, now], summed live at read
+    time and never stored. Closed windows live in ThesisTrades files; this is
+    the one window still open (services/strategies/trades.py,
+    open_window_stats). Added 2026-10-25 so a stop that fired an hour ago
+    shows on the Desk page the same hour, not when the thesis expires."""
+    thesis_id: str
+    since: datetime
+    computed_at: datetime
+    n_fills: int = 0
+    realized_pnl_usd: float = 0.0              # sum(closedPnl) - sum(fee), same math as AccountTradeGrade
+
+
 class TrackRecord(_M):
     n_graded: int = 0
     direction_hit_rate: Optional[float] = None
@@ -470,12 +484,14 @@ class TrackRecord(_M):
     mean_ret_pct: Optional[float] = None
     by_author: dict = {}                       # {"machine": {...}, "user": {...}} same keys
     # Trade-grading roll-up (services/strategies/trades.py), aggregated across
-    # every registered account's fills on every graded thesis for this desk.
-    # Optional/absent = no trades computed yet, never a 0 standing in for
+    # every registered account's fills on every closed thesis window for this
+    # desk PLUS the open window (`open_window`, the latest thesis, summed live).
+    # Optional/absent = no trades at all, never a 0 standing in for
     # "nothing to report" (0.0 realized P&L is a real, different fact).
     realized_pnl_usd: Optional[float] = None
-    n_trades: int = 0
-    follow_rate: Optional[float] = None
+    n_trades: int = 0                          # fills, closed windows + open window
+    follow_rate: Optional[float] = None        # closed windows only (needs a full window)
+    open_window: Optional[OpenWindowTrades] = None
 
 
 class AccountTradeGrade(_M):

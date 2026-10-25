@@ -506,7 +506,21 @@ function renderTrackRecord(tr) {
       <div class="ksub">${a.n_graded} graded${a.mean_ret_pct != null ? ' · ' + pctSigned(a.mean_ret_pct) + ' avg' : ''}</div>
     </div>`;
   };
-  el.innerHTML = col('Machine', 'machine') + col('You', 'user');
+  // What the account actually did: fills on closed windows plus the open
+  // window summed live (TrackRecord.open_window), so a stop that fired this
+  // hour shows this hour (2026-10-25).
+  const tradesCol = () => {
+    if (!tr.n_trades) return '';
+    const ow = tr.open_window;
+    const n = Number(tr.realized_pnl_usd || 0);
+    const live = (ow && ow.n_fills) ? ` · ${ow.n_fills} on the open call` : '';
+    return `<div class="track-col">
+      <div class="sec-label">Trades</div>
+      <div class="kv ${n < 0 ? 'neg' : 'pos'}">${(n < 0 ? '-' : '+') + '$' + Math.abs(n).toFixed(2)}</div>
+      <div class="ksub">${tr.n_trades} fill${tr.n_trades === 1 ? '' : 's'}${live}</div>
+    </div>`;
+  };
+  el.innerHTML = col('Machine', 'machine') + col('You', 'user') + tradesCol();
 }
 
 function renderHistory(brief) {

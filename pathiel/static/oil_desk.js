@@ -479,19 +479,37 @@ async function loadLog() {
 
 // ── 6. TRACK RECORD ──────────────────────────────────────────────────────────
 
+// Two sources, one card. The thesis columns (graded, hit rate, return,
+// Brier) grade CALLS at their 7-day horizon. The fill columns count what the
+// account actually did: every fill on closed thesis windows plus the open
+// window summed live (TrackRecord.open_window), so a stop that fired this
+// hour is on the page this hour, not when the thesis expires (2026-10-25).
+function fmtUsdSigned(v) {
+  if (v == null || !isFinite(Number(v))) return '—';
+  const n = Number(v);
+  return (n < 0 ? '-' : '+') + '$' + Math.abs(n).toFixed(2);
+}
+
 function renderTrackRecord(tr) {
   const cols = document.getElementById('track-cols');
-  if (!tr || !tr.n_graded) {
+  if (!tr || (!tr.n_graded && !tr.n_trades)) {
     cols.innerHTML = '';
     show('track-empty', true);
     return;
   }
   show('track-empty', false);
+  const ow = tr.open_window;
+  const liveNote = (ow && ow.n_fills)
+    ? `<div class="ksub">${ow.n_fills} fill${ow.n_fills === 1 ? '' : 's'} on the open call</div>` : '';
+  const pnl = Number(tr.realized_pnl_usd);
+  const pnlClass = (tr.realized_pnl_usd == null || !isFinite(pnl)) ? '' : (pnl < 0 ? 'neg' : 'pos');
   cols.innerHTML = `
-    <div class="track-col"><div class="sec-label">Graded</div><div class="kv">${tr.n_graded}</div></div>
-    <div class="track-col"><div class="sec-label">Direction hit rate</div><div class="kv">${pctUnsigned(tr.direction_hit_rate)}</div></div>
-    <div class="track-col"><div class="sec-label">Mean return</div><div class="kv">${pctSigned(tr.mean_ret_pct)}</div></div>
-    <div class="track-col"><div class="sec-label">Mean Brier</div><div class="kv">${tr.mean_brier != null ? Number(tr.mean_brier).toFixed(3) : '—'}</div></div>`;
+    <div class="track-col"><div class="sec-label">Graded</div><div class="kv">${tr.n_graded || 0}</div></div>
+    <div class="track-col"><div class="sec-label">Direction hit rate</div><div class="kv">${tr.n_graded ? pctUnsigned(tr.direction_hit_rate) : '—'}</div></div>
+    <div class="track-col"><div class="sec-label">Mean return</div><div class="kv">${tr.n_graded ? pctSigned(tr.mean_ret_pct) : '—'}</div></div>
+    <div class="track-col"><div class="sec-label">Mean Brier</div><div class="kv">${tr.mean_brier != null ? Number(tr.mean_brier).toFixed(3) : '—'}</div></div>
+    <div class="track-col"><div class="sec-label">Fills</div><div class="kv">${tr.n_trades || 0}</div></div>
+    <div class="track-col"><div class="sec-label">Realized P&amp;L</div><div class="kv ${pnlClass}">${fmtUsdSigned(tr.realized_pnl_usd)}</div>${liveNote}</div>`;
 }
 
 // The old auto-trader kill switch and the operator-token popover left with
