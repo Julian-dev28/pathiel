@@ -24,6 +24,12 @@ Failures raise `services.llm.errors.LlmError` (or a subclass:
 `LlmBadOutputError`) instead of returning a sentinel. Every call, success or
 failure, is appended to `$PATHIEL_STATE_DIR/llm/usage.jsonl`.
 
+A non-zero exit (`LlmProcessError`) carries the envelope's stop fields
+(`subtype`, `terminal_reason`, `stop_reason`, `num_turns`, `total_cost_usd`,
+`is_error`, `api_error_status`), the `result` sentence and stderr, not a raw
+500-character tail: on 2026-10-25 that tail ended inside the usage block and
+an oil refresh failed with nothing that said why (`cli._failure_detail`).
+
 ## Live probe log (2026-10-17)
 
 Before wiring a default model in, SWARM_RULES.md section 3 requires verifying

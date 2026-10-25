@@ -10,11 +10,16 @@ thesis = write_thesis(spec, analytics, intel, prev)  # -> Thesis, never raises
 Flow: build a dense-text prompt (prompt.py) -> ask services/llm for
 schema-constrained JSON (llm_schema.ThesisDraft - the latent fields only:
 call, scenarios, bull, bear, what_changes_my_mind, lessons,
-leverage_reasons) -> validate it (validator.py, the anti-hallucination
+leverage_reasons; the call itself is retried once if the CLI exits non-zero
+or returns a bad envelope, never on a timeout: 2026-10-25, one such one-off
+re-served a stale call for four hours) -> validate it (validator.py, the
+anti-hallucination
 gate) -> on failure, one repair round, resuming the first call's session so
 the repair message stays short -> on a second failure, degrade to `prev`
 (annotated with why) or a flat zero-confidence fallback if there is no
-`prev` (fallback.py) -> on success, assemble the full contract Thesis
+`prev` (fallback.py; services/strategies/pipeline.py then keeps the prior
+file untouched and logs the refresh as `degraded`, not `written`) -> on
+success, assemble the full contract Thesis
 deterministically (assemble.py: ids, timestamps, catalysts, leverage
 verdicts, resolved sources, payload hashes, usage - never from the model).
 

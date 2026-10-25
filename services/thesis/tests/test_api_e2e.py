@@ -10,7 +10,9 @@ from __future__ import annotations
 
 from contracts.strategies.models import Thesis
 from services.llm import LlmResult
-from services.llm.errors import LlmError, LlmTimeoutError
+import pytest
+
+from services.llm.errors import LlmBadOutputError, LlmError, LlmProcessError, LlmTimeoutError
 from services.thesis import api
 from services.thesis.llm_schema import ThesisDraft
 
@@ -246,6 +248,39 @@ def test_llm_error_on_the_only_call_with_no_prev_returns_fallback(oil, monkeypat
     thesis = api.write_thesis(oil.spec, oil.analytics, oil.intel, None)
     assert thesis.call.side == "flat"
     assert "LLM call failed" in thesis.usage.skipped_reason
+
+
+# -- one retry on a transient CLI failure (2026-10-25) --------------------------
+
+
+@pytest.mark.parametrize("transient", [
+    LlmProcessError("CLI exited 1: claude {\"stop_reason\": \"tool_use\"}"),
+    LlmBadOutputError("CLI returned empty stdout: claude"),
+])
+def test_a_transient_cli_failure_on_the_first_call_is_retried_once(oil, monkeypatch, transient):
+    fake = _install(monkeypatch, [transient, _result(_draft_json(oil))])
+    thesis = api.write_thesis(oil.spec, oil.analytics, oil.intel, oil.thesis)
+    assert len(fake.calls) == 2
+    assert fake.calls[0]["user"] == fake.calls[1]["user"]      # the same call, again
+    assert thesis.id != oil.thesis.id                           # a fresh thesis, not prev re-served
+    assert thesis.usage.skipped_reason is None
+
+
+def test_two_transient_failures_degrade_to_prev_with_the_second_reason(oil, monkeypatch):
+    fake = _install(monkeypatch, [LlmProcessError("CLI exited 1: first"), LlmProcessError("CLI exited 1: second")])
+    thesis = api.write_thesis(oil.spec, oil.analytics, oil.intel, oil.thesis)
+    assert len(fake.calls) == 2                                 # one retry, never a third
+    assert thesis.id == oil.thesis.id
+    assert "LLM call failed: CLI exited 1: second" in thesis.usage.skipped_reason
+
+
+def test_a_timeout_is_not_retried(oil, monkeypatch):
+    """The first timeout already cost the full wait; a second one would push
+    a refresh past every caller's patience. Degrade at once."""
+    fake = _install(monkeypatch, [LlmTimeoutError("CLI timed out after 120s")])
+    thesis = api.write_thesis(oil.spec, oil.analytics, oil.intel, oil.thesis)
+    assert len(fake.calls) == 1
+    assert thesis.id == oil.thesis.id
 
 
 def test_write_thesis_never_raises_regardless_of_what_the_llm_does(oil, monkeypatch):

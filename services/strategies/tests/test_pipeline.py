@@ -255,6 +255,68 @@ def test_refresh_degrades_when_thesis_provider_raises(stub_live_analytics):
     assert journal.latest_thesis("oil") is None
 
 
+def _usage_rows():
+    with open(pipeline._usage_log_path()) as fh:
+        return [json.loads(line) for line in fh]
+
+
+def test_refresh_keeps_prev_untouched_when_the_provider_degrades_to_it(monkeypatch, stub_live_analytics):
+    """2026-10-25: the thesis provider's own LLM call failed, so it handed
+    back the prior call with usage.skipped_reason set. refresh() used to save
+    that over the prior file and log "written". Now the file is left alone,
+    the decision is logged as degraded, and the job says the call was kept."""
+    stub_live_analytics(minimal_analytics("oil", mid=99.0, coin="xyz:BRENTOIL"))
+    prev = make_thesis(desk_id="oil", thesis_id="prev-1", instrument="xyz:BRENTOIL", entry_px=99.0,
+                       created_at=NOW, horizon_days=7, scenarios=[])
+    prev = prev.model_copy(update={"usage": Usage(model="fake", input_tokens=100, output_tokens=50,
+                                                  cost_usd=0.4, duration_s=40.0)})
+    journal.save_thesis(prev)
+    degraded = prev.model_copy(update={"usage": prev.usage.model_copy(
+        update={"skipped_reason": "LLM call failed: CLI exited 1: claude {\"stop_reason\": \"tool_use\"}"})})
+
+    def fake_resolve(path):
+        if path == pipeline.INTEL_PROVIDER_PATH:
+            return lambda spec: IntelPacket(desk_id=spec.id, as_of=NOW)
+        if path == pipeline.THESIS_PROVIDER_PATH:
+            return lambda spec, a, i, p: degraded
+        raise ImportError(path)
+
+    monkeypatch.setattr(pipeline, "_resolve_provider", fake_resolve)
+    job = pipeline.refresh("oil", force=True)
+
+    assert job.state == "done"
+    assert job.message.startswith("thesis kept, not rewritten (forced): LLM call failed")
+    assert job.usage.skipped_reason.startswith("LLM call failed")
+    saved = journal.latest_thesis("oil")
+    assert saved.id == "prev-1"
+    assert saved.usage == prev.usage                 # the original call's usage, not the failure's
+    rows = _usage_rows()
+    assert rows[-1]["decision"] == "degraded" and rows[-1]["reason"] == "forced"
+
+
+def test_refresh_logs_a_flat_fallback_as_degraded_not_written(monkeypatch, stub_live_analytics):
+    stub_live_analytics(minimal_analytics("oil", mid=99.0, coin="xyz:BRENTOIL"))
+    fallback = make_thesis(desk_id="oil", thesis_id="fallback-1", instrument="xyz:BRENTOIL",
+                           side="flat", entry_px=None, stop_px=None, targets=(), leverage=None,
+                           confidence=0.0, scenarios=[], created_at=NOW)
+    fallback = fallback.model_copy(update={"usage": Usage(skipped_reason="LLM call failed: binary not found")})
+
+    def fake_resolve(path):
+        if path == pipeline.INTEL_PROVIDER_PATH:
+            return lambda spec: IntelPacket(desk_id=spec.id, as_of=NOW)
+        if path == pipeline.THESIS_PROVIDER_PATH:
+            return lambda spec, a, i, p: fallback
+        raise ImportError(path)
+
+    monkeypatch.setattr(pipeline, "_resolve_provider", fake_resolve)
+    job = pipeline.refresh("oil", force=True)
+
+    assert job.state == "done"
+    assert job.message.startswith("fallback thesis written (forced): LLM call failed")
+    assert journal.latest_thesis("oil").id == "fallback-1"    # no prev: the flat card is saved
+    assert _usage_rows()[-1]["decision"] == "degraded"
+
+
 # ── stage reporting (refresh progress for the UI / MCP) ─────────────────────
 
 def test_refresh_reports_each_stage_in_order(stub_live_analytics):

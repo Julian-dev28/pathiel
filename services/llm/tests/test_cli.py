@@ -110,6 +110,36 @@ def test_run_cli_nonzero_exit_raises_process_error_with_stderr_tail(monkeypatch)
         cli.run_cli(["claude"], "hi", timeout_s=5)
 
 
+def test_run_cli_nonzero_exit_with_an_envelope_reports_why_it_stopped(monkeypatch):
+    """2026-10-25: the CLI exited 1 and printed its result envelope; the old
+    500-character raw tail ended inside the usage block and said nothing. The
+    error must carry the stop fields and the result sentence, and must not
+    be the usage block."""
+    envelope = {
+        "type": "result", "subtype": "error_max_turns", "is_error": True,
+        "stop_reason": "tool_use", "num_turns": 1, "total_cost_usd": 0.3867,
+        "result": "Reached max turns (1)",
+        "usage": {"input_tokens": 4, "cache_creation_input_tokens": 8718, "filler": "x" * 2000},
+    }
+    _patch_popen(monkeypatch, _FakeProc(stdout=json.dumps(envelope), stderr="", returncode=1))
+    with pytest.raises(LlmProcessError) as info:
+        cli.run_cli(["claude"], "hi", timeout_s=5)
+    msg = str(info.value)
+    assert "CLI exited 1" in msg
+    for needle in ('"subtype": "error_max_turns"', '"stop_reason": "tool_use"', '"num_turns": 1',
+                   "Reached max turns (1)"):
+        assert needle in msg, msg
+    assert "xxxx" not in msg and "cache_creation_input_tokens" not in msg
+
+
+def test_run_cli_nonzero_exit_keeps_stderr_next_to_the_envelope(monkeypatch):
+    envelope = {"type": "result", "subtype": "error_during_execution", "result": ""}
+    _patch_popen(monkeypatch, _FakeProc(stdout=json.dumps(envelope), stderr="budget exceeded", returncode=1))
+    with pytest.raises(LlmProcessError, match="error_during_execution") as info:
+        cli.run_cli(["claude"], "hi", timeout_s=5)
+    assert "budget exceeded" in str(info.value)
+
+
 def test_run_cli_empty_stdout_raises_bad_output(monkeypatch):
     _patch_popen(monkeypatch, _FakeProc(stdout="   \n  ", returncode=0))
     with pytest.raises(LlmBadOutputError, match="empty"):

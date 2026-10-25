@@ -4,7 +4,9 @@
                  intel: IntelPacket | None, prev: Thesis | None) -> Thesis
 
 Flow: build the system + user prompt (prompt.py) -> ask services/llm for the
-latent-only JSON draft (llm_schema.ThesisDraft), schema-constrained -> run
+latent-only JSON draft (llm_schema.ThesisDraft), schema-constrained (one
+retry if the CLI itself fails: non-zero exit or bad envelope, never on a
+timeout) -> run
 the anti-hallucination validator (validator.py) -> on failure, one repair
 round (resuming the first call's session so the repair message can be short
 - see services/llm/README.md's probe log) -> on a second failure, reject and
@@ -26,6 +28,7 @@ from pydantic import ValidationError
 
 from contracts.strategies.models import DeskAnalytics, DeskSpec, IntelPacket, Thesis, Usage
 from services.llm import LlmError, LlmResult, complete
+from services.llm.errors import LlmBadOutputError, LlmProcessError
 from services.thesis import assemble, desk_lookup, fallback, validator
 from services.thesis import prompt as prompt_mod
 from services.thesis.llm_schema import ThesisDraft, thesis_draft_json_schema
@@ -51,7 +54,8 @@ def write_thesis(
         user_prompt, _ = prompt_mod.build_user_prompt(spec, analytics, intel, prev, incremental=incremental)
         schema = thesis_draft_json_schema(len(desk_lookup.ladder_leverages(analytics)))
 
-        result1 = complete(
+        result1 = _complete_with_one_retry(
+            spec,
             system_prompt,
             user_prompt,
             max_output_tokens=spec.token_budget.max_output_tokens,
@@ -95,6 +99,29 @@ def write_thesis(
         reason = f"LLM call failed: {exc}"
         logger.error(f"[thesis] {spec.id}: {reason}")
         return _degrade(spec, analytics, intel, prev, reason, now)
+
+
+# A non-zero CLI exit or a bad envelope is retried once; a timeout or a
+# missing binary is not (the first already cost the full wait, and the second
+# would not find the binary either).
+_TRANSIENT_LLM_ERRORS = (LlmProcessError, LlmBadOutputError)
+
+
+def _complete_with_one_retry(spec: DeskSpec, system_prompt: str, user_prompt: str, **kwargs) -> LlmResult:
+    """The first draft call, with one retry on a transient CLI failure.
+
+    2026-10-25: an oil refresh died with "CLI exited 1 ... stop_reason:
+    tool_use" and the identical call shape passed a minute later. Without a
+    retry that one-off re-served the prior call (reject_with_prev) for the
+    next four-hour weekend tick. A retry doubles the cost of the rare bad
+    run; a stale call on a live desk costs more. The warning line is the
+    trace: a retry that fires often shows up in the server log as a pattern,
+    not as silence."""
+    try:
+        return complete(system_prompt, user_prompt, **kwargs)
+    except _TRANSIENT_LLM_ERRORS as exc:
+        logger.warning(f"[thesis] {spec.id}: first call failed, retrying once: {exc}")
+        return complete(system_prompt, user_prompt, **kwargs)
 
 
 def _run_repair(

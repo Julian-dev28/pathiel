@@ -337,12 +337,33 @@ def refresh(desk_id: str, force: bool = False,
         return RefreshJob(id=job_id, desk_id=desk_id, state="done", started_at=started,
                           finished_at=datetime.now(timezone.utc), message=message, usage=usage)
 
+    # The provider never raises: when its own LLM call fails or the validator
+    # rejects the draft twice it hands back `prev` with usage.skipped_reason
+    # set (services/thesis fallback.reject_with_prev), or a flat fallback
+    # thesis when there is no prev. Before 2026-10-25 both were saved and
+    # logged as "written": the prior call's file was overwritten with the
+    # failure's usage, and the usage log said a thesis was written when the
+    # card had not changed. Now the call that did not change is left alone
+    # and the decision is logged for what it is.
+    degraded_reason = thesis.usage.skipped_reason if thesis.usage is not None else None
+    if degraded_reason and prev is not None and thesis.id == prev.id:
+        usage = Usage(skipped_reason=degraded_reason, duration_s=time.monotonic() - t0)
+        _log_usage(desk_id, "degraded", reason, usage)
+        logger.warning(f"[strategies.pipeline] {desk_id}: thesis kept, not rewritten ({reason}): {degraded_reason}")
+        return RefreshJob(id=job_id, desk_id=desk_id, state="done", started_at=started,
+                          finished_at=datetime.now(timezone.utc),
+                          message=f"thesis kept, not rewritten ({reason}): {degraded_reason}", usage=usage)
+
     thesis = thesis.model_copy(update={"primary_coins": primary_coins(spec)})
     journal.save_thesis(thesis)
     usage = thesis.usage or Usage()
     if usage.duration_s is None:
         usage = usage.model_copy(update={"duration_s": time.monotonic() - t0})
-    _log_usage(desk_id, "written", reason, usage)
+    if degraded_reason:
+        _log_usage(desk_id, "degraded", reason, usage)
+        message = f"fallback thesis written ({reason}): {degraded_reason}"
+    else:
+        _log_usage(desk_id, "written", reason, usage)
+        message = f"thesis written ({reason})"
     return RefreshJob(id=job_id, desk_id=desk_id, state="done", started_at=started,
-                      finished_at=datetime.now(timezone.utc),
-                      message=f"thesis written ({reason})", usage=usage)
+                      finished_at=datetime.now(timezone.utc), message=message, usage=usage)

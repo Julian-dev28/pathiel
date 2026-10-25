@@ -139,8 +139,7 @@ def run_cli(
         raise LlmTimeoutError(f"CLI timed out after {timeout_s:.0f}s: {args[0]}")
 
     if proc.returncode != 0:
-        tail = (stderr or stdout or "").strip()[:500]
-        raise LlmProcessError(f"CLI exited {proc.returncode}: {args[0]} {tail}")
+        raise LlmProcessError(f"CLI exited {proc.returncode}: {args[0]} {_failure_detail(stdout, stderr)}")
 
     stdout = (stdout or "").strip()
     if not stdout:
@@ -158,6 +157,45 @@ def run_cli(
         raise LlmBadOutputError(f"CLI error envelope: {envelope.get('result') or envelope}")
 
     return envelope
+
+
+# The envelope fields that say WHY a run stopped. `usage` and `modelUsage`
+# are deliberately absent: they are long and explain nothing about a failure.
+_ENVELOPE_DIAG_KEYS = (
+    "subtype", "terminal_reason", "stop_reason", "num_turns", "total_cost_usd",
+    "is_error", "api_error_status",
+)
+
+
+def _failure_detail(stdout: str | None, stderr: str | None) -> str:
+    """What a non-zero exit left behind, in a form someone can act on.
+
+    The CLI usually prints its JSON result envelope to stdout even when it
+    exits 1. The first 500 raw characters of that envelope end inside the
+    usage block, so the error the operator saw on 2026-10-25 read
+    "...stop_reason: tool_use ... iteratio" and nothing that said why the
+    run stopped. This picks the stop fields out of the envelope, keeps the
+    result text (where the CLI writes its own error sentence) and carries
+    stderr alongside; with no envelope it falls back to the raw tail.
+    """
+    out = (stdout or "").strip()
+    err = (stderr or "").strip()
+    envelope: Any = None
+    if out:
+        try:
+            envelope = json.loads(out)
+        except json.JSONDecodeError:
+            envelope = None
+    if not isinstance(envelope, dict):
+        return (err or out)[:500]
+    diag = {k: envelope.get(k) for k in _ENVELOPE_DIAG_KEYS if envelope.get(k) is not None}
+    parts = [json.dumps(diag, sort_keys=True)]
+    result = str(envelope.get("result") or "").strip()
+    if result:
+        parts.append(f"result={result[:300]!r}")
+    if err:
+        parts.append(f"stderr={err[:300]!r}")
+    return " ".join(parts)
 
 
 def _kill_process_group(proc: "subprocess.Popen[str]") -> None:
