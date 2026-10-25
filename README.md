@@ -347,6 +347,7 @@ What leaves the machine and what does not, and the checks that enforce it.
 
 | Desk writes (`POST /api/desks/{id}/theses`, `/refresh`) and the loop log are gated: local mode, else the deployment's operator. Local mode needs a loopback peer, a loopback Host and a loopback Origin, which closes DNS rebinding | `services/strategies/api.py`, `services/auth/integration.py`; `tests/test_http_hardening.py` |
 | No wildcard CORS; bodies capped at 1 MiB; API docs off on any deployment; `/metrics` can require a bearer token | `pathiel/server.py` (`PATHIEL_CORS_ORIGINS`, `PATHIEL_MAX_BODY_BYTES`, `PATHIEL_API_DOCS`, `PATHIEL_METRICS_TOKEN`) |
+| The operator token travels in the `X-Operator-Token` header only, never in a URL; on a deployment nobody becomes operator by signing in first, the role is granted with `scripts/grant_operator.py` | `pathiel/dashboard.py`, `k8s/configmap.yaml`; `tests/test_operator_auth.py`, `tests/test_deploy_config.py` |
 | The image runs as uid 10001, installs from the hashed lock with `--require-hashes`, and npm never runs install scripts (`.npmrc`, CI). The committed `wallet.js` rebuilds byte for byte from the lockfile | `Dockerfile`, `docker-entrypoint.sh`, `services/wallet_ui/build.mjs --verify`, `scripts/supply_chain_check.py`, `tests/test_supply_chain.py` |
 
 The inventory of every secret, who reads it and how to rotate it is

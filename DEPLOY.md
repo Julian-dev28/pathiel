@@ -152,6 +152,17 @@ What the manifests encode, and what `tests/test_deploy_config.py` and
   under the critical floor or the state directory is not writable)
 - `k8s/monitoring/` adds the ServiceMonitor and the PrometheusRule after
   kube-prometheus-stack is installed: `kubectl apply -k k8s/monitoring/`
+- the configmap sets `PATHIEL_AUTH_NO_BOOTSTRAP_OPERATOR=1`, so the first
+  wallet to sign in does NOT become the operator. Grant the role yourself,
+  once, from inside the pod:
+
+  ```bash
+  kubectl -n pathiel exec pathiel-0 -c web -- python3 scripts/grant_operator.py 0xYourWallet
+  ```
+
+  Machine callers of the operator routes send the token in the
+  `X-Operator-Token` header only; `?token=` is refused (it would land in
+  logs and browser history).
 
 ## Health
 

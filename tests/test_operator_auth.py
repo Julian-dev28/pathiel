@@ -193,3 +193,18 @@ def test_risk_router_is_mounted_and_preview_works_locally():
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["preset_applied"] == "starter" and body["headline"]
+
+
+# ── the token travels in a header, never in the URL ──────────────────────────
+
+def test_a_query_string_token_is_refused_and_counted(client):
+    """Security review 2026-10-25, P3-4: `?token=` landed the kill-switch
+    credential in browser history, proxy logs and Referer headers. Only the
+    X-Operator-Token header is read now; a correct token in the query string
+    is a wrong guess like any other."""
+    r = client.post(f"{_MUTATING_PATH}?token={TOKEN}", json=_MUTATING_BODY)
+    assert r.status_code == 401
+    with db._AUTH_LOCK:
+        assert sum(len(v) for v in db._AUTH_FAILURES.values()) == 1
+    ok = client.post(_MUTATING_PATH, json=_MUTATING_BODY, headers={"X-Operator-Token": TOKEN})
+    assert ok.status_code == 200, ok.text

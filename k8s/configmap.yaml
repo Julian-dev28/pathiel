@@ -17,6 +17,12 @@ metadata:
 # sign-in is rejected for a domain mismatch (services/auth). The default is
 # right for the port-forward in k8s/README.md; set the real host for anything
 # reachable from outside the cluster.
+#
+# PATHIEL_AUTH_NO_BOOTSTRAP_OPERATOR=1: on a fresh database the first wallet
+# to sign in would otherwise claim the operator role (security review
+# 2026-10-25, P2-6). A deployment never relies on being first: grant the role
+# from inside the pod with `python scripts/grant_operator.py 0xYourWallet`.
 data:
   PATHIEL_PORT: "8000"
   PATHIEL_AUTH_DOMAIN: "localhost:8000"
+  PATHIEL_AUTH_NO_BOOTSTRAP_OPERATOR: "1"

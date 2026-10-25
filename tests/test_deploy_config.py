@@ -384,6 +384,15 @@ def test_only_the_web_container_mounts_the_state_volume():
     assert "mountPath: /data" not in rotator_block
 
 
+def test_the_configmap_turns_off_first_caller_operator_bootstrap():
+    """Security review 2026-10-25, P2-6: on a fresh database the first wallet
+    to sign in claimed the operator role. A deployment never relies on being
+    first; the role is granted with scripts/grant_operator.py (DEPLOY.md)."""
+    cm = (ROOT / "k8s" / "configmap.yaml").read_text()
+    assert re.search(r'^\s*PATHIEL_AUTH_NO_BOOTSTRAP_OPERATOR:\s*"1"\s*$', cm, re.M), cm
+    assert "grant_operator.py" in (ROOT / "DEPLOY.md").read_text()
+
+
 def test_restart_sh_sets_a_private_umask():
     """Logs and state the local processes write carry addresses, positions
     and order history; they were created world-readable (644) until the

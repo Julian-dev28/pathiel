@@ -202,7 +202,7 @@ and what it can break.
 | P2-3 | S3 API docs | Off on any deployment unless `PATHIEL_API_DOCS=1` | `test_api_docs_are_off_on_any_deployment`; container with `KUBERNETES_SERVICE_HOST` gives 404 on `/docs` | Local `/docs` unchanged | **FIXED** |
 | P2-4 | A8 Python hashes | `uv pip compile --generate-hashes`; CI and Dockerfile install hash-checked | `check_python_lock_hashes`; `--require-hashes` install succeeded | Regenerating needs the same uv flags (header says so) | **FIXED** |
 | P2-5 | R5 k8s pod | `runAsNonRoot`, uid/gid/fsGroup 10001, `seccompProfile: RuntimeDefault`, `allowPrivilegeEscalation: false`, `capabilities.drop: [ALL]`, `readOnlyRootFilesystem` with `logs`/`tmp` emptyDirs, `automountServiceAccountToken: false` | `test_k8s_pods_run_non_root_with_no_privileges`; read-only `docker run` above | `fsGroup` changed 1000 to 10001: the kubelet re-chowns the PVC on next mount | **FIXED** |
-| P2-6 | S6 first-caller operator bootstrap | Proposed: set `PATHIEL_AUTH_NO_BOOTSTRAP_OPERATOR=1` in `k8s/configmap.yaml` and grant with `scripts/grant_operator.py` | n/a | Changes the first-deploy flow; on a deployment that already has an operator it changes nothing. Operator's call | **OPEN** |
+| P2-6 | S6 first-caller operator bootstrap | `k8s/configmap.yaml` sets `PATHIEL_AUTH_NO_BOOTSTRAP_OPERATOR=1`; the role is granted from inside the pod with `scripts/grant_operator.py` (DEPLOY.md) | `tests/test_deploy_config.py::test_the_configmap_turns_off_first_caller_operator_bootstrap` | A fresh deployment has no operator until one is granted; the operator's own machine (local mode) is unchanged | **FIXED** (operator decided, same day) |
 | P2-7 | W6 inline script in CSP | Move each page's inline `<script>` to a file, drop `'unsafe-inline'` | n/a | Touches five templates and their browser tests; a UI change, out of this review's scope | **OPEN** |
 | P2-8 | R2 local Node | `brew upgrade node@22` (or nvm) to 22.23.4 | `node --version` | Build-time only | **OPERATOR** |
 
@@ -213,7 +213,7 @@ and what it can break.
 | P3-1 | S7 `/metrics` | Optional `PATHIEL_METRICS_TOKEN` bearer (constant-time compare); `servicemonitor.yaml` shows `bearerTokenSecret`; listed in `docs/SECRETS.md` and `scripts/preflight_secrets.py`. Set it in the k8s Secret for an internet-facing cluster | **FIXED** (opt-in), **OPERATOR** to set |
 | P3-2 | A6 ranges | Exact versions in `package.json`, `save-exact=true`, gate-checked against the lock | **FIXED** |
 | P3-3 | S9 log modes | `umask 077` in `scripts/restart.sh` (gate-checked). Existing files keep 644 | **FIXED**, **OPERATOR** for `chmod -R go-rwx logs` |
-| P3-4 | S8 `?token=` | Drop query-string support, header only. No tracked code sends it, but the documented operator workflow does (`DEPLOY.md:158`, `docs/ARCHITECTURE.md:731`), so removing it breaks bookmarks the operator may have. Operator's call | **OPEN** |
+| P3-4 | S8 `?token=` | Query-string support dropped: `pathiel/dashboard.py` `_require_operator` reads `X-Operator-Token` only, and a token in the URL counts as a wrong guess | `tests/test_operator_auth.py::test_a_query_string_token_is_refused_and_counted` | Any bookmarked `?token=` URL stops working; DEPLOY.md documents the header | **FIXED** (operator decided, same day) |
 | P3-5 | A11 transitive advisories | They clear with wagmi 3.x, a major with a new connector API, published 2026-10-21 (4 days old). The case for waiting: no flagged package ships or executes, and wagmi 3 would change the connect flow the browser suite guards. `npm overrides` for ws/axios/follow-redirects/zod was tried and reverted: it produced ERESOLVE peer overrides inside the Reown tree for no change to the bundle | **OPEN**, revisit with the wagmi 3 upgrade |
 | P3-6 | esbuild 0.24.2 dev-server advisory | Upgrade to 0.25+ with a rebuild and browser run; not exploitable here (`serve` unused) | **OPEN** |
 | P3-7 | Image carries pytest and ruff (dev extras in the one lock) | Split a runtime lock if image size or surface matters | **OPEN** |
@@ -234,7 +234,7 @@ and what it can break.
 
 1. `chmod -R go-rwx logs .state` in the repo root (old files predate the umask).
 2. Upgrade local Node to 22.23.4.
-3. Decide P2-6 (operator bootstrap on deployments).
+3. P2-6 decided and fixed: bootstrap off on deployments, grant with `scripts/grant_operator.py`.
 4. Plan the wagmi 3 upgrade as its own change with the browser suite (P3-5), and bump esbuild in the same pass (P3-6).
 5. Look at the nightly `Advisories on what ships` result each morning for a week to confirm it is quiet.
 6. Move inline page scripts to files and drop `'unsafe-inline'` (P2-7).
@@ -246,3 +246,8 @@ python scripts/supply_chain_check.py            # offline, also in the gate
 python scripts/supply_chain_check.py --online   # + OSV on what ships and every Python pin
 cd services/wallet_ui && npm ci --ignore-scripts && npm audit signatures && node build.mjs --verify
 ```
+
+
+## Status, later the same day
+
+Done by the operator's session after the merge: the dev venv reinstalled from the hashed lock (certifi 2026.10.23, urllib3 2.8.0) and the server restarted on it; `npm ci --ignore-scripts` in `services/wallet_ui`; `chmod -R go-rwx logs`; Node 22.22.0 -> 22.23.4 (`brew upgrade node@22`); P2-6 and P3-4 fixed as above. P3-5 (wagmi 3) is on hold: the wallet connect flow has no registered account on the live desk (the active account comes from `.env.local`), so the operator is deciding whether to upgrade it or remove `services/wallet_ui` altogether.

@@ -841,11 +841,17 @@ def _require_operator_role(request: Request) -> None:
 
 
 def _require_operator(request: Request) -> None:
-    """401 unless `?token=` or `X-Operator-Token` matches `PATHIEL_OPERATOR_TOKEN`.
+    """401 unless the `X-Operator-Token` header matches `PATHIEL_OPERATOR_TOKEN`.
 
     Checking at request time (not import time) means rotating the token doesn't
     need a restart. Missing env var = operator surface is closed (503), which
     fails CLOSED: a missing token must never mean "no auth required".
+
+    Header only since 2026-10-25 (security review P3-4). `?token=` used to be
+    accepted too, and a token in a URL lands in browser history, proxy and
+    access logs, and Referer headers; none of those is where a kill-switch
+    credential belongs. A query-string token is refused and counted as a
+    wrong guess, never silently ignored.
     """
     expected = os.environ.get("PATHIEL_OPERATOR_TOKEN", "")
     if not expected:
@@ -853,7 +859,7 @@ def _require_operator(request: Request) -> None:
                             detail="operator surface disabled (set PATHIEL_OPERATOR_TOKEN)")
 
     client, now = _client_id(request), time.time()
-    provided = request.query_params.get("token") or request.headers.get("X-Operator-Token", "")
+    provided = request.headers.get("X-Operator-Token", "")
 
     # The token is checked BEFORE the lockout, deliberately. A correct token is
     # proof the caller is not guessing, so it is always honoured and clears the
