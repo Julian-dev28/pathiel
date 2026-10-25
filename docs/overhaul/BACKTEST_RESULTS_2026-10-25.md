@@ -282,3 +282,30 @@ to 0.05R per row at 0.50.
 
 Machine-readable output of the rerun: `/tmp/desk-backtest-050/report.json`
 and `/tmp/desk-backtest-050/trades_<run>.csv`.
+
+## Leverage grid: what setting ends with the most equity
+
+Operator: "can we change the config and tick for the highest pnl and most
+equity". Same window, 0.50 buffer, slippage 0.03%, leverage {2, 3, 5, 10, 20}
+x min_r {1.5, 2.0, 3.0} x the three series that matter. min_r changed
+nothing worth a row (3.0 drops trades from 47 to 38 at the same final
+equity), so the table is at min_r 1.5. Script: the session scratchpad
+`grid_leverage_minr.py`; output `/tmp/desk-backtest-050/grid_leverage_minr.json`.
+
+| leverage | always-long final / max DD | daily-sign final / max DD | journaled final / max DD |
+|---|---|---|---|
+| 2x | $67 / 12% | $55 / 24% | $70 / 3% |
+| 3x | $68 / 17% | $51 / 33% | $73 / 4% |
+| 5x | $69 / 28% | $43 / 50% | $80 / 7% |
+| 10x | $63 / 50% | $26 / 76% | $97 / 14% |
+| 20x | $38 / 78% | $7 / 95% | $132 / 27% |
+
+Start $64. Expectancy in R is identical down each column (R does not see
+leverage); only the path does.
+
+Reading: leverage is a bet on the direction calls being as good as last
+week's six. If they are, 20x compounds fastest. If the mechanics have to
+carry it, 20x loses 40% of the stack in a month where 5x finishes ahead and
+10x finishes flat. 10x keeps three quarters of the journaled upside ($97 of
+$132 over $64) and turns the mechanics-only worst case from -40% into
+break-even; 5x caps the upside at +25% for a worst case of +8%.
