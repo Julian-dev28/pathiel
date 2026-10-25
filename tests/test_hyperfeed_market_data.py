@@ -20,8 +20,13 @@ from pathiel.models.types import Candle
 
 # ── asset classification (moved in from market_regime.py) ──────────────────
 
-def test_classify_asset():
+def test_classify_asset(monkeypatch):
+    from pathiel.agents import hyperfeed as hf
     from pathiel.agents.hyperfeed import classify_asset
+    # The native-ticker set comes from get_universe() (a venue read) on a cold
+    # cache; pin it so this stays a pure classification test. Reached the
+    # network on every clean CI runner until 2026-10-25.
+    monkeypatch.setattr(hf, "_crypto_tickers_cache", frozenset({"BTC", "ETH", "SOL"}))
     # crypto default
     assert classify_asset("BTC") == "crypto"
     assert classify_asset("PEPE") == "crypto"

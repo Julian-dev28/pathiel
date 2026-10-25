@@ -44,6 +44,7 @@ SKIPPED: Dict[str, str] = {
     "cancel_order": "cancels a live order",
     "desk_refresh": "spends LLM tokens (run it on purpose, not in a smoke)",
     "desk_submit_call": "writes to the desk journal",
+    "desk_grade": "writes grades into the desk journal (the server's hourly sweep runs it)",
     "risk_set_profile": "changes live position sizing",
 }
 

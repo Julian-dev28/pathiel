@@ -46,6 +46,7 @@ sent off-hours will be rejected by HL. No special hours-gate is implemented.
 from __future__ import annotations
 
 import json
+import os
 import logging
 import time
 from pathlib import Path
@@ -57,7 +58,10 @@ from pathiel.client.hl_client import _http_post
 logger = logging.getLogger(__name__)
 
 # A warm cache under the old name is still a warm cache.
-_CACHE_DIR = Path(compat.legacy_path(
+# PATHIEL_UNIVERSE_CACHE_DIR overrides the location (the test gate points it at
+# an empty temp dir so a warm cache on one machine cannot hide a network
+# call that every clean CI runner then makes; found 2026-10-25).
+_CACHE_DIR = Path(os.environ.get("PATHIEL_UNIVERSE_CACHE_DIR") or compat.legacy_path(
     str(Path.home() / ".pathiel" / "universe_cache"),
     str(Path.home() / ".pathiel" / "universe_cache")))
 _CACHE_DIR.mkdir(parents=True, exist_ok=True)

@@ -7,6 +7,12 @@ from services.accounts import registry, summary
 
 def _clear_env_identity(monkeypatch):
     monkeypatch.setattr("pathiel.client.exchange.PRIVATE_KEY_HEX", "")
+    # The full account read lists every perp dex first (a `perpDexs` venue
+    # call on a cold universe cache). Pin the list: these tests stub the
+    # account state, not the venue. Reached the network on every clean CI
+    # runner until 2026-10-25.
+    from pathiel.client import account_snapshot
+    monkeypatch.setattr(account_snapshot, "LIST_DEXES", lambda: ["xyz"])
 
 
 def test_no_account_connected(monkeypatch, tmp_path):

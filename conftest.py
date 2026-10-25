@@ -37,6 +37,15 @@ os.environ.setdefault("PATHIEL_DESK_WARMUP", "0")
 os.environ.setdefault("PATHIEL_META_PREWARM", "0")
 os.environ.setdefault("PATHIEL_GRADE_LOOP", "0")
 
+# The Hyperliquid universe cache lives under ~/.pathiel/universe_cache with a
+# 24h TTL. A warm one on a developer's machine let five gate tests pass locally
+# while every clean CI runner reached api.hyperliquid.xyz through them
+# (2026-10-25, red since 0f153e4). Every gate run now starts from an empty
+# cache, so local runs are exactly as cold as CI.
+import tempfile  # noqa: E402
+os.environ.setdefault("PATHIEL_UNIVERSE_CACHE_DIR",
+                      tempfile.mkdtemp(prefix="pathiel-universe-cache-"))
+
 
 import pytest  # noqa: E402
 
