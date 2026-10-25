@@ -3,10 +3,10 @@ per-class funding regime.
 
 Moved out of tests/test_cleanup.py 2026-10-23 (wave 2): that file was mostly
 coverage for the retired autonomous engine (deleted with it), but hyperfeed.py
-is kept (the MCP server's market/leaderboard tools route through it) and
-this is real, otherwise-unduplicated coverage for it — tests/
-test_hyperfeed_leaderboard.py covers the leaderboard discovery ranking/
-caching, not these functions.
+is kept (the MCP server's market_* tools route through it) and this is
+real, otherwise-unduplicated coverage for it. 2026-10-25: the leaderboard
+and trader-discovery functions (and tests/test_hyperfeed_leaderboard.py)
+were deleted; no tool had called them since the 2026-10-23 tool cut.
 
 `classify_asset`/`_native_crypto_tickers` moved INTO hyperfeed.py from
 pathiel.agents.market_regime (deleted the same wave: its trend detector fed
@@ -88,40 +88,6 @@ def test_hyperfeed_safe_float_default():
     assert _safe_float("3.5") == 3.5
 
 
-def test_leaderboard_get_markets_ranks_by_volume(monkeypatch):
-    from pathiel.agents import hyperfeed
-    monkeypatch.setattr(hyperfeed, "get_universe", lambda: [
-        {"coin": "SMALL", "type": "perp", "dayNtlVlm": 1e6, "openInterest": 1},
-        {"coin": "BIG", "type": "perp", "dayNtlVlm": 1e9, "openInterest": 9},
-        {"coin": "@SPOT", "type": "spot", "dayNtlVlm": 1e12},  # excluded
-    ])
-    out = hyperfeed.leaderboard_get_markets()["markets"]
-    assert [m["asset"] for m in out] == ["BIG", "SMALL"]
-    assert out[0]["rank"] == 1
-
-
-def test_leaderboard_get_trader_positions_unwraps_and_coerces(monkeypatch):
-    """Nested position unwrap, string-leverage coercion, szi==0 skip."""
-    from pathiel.agents import hyperfeed
-    monkeypatch.setattr(hyperfeed, "_http_post", lambda path, body: {
-        "assetPositions": [
-            {"position": {"coin": "BTC", "szi": "2.0", "entryPx": "60000",
-                          "leverage": "10", "unrealizedPnl": "500"}},
-            {"position": {"coin": "ETH", "szi": "0"}},  # skipped
-        ],
-    })
-    out = hyperfeed.leaderboard_get_trader_positions("0xABC")["positions"]
-    assert len(out) == 1
-    assert out[0]["side"] == "long"
-    assert out[0]["leverage"] == {"value": "10"}  # str coerced to obj
-
-
-def test_leaderboard_get_trader_positions_empty_when_no_state(monkeypatch):
-    from pathiel.agents import hyperfeed
-    monkeypatch.setattr(hyperfeed, "_http_post", lambda path, body: None)
-    assert hyperfeed.leaderboard_get_trader_positions("0xABC") == {"positions": []}
-
-
 def test_market_get_asset_data_collects_candles_and_context(monkeypatch):
     from pathiel.agents import hyperfeed
     fake_candles = [Candle(t=1, o=1, h=2, l=0.5, c=1.5, v=100)]
@@ -173,33 +139,6 @@ def test_market_get_mids_passthrough(monkeypatch):
     monkeypatch.setattr(hyperfeed, "fetch_all_mids", fake_mids)
     assert hyperfeed.market_get_mids() == {"BTC": "60000", "xyz:IBM": "280"}
     assert seen["include_hip3"] is True
-
-
-def test_discovery_get_trader_state_win_rate_is_percentage(monkeypatch):
-    """win_rate is a 0-100 percentage; positions unwrapped; ROI computed."""
-    from pathiel.agents import hyperfeed
-    calls = {"clearinghouse": {
-        "marginSummary": {"accountValue": "8000", "totalNtlPos": "4000"},
-        "assetPositions": [
-            {"position": {"coin": "BTC", "szi": "1", "entryPx": "60000",
-                          "unrealizedPnl": "100", "leverage": {"value": "5"}}},
-        ],
-    }}
-
-    def fake_post(path, body):
-        if body["type"] == "clearinghouseState":
-            return calls["clearinghouse"]
-        if body["type"] == "userFills":
-            return [{"closedPnl": "5"}, {"closedPnl": "-2"}, {"closedPnl": "3"}]
-        return {}
-
-    monkeypatch.setattr(hyperfeed, "_http_post", fake_post)
-    out = hyperfeed.discovery_get_trader_state(["0xABC"])["data"]["traders"]
-    assert len(out) == 1
-    t = out[0]
-    assert t["total_trades"] == 3
-    assert abs(t["win_rate"] - (2 / 3 * 100)) < 1e-6  # 2 of 3 winners
-    assert t["open_positions"] == 1
 
 
 # ── per-class funding regime ────────────────────────────────────────────

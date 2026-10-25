@@ -1,428 +1,256 @@
-# Deploy pathiel to Fly.io
+# Deploy pathiel (Docker and Kubernetes)
 
-> **Known gap (2026-10-23, wave 2):** the autonomous `loop` and `sched`
-> processes this doc describes below are retired — the scan/research/execute
-> trading loop script and the cron-replacement scheduler script they ran are
-> both deleted. Claude trades through the MCP server now, not a standing
-> loop, and there is no scheduler left to run the capital-flows/
-> autonomous-cycle/trends-price jobs. `fly.toml`, the k8s manifests, and the
-> local restart script still declare both processes and have not been
-> updated for this yet — deploying from this repo today will try to launch
-> two process groups with no script to run. The process table,
-> health-check and runbook sections below are accurate for the deploy
-> config as it stands, not for the code; fixing the deploy config to drop
-> `loop`/`sched` (down to two Fly processes — `web` and `rotator` — plus the
-> MCP server run locally, not containerized) is a follow-up this doc update
-> did not do.
+pathiel is a headless live desk on Hyperliquid. Claude is the trader, through
+the MCP server (`scripts/pathiel-mcp-server.py`) on the operator's own
+machine; the web server (`python -m pathiel.server`) is the Desk and Account
+pages, the JSON API, `/metrics` and the desk-grading loop. Only the web half
+is containerised. There is no trading loop, no scheduler and no AI brain
+process to deploy (the autonomous engine was retired 2026-10-23, the brain
+module 2026-10-25), and Fly.io was dropped as a target on 2026-10-25: the one
+container target is Kubernetes (`k8s/`), with plain `docker run` for a local
+smoke test.
 
-A single image, five Fly processes, one persistent volume. This is
-`scripts/restart.sh`'s process list translated to Fly process groups — the
-container never runs `restart.sh` itself; Fly launches each process directly
-and supervises it:
+| Where | What runs | How it starts |
+|---|---|---|
+| operator's machine | the server, the log rotator, the MCP server, Claude's desk ticks | `scripts/restart.sh`; Claude Code with `.mcp.json`; `/loop 15m /desk-tick oil` |
+| container (`web`) | `python3 -m pathiel.server` on `:8000` | k8s StatefulSet, or `docker run` |
+| container (`rotator`) | `python3 scripts/log_rotate.py --daemon` | second container in the same pod |
 
-| Process   | Command                                                | What it is |
-|-----------|---------------------------------------------------------|------------|
-| `web`     | `python3 -m pathiel.server`                        | Dashboard + JSON API + SSE feed + `/metrics`, public |
-| `loop`    | *(script deleted — see the known-gap note above)*       | Was: autonomous scan → research → execute → DSL monitor, private |
-| `sched`   | *(script deleted — see the known-gap note above)*       | Was: cron replacement — fired `capital-flows` (6h), `autonomous-cycle` (daily), `trends-price` (30min) |
-| `rotator` | `python3 scripts/log_rotate.py --daemon`                 | Bounds `logs/` growth — `sched`'s fired jobs write real log files regardless of how `sched` itself was launched |
-
-All four run from one image. `web`, `loop`, and `sched` share the
-`/data` volume; `rotator` doesn't touch `/data` (see "Runtime state" below).
-
-Cost: roughly **$5–8/month** for five `shared-cpu-1x` VMs (three at 512MB, two
-at 256MB) + a 1GB volume.
+The container can show the Desk pages, serve the API and grade expired
+theses. It cannot write a new thesis: `desk_refresh` goes through
+`services/llm`, which shells out to a locally signed-in Claude Code CLI, and
+no such session exists in a pod. In a container the thesis writer degrades to
+the previous thesis or a flat placeholder; the operator refreshes theses from
+their own machine.
 
 ## Prerequisites
 
 ```bash
-brew install flyctl
-flyctl auth signup   # or `flyctl auth login` if you already have an account
-docker info           # Docker must be running — flyctl builds the image locally by default
+docker info                     # Docker must be running
+brew install kind helm          # only for the Kubernetes path (kubectl already present)
 ```
 
-You'll also need, before the first deploy:
-- An [OpenRouter](https://openrouter.ai/keys) account (the default AI brain provider)
-- A funded Hyperliquid wallet + its private key
-- (Optional) [Brave Search](https://api.search.brave.com/) for news in research
+A funded Hyperliquid account with an agent wallet (the key that signs orders,
+never the master key). No LLM account: nothing in the image calls a hosted
+model.
 
 ## Secrets
 
-**Never** put these in `fly.toml`, `k8s/configmap.yaml`, or the image — set
-them with `flyctl secrets set` / a `kubectl create secret` (see
-`k8s/secret.example.yaml`). This lists names and purpose only, never values.
+**Never** put these in `k8s/configmap.yaml`, the `Dockerfile`, or any tracked
+file. Create the k8s Secret imperatively (see `k8s/secret.example.yaml`) or
+pass `-e` flags to `docker run` from your shell environment.
 
 | Secret | Required? | Unlocks |
-|--------|-----------|---------|
-| `OPENROUTER_API_KEY` | **Required** | The default AI brain (`AI_BRAIN_PROVIDER=openrouter`, baked into the image) — research and the /trends narrative pass |
-| `HYPERLIQUID_WALLET_ADDRESS` | **Required** | The trading account |
-| `HYPERLIQUID_PRIVATE_KEY` | **Required** | Signs orders — the money key |
-| `PATHIEL_OPERATOR_TOKEN` | **Required** | Gates every mutating dashboard endpoint (`?token=` / `X-Operator-Token`). Missing = the operator console 503s closed, which is safe but means you can't start/stop/configure the bot from the dashboard |
-| `PATHIEL_AUTH_DOMAIN` | **Required** | The host that must appear inside every signed sign-in message. Set it to the real deployed host — if it does not match what the browser is on, every signature is rejected for a domain mismatch and nobody can log in. Never derived from the request's own Host header, which an attacker controls |
-| `PATHIEL_PUBLIC_DASHBOARD` | Optional | `1` restores pre-2026-09-04 open reads on the account routes. Only for a genuinely private single-operator box |
-| `BRAVE_API_KEY` | Optional | News search inside `pathiel/agents/research.py`. Unset = that source is skipped, not an error |
-| `HYPERLIQUID_MASTER_ADDRESS` | Optional | Agent-wallet setup — the funding account behind the trading wallet |
-| `HYPERLIQUID_MASTER_PRIVATE_KEY` | Optional | Only used by `scripts/treasury.py` (manual transfers between master/agent wallets) — never read by any of the five deployed processes. Set it only if you plan to `flyctl ssh console` and run treasury commands by hand |
+|---|---|---|
+| `HYPERLIQUID_WALLET_ADDRESS` | **Required** | The agent wallet that signs orders |
+| `HYPERLIQUID_PRIVATE_KEY` | **Required** | That wallet's key. The money key |
+| `HYPERLIQUID_MASTER_ADDRESS` | **Required** | The account the agent wallet acts for |
+| `PATHIEL_OPERATOR_TOKEN` | **Required** | Bearer token for machine callers of the mutating routes. Missing = those routes 503 closed |
+| `EIA_API_KEY`, `FRED_API_KEY`, `CONGRESS_API_KEY` | Optional | `services/intel` data sources. A missing key skips that source and the desk brief's `stale` list says so |
+| `HYPERLIQUID_MASTER_PRIVATE_KEY` | **Never in a container** | `scripts/treasury.py` only, on the operator's machine. `scripts/preflight_secrets.py --deploy` fails if it is set |
+
+Run the preflight before any deploy. It prints names, never values, and exits
+non-zero when secrets handling is wrong:
 
 ```bash
-flyctl secrets set \
-  OPENROUTER_API_KEY="sk-or-..." \
-  HYPERLIQUID_WALLET_ADDRESS="0x..." \
-  HYPERLIQUID_PRIVATE_KEY="0x..." \
-  PATHIEL_OPERATOR_TOKEN="$(openssl rand -hex 16)"
-
-# Optional
-flyctl secrets set BRAVE_API_KEY="BSA..."
-flyctl secrets set HYPERLIQUID_MASTER_ADDRESS="0x..." HYPERLIQUID_MASTER_PRIVATE_KEY="0x..."
+.venv/bin/python scripts/preflight_secrets.py --deploy
 ```
 
-```bash
-flyctl secrets list                                # names only, never values
-flyctl secrets set PATHIEL_OPERATOR_TOKEN="$(openssl rand -hex 16)"   # rotate
-flyctl secrets unset BRAVE_API_KEY                 # remove
-```
-
-Setting or unsetting a secret triggers a rolling redeploy of every process.
-
-## AI provider — read this before you deploy
-
-The image bakes `AI_BRAIN_PROVIDER=openrouter` (see `Dockerfile`). That's a
-plain HTTPS call authenticated by `OPENROUTER_API_KEY` and works out of the
-box in any container.
-
-The alternative provider, `claude_cli` (what CLAUDE.md's "route LLM calls
-through local Claude Code" rule refers to, and what is configured on the
-operator's Mac today per `.env.local`), shells out to a **locally
-authenticated Claude Code CLI session** — an interactive desktop
-subscription, not a credential you can bake into an image or hand to
-`flyctl secrets set`. It does not run in a stateless cloud container.
-
-Two things now make that impossible to get wrong silently:
-
-- `scripts/preflight_secrets.py --deploy` **fails** on a CLI provider. Run it
-  before every deploy; it refuses rather than shipping an image whose brain
-  cannot start.
-- `/api/health/system` reports `ai_brain` as failing when the selected brain
-  cannot run, so a misconfigured deploy shows up as a 503 instead of as a
-  system that quietly never produces a verdict.
-
-Fixed 2026-08-29: `services/trend_engine/ai.py` used to shell out to the
-`claude` binary **unconditionally**, ignoring `AI_BRAIN_PROVIDER`, so the
-/trends narrative pass failed every call in a container and returned an empty
-string — indistinguishable from a model with nothing to say. It now routes
-through the shared brain like everything else, so the image default
-(`openrouter`) works.
+`docs/SECRETS.md` is the full inventory and rotation runbook.
 
 ## Runtime state
 
-Everything the app persists lives on one Fly volume mounted at `/data`,
-shared by `web`, `loop`, and `sched`:
+Everything the server persists lives under one volume mounted at `/data`:
 
 | Path | What |
-|------|------|
-| `/data/.dsl-state.json` | Position exit-tracker ratchets (`PATHIEL_DSL_STATE_FILE`) |
-| `/data/.agent-config.json` | Live mode / config (`PATHIEL_AGENT_CONFIG_FILE`) — first boot writes `mode: "OFF"` |
-| `/data/.agent-memory.json` | Perception/analysis memory (`PATHIEL_AGENT_MEMORY_FILE`) |
-| `/data/session-log.jsonl` | Trade/action session log (`SESSION_LOG_PATH`) |
-| `/data/.positions-snapshot.json` | Cross-process position snapshot the loop writes and the dashboard reads (`PATHIEL_POSITIONS_SNAPSHOT_FILE`) — also what `loop`'s k8s `startupProbe` checks |
-| `/data/.state/` | Everything routed through `PATHIEL_STATE_DIR`: shadow ledgers (`.state/shadow_ledger/<book>.jsonl`), the cross-book claims registry, the capital-flow record the drawdown is computed from (`.state/capital_flows.jsonl`), per-strategy throttle timers, `services/trend_engine`'s cached lanes, and the (now-deleted) scheduler's own job-run bookkeeping (via a symlink — see the Dockerfile) |
+|---|---|
+| `/data/.state/` | `PATHIEL_STATE_DIR`: desk journals and theses (`strategies/<desk>/`), the intel cache, candle cache, the accounts registry and vault, backup receipts |
+| `/data/.agent-config.json` | `PATHIEL_AGENT_CONFIG_FILE`: mode, HIP-3 and coin lists, risk profile, active desks |
+| `/data/session-log.jsonl` | `SESSION_LOG_PATH`: the action log the Account page tails |
 
-`logs/` is deliberately **not** on the volume — see the Dockerfile and
-`k8s/statefulset.yaml`'s `rotator` container comment for why.
+`logs/` is deliberately **not** on the volume: log history needs no
+backup or rollback semantics, and keeping it off the volume keeps the one
+singleton-sensitive claim small. `rotator` bounds it inside the container's
+own writable layer.
 
-## One-time setup
+The `web` container runs with `PATHIEL_STATE_READONLY=1` and a throttled
+Hyperliquid token bucket (`PATHIEL_HL_RATE_REFILL_PER_SEC=2`,
+`PATHIEL_HL_RATE_CAPACITY=60`), the same env `scripts/restart.sh` gives the
+server on the operator's machine, so the dashboard's polling yields venue
+budget to the trading calls.
 
-```bash
-# From the repo root, launch the app (skips automatic deploy so we can wire
-# secrets first)
-flyctl launch --no-deploy --copy-config
-
-# When prompted:
-#   - App name: pick something unique (e.g. pathiel-julian)
-#   - Region: pick one near you (iad / ord / fra / nrt …)
-#   - Postgres / Redis: NO
-#   - Deploy now: NO
-
-# Create the persistent volume (one per region; size = 1GB is plenty)
-flyctl volumes create pathiel_data --size 1 --region iad
-
-# Wire secrets — see "Secrets" above
-flyctl secrets set OPENROUTER_API_KEY="..." HYPERLIQUID_WALLET_ADDRESS="..." \
-  HYPERLIQUID_PRIVATE_KEY="..." PATHIEL_OPERATOR_TOKEN="$(openssl rand -hex 16)"
-
-# First deploy
-flyctl deploy
-```
-
-After a successful deploy you'll get a URL like `https://pathiel-julian.fly.dev`.
-The dashboard is at `/`, the operator console is at `/operator?token=<PATHIEL_OPERATOR_TOKEN>`.
-
-## Verifying the image before you ship it
-
-The image was built and exercised on 2026-08-29 — these are the exact commands,
-not an aspiration:
-
-```bash
-docker build -t pathiel-test .
-
-# Every module a running process imports must be IN the image. This is the
-# check that would have caught services/ being absent from a 3-month-stale
-# Dockerfile.
-docker run --rm pathiel-test python3 -c "
-import pathiel.server, pathiel.dashboard, pathiel.metrics
-from pathiel.agents import bracket, hyperfeed, config_store
-import services.trend_engine.run"
-
-# The server boots and every page renders inside the container.
-docker run --rm -e PATHIEL_OPERATOR_TOKEN=t pathiel-test python3 -c "
-from fastapi.testclient import TestClient
-from pathiel.server import app
-c = TestClient(app)
-print({p: c.get(p).status_code for p in ('/','/activity','/news','/analytics','/trends')})"
-```
-
-Expect all five pages to return 200, and `/api/health/system` to return **503**
-with `['ai_brain', 'loop']` failing — a container with no credentials and no
-running loop SHOULD report unhealthy. That 503 is the deep healthcheck working,
-not a build problem.
-
-## Verifying the deploy is healthy
-
-```bash
-flyctl status                          # all 4 process groups should show "started"
-flyctl checks list                     # both http_service checks should be "passing"
-
-# Shallow: is the web process serving?
-curl -s https://<your-app>.fly.dev/api/health
-
-# Deep: is the SYSTEM working? 503 lists exactly what is broken. This is the
-# one to alert on — /api/health answers 200 even with a dead trading loop.
-curl -s https://<your-app>.fly.dev/api/health/system | jq
-
-# Confirm every process actually came up (not just the machine)
-flyctl logs -i web     | tail -20      # "Starting Pathiel server on port 8000"
-flyctl logs -i loop    | tail -20      # first scan cycle log lines
-flyctl logs -i sched   | tail -20      # "[scheduler] up — N jobs, 60s tick"
-flyctl logs -i rotator | tail -20      # first disk-guard pass
-
-# Confirm the loop is actually writing state to the volume (not just running)
-flyctl ssh console -s -C "cat /data/.positions-snapshot.json"
-```
-
-If `web` is up but every other process group shows 0 machines, you likely
-deployed before `flyctl secrets set` or before `flyctl volumes create` —
-check `flyctl logs -i loop` for the crash reason (missing `HYPERLIQUID_PRIVATE_KEY`
-fails loudly at import time).
-
-## Tailing logs
-
-```bash
-flyctl logs                          # combined, all five processes
-flyctl logs -i web
-flyctl logs -i loop
-flyctl logs -i sched
-flyctl logs -i rotator
-```
-
-## Pausing the bot without redeploying
-
-```bash
-flyctl machines stop --process-group loop                # halt trading loop
-flyctl machines start --process-group loop                # resume
-```
-
-`web` and `sched` keep running either way — the dashboard stays
-readable, `/predictions` and `/trends` keep refreshing, without the loop
-placing trades. You can also flip mode to `OFF` in the operator console — the
-loop process stays alive but stops opening new positions; existing positions
-still get DSL-managed.
-
-## Deploying new code (upgrade)
-
-```bash
-git push          # main branch; doesn't trigger deploy
-flyctl deploy     # builds image + rolls all five processes
-```
-
-Fly does a rolling restart for `web` for free (zero-downtime). `loop`,
-`sched` and `rotator` briefly drop and restart — or did, while those first
-two processes still had a script to run; see the known-gap note at the top
-of this file.
-
-## Rollback
-
-```bash
-flyctl releases list                              # find the last-known-good version
-flyctl deploy --image <previous-image-ref>         # from a specific past release
-# or, simplest:
-flyctl releases rollback <version>
-```
-
-Rollback does not touch `/data` — state (positions, DSL ratchets, shadow
-ledgers) is untouched by a code rollback, since it's all on the volume, not
-in the image.
-
-## SSH into the running machine
-
-```bash
-flyctl ssh console -s
-ls /data                              # see the persisted state files
-tail -f /data/session-log.jsonl       # live activity from inside the box
-```
-
-## Backing up volume state
-
-```bash
-flyctl ssh sftp shell
-get /data/.dsl-state.json
-get /data/.agent-memory.json
-get /data/session-log.jsonl
-```
-
-Or set up a periodic snapshot:
-
-```bash
-flyctl volumes snapshots create pathiel_data
-flyctl volumes snapshots list pathiel_data
-```
-
-## Switching to a custom domain
-
-```bash
-flyctl certs add pathiel.yourdomain.com
-flyctl certs show pathiel.yourdomain.com    # follow the DNS-CNAME instructions
-```
-
-## Common gotchas
-
-- **Four of the five processes need the volume mount.** `web`, `loop`,
-  and `sched` all read or write `/data` (directly, or through
-  `PATHIEL_STATE_DIR`); `rotator` deliberately does not. `[[mounts]] processes`
-  in `fly.toml` reflects this exactly — don't add `rotator` to it and don't
-  remove any of the other four.
-- **`PATHIEL_BIND` is baked to `0.0.0.0` in the image.** The code default is
-  `127.0.0.1` (a security fix for running bare on a Mac). If you ever run
-  this image with a custom entrypoint that unsets image `ENV`, the health
-  check will time out with no obvious error — the process is up, just
-  unreachable. See the Dockerfile's "Networking" comment.
-- **Mode defaults to OFF.** First boot writes `/data/.agent-config.json` with
-  `mode: "OFF"`. Open the operator console and flip to `LIVE` once you've
-  verified the dashboard.
-- **Time on Fly is UTC.** The dashboard converts to your browser's local zone;
-  the session log timestamps are epoch ms (timezone-agnostic).
-- **The `~/.pathiel.pid` file** that the FastAPI start/stop endpoints
-  reference is meaningless in a container — Fly handles process supervision.
-  Those endpoints will report stopped state inside Fly; ignore them and use
-  `flyctl machines stop --process-group loop` instead.
-- **`AI_BRAIN_PROVIDER=claude_cli` will not work as deployed.** See "AI
-  provider" above before changing it.
-
-## Local build + smoke test (before you deploy)
+## Build and verify the image
 
 ```bash
 docker build -t pathiel:local .
 
-# Prove the image actually contains every package it imports:
-docker run --rm pathiel:local python3 -c \
-  "import pathiel.server, pathiel.dashboard, \
-   services.trend_engine.run; print('ok')"
+# Every package a running process imports must be IN the image. This is the
+# check that would have caught services/ being absent from a stale Dockerfile
+# (tests/test_deploy_config.py runs the same check offline on every commit).
+docker run --rm pathiel:local python3 -c "
+import pathiel.server, pathiel.dashboard, pathiel.metrics
+from pathiel.agents import bracket, hyperfeed, config_store
+import services.strategies.api, services.intel.api, services.accounts.api, services.risk.api
+print('ok')"
 
-# Prove the server actually binds reachably and serves /api/health:
-docker run --rm -d --name pathiel-smoke -p 8000:8000 \
-  -e HYPERLIQUID_WALLET_ADDRESS=0xtest -e HYPERLIQUID_PRIVATE_KEY=0x$(printf '1%.0s' {1..64}) \
-  -e OPENROUTER_API_KEY=test -e PATHIEL_OPERATOR_TOKEN=test \
-  pathiel:local
-sleep 3 && curl -sf http://localhost:8000/api/health && echo OK
-docker rm -f pathiel-smoke
+# The server boots and both pages render inside the container.
+docker run --rm -e PATHIEL_OPERATOR_TOKEN=t pathiel:local python3 -c "
+from fastapi.testclient import TestClient
+from pathiel.server import app
+c = TestClient(app)
+print({p: c.get(p).status_code for p in ('/', '/desk/oil', '/account')})"
 ```
 
-## Full env var reference
+Expect every page to return 200.
 
-Most of these are optional tuning knobs with safe defaults and don't need to
-be set for a working deploy — listed here so every env var the code reads is
-documented somewhere, per this repo's deploy-config gate test
-(`tests/test_deploy_config.py`).
+## Run it with Docker
 
-### Secrets — see "Secrets" above
+```bash
+docker volume create pathiel_data
+docker run -d --name pathiel -p 8000:8000 \
+  -v pathiel_data:/data \
+  -e HYPERLIQUID_WALLET_ADDRESS -e HYPERLIQUID_PRIVATE_KEY -e HYPERLIQUID_MASTER_ADDRESS \
+  -e PATHIEL_OPERATOR_TOKEN \
+  -e PATHIEL_AUTH_DOMAIN=localhost:8000 \
+  -e PATHIEL_STATE_READONLY=1 -e PATHIEL_HL_RATE_REFILL_PER_SEC=2 -e PATHIEL_HL_RATE_CAPACITY=60 \
+  pathiel:local
+curl -sf http://localhost:8000/api/health && echo OK
+curl -s  http://localhost:8000/api/health/system | python3 -m json.tool
+```
 
-`OPENROUTER_API_KEY`, `HYPERLIQUID_WALLET_ADDRESS`, `HYPERLIQUID_PRIVATE_KEY`,
-`HYPERLIQUID_MASTER_ADDRESS`, `HYPERLIQUID_MASTER_PRIVATE_KEY`
+The bare `-e NAME` form copies the variable from your shell without putting
+the value on the command line. `PATHIEL_AUTH_DOMAIN` must match the host the
+browser is on or every wallet sign-in is rejected for a domain mismatch.
 
-### Baked into the image — see the Dockerfile, don't override casually
+## Run it on Kubernetes
 
-`PATHIEL_BIND` (`0.0.0.0`), `AI_BRAIN_PROVIDER` (`openrouter`),
-`PATHIEL_STATE_DIR`, `PATHIEL_POSITIONS_SNAPSHOT_FILE`, `SESSION_LOG_PATH`,
-`PATHIEL_DSL_STATE_FILE`, `PATHIEL_AGENT_CONFIG_FILE`, `PATHIEL_AGENT_MEMORY_FILE`
+`k8s/README.md` is the step-by-step for a local kind cluster with Prometheus
+and Grafana. The short form:
 
-### Set in fly.toml `[env]` / k8s ConfigMap
+```bash
+kind create cluster --name pathiel
+kind load docker-image pathiel:local --name pathiel
+kubectl apply -f k8s/namespace.yaml
+kubectl create secret generic pathiel-secrets -n pathiel \
+  --from-literal=HYPERLIQUID_WALLET_ADDRESS="$HYPERLIQUID_WALLET_ADDRESS" \
+  --from-literal=HYPERLIQUID_PRIVATE_KEY="$HYPERLIQUID_PRIVATE_KEY" \
+  --from-literal=HYPERLIQUID_MASTER_ADDRESS="$HYPERLIQUID_MASTER_ADDRESS" \
+  --from-literal=PATHIEL_OPERATOR_TOKEN="$(openssl rand -hex 16)"
+kubectl apply -k k8s/                      # namespace, configmap, service, statefulset
+kubectl -n pathiel rollout status statefulset/pathiel
+kubectl -n pathiel port-forward svc/pathiel 8000:8000
+```
 
-`PATHIEL_PORT` (`8000`), `PATHIEL_SCAN_INTERVAL` (`60`)
+What the manifests encode, and what `tests/test_deploy_config.py` and
+`tests/test_health_endpoints.py` pin:
 
-### Set only on the `web` process (statefulset.yaml `web` container `env:` /
-### fly.toml's `env` command prefix on the `web` process)
+- one `StatefulSet` replica (the server is a singleton over its state files),
+  two containers, `web` and `rotator`, one per process in `scripts/restart.sh`
+- only `web` mounts the `/data` claim
+- liveness probes `/api/health` (shallow, always 200 while the process can
+  serve); readiness probes `/api/health/system` (deep, 503 when the disk is
+  under the critical floor or the state directory is not writable)
+- `k8s/monitoring/` adds the ServiceMonitor and the PrometheusRule after
+  kube-prometheus-stack is installed: `kubectl apply -k k8s/monitoring/`
 
-`PATHIEL_STATE_READONLY` — never let the dashboard process flush
-`.agent-memory.json` over the loop's live data (see `pathiel/agents/memory.py`).
-`PATHIEL_HL_RATE_REFILL_PER_SEC` / `PATHIEL_HL_RATE_CAPACITY` — throttle the
-dashboard's HL polling to ~1/4 budget so it yields to the loop's fetches
-(defaults 15/300 otherwise; `loop` keeps the full budget, unset).
+## Health
 
-### Tuning knobs — safe code defaults, override only if you know why
+```bash
+curl -s http://localhost:8000/api/health            # liveness: the process serves
+curl -s http://localhost:8000/api/health/system      # readiness: disk + state dir, plus hl_budget
+curl -s http://localhost:8000/metrics | grep pathiel_
+```
 
-| Var | Default | Purpose |
-|-----|---------|---------|
-| `PATHIEL_MAX_MARKETS` | 45 | Total candle-fetch budget per scan |
-| `PATHIEL_MAX_MARKETS_HIP3` | 18 | Of that budget, slots reserved for HIP-3 |
-| `PATHIEL_MAX_MARKETS_MOVERS` | 10 | Slots reserved for movers |
-| `PATHIEL_BATCH_SIZE` | 20 | Markets per parallel batch |
-| `PATHIEL_BATCH_SLEEP` | 0.3 | Seconds between batches |
-| `PATHIEL_SCAN_WORKERS` | (auto) | Parallel scan threads |
-| `PATHIEL_UNIVERSE_SWEEP` | 0 (disabled) | Full-universe sweep toggle |
-| `PATHIEL_UNIVERSE_REFRESH_S` | 1800 | Universe refresh interval |
-| `PATHIEL_HIP3_MOVERS_FLOOR_USD` | 50000 | HIP-3 movers volume floor |
-| `PATHIEL_MOVERS_VOL_FLOOR_USD` | 300000 | Movers volume floor |
-| `PATHIEL_CANDLE_CACHE_TTL_S` | 90 | Candle cache freshness window |
-| `PATHIEL_CANDLE_RETRIES` | 6 | Candle fetch retry count |
-| `PATHIEL_CANDLE_BACKOFF_CAP_S` | 8 | Candle fetch backoff cap |
-| `PATHIEL_META_TTL_S` | 3600 | Exchange metadata cache TTL |
-| `PATHIEL_HL_RATE_CAPACITY` | 300 | HL rate-limit token bucket capacity |
-| `PATHIEL_HL_RATE_REFILL_PER_SEC` | 15 | HL rate-limit refill rate |
-| `PATHIEL_HL_RATE_MAX_WAIT_S` | 30 | Max wait for a rate-limit token |
-| `PATHIEL_STARTUP_GRACE_S` | 12 | Loop startup grace period before first scan |
-| `PATHIEL_META_PREWARM_TIMEOUT_S` | 3 | Meta cache prewarm timeout |
-| `PATHIEL_WATCHDOG_TIMEOUT_S` | 600 | Loop self-heal re-exec timeout on a stuck cycle |
-| `PATHIEL_DASHBOARD_READONLY` | unset | Hard-refuse every mutating dashboard POST regardless of token |
-| `PATHIEL_LOG_DIR` | `<repo>/logs` | Override where `pathiel/log_setup.py` writes/rotates logs |
-| `PATHIEL_LOG_MAX_BYTES`, `PATHIEL_LOG_BACKUP_COUNT`, `PATHIEL_LOG_DIR_MAX_BYTES`, `PATHIEL_LOG_ROTATE_INTERVAL_SEC` | see `pathiel/log_setup.py` | Log rotation policy |
-| `PATHIEL_DISK_FREE_WARN_MB` / `PATHIEL_DISK_FREE_CRITICAL_MB` | 2048 / 500 | Disk-guard thresholds `scripts/log_rotate.py --guard` enforces before `restart.sh` starts a process |
-| `AI_BRAIN_TIMEOUT_S` | 120 | AI brain call timeout |
-| `OPENROUTER_MODEL` | `x-ai/grok-4.3` | Model for the openrouter provider |
-| `OPENROUTER_MAX_TOKENS` | 2048 | Response token cap |
-| `OPENROUTER_WEB_ENGINE`, `OPENROUTER_WEB_MAX_RESULTS`, `OPENROUTER_WEB_MAX_TOTAL_RESULTS` | see `ai_brain.py` | OpenRouter web-search tuning |
-| `CLAUDE_CLI_COMMAND`, `CLAUDE_CLI_MODEL`, `CLAUDE_CLI_MAX_TURNS`, `CLAUDE_CLI_WEB_MAX_TURNS` | see `ai_brain.py` | Only relevant if `AI_BRAIN_PROVIDER=claude_cli` — not viable in this deploy, see "AI provider" |
-| `CODEX_CLI_COMMAND` | `codex` | Only relevant for the unused `codex_cli` provider |
-| `POLY_SCOUT_MODEL` | `claude-opus-4-8` | Forecaster model (via the AI brain, so effectively an openrouter model in this deploy) |
-| `TREND_AI_MODEL`, `TREND_AI_TIMEOUT_S` | `claude-opus-4-8` / 180 | Only relevant to the `/trends` narrative pass, which is not reachable in this deploy — see "AI provider" |
-| `HYDROMANCER_TESTNET`, `HYDROMANCER_TIMEOUT_S` | unset / 10 | Hydromancer provider tuning |
-| `NO_SSL_FIX` | unset | Skip the macOS `certifi` cert-bundle workaround (`pathiel/__init__.py`) — irrelevant on Linux, harmless either way |
-| `PATHIEL_MCP_DISABLE_SAMPLING`, `PATHIEL_MCP_SAMPLING_MAX_TOKENS` | unset / 2048 | `scripts/pathiel-mcp-server.py` only — see "Not containerized" below |
-| `PATHIEL_SMOKE_BASE` | `http://127.0.0.1:8000` | `scripts/smoke_trends.py` test target, dev-only |
+`/api/health/system` lists `failing` by name and carries `hl_budget`, the
+server's Hyperliquid weight granted and refused per request type: the trace
+for "the site is slow". The `loop`, `feed` and `ai_brain` checks it used to
+carry are gone (2026-10-25); each watched a process that no longer exists
+and had turned into a permanent false 503.
 
-## Not containerized
+Alerts (`k8s/prometheusrule.yaml`): LIVE mode with an account under the
+structural minimum, disk under 2GB, `logs/` over 800MB, no verified state
+backup in 36h, max drawdown past 25%.
 
-- **`scripts/pathiel-mcp-server.py`** — a transient stdio process Pathiel
-  Agent (the IDE tool) respawns on each tool call, not a long-lived service.
-  `scripts/restart.sh` deliberately doesn't manage it either. There's nothing
-  to deploy: it only makes sense next to an interactive Claude Code session,
-  the same one the `claude_cli` AI provider depends on.
-- **The `claude_cli` AI provider** — see "AI provider" above. The `claude`
-  binary itself could be installed into the image, but the credential it
-  needs is an interactively-authenticated desktop session, not a bakeable
-  secret, so installing the binary alone would not make the feature work.
-  Left out rather than shipped half-working.
-- **One-off scripts under `scripts/`** not named in `scripts/restart.sh` —
-  run by hand (`flyctl ssh console`) when needed, not continuously
-  supervised processes (`scripts/backup_state.py`, `scripts/treasury.py`,
-  `scripts/preflight_live.py`, ...). The post-mortem DSL exit replay script
-  that used to be called out here specifically is deleted 2026-10-23
-  (wave 2) along with the exit engine it replayed.
+## Upgrade and rollback
+
+```bash
+docker build -t pathiel:local .
+kind load docker-image pathiel:local --name pathiel
+kubectl -n pathiel rollout restart statefulset/pathiel
+kubectl -n pathiel rollout status statefulset/pathiel
+kubectl -n pathiel rollout undo statefulset/pathiel     # back to the previous image
+```
+
+Tag images with the commit (`pathiel:<sha>`) for anything beyond a local
+cluster so `rollout undo` has a real target. A rollback never touches
+`/data`: theses, journals and the account registry live on the volume, not in
+the image.
+
+## Backing up state
+
+```bash
+# on the operator's machine (the live desk)
+.venv/bin/python scripts/backup_state.py
+# from a pod
+kubectl -n pathiel cp pathiel-0:/data/.state ./pathiel-state-backup -c web
+```
+
+`scripts/backup_state.py` writes a verified archive and a receipt;
+`pathiel_backup_age_seconds` on `/metrics` reads the receipt and the
+`PathielBackupStale` alert fires past 36h without one.
+
+## Common gotchas
+
+- **`PATHIEL_BIND` is baked to `0.0.0.0` in the image.** The code default is
+  `127.0.0.1` (a security fix for running bare on a Mac). A custom entrypoint
+  that drops the image `ENV` makes the process unreachable from outside the
+  container with no error in its log.
+- **Mode defaults to OFF.** A first boot with no `/data/.agent-config.json`
+  writes `mode: "OFF"`. Flip it with the MCP `config` tool or a hand edit.
+- **No theses get written in a pod.** See the top of this file. A pod shows
+  the last thesis the operator wrote; `desk_refresh` from the operator's
+  machine is what moves it.
+- **Wallet sign-in fails silently on a domain mismatch.** Set
+  `PATHIEL_AUTH_DOMAIN` (configmap, or `-e`) to the exact host in the browser.
+- **The `~/.pathiel.pid` start/stop routes are meaningless in a container.**
+  k8s owns process supervision; use `kubectl rollout`.
+
+## Env var reference
+
+Set by the image (do not override casually): `PATHIEL_BIND` (`0.0.0.0`),
+`PATHIEL_STATE_DIR` (`/data/.state`), `PATHIEL_AGENT_CONFIG_FILE`,
+`SESSION_LOG_PATH`.
+
+Set per deploy (configmap, or `-e`): `PATHIEL_PORT` (`8000`),
+`PATHIEL_AUTH_DOMAIN`.
+
+Set on the `web` container only: `PATHIEL_STATE_READONLY`,
+`PATHIEL_HL_RATE_REFILL_PER_SEC`, `PATHIEL_HL_RATE_CAPACITY`.
+
+Tuning knobs with code defaults, by module. Override only with a reason:
+
+| Area | Vars | Read by |
+|---|---|---|
+| Hyperliquid budget | `PATHIEL_HL_RATE_CAPACITY`, `PATHIEL_HL_RATE_REFILL_PER_SEC`, `PATHIEL_HL_RATE_MAX_WAIT_S`, `PATHIEL_HL_BACKGROUND_RESERVE` | `pathiel/client/rate_limit.py` |
+| Account reads | `PATHIEL_ACCOUNT_FRESH_S`, `PATHIEL_ACCOUNT_MAX_STALE_S`, `PATHIEL_ACCOUNT_SWEEP_S`, `PATHIEL_ACCOUNT_WAIT_S`, `PATHIEL_RISK_EQUITY_TTL_S`, `PATHIEL_DASHBOARD_LIVE_EQUITY` | `pathiel/client/account_snapshot.py`, `services/risk` |
+| Candles and meta | `PATHIEL_CANDLE_CACHE_TTL_S`, `PATHIEL_CANDLE_RETRIES`, `PATHIEL_CANDLE_BACKOFF_CAP_S`, `PATHIEL_META_TTL_S`, `PATHIEL_META_PREWARM`, `PATHIEL_MAX_MARKETS` | `pathiel/client/hl_client.py` |
+| Desks | `PATHIEL_DESK_CARD_MAX_AGE_S`, `PATHIEL_DESK_BRIEF_MAX_AGE_S`, `PATHIEL_DESK_CANDLE_MAX_AGE_S`, `PATHIEL_DESK_INTEL_MAX_AGE_S`, `PATHIEL_DESK_ACCOUNT_TTL_S`, `PATHIEL_DESK_BACKGROUND_REFRESH`, `PATHIEL_DESK_WARMUP` | `services/strategies/facade.py` |
+| Grading loop | `PATHIEL_GRADE_LOOP`, `PATHIEL_GRADE_INTERVAL_MIN`, `PATHIEL_GRADE_INITIAL_DELAY_S` | `pathiel/server.py` |
+| LLM (operator machine only) | `PATHIEL_LLM_MODEL`, `PATHIEL_LLM_CONCURRENCY`, `PATHIEL_THESIS_EFFORT` | `services/llm`, `services/thesis` |
+| Auth | `PATHIEL_AUTH_DOMAIN`, `PATHIEL_AUTH_URI`, `PATHIEL_AUTH_CHAIN_ID`, `PATHIEL_AUTH_DB`, `PATHIEL_AUTH_NONCE_SECRET`, `PATHIEL_AUTH_STATELESS_NONCE`, `PATHIEL_AUTH_STATELESS_SESSION`, `PATHIEL_AUTH_NO_BOOTSTRAP_OPERATOR`, `PATHIEL_PUBLIC_DASHBOARD`, `PATHIEL_DISABLE_LOCAL_MODE`, `PATHIEL_INSECURE_COOKIES`, `PATHIEL_DATABASE_URL` | `services/auth` |
+| Vault | `PATHIEL_VAULT_PASSPHRASE`, `PATHIEL_VAULT_FAST_KDF` | `services/accounts` |
+| HTTP rate limit | `PATHIEL_RATE_LIMIT_PER_MIN`, `PATHIEL_RATE_LIMIT_BURST`, `PATHIEL_DASHBOARD_READONLY` | `pathiel/server.py` |
+| Logs and disk | `PATHIEL_LOG_DIR`, `PATHIEL_LOG_MAX_BYTES`, `PATHIEL_LOG_BACKUP_COUNT`, `PATHIEL_LOG_DIR_MAX_BYTES`, `PATHIEL_LOG_ROTATE_INTERVAL_SEC`, `PATHIEL_LOG_JSON`, `PATHIEL_DISK_FREE_WARN_MB`, `PATHIEL_DISK_FREE_CRITICAL_MB` | `pathiel/log_setup.py`, `scripts/log_rotate.py` |
+| Backups | `PATHIEL_BACKUP_DIR`, `PATHIEL_BACKUP_KEEP` | `scripts/backup_state.py` |
+| MCP server (operator machine only) | `PATHIEL_MCP_MAX_CONCURRENT`, `PATHIEL_MCP_TOOL_TIMEOUT_S`, `PATHIEL_MCP_MAX_OUTPUT_CHARS` | `scripts/pathiel-mcp-server.py` |
+| Misc | `NO_SSL_FIX` (skip the macOS certifi workaround), `PATHIEL_ENV` | `pathiel/__init__.py` |
+
+## Not containerised
+
+- **`scripts/pathiel-mcp-server.py`**: a transient stdio process Claude Code
+  respawns per tool call next to the operator's interactive session. Nothing
+  to deploy.
+- **The desk thesis writer**: needs that same signed-in Claude Code CLI.
+- **One-off scripts under `scripts/`** not named in `scripts/restart.sh`:
+  `backup_state.py`, `treasury.py`, `preflight_live.py`, `desk_slot.py`,
+  `oil_levels.py`. Run by hand on the operator's machine.

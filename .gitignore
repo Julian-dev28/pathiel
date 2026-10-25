@@ -82,11 +82,6 @@ python-service/logs/
 
 # Pathia-Trader runtime state (per-strategy timers, position claims, telemetry —
 # generated at runtime, never source). The bot recreates these on start.
-# alpha_swarm candle dataset — 17MB data, rebuild with research/alpha_swarm/lib/build_dataset.py
-research/alpha_swarm/dataset.json
-research/alpha_swarm/funding.json
-research/alpha_swarm/**/marginal_dataset.json
-research/alpha_swarm/**/__pycache__/
 .crash_continue_div_short_live_seen.json
 .crash_continue_div_short_live_ts
 .crash_continue_div_short_shadow.jsonl
@@ -192,13 +187,6 @@ backtest-trades.csv
 # filings and event tables — regenerate by rerunning the hypothesis script that
 # built them (W-U1_unlock_backtest.py for the W-U set, and so on). They were
 # tracked until 2026-09-01, which put 83MB of throwaway JSON in every clone; the
-# three W-U/W-R entries that used to be listed here by name are covered by the
-# patterns below. Findings, specs, hypothesis code and *_results.json stay
-# tracked — those are the evidence, and test_evidence_doctrine reads them.
-research/alpha_swarm/**/*_cache_*.json
-research/alpha_swarm/**/*_cache_texts/
-research/alpha_swarm/**/*_events.json
-research/alpha_swarm/**/*_dataset.json
 
 # Per-IDE agent skill copies, written by the installed caveman plugin. All three
 # are byte-for-byte the same 22 files as each other and as the plugin's own

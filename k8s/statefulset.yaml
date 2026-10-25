@@ -67,8 +67,10 @@ spec:
             - name: data
               mountPath: /data
           # Readiness answers "should traffic go here", so it uses the DEEP
-          # check: a pod whose AI brain is unusable or whose disk is low
-          # should not be presented as a working system.
+          # check: a pod whose disk is below the critical floor or whose
+          # state volume did not mount should not be presented as a working
+          # system. (2026-10-25: the loop/feed/AI-brain checks that could
+          # never pass in a headless deploy are gone from that route.)
           readinessProbe:
             httpGet:
               path: /api/health/system

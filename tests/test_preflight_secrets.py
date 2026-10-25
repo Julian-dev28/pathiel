@@ -18,7 +18,6 @@ import uuid
 from pathlib import Path
 from typing import Dict
 
-import pytest
 
 _PATH = Path(__file__).resolve().parents[1] / "scripts" / "preflight_secrets.py"
 _SPEC = importlib.util.spec_from_file_location("preflight_secrets", _PATH)
@@ -36,7 +35,6 @@ FAKE_AGENT_WALLET = "0xAAAA000000000000000000000000000000AAAA"
 FAKE_MASTER_ADDR = "0xBBBB000000000000000000000000000000BBBB"
 FAKE_PRIVATE_KEY = "0xFAKEPRIVATEKEYNOTREAL0000000000000000000000000000000000000001"
 FAKE_OPERATOR_TOKEN = "faketoken1234567890abcdef"
-FAKE_OPENROUTER_KEY = "sk-or-fake0000000000000000000000000000"
 
 
 def _complete_env(**overrides: str) -> Dict[str, str]:
@@ -45,14 +43,6 @@ def _complete_env(**overrides: str) -> Dict[str, str]:
         "HYPERLIQUID_MASTER_ADDRESS": FAKE_MASTER_ADDR,
         "HYPERLIQUID_PRIVATE_KEY": FAKE_PRIVATE_KEY,
         "PATHIEL_OPERATOR_TOKEN": FAKE_OPERATOR_TOKEN,
-        # openrouter + a fake key, NOT claude_cli. Selecting a CLI provider here
-        # used to "sidestep the OPENROUTER_API_KEY requirement", but the brain
-        # readiness check verifies the `claude` binary is on PATH — so the test
-        # passed on a developer machine and failed on CI, which has no such
-        # binary. openrouter's readiness is a pure env-var check with no host
-        # dependency, which is what a fixture should assert against.
-        "AI_BRAIN_PROVIDER": "openrouter",
-        "OPENROUTER_API_KEY": FAKE_OPENROUTER_KEY,
     }
     base.update(overrides)
     return base
@@ -107,23 +97,14 @@ def test_required_present_passes_with_complete_synthetic_env():
     assert always <= _names_with_status(findings, "PASS")
 
 
-def test_openrouter_key_required_only_when_provider_is_openrouter():
-    # provider unset -> defaults to openrouter -> key required. The key must be
-    # cleared explicitly: _complete_env now supplies one by default so the
-    # fixture does not depend on a CLI binary being installed on the host.
-    findings_default = pf.check_required_present(
-        _complete_env(AI_BRAIN_PROVIDER="", OPENROUTER_API_KEY=""))
-    assert "OPENROUTER_API_KEY" in _names_with_status(findings_default, "FAIL")
-
-    # provider explicitly claude_cli -> key not required, no finding for it at all
-    findings_cli = pf.check_required_present(_complete_env(AI_BRAIN_PROVIDER="claude_cli"))
-    assert "OPENROUTER_API_KEY" not in {f.name for f in findings_cli}
-
-    # provider openrouter + key present -> passes
-    findings_ok = pf.check_required_present(
-        _complete_env(AI_BRAIN_PROVIDER="openrouter", OPENROUTER_API_KEY=FAKE_OPENROUTER_KEY)
-    )
-    assert "OPENROUTER_API_KEY" in _names_with_status(findings_ok, "PASS")
+def test_no_llm_key_is_required_any_more():
+    """2026-10-25: OPENROUTER_API_KEY left the registry with the AI brain
+    module. A complete env with no LLM key of any kind passes, and the
+    registry names no provider-conditional secret."""
+    findings = pf.check_required_present(_complete_env())
+    assert _statuses(findings) == {"PASS"}
+    assert not any(s.name.startswith(("OPENROUTER", "BRAVE", "HYDROMANCER")) for s in pf.REGISTRY)
+    assert {s.required for s in pf.REGISTRY} <= {"always", "optional", "local_only"}
 
 
 # ── accounts vault awareness (services/accounts) ────────────────────────────────
@@ -159,8 +140,7 @@ def _write_vault_registry(tmp_path: Path, *, active_id="acc_1", accounts=None) -
 
 def test_required_present_satisfied_by_a_connected_vault_account_with_no_env_vars(tmp_path):
     state_dir = _write_vault_registry(tmp_path)
-    env = {"PATHIEL_STATE_DIR": str(state_dir), "PATHIEL_OPERATOR_TOKEN": FAKE_OPERATOR_TOKEN,
-           "AI_BRAIN_PROVIDER": "claude_cli"}
+    env = {"PATHIEL_STATE_DIR": str(state_dir), "PATHIEL_OPERATOR_TOKEN": FAKE_OPERATOR_TOKEN}
     findings = pf.check_required_present(env)
     for name in ("HYPERLIQUID_WALLET_ADDRESS", "HYPERLIQUID_PRIVATE_KEY", "HYPERLIQUID_MASTER_ADDRESS"):
         matches = [f for f in findings if f.name == name]
@@ -175,15 +155,13 @@ def test_required_present_still_fails_when_vault_account_is_watch_mode(tmp_path)
         "mode": "watch", "source": "watch", "created_at": "2026-10-17T12:00:00+00:00",
         "verified_at": None, "agent_name": None,
     }])
-    env = {"PATHIEL_STATE_DIR": str(state_dir), "PATHIEL_OPERATOR_TOKEN": FAKE_OPERATOR_TOKEN,
-           "AI_BRAIN_PROVIDER": "claude_cli"}
+    env = {"PATHIEL_STATE_DIR": str(state_dir), "PATHIEL_OPERATOR_TOKEN": FAKE_OPERATOR_TOKEN}
     findings = pf.check_required_present(env)
     assert "HYPERLIQUID_WALLET_ADDRESS" in _names_with_status(findings, "FAIL")
 
 
 def test_required_present_ignores_a_missing_or_malformed_vault_file(tmp_path):
-    env = {"PATHIEL_STATE_DIR": str(tmp_path / "nope"), "PATHIEL_OPERATOR_TOKEN": FAKE_OPERATOR_TOKEN,
-           "AI_BRAIN_PROVIDER": "claude_cli"}
+    env = {"PATHIEL_STATE_DIR": str(tmp_path / "nope"), "PATHIEL_OPERATOR_TOKEN": FAKE_OPERATOR_TOKEN}
     findings = pf.check_required_present(env)
     assert "HYPERLIQUID_WALLET_ADDRESS" in _names_with_status(findings, "FAIL")
 
@@ -303,7 +281,9 @@ def test_master_private_key_absent_passes_either_mode():
 
 
 def test_is_deploy_context_detects_platform_signals():
-    assert pf.is_deploy_context({"FLY_APP_NAME": "pathiel"}) is True
+    # 2026-10-25: FLY_APP_NAME dropped with the Fly deploy target; k8s is the
+    # one container platform left.
+    assert pf.is_deploy_context({"FLY_APP_NAME": "pathiel"}) is False
     assert pf.is_deploy_context({"KUBERNETES_SERVICE_HOST": "10.0.0.1"}) is True
     assert pf.is_deploy_context({}) is False
     assert pf.is_deploy_context({}, forced=True) is True
@@ -488,6 +468,17 @@ def test_git_index_scan_non_git_dir_skips(tmp_path):
     assert _statuses(findings) == {"SKIP"}
 
 
+def test_index_scan_values_exclude_public_addresses():
+    """A wallet address is public (on chain, and written into the desk-tick
+    skill and README on purpose); only keys and tokens are leak material.
+    2026-10-25: the master address in a tracked SKILL.md failed every run."""
+    env = _complete_env()
+    scanned = pf._index_scan_values(env)
+    assert "HYPERLIQUID_PRIVATE_KEY" in scanned and "PATHIEL_OPERATOR_TOKEN" in scanned
+    assert not any(name.endswith("_ADDRESS") for name in scanned)
+    assert FAKE_MASTER_ADDR not in scanned.values() and FAKE_AGENT_WALLET not in scanned.values()
+
+
 # ── redaction ───────────────────────────────────────────────────────────────────
 
 def test_redact_strips_known_secret_value():
@@ -588,20 +579,27 @@ def test_effective_env_file_fills_gaps_not_set_in_process(tmp_path):
     assert merged["FOO"] == "from_file"
 
 
-# ── provider normalisation ──────────────────────────────────────────────────────
+# ── redaction (moved from tests/test_ai_brain_readiness.py, 2026-10-25) ───────
 
-@pytest.mark.parametrize("raw,expected", [
-    ("", "openrouter"),
-    ("openrouter", "openrouter"),
-    ("open-router", "openrouter"),
-    ("claude", "claude_cli"),
-    ("claude_cli", "claude_cli"),
-    ("codex", "codex_cli"),
-    ("codex_cli", "codex_cli"),
-    ("something_unknown", "openrouter"),
-])
-def test_effective_ai_brain_provider_normalisation(raw, expected):
-    assert pf._effective_ai_brain_provider({"AI_BRAIN_PROVIDER": raw}) == expected
+def test_redaction_covers_every_declared_secret_regardless_of_length():
+    env = {spec.name: "x" * 6 for spec in pf.REGISTRY}
+    vals = pf._redaction_values(env)
+    assert all(v in vals for v in env.values()), (
+        "a declared secret escaped redaction because it was short")
+
+
+def test_redaction_leaves_short_non_secret_config_readable():
+    """Redacting everything made findings useless: '[REDACTED]' in place of a
+    port or a mode name says nothing. No credential is 4 chars long."""
+    vals = pf._redaction_values({"PATHIEL_PORT": "8000"})
+    assert "8000" not in vals
+
+
+def test_redaction_still_catches_an_undeclared_long_value():
+    """Something added to .env.local that nobody remembered to declare here must
+    still never print."""
+    secret = "s" * pf._UNDECLARED_SECRET_MIN_LEN
+    assert secret in pf._redaction_values({"SOME_NEW_THING": secret})
 
 
 def test_gate_sessions_never_load_wallet_private_keys():

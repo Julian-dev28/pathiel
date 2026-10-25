@@ -6,8 +6,8 @@ WHY EXTERNAL, WHY COPYTRUNCATE
 Every pathiel process is started by ``scripts/restart.sh`` with shell
 append redirection (``nohup ... >> logs/foo.log 2>&1 &``). The shell opens
 that file once, in ``O_APPEND`` mode, and hands the fd to the child for its
-entire lifetime — including for a bare ``print()`` (the trend_engine
-sample-daemon has no ``logging`` calls at all) and for an uncaught traceback
+entire lifetime — including for a bare ``print()`` (a script with no
+``logging`` calls at all) and for an uncaught traceback
 dumped straight to stderr. A ``RotatingFileHandler`` running *inside* one of
 these processes cannot touch that fd: it would rotate a second, independent
 handle while the shell's fd keeps appending to whatever inode it was opened

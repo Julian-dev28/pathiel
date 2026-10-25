@@ -209,8 +209,8 @@ def resolve_user_address() -> str:
 
     Deliberately NOT "whatever account is active for dashboard viewing" — a
     `watch`-mode active account is skipped here on purpose. This function
-    backs real trading code (stranded-order cancellation, fill lookups for
-    maker_first, order-status polling), and pointing it at a different
+    backs real trading code (stranded-order cancellation, fill lookups,
+    order-status polling), and pointing it at a different
     account than the one actually placing orders would silently break fill
     tracking for whoever IS trading. services/accounts/summary.py is the
     purpose-built way to look up an arbitrary (including watch-mode)

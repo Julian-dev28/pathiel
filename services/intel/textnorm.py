@@ -13,7 +13,7 @@ from __future__ import annotations
 import hashlib
 import re
 import unicodedata
-from typing import Iterable, List, Sequence, Tuple, TypeVar
+from typing import List, Sequence, TypeVar
 
 # " - Source Name" / " | Source Name" suffixes that Google News and most RSS
 # aggregators append. Matched case-sensitively on the dash/pipe so we don't
@@ -83,13 +83,3 @@ def dedup_by_title(items: Sequence[T], title_fn, *, keep: str = "first") -> List
     return out
 
 
-def dedup_pairs(items: Iterable[Tuple[str, T]]) -> List[Tuple[str, T]]:
-    """Dedup a (title, payload) iterable, preserving input order."""
-    out: List[Tuple[str, T]] = []
-    kept: List[str] = []
-    for title, payload in items:
-        if any(is_near_duplicate(title, kt) for kt in kept):
-            continue
-        out.append((title, payload))
-        kept.append(title)
-    return out

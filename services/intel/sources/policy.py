@@ -248,16 +248,3 @@ def dedup_policy(items: List[PolicyItem]) -> List[PolicyItem]:
                reverse=True),
         lambda p: p.title,
     )
-
-
-def fetch_policy(spec: DeskSpec, now: datetime) -> Tuple[List[PolicyItem], List[str]]:
-    """Convenience sequential path — see news.fetch_headlines's docstring
-    for why this exists alongside ATOMIC_FETCHERS."""
-    failed: List[str] = []
-    all_items: List[PolicyItem] = []
-    for fetch_fn in ATOMIC_FETCHERS:
-        items, err = fetch_fn(spec)
-        if err:
-            failed.append(err)
-        all_items.extend(items)
-    return dedup_policy(all_items), failed

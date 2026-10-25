@@ -31,6 +31,7 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
@@ -53,8 +54,6 @@ _ALLOWED_CALLS = {
     # clocks
     "time.time", "time.monotonic",
     # dashboard.py, in memory only
-    "_analyze_job",          # a dict lookup under a lock
-    "_start_trend_job",      # registers a job and starts its thread
     "_tail_log_sse",         # builds the SSE generator; streaming, it stats the log once a
                              # second and reads only its new lines: small, bounded, on the loop
 }
@@ -204,7 +203,6 @@ class Calls:
 def calls(monkeypatch):
     import pathiel.client.exchange as exchange
     import pathiel.client.hl_client as hl_client
-    import pathiel.dashboard as db
     import pathiel.server as srv
     from pathiel.client import account_snapshot
 
@@ -228,8 +226,10 @@ def calls(monkeypatch):
     monkeypatch.setattr(srv.session_log, "append", c.fake("session_log.append"))
     monkeypatch.setattr(srv.session_log, "tail", c.fake("session_log.tail", []))
     monkeypatch.setattr(hl_client, "_http_post", c.fake("_http_post", {"levels": [[], []]}))
-    monkeypatch.setattr(db, "_summary_payload", c.fake("_summary_payload", {"last_tick_age_s": 30}))
-    monkeypatch.setattr(db, "_feed_health", c.fake("_feed_health", {"trustworthy": True}))
+    import pathiel.log_setup as _ls
+    monkeypatch.setattr(_ls, "check_disk_guard", c.fake(
+        "check_disk_guard", SimpleNamespace(critical=False, warn=False,
+                                            free_bytes=10 ** 12, log_dir_bytes=0)))
     for name, result in (("get_hl_price", 80000.0), ("set_leverage", None), ("get_hl_atr", 900.0),
                          ("min_entry_notional_usd", 10.0), ("entry_size_for_notional", 0.001),
                          ("place_hl_order", {"ok": True, "avg_px": "80000", "total_sz": "0.001"}),
@@ -260,7 +260,9 @@ ROUTES = [
     ("POST", "/api/hl/close-position", {"coin": "BTC"},
      {"fetch_account_state", "get_hl_price", "place_hl_order", "session_log.append"}),
     ("POST", "/api/hl/cancel-order", {"oid": 7, "coin": "BTC"}, {"cancel_orders"}),
-    ("GET", "/api/health/system", None, {"_summary_payload", "_feed_health"}),
+    # 2026-10-25: the loop/feed/ai_brain checks are gone with the engine they
+    # watched; the disk guard (a statvfs + a directory walk) is what is left.
+    ("GET", "/api/health/system", None, {"check_disk_guard"}),
     ("GET", "/metrics", None, {"render_metrics"}),
 ]
 

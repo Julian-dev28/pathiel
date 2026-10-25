@@ -42,7 +42,7 @@ def test_config_store_normalizes_partial_live_config(monkeypatch, tmp_path):
     assert cfg["mode"] == "LIVE"
     assert cfg["enable_hip3"] is False                 # explicit override kept
     assert cfg["coin_blocklist"] == ["TON", "TRX"]      # untouched key still defaults
-    assert cfg["ai_brain"]["provider"] == "openrouter"  # untouched nested block still defaults
+    assert cfg["hip3_dex_allowlist"] == ["xyz"]         # untouched list still defaults
 
 
 def test_config_store_writes_parent_directory(monkeypatch, tmp_path):
@@ -59,25 +59,28 @@ def test_config_store_writes_parent_directory(monkeypatch, tmp_path):
 def test_config_store_deep_merge_preserves_nested_safety_keys():
     from pathiel.agents.config_store import merge_agent_config
 
+    # A hand-added nested block stands in for the ai_brain block this test
+    # used to merge (deleted 2026-10-25); the merge is generic over any
+    # nested object, which is the property under test.
     base = {
         "mode": "LIVE",
-        "ai_brain": {
-            "provider": "openrouter",
+        "experiment": {
+            "provider": "a",
             "timeout_s": 120,
-            "claude_cli": {"command": "claude", "max_turns": 1},
+            "inner": {"command": "x", "max_turns": 1},
         },
     }
 
-    merged = merge_agent_config(base, {"ai_brain": {"timeout_s": 30}})
+    merged = merge_agent_config(base, {"experiment": {"timeout_s": 30}})
 
-    assert merged["ai_brain"]["timeout_s"] == 30
-    assert merged["ai_brain"]["provider"] == "openrouter"
-    assert merged["ai_brain"]["claude_cli"]["command"] == "claude"
-    assert base["ai_brain"]["timeout_s"] == 120   # base is not mutated
+    assert merged["experiment"]["timeout_s"] == 30
+    assert merged["experiment"]["provider"] == "a"
+    assert merged["experiment"]["inner"]["command"] == "x"
+    assert base["experiment"]["timeout_s"] == 120   # base is not mutated
 
-    ignored = merge_agent_config(base, {"ai_brain": None})
-    assert ignored["ai_brain"]["provider"] == "openrouter"
-    assert ignored["ai_brain"]["timeout_s"] == 120
+    ignored = merge_agent_config(base, {"experiment": None})
+    assert ignored["experiment"]["provider"] == "a"
+    assert ignored["experiment"]["timeout_s"] == 120
 
 
 # ── the MCP `config` tool handler (scripts/pathiel-mcp-server.py) ───────────
@@ -89,21 +92,6 @@ def _load_mcp_named(name):
     mcp = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mcp)
     return mcp
-
-
-def test_mcp_config_allows_ai_brain_provider_update():
-    """The MCP config tool can hot-switch the pluggable brain provider."""
-    from pathiel.agents import config_store
-
-    mcp = _load_mcp_named("pathiel_mcp_server_config_test")
-    try:
-        config_store.write_agent_config({"mode": "OFF"})
-        out = json.loads(mcp.handle_config({"ai_brain": {"provider": "codex_cli"}}))
-
-        assert out["ai_brain"]["provider"] == "codex_cli"
-        assert config_store.read_agent_config()["ai_brain"]["provider"] == "codex_cli"
-    finally:
-        config_store.write_agent_config({"mode": "OFF"})
 
 
 def test_mcp_config_updates_any_existing_key_not_on_the_allowlist():

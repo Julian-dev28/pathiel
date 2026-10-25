@@ -5,11 +5,10 @@ Shells out to the local Claude Code CLI
 API, OpenAI, any hosted inference endpoint) are banned by project rule
 (CLAUDE.md, "LLM access") unless Julien explicitly instructs otherwise - this
 module is meant to be the only sanctioned path from the rest of the codebase
-to an LLM. See the module docstring in ``pathiel/agents/ai_brain.py`` for the
-pre-existing ``claude_cli`` provider this one reuses the invocation mechanics
-of (services/llm/cli.py's docstring spells out the exact reuse and the one
-deliberate deviation); see services/llm/README.md for whether ai_brain should
-move onto this gateway.
+to an LLM. The invocation mechanics were ported from the bot-era
+``pathiel/agents/ai_brain.py`` ``claude_cli`` provider (deleted 2026-10-25;
+services/llm/cli.py's docstring spells out the exact reuse and the one
+deliberate deviation).
 
 Contract (exact names/types; the four kwargs after ``timeout_s`` are this
 implementation's own additions and default such that a caller using only the
@@ -229,7 +228,7 @@ def _fallback_chain(model: str) -> Sequence[str]:
 
 
 def _subprocess_env(model: str, web_search: bool) -> dict[str, str] | None:
-    """Mirrors ai_brain._cli_env for the claude_cli provider: pin every model
+    """Pins every model knob (ported from the retired ai_brain._cli_env):
     knob so no auxiliary model (fable/haiku riding along for free) ever does
     brain work. Only when web_search is requested does a small model
     (haiku) get the nod - to execute the search tool, not to write the

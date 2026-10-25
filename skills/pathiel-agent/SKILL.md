@@ -144,14 +144,13 @@ the confidence/volume/regime gates, `dsl_exit`, `runner_entry_gate`, ...) —
 see `pathiel/agents/config_store.py`'s `DEFAULT_CONFIG` for the full list
 of what left and why.
 
-## AI Brain Providers
+## LLM access
 
-`ai_brain` stays — `services/thesis`'s desk-refresh research and
-`services/trend_engine` both call `pathiel.agents.ai_brain.get_brain()`.
-Valid providers: `openrouter` (default HTTP), `claude_cli`
-(`claude -p --output-format json`), `codex_cli` (`codex exec --sandbox
-read-only --ephemeral -`). Selector precedence: `AI_BRAIN_PROVIDER` env
-var, then `.agent-config.json` → `ai_brain.provider`, then `openrouter`.
+The one model call is the desk thesis writer: `services/thesis` through
+`services/llm`, the local Claude Code CLI gateway (`PATHIEL_LLM_MODEL`
+overrides the model). The bot-era `pathiel/agents/ai_brain.py` provider
+switch (`openrouter` / `claude_cli` / `codex_cli`, `AI_BRAIN_PROVIDER`,
+the `ai_brain` config block) was deleted 2026-10-25 with its last caller.
 
 ## State Files
 

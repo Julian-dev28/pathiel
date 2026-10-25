@@ -3,10 +3,10 @@
 Deliberately a leaf module with zero imports from other `services/*` or
 `pathiel/*` packages (see docs/overhaul/SWARM_RULES.md section 6 ownership —
 this service owns `services/accounts/**` only and must not reach into another
-service's internals). `services/intel/env.py` and `services/trend_engine/env.py`
-solve the identical problem the identical way; the duplication is intentional,
-not an oversight, so each service can be edited by a different agent in
-parallel without a shared-file collision.
+service's internals). `services/intel/env.py` solves the identical problem
+the identical way; the duplication is intentional, not an oversight, so each
+service can be edited by a different agent in parallel without a shared-file
+collision.
 
 Call `state_dir()` to get the directory this service writes under.
 `PATHIEL_STATE_DIR` always wins when set (every worktree in the swarm exports a

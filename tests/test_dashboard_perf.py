@@ -143,7 +143,6 @@ def test_positions_uncached_raises_rather_than_silently_reporting_flat(monkeypat
     on one screen disagreeing about whether the account held anything, with
     nothing on the page saying so."""
     from pathiel import dashboard as db
-    monkeypatch.setattr(db, "read_position_snapshot", lambda max_age_s: None)
     monkeypatch.setattr(db, "resolve_user_address", lambda: "")
     with pytest.raises(RuntimeError, match="no HL address resolvable"):
         db._positions_payload_uncached()
@@ -162,6 +161,5 @@ def test_positions_payload_serves_last_known_good_when_address_unresolvable(monk
         # old enough that the next call actually attempts a fresh read
         db._POSITIONS_CACHE["ts"] = _t.time() - db._POSITIONS_CACHE_TTL_S - 1
         db._POSITIONS_CACHE["data"] = good_rows
-    monkeypatch.setattr(db, "read_position_snapshot", lambda max_age_s: None)
     monkeypatch.setattr(db, "resolve_user_address", lambda: "")
     assert db._positions_payload() == good_rows

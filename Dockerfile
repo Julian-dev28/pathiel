@@ -23,22 +23,18 @@ RUN pip install -e .
 # runtime. `scripts/restart.sh` is the source of truth for what runs:
 #   pathiel/              core package — server, dashboard, agents, client
 #                                (imported by every process below)
-#   scripts/                    trading_loop.py, scheduler.py, log_rotate.py,
-#                                autonomous_cycle.py, and CLI tooling
-#   services/trend_engine/      /trends lanes (services.trend_engine.run —
-#                                imported by dashboard.py, scheduler.py)
+#   scripts/                    the MCP server, log_rotate.py, the desk-tick
+#                                tools (desk_slot.py, oil_levels.py), CLI tooling
 #   services/intel/             desk news/policy/catalyst/odds/positioning
 #                                packet (services.intel.api.build_packet —
 #                                imported by services/strategies)
 # `services/pathiel_data_api` is its OWN deploy unit — own Dockerfile, own
 # Postgres, own requirements.txt (sqlalchemy/psycopg2, never installed here)
-# — deliberately NOT bundled into this image. `research/` (159MB, dev-only
-# artifacts — nothing under pathiel/scripts/services imports it at
-# runtime), `docs/`, `tests/`, and `skills/` are excluded via .dockerignore;
-# see that file for the full list and why.
+# — deliberately NOT bundled into this image. `docs/`, `tests/`, and
+# `skills/` are excluded via .dockerignore; see that file for the full list
+# and why. (`services/trend_engine` and `research/` were deleted 2026-10-25.)
 COPY pathiel/ pathiel/
 COPY scripts/ scripts/
-COPY services/trend_engine/ services/trend_engine/
 # Auth is on the request path for every gated route, so a missing copy here is
 # not a degraded feature, it is a server that 500s on the first page load.
 COPY services/auth/ services/auth/
@@ -62,13 +58,13 @@ COPY services/risk/ services/risk/
 COPY conftest.py ./
 
 # ── Runtime state ────────────────────────────────────────────────────────────
-# State lives on a persistent volume mounted at /data (fly.toml [[mounts]] /
-# k8s volumeClaimTemplates) so `web` and `rotator` share one source of truth
+# State lives on a persistent volume mounted at /data (k8s
+# volumeClaimTemplates, or `docker run -v`) so `web` keeps one source of truth
 # across restarts and redeploys.
 #
 # Almost every state path in this app routes through PATHIEL_STATE_DIR (see
 # pathiel/state.py:state_file — backup receipts and other process-local
-# state files all resolve relative to it; also services/trend_engine/env.py).
+# state files all resolve relative to it; also services/*/env.py).
 # Pointing that ONE var at /data/.state redirects all of them together.
 # docker-entrypoint.sh creates the real /data/.state directory at container
 # start (the volume is empty/fresh at that point, not at image-build time).
@@ -77,36 +73,35 @@ COPY conftest.py ./
 # are dropped — pathiel.agents.dsl_exit and pathiel.agents.memory, their only
 # readers, are retired with the rest of the autonomous engine. The
 # scripts/scheduler.py symlink workaround this section used to carry is
-# dropped the same wave: scheduler.py itself is deleted.
+# dropped the same wave: scheduler.py itself is deleted. 2026-10-25:
+# PATHIEL_POSITIONS_SNAPSHOT_FILE goes too — the loop that wrote the snapshot
+# is gone, so the dashboard reads positions live (cached) and the module
+# that read the file is deleted.
 
 ENV SESSION_LOG_PATH=/data/session-log.jsonl \
     PATHIEL_AGENT_CONFIG_FILE=/data/.agent-config.json \
-    PATHIEL_STATE_DIR=/data/.state \
-    PATHIEL_POSITIONS_SNAPSHOT_FILE=/data/.positions-snapshot.json
+    PATHIEL_STATE_DIR=/data/.state
 
 # ── Networking ───────────────────────────────────────────────────────────────
 # pathiel/server.py defaults PATHIEL_BIND to 127.0.0.1 (a 2026-07-10
 # security fix for running bare on an operator's Mac, so the dashboard isn't
 # reachable from the LAN by default). Inside a container that default makes
 # the process unreachable from anywhere OUTSIDE its own network namespace —
-# `docker run -p`, Fly's http_service checks, and k8s probes/Services all
-# connect from outside it, so the request never lands and every health check
-# times out. 0.0.0.0 is correct and safe here: the container/pod boundary is
-# the actual security perimeter (Fly's edge proxy / the k8s Service), not the
-# loopback interface.
+# `docker run -p` and k8s probes/Services all connect from outside it, so the
+# request never lands and every health check times out. 0.0.0.0 is correct
+# and safe here: the container/pod boundary is the actual security perimeter
+# (the k8s Service, or whatever fronts `docker run`), not the loopback
+# interface.
 ENV PATHIEL_BIND=0.0.0.0
 
-# AI features (pathiel/agents/ai_brain.py research calls, the
-# Polymarket forecaster, the /trends narrative pass) default to
-# AI_BRAIN_PROVIDER=openrouter — a plain HTTPS call authenticated by
-# OPENROUTER_API_KEY. The alternative `claude_cli` provider shells out to a
-# LOCALLY AUTHENTICATED Claude Code CLI session (an operator's desktop
-# subscription — not a credential that can be baked into an image or passed
-# as a secret) and cannot run in a stateless cloud container as configured;
-# see DEPLOY.md "AI provider" for the tradeoff and what still degrades
-# gracefully (services/trend_engine/ai.py's narrative pass) vs. what needs
-# openrouter to function at all (the Polymarket forecaster's default path).
-ENV AI_BRAIN_PROVIDER=openrouter
+# No LLM credential is baked in or expected. The one LLM step (the desk thesis
+# writer, services/thesis via services/llm) shells out to a LOCALLY
+# AUTHENTICATED Claude Code CLI session: an operator's desktop subscription,
+# not a credential that can be passed as a secret. In a container
+# desk_refresh degrades to the previous thesis or a flat placeholder; the
+# operator refreshes theses from their own machine through the MCP server.
+# (The AI_BRAIN_PROVIDER / OPENROUTER_API_KEY pair this section used to set
+# left with pathiel/agents/ai_brain.py on 2026-10-25.)
 
 # Every managed process shares this one bootstrap step (see the script for
 # why) before running its real command.
@@ -116,8 +111,9 @@ ENTRYPOINT ["docker-entrypoint.sh"]
 
 EXPOSE 8000
 
-# Default command runs the FastAPI server (dashboard + API). The trading
-# loop, scheduler, and log rotator each run as separate
-# Fly processes / k8s containers sharing this same image — see
-# fly.toml [processes] and k8s/statefulset.yaml.
+# Default command runs the FastAPI server (dashboard + API). The log rotator
+# runs as a second k8s container sharing this same image — see
+# k8s/statefulset.yaml. (There is no trading loop or scheduler process since
+# 2026-10-23; Claude is the trader, via the MCP server on the operator's
+# machine. Fly.io was dropped as a target 2026-10-25.)
 CMD ["python3", "-m", "pathiel.server"]

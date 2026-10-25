@@ -185,14 +185,3 @@ def fetch_kalshi(spec: DeskSpec, *, max_markets_per_series: int = 12
 # api.py fans these out to its own thread pool — see that module's 15s
 # cold-build budget note.
 ATOMIC_FETCHERS = (fetch_polymarket, fetch_kalshi)
-
-
-def fetch_predictions(spec: DeskSpec, now: datetime) -> Tuple[List[MarketOdds], List[str]]:
-    failed: List[str] = []
-    all_odds: List[MarketOdds] = []
-    for fetch_fn in ATOMIC_FETCHERS:
-        odds, err = fetch_fn(spec)
-        if err:
-            failed.append(err)
-        all_odds.extend(odds)
-    return all_odds, failed

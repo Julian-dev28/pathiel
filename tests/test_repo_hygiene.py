@@ -135,7 +135,7 @@ SCRIPTS_DIR = ROOT / "scripts"
 # Helper modules meant to be imported, never run on their own — `scripts/foo`
 # imports them, so they are covered by guard 3's "imported by" path, but a
 # leading underscore is the existing naming convention for "not an entry
-# point" (scripts/_memory_io.py, scripts/_state_env.py) and is excluded from
+# point" (scripts/_state_env.py) and is excluded from
 # needing its OWN justification beyond being importable.
 def _is_private_helper(name: str) -> bool:
     return name.startswith("_")
@@ -233,18 +233,19 @@ ENTRY_POINT_FILES = (
     # 2026-10-23 (wave 2): the autonomous scan/research/execute engine
     # (scripts/trading_loop.py, pathiel/agents/executor.py, risk_gates.py,
     # sizing.py) is retired, so neither the script nor its NOT_CLEANUP_OWNED
-    # exemptions apply any more. book_params.py and news_catalyst.py lost
-    # their one direct pathiel/agents/*.py importer (executor.py) in the same
-    # deletion — both are still genuinely live, just reached from outside
-    # pathiel/agents/ now (services/risk/books.py's main_engine_spec,
-    # services/risk/migrate.py's legacy-key migration, and scripts/news.py's
-    # CLI), so those real callers join the BFS roots below rather than being
-    # left as a false "unreachable" positive — the same class of bug the
-    # NOT_CLEANUP_OWNED tracing fix (see the test's own docstring) existed to
-    # catch when executor.py was still the one doing the reaching.
+    # exemptions apply any more. book_params.py lost its one direct
+    # pathiel/agents/*.py importer (executor.py) in the same deletion — it is
+    # still genuinely live, just reached from outside pathiel/agents/ now
+    # (services/risk/books.py's main_engine_spec and services/risk/migrate.py's
+    # legacy-key migration), so those real callers join the BFS roots below
+    # rather than being left as a false "unreachable" positive — the same
+    # class of bug the NOT_CLEANUP_OWNED tracing fix (see the test's own
+    # docstring) existed to catch when executor.py was still the one doing
+    # the reaching. (news_catalyst.py and its scripts/news.py CLI, the other
+    # pair this note used to cover, were deleted 2026-10-25: services/intel
+    # replaced them.)
     ROOT / "services" / "risk" / "books.py",
     ROOT / "services" / "risk" / "migrate.py",
-    ROOT / "scripts" / "news.py",
 )
 
 

@@ -164,9 +164,9 @@ def test_neither_template_uses_a_cdn():
 
 def test_neither_template_defines_tailwind_shaped_classes(tmp_path):
     """scripts/build_static_css.py hard-fails the build if a template uses a
-    utility-shaped class token with no mapping, and two existing gate tests
-    (test_dashboard_pages.py::test_v4_compiled_css_replaces_tailwind_runtime,
-    test_trend_engine.py::test_css_build_is_current) assert the committed
+    utility-shaped class token with no mapping, and an existing gate test
+    (test_dashboard_pages.py::test_v4_compiled_css_replaces_tailwind_runtime)
+    asserts the committed
     app.css is byte-exact with what that scanner emits for ALL templates,
     desk.html included. Reproduce its own scan here so a future edit to this
     template fails fast, in this file, with a clear reason, instead of as a

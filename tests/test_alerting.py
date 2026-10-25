@@ -40,7 +40,7 @@ def test_every_failure_mode_has_a_metric(scrape):
     wrote them are retired, and a metric with no writer left reads as a
     permanent, false failure rather than a real one (the same reasoning that
     dropped pathiel_grading_age_seconds in wave 1)."""
-    for metric in ("pathiel_can_trade", "pathiel_ai_brain_ready",
+    for metric in ("pathiel_can_trade",
                    "pathiel_disk_free_bytes", "pathiel_log_dir_bytes",
                    "pathiel_max_drawdown_pct", "pathiel_backup_age_seconds"):
         assert metric in scrape, f"{metric} is not exported"

@@ -129,9 +129,10 @@ token budget. `total_cost_usd` was never affected by this; only the token
 **Not as a blind swap. Yes for the subprocess internals; no for the
 verdict-specific behavior, at least not without a decision from Julien.**
 
-`ai_brain.py` is deeply embedded in the live trading loop
-(`docs/AI_BRAIN_OPERATOR_WIRING.md`: `trading_loop.py -> research._call_ai()
--> ai_brain -> parse_verdict() -> executor.route_verdict()`), has three
+`ai_brain.py` was deeply embedded in the live trading loop
+(`trading_loop.py -> research._call_ai() -> ai_brain -> parse_verdict()
+-> executor.route_verdict()`; the module and that doc are deleted as of
+2026-10-25, this gateway is the only LLM path left), had three
 providers (`openrouter`, `claude_cli`, `codex_cli`) where this gateway only
 covers one, and its `claude_cli` path has its own tuned behavior
 (`_contains_parseable_verdict_json`'s trailing-`{...}` scrape, the

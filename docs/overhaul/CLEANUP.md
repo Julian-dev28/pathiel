@@ -236,3 +236,52 @@ Run them:
 
     PATHIEL_STATE_DIR="$(mktemp -d)" .venv/bin/python -m pytest -q -p no:cacheprovider
     .venv/bin/python -m pytest tests/test_repo_hygiene.py tests/test_preflight_secrets.py -v
+
+---
+
+# Cleanup sweep 2 (2026-10-25)
+
+Operator ask: "can we delete anything we dont use or need from tests/
+services/ scripts/ research/ pathiel/ docs/ contracts/ api/", then "tier 1+2",
+then "also delete the fly.toml stuff, update deploy and docker and k8s".
+
+Method: an AST import graph over the 1041 tracked files, reachability from
+server.py, the MCP server, restart.sh, the hooks and CI, the SKILL.md scripts,
+api/index.py and nightly.yml; a grep of every candidate's path and basename;
+then every deletion's test, doc and comment references fixed in the same
+commit. Full inventory with evidence per file was produced in-session.
+
+## Measurable outcome
+
+| | before (9e1b475) | after |
+|---|---|---|
+| tracked files deleted | | **524** |
+| untracked disk freed | | web/ 891 MB, research caches 170 MB, repo-root .state/ 51 MB (stale fallback; live state is `PATHIEL_STATE_DIR`), intel/, shadow_ledger/, bot dotfiles |
+| `/api/health/system` on the live box | 503 for 23 days (`loop` check: "last heartbeat 1983217s ago") | 200 (checks: disk, state) |
+| deploy targets | Fly + k8s, drifted | k8s only, manifests match restart.sh |
+
+## What went
+
+| cluster | why it was dead |
+|---|---|
+| `research/` (alpha_swarm, market_folklore, killa_xbt, regime_2026_09, worldmonitor, EVIDENCE_DOCTRINE.md) + 7 W-* tests | loaded only by its own tests; nothing on a live path |
+| `services/trend_engine`, `services/events`, dashboard trend-lane helpers, `scripts/smoke_trends.py` | the /trends routes were removed 2026-10-23 |
+| `pathiel/agents/ai_brain.py` (the 3 completion backends, `get_brain`, readiness), the `ai_brain` config block, `pathiel_ai_brain_ready`, `PathielBrainUnusable`, `check_ai_brain_usable`, OPENROUTER/BRAVE/HYDROMANCER secrets | last caller was trend_engine; the thesis writer uses services/llm |
+| `pathiel/indicators`, `pathiel/agents/news_catalyst.py` + `scripts/news.py`, `pathiel/positions_snapshot.py`, `scripts/watch_wallet.py`, `scripts/site_latency_eval.py`, `scripts/_memory_io.py` | research-only, replaced by services/intel, written by the deleted loop, or operator-retired |
+| exchange.py maker-first block (~200 lines), hyperfeed leaderboard/discovery (~330 lines), MCP server perception helpers, `server._append_session_log`, `accounts/api._require_control`, `auth/deps.require_operator_user`, `textnorm.dedup_pairs`, the intel per-module aggregate fetchers, research-era TypedDicts in `models/types.py` | zero callers |
+| `/api/health/system` `loop`, `feed`, `ai_brain` checks | each watched a deleted process and had become a permanent false 503 |
+| `fly.toml`, Fly sections of DEPLOY.md and SECRETS.md, `FLY_APP_NAME` deploy signal | Fly dropped as a target |
+| `docs/ARCHITECTURE.md`, `AI_BRAIN_OPERATOR_WIRING.md`, `overhaul/UX_AUDIT.md`, three `STATUS_*.md` | described the retired bot; no inbound links |
+| 15 test files and 12 test functions whose targets left | see above |
+
+Kept on purpose: `docs/overhaul/PROFIT_AUDIT.md` (risk presets cite it as the
+evidence), `docs/CONFIG.md` (config_preset.py links it), `services/pathiel_data_api`
+(its own deploy unit), the preflight, treasury and grant_operator scripts,
+`services/wallet_ui` and its node_modules (the committed wallet.js is built from
+it), `pathiel_data.db` (the live api_keys store).
+
+## Verification
+
+    PATHIEL_STATE_DIR="$(mktemp -d)" .venv/bin/python -m pytest -q -p no:cacheprovider
+    .venv/bin/python scripts/preflight_secrets.py
+    curl -s http://127.0.0.1:8000/api/health/system

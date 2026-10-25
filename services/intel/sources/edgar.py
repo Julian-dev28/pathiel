@@ -38,7 +38,7 @@ isolation), rather than silently truncating results with no signal.
 CIK-map and submissions-cadence logic intentionally duplicates a slice of
 services/intel/sources/catalysts.py's `fetch_earnings_catalysts` rather
 than importing from it — same call services/intel/env.py's docstring
-already made for services/trend_engine/env.py: two sources that may be
+already made for services/accounts/env.py: two sources that may be
 edited in parallel by two different agents should not share a file.
 catalysts.py emits a Catalyst for the calendar; this module emits a
 DataPoint for the HARD DATA block — related numbers, different contracts.

@@ -149,8 +149,8 @@ def handle_get_xxx(params: Dict[str, Any]) -> str:
   which refuses under the R-multiple minimum or when the stop sits too close
   to liquidation for the requested leverage. `bracket_sweep` cancels a
   stranded sibling order and confirms an open position is covered by a stop.
-- `config` whitelists nested updates, including `ai_brain`, so MCP clients can
-  hot-switch the research provider without editing `.agent-config.json` by hand.
+- `config` deep-merges nested updates (risk_profile and any hand-added block)
+  so MCP clients can change one key without editing `.agent-config.json` by hand.
 
 ## Audit invariant
 
@@ -179,7 +179,7 @@ still gets answered (`ping` normally, anything else with a busy error).
 
 ## Testing
 
-- Gate (no network, <1s): `pytest tests/test_mcp_server_hardening.py tests/test_hyperfeed_leaderboard.py tests/test_mcp_sampling.py tests/test_mcp_wallet_tools.py`
+- Gate (no network, <1s): `pytest tests/test_mcp_server_hardening.py tests/test_hyperfeed_market_data.py tests/test_mcp_sampling.py tests/test_mcp_wallet_tools.py`
 - Periodic eval (live HL, read-only, ~90s): `pytest -m online tests/test_mcp_online_eval.py -s`.
   Calls every non-mutating tool through a real stdio session; pass floor 97%.
   Trace in `/tmp/pathiel-mcp-eval/latest.json`.

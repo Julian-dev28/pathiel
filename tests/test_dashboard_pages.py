@@ -138,31 +138,6 @@ def client():
 
 # ── news payload ─────────────────────────────────────────────────────────────
 
-# news_surge_short, not news_catalyst: the feed reads the books that can trade
-# today, and news_surge_short is the live one that records headlines. These
-# fixtures wrote to news_catalyst for six weeks after that book was demolished,
-# which is exactly why the /news tab could serve July rows with every test green.
-@pytest.fixture
-def isolated_ledger(tmp_path, monkeypatch):
-    """The news payload merges every live book, so a test that writes one
-    fixture book into the real ledger directory gets the operator's actual
-    news_surge_multi history mixed in and its rows pushed past `limit`. These
-    tests only passed before because the payload read a single hardcoded book."""
-    from pathiel.agents import shadow_ledger
-    monkeypatch.setattr(shadow_ledger, "_ledger_dir", lambda: str(tmp_path))
-    return tmp_path
-
-
-def _write_news_ledger(rows, book="news_surge_short"):
-    from pathiel.agents import shadow_ledger
-    path = shadow_ledger._book_path(book)
-    if os.path.exists(path):
-        os.remove(path)
-    with open(path, "w") as fh:
-        for r in rows:
-            fh.write(json.dumps(r) + "\n")
-
-
 # ── pages + endpoints ────────────────────────────────────────────────────────
 
 HOW_IT_WORKS = "No discretionary trading and no manual override."

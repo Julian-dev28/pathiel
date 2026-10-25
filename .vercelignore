@@ -39,7 +39,6 @@ __pycache__/
 .ruff_cache/
 .git/
 tests/
-research/
 k8s/
 contracts/
 docs/

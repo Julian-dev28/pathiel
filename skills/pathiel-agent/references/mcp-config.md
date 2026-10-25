@@ -65,7 +65,7 @@ well as a funding one. (`get_funding_history` was later cut outright on
 | `set_leverage` | `coin: string, leverage: number` | Sets leverage; with an open position it keeps that position's margin type (isolated on HIP-3), flat it uses the market default; a venue refusal is an error |
 | `cancel_order` | `asset: number, order_id: number` | Cancels one resting order |
 | `state` | none | Full agent state |
-| `config` | see SKILL.md | Current or updated config, including `ai_brain` |
+| `config` | see SKILL.md | Current or updated config (mode, HIP-3 and coin lists, risk_profile, active_desks) |
 
 ## Environment Variables
 
@@ -75,11 +75,7 @@ Set in `.env.local` at the project root:
 HYPERLIQUID_WALLET_ADDRESS=0x...
 HYPERLIQUID_PRIVATE_KEY=0x...
 # HYPERLIQUID_MASTER_ADDRESS=0x...   # optional, for agent-wallet setups
-OPENROUTER_API_KEY=sk-or-...
-# AI_BRAIN_PROVIDER=openrouter   # openrouter | claude_cli | codex_cli
-# AI_BRAIN_TIMEOUT_S=120
-# CLAUDE_CLI_COMMAND=claude
-# CODEX_CLI_COMMAND=codex
+# PATHIEL_LLM_MODEL=...            # optional: pin the local Claude Code model services/llm uses
 ```
 
 The web auth vars (`PATHIEL_AUTH_DOMAIN`, `PATHIEL_PUBLIC_DASHBOARD`,

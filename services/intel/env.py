@@ -3,7 +3,7 @@
 Deliberately a leaf module with zero imports from other `services/*` or
 `pathiel/*` packages (see docs/overhaul/SWARM_RULES.md section 6 ownership —
 this service owns `services/intel/**` only and must not reach into another
-service's internals). `services/trend_engine/env.py` solves the identical
+service's internals). `services/accounts/env.py` solves the identical
 problem the identical way; the duplication is intentional, not an oversight,
 so the two services can be edited by two different agents in parallel
 without a shared-file collision.

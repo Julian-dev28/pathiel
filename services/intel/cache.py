@@ -34,7 +34,7 @@ of refreshing a desk that was just refreshed.
   6. On failure with no success cache at all, returns (None, error).
 
 Atomic write (tempfile + os.replace) so a reader can never observe a
-half-written cache file — the exact pattern `services/trend_engine/cache.py`
+half-written cache file — the same pattern `pathiel/agents/atomic_io.py`
 uses for the same reason.
 
 This module takes a resolved directory (`desk_dir`), never a desk id plus

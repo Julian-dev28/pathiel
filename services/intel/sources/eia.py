@@ -135,16 +135,3 @@ def fetch_natgas_storage(spec: DeskSpec) -> Tuple[List[DataPoint], Optional[str]
 
 
 ATOMIC_FETCHERS = (fetch_crude_stocks, fetch_natgas_storage)
-
-
-def fetch_eia(spec: DeskSpec) -> Tuple[List[DataPoint], List[str]]:
-    """Convenience sequential path — see sources/news.py's fetch_headlines
-    docstring for why this exists alongside ATOMIC_FETCHERS."""
-    out: List[DataPoint] = []
-    failed: List[str] = []
-    for fn in ATOMIC_FETCHERS:
-        items, err = fn(spec)
-        if err:
-            failed.append(err)
-        out.extend(items)
-    return out, failed

@@ -1,10 +1,11 @@
 """Positions + stop coverage for any Hyperliquid address, across the main
 dex and every HIP-3 dex it holds margin on.
 
-`assess()` is the pure part, moved out of `scripts/watch_wallet.py`
-(2026-10-23) unchanged so the Oil Desk dashboard's Wallets section
-(`GET /api/accounts/{id}/positions`) and that script's CLI share one
-implementation. The script stays a thin CLI that imports this.
+`assess()` is the pure part, moved out of the operator-wallet watcher
+script (2026-10-23) so the Oil Desk dashboard's Wallets section
+(`GET /api/accounts/{id}/positions`) owns the one implementation. The
+script itself was deleted 2026-10-25 (the loop no longer watches a
+second wallet).
 
 `fetch_positions_for_account()` is the live leg: it reads the account's
 already-shared snapshot (`pathiel.client.account_snapshot`) to find which
@@ -225,8 +226,7 @@ def fetch_positions_for_account(address: str, *, dexes: Optional[List[str]] = No
 
 
 def _fetch_positions_uncached(address: str, *, dexes: Optional[List[str]] = None) -> Dict[str, Any]:
-    """assess() per dex this account holds margin on. Same shape as
-    scripts/watch_wallet.py's CLI output:
+    """assess() per dex this account holds margin on. Shape:
     {"user", "accounts": [...one assess() dict per dex...], "any_naked"}.
 
     `dexes` overrides dex discovery (tests; a caller that already knows

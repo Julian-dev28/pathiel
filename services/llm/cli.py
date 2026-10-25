@@ -1,7 +1,7 @@
 """Subprocess mechanics for the local Claude Code CLI.
 
-Reuses the invocation shape hard-won in pathiel/agents/ai_brain.py's
-ClaudeCliBrain / _run_cli / _kill_process_group: a dedicated process group
+Reuses the invocation shape hard-won in the bot-era pathiel/agents/ai_brain.py
+(ClaudeCliBrain / _run_cli / _kill_process_group, deleted 2026-10-25): a dedicated process group
 (``start_new_session=True``) so a timeout can SIGTERM-then-SIGKILL the whole
 group and not just the parent, ``--output-format json`` so usage/cost ride
 along in the envelope instead of needing a second call, and the same

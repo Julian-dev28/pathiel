@@ -25,7 +25,7 @@ import os
 import time
 from typing import Optional
 
-from fastapi import Depends, HTTPException, Request
+from fastapi import HTTPException, Request
 
 from services.auth import stateless
 from services.auth.store import AuthStore, User
@@ -102,15 +102,6 @@ def require_user(request: Request) -> User:
     user = current_user(request)
     if user is None:
         raise HTTPException(status_code=401, detail="sign in required")
-    return user
-
-
-def require_operator_user(user: User = Depends(require_user)) -> User:
-    """Operator-only. 403, not 404: the caller is authenticated, so hiding the
-    route's existence protects nothing and only makes the failure harder to
-    diagnose."""
-    if not user.is_operator:
-        raise HTTPException(status_code=403, detail="operator role required")
     return user
 
 

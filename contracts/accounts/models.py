@@ -30,8 +30,8 @@ Routes (services/accounts/api.py):
   GET    /api/accounts/active/summary       -> ActiveSummary
   GET    /api/accounts/{account_id}/positions -> {"user", "accounts": [...], "any_naked"}
                                                 (services/accounts/positions.py; not modeled
-                                                here since it mirrors scripts/watch_wallet.py's
-                                                CLI shape, not a strict contract type)
+                                                here: it is the assess() dict shape the Wallets
+                                                card reads, not a strict contract type)
 
 Private keys are never returned by any route, never logged, never written
 unencrypted. Bump CONTRACT_VERSION on a breaking change.

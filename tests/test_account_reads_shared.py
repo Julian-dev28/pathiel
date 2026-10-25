@@ -60,7 +60,6 @@ def venue(monkeypatch):
     monkeypatch.setattr(hl_client, "resolve_user_address", lambda: ADDR)
     from pathiel import dashboard
     monkeypatch.setattr(dashboard, "resolve_user_address", lambda: ADDR)
-    monkeypatch.setattr(dashboard, "read_position_snapshot", lambda max_age_s=120.0: None)
     dashboard._POSITIONS_CACHE.update(ts=0.0, data=[])
     return v
 

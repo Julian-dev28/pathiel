@@ -131,11 +131,9 @@ in order:
 4. **Levels** (`scripts/oil_levels.py`): mid, last closed 1h candle, 8h/24h/48h
    range, ATR14, 15m micro range; `--check ENTRY STOP TP --lev 20` judges one
    level against the R gate and the 20x line.
-5. **The operator's own wallet, read-only** (`scripts/watch_wallet.py`):
-   warns once if a hand-placed position is naked.
-6. **One decision**: hold, cancel a stale resting entry, or place one new
-   bracket anchored on structure. No setup, no trade.
-7. **One log line** to `/tmp/oil-loop/progress.log`.
+5. **One decision**: hold, top up at the thesis entry, cancel a stale resting
+   entry, or place one new bracket anchored on structure. No setup, no trade.
+6. **One log line** to `/tmp/oil-loop/progress.log`.
 
 ## MCP server
 
@@ -258,11 +256,12 @@ Two files, and they bootstrap differently:
 | `.agent-config.json` | Yes, tracked | edit it (don't create) | fresh on every trade, no restart |
 | `.env.local` | No, gitignored | create it: `cp .env.local.example .env.local` | at process start, restart to apply |
 
-`.agent-config.json` today carries 8 top-level keys: `mode`, `ai_brain`,
-`enable_hip3`, `coin_allowlist`, `coin_blocklist`, `hip3_dex_allowlist`,
-`hip3_dex_blocklist`, `risk_profile`, plus `active_desks`. Everything the
-old scan/research/execute engine read (sizing fractions, gate thresholds,
-DSL exit tuning) is gone with that engine.
+`.agent-config.json` today carries 8 top-level keys: `mode`, `enable_hip3`,
+`coin_allowlist`, `coin_blocklist`, `hip3_dex_allowlist`, `hip3_dex_blocklist`,
+`risk_profile` and `active_desks`. Everything the old scan/research/execute
+engine read (sizing fractions, gate thresholds, DSL exit tuning) is gone with
+that engine, and the `ai_brain` provider block went with the brain module on
+2026-10-25.
 
 ### `.env.local`: credentials
 
@@ -278,9 +277,8 @@ EIA_API_KEY=...        # free, eia.gov/opendata/register.php
 FRED_API_KEY=...       # free, fred.stlouisfed.org/docs/api/api_key.html
 CONGRESS_API_KEY=...   # free, api.congress.gov/sign-up/
 
-AI_BRAIN_PROVIDER=claude_cli   # claude_cli routes through the local Claude Code
-                                 # CLI, not a hosted API; openrouter/codex_cli
-                                 # are the other options in pathiel/agents/ai_brain.py
+# PATHIEL_LLM_MODEL=...          # optional: pin the model services/llm hands the
+                                 # local Claude Code CLI; there is no LLM API key
 ```
 
 `.env.local.example` at the repo root does not yet list the `services/intel`
@@ -343,11 +341,9 @@ pathiel/
 │   ├── state.py                    # shared state-directory resolver
 │   ├── agents/
 │   │   ├── bracket.py              # place_bracket, bracket_sweep, close_position, the 20x rule
-│   │   ├── ai_brain.py              # pluggable verdict providers (openrouter, claude_cli, codex_cli)
 │   │   ├── book_params.py           # the sizing-floor resolver place_bracket still prices against
 │   │   ├── capital_flows.py         # deposits/withdrawals, flow-neutral drawdown
-│   │   ├── hyperfeed.py             # leaderboard, whale index, funding-regime classification
-│   │   └── news_catalyst.py         # desk news-headline fetch
+│   │   └── hyperfeed.py             # market data for the MCP market_* tools, funding regime
 │   ├── client/
 │   │   ├── hl_client.py             # Hyperliquid REST client
 │   │   ├── exchange.py              # order placement, leverage setting
@@ -365,7 +361,7 @@ pathiel/
 ├── contracts/                       # shared pydantic models (risk, strategies, accounts)
 ├── scripts/
 │   ├── pathiel-mcp-server.py        # MCP server (stdio, 59 tools)
-│   ├── desk_slot.py, oil_levels.py, watch_wallet.py   # desk-tick's own tools
+│   ├── desk_slot.py, oil_levels.py  # desk-tick's own tools
 │   ├── restart.sh                   # server + log rotator
 │   └── mcp_tool_table.py            # regenerates docs/overhaul/MCP.md
 ├── docs/overhaul/                   # the headless-desk and desk-ui removal writeups

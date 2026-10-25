@@ -214,8 +214,7 @@ def test_the_mcp_tool_count_in_the_docs_matches_the_server():
 
     for doc in ("skills/pathiel-agent/SKILL.md",
                 "skills/pathiel-agent/references/mcp-config.md",
-                "skills/pathiel-agent/references/mcp-server.md",
-                "docs/ARCHITECTURE.md"):
+                "skills/pathiel-agent/references/mcp-server.md"):
         text = (ROOT / doc).read_text()
         if "tools" not in text:
             continue

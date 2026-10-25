@@ -1,6 +1,6 @@
 """Defaults and env knobs for services/llm.
 
-Mirrors the env-overrides-everything pattern in pathiel/agents/ai_brain.py,
+Mirrors the env-overrides-everything pattern of the retired pathiel/agents/ai_brain.py,
 simplified to one provider: the local Claude Code CLI. Hosted LLM APIs are
 banned by project rule (CLAUDE.md, "LLM access") unless Julien explicitly
 instructs otherwise, so there is no provider switch here - just knobs on the
@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import os
 
-# Same tuned ceiling as pathiel/agents/ai_brain.py:MAX_CLI_TIMEOUT_S. That
+# Same tuned ceiling the retired ai_brain.py used (MAX_CLI_TIMEOUT_S). That
 # number came from a real incident (2026-07-25, WLD/SPCX/HIMS: 120s SIGKILLed
 # a web-search call mid-search). We do not web-search by default here, but a
 # shared ceiling means one fewer tuned constant to keep in sync by hand.

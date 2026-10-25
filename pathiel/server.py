@@ -68,18 +68,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger("pathiel-server")
 
-# ── Session log ────────────────────────────────────────────────────────────────
-# Shared activity feed (pathiel.session_log) — the same JSONL file the
-# trading loop and status.py use. Writes run in an executor so the file append
-# never blocks the event loop.
-
-
-async def _append_session_log(entry: Dict[str, Any]) -> None:
-    """Append one event to the shared session log (non-blocking)."""
-    loop = asyncio.get_running_loop()
-    await loop.run_in_executor(None, session_log.append, entry)
-
-
 async def _json_object(request: Request, *, empty_ok: bool = False) -> Dict[str, Any]:
     """The request's JSON body as a dict, else a 400. Read on the event loop
     (it is an await); the work the body asks for then goes to a worker thread."""
@@ -784,30 +772,22 @@ def health_system(response: Response):
     every probe pointed at it — the same silent-failure shape as a data outage
     reading as a quiet market, and as an unrotated log filling a disk.
 
+    2026-10-25: the `loop`, `feed` and `ai_brain` checks are gone. The loop
+    heartbeat, the scanner feed and the brain module they probed were deleted
+    with the autonomous engine (2026-10-23 and 2026-10-25), so each had become
+    a permanent false failure: the live box answered 503 for 23 days with
+    "last heartbeat 1983217s ago", and a k8s readiness probe on this route
+    could never pass. What is left is what can still fail silently in a
+    headless desk: the disk the logs and state live on, and the state
+    directory itself.
+
     Unauthenticated, like /api/health and /metrics, so an external monitor can
     reach it. It exposes no position, size, or credential — only whether the
     parts are alive.
     """
-    from pathiel import dashboard as _db
-
     checks: Dict[str, Any] = {}
-    summary = _db._summary_payload()
 
-    # 1. Is the loop alive? The heartbeat is written every cycle; p99 is ~420s
-    #    on healthy days, so 900s is a genuinely dead loop, not a slow one.
-    age = summary.get("last_tick_age_s")
-    loop_ok = age is not None and age <= 900
-    checks["loop"] = {"ok": bool(loop_ok), "last_tick_age_s": age,
-                      "detail": ("no heartbeat yet" if age is None
-                                 else f"last heartbeat {age}s ago")}
-
-    # 2. Is the market data trustworthy? A degraded feed reads downstream as a
-    #    quiet market, so it has to surface as a health problem, not silence.
-    feed = _db._feed_health()
-    feed_ok = feed.get("trustworthy") is not False
-    checks["feed"] = {"ok": bool(feed_ok), **feed}
-
-    # 3. Is there room to keep logging? An unrotated disk took this system down
+    # 1. Is there room to keep logging? An unrotated disk took this system down
     #    before anything else noticed.
     try:
         from pathiel import log_setup
@@ -826,21 +806,19 @@ def health_system(response: Response):
         # monitoring gap becomes an outage.
         checks["disk"] = {"ok": True, "detail": f"unavailable: {str(exc)[:80]}"}
 
-    # 4. Can the AI brain actually run? Every failure here is silent: a missing
-    #    CLI binary returns an empty completion, which fails to parse, which has
-    #    historically defaulted to PASS. A dead brain looks exactly like a brain
-    #    that looked and declined.
+    # 2. Can this process reach its state directory? Every desk journal, the
+    #    intel cache and the account registry live under PATHIEL_STATE_DIR; a
+    #    container whose volume did not mount, or mounted read-only, would
+    #    otherwise serve pages and lose every write.
     try:
-        from pathiel.agents.ai_brain import provider_readiness
-        pr = provider_readiness()
-        checks["ai_brain"] = {
-            "ok": bool(pr.get("ready")),
-            "provider": pr.get("provider"),
-            "deployable": pr.get("deployable"),
-            "detail": pr.get("reason") or "usable",
-        }
+        from pathiel.state import state_file
+        state_dir = os.path.dirname(state_file("health-probe"))
+        writable = os.path.isdir(state_dir) and os.access(state_dir, os.W_OK)
+        checks["state"] = {"ok": bool(writable),
+                           "detail": ("ok" if writable else
+                                      "state directory missing or not writable")}
     except Exception as exc:
-        checks["ai_brain"] = {"ok": True, "detail": f"unavailable: {str(exc)[:80]}"}
+        checks["state"] = {"ok": True, "detail": f"unavailable: {str(exc)[:80]}"}
 
     ok = all(c.get("ok") for c in checks.values())
     if not ok:

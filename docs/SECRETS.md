@@ -27,9 +27,7 @@ each check exists; the script is what actually enforces it.
 | `HYPERLIQUID_PRIVATE_KEY` | Agent/API wallet private key — signs every order | `pathiel/client/exchange.py` (the signer every order routes through — `pathiel/agents/bracket.py`'s `place_bracket`/`close_position` and the MCP server call it the same way the now-deleted autonomous executor and trading loop used to, before both were deleted 2026-10-23, wave 2) | **Always** | `exchange.py` itself just holds `""` when unset — an actual sign attempt blows up in the SDK, not at startup. The dedicated `{"executed": False, "reason": "private_key_missing"}` loud-refusal check was the retired executor's own and went with it; not re-verified for `bracket.py`'s path, which is a real gap this doc update did not close |
 | `HYPERLIQUID_MASTER_ADDRESS` | Master account public address — where funds actually live | `pathiel/client/exchange.py`, `pathiel/client/hl_client.py`, `scripts/treasury.py` | **Always** (for the agent-vs-master safety check — see below) | Silent — `exchange.py`'s `IS_AGENT` flag quietly becomes `False` and the trading identity falls back to the wallet address alone. The app tolerates this; the preflight check does not |
 | `HYPERLIQUID_MASTER_PRIVATE_KEY` | Master account private key — signs treasury transfers/swaps ONLY | `scripts/treasury.py` (nowhere else) | **Local-only** — must never exist in a deployed environment | Loud: `treasury.py` prints an error and `sys.exit(2)` |
-| `PATHIEL_OPERATOR_TOKEN` | Bearer token for **machine callers only** since 2026-09-04 — smoke checks (the scheduler and the supervisor this line used to also name are deleted 2026-10-23, wave 2). It is one static string for the whole deployment: it cannot say who acted, cannot be revoked for one person, and cannot rotate without restarting everything that uses it. Humans sign in with a wallet instead | `pathiel/dashboard.py`, `scripts/smoke_trends.py` | **Always** | Loud and fail-*closed*: `_require_operator()` 503s "operator surface disabled" rather than opening the surface with no auth |
-| `OPENROUTER_API_KEY` | OpenRouter API key — the default AI brain, used by the desk thesis refresh (`desk_refresh`) and `services/trend_engine` | `pathiel/agents/ai_brain.py` | **Conditional** — required iff `AI_BRAIN_PROVIDER` resolves to `openrouter` (the default when unset) | Logs a warning and returns `""` from the completion call. The `ai_down: True` tagging and the executor's structural-override interaction described here before 2026-10-23 (wave 2) were `pathiel/agents/research.py`'s own, deleted with it — every AI-brain call still fails silently at the log level, not at startup, but nothing downstream specifically guards against upgrading a failed call into a false signal any more; not re-verified for the desk-thesis path |
-| `BRAVE_API_KEY` | Brave Search — news context for the old AI research pipeline | *(no reader — `pathiel/agents/research.py`, its only caller, is deleted 2026-10-23, wave 2)* | Optional, and currently dead | Nothing reads it; kept in `scripts/preflight_secrets.py`'s check only. `pathiel/agents/news_catalyst.py` (the surviving news/catalyst source, used by `scripts/news.py` and the desk briefs) uses Google News, not Brave |
+| `PATHIEL_OPERATOR_TOKEN` | Bearer token for **machine callers only** since 2026-09-04 — smoke checks (the scheduler and the supervisor this line used to also name are deleted 2026-10-23, wave 2). It is one static string for the whole deployment: it cannot say who acted, cannot be revoked for one person, and cannot rotate without restarting everything that uses it. Humans sign in with a wallet instead | `pathiel/dashboard.py` (the /trends smoke script that also read it was deleted 2026-10-25 with those routes) | **Always** | Loud and fail-*closed*: `_require_operator()` 503s "operator surface disabled" rather than opening the surface with no auth |
 
 ### Sign-in (`services/auth`)
 
@@ -70,29 +68,10 @@ not a secret, just an unused knob).
 
 ## Provisioning for a deploy
 
-Never put a real value in `fly.toml`'s `[env]` block, a `Dockerfile` `ENV`
-line, a k8s `ConfigMap`, or any tracked file — only in the platform's secret
-store, injected as process environment variables at runtime.
-
-### Fly.io (see `DEPLOY.md` for the full one-time setup)
-
-```bash
-flyctl secrets set \
-  HYPERLIQUID_WALLET_ADDRESS="0x..." \
-  HYPERLIQUID_PRIVATE_KEY="0x..." \
-  HYPERLIQUID_MASTER_ADDRESS="0x..." \
-  OPENROUTER_API_KEY="sk-or-..." \
-  PATHIEL_OPERATOR_TOKEN="$(openssl rand -hex 16)"
-
-# optional
-flyctl secrets set BRAVE_API_KEY="BSA..."
-
-# NEVER: flyctl secrets set HYPERLIQUID_MASTER_PRIVATE_KEY=...
-# Treasury transfers are a manual, local-only operation — see below.
-```
-
-`flyctl secrets list` prints names only, never values. Setting or unsetting
-a secret triggers a rolling redeploy — that's expected, not a bug.
+Never put a real value in a `Dockerfile` `ENV` line, a k8s `ConfigMap`, or
+any tracked file — only in the platform's secret store, injected as process
+environment variables at runtime. (Fly.io was dropped as a deploy target on
+2026-10-25; Kubernetes is the one container target, see `DEPLOY.md`.)
 
 ### Kubernetes (see `k8s/README.md`, `k8s/secret.example.yaml`)
 
@@ -104,7 +83,6 @@ kubectl create secret generic pathiel-secrets -n pathiel \
   --from-literal=HYPERLIQUID_WALLET_ADDRESS="$HYPERLIQUID_WALLET_ADDRESS" \
   --from-literal=HYPERLIQUID_PRIVATE_KEY="$HYPERLIQUID_PRIVATE_KEY" \
   --from-literal=HYPERLIQUID_MASTER_ADDRESS="$HYPERLIQUID_MASTER_ADDRESS" \
-  --from-literal=OPENROUTER_API_KEY="$OPENROUTER_API_KEY" \
   --from-literal=PATHIEL_OPERATOR_TOKEN="$(openssl rand -hex 16)"
 ```
 
@@ -181,9 +159,7 @@ revoke the old value at the provider once the new one is confirmed live.
 | `HYPERLIQUID_WALLET_ADDRESS` | Follows the private key above (they're a pair) | Yes | Not a secret by itself (a public address) — rotate alongside the private key |
 | `HYPERLIQUID_MASTER_ADDRESS` | This is your actual account; you don't "rotate" it. If it needs to change, you're moving to a different Hyperliquid account entirely — treat as a full re-provision | Yes | Not a secret (public address) — no action needed on its own, but if leaked *alongside* the master private key, see below |
 | `HYPERLIQUID_MASTER_PRIVATE_KEY` | Hyperliquid does not support rotating a master wallet's key — it's an on-chain wallet, so "rotation" means moving funds to a new wallet | N/A (local-only, never deployed) | **Treat as a full account compromise.** Move all funds to a brand-new wallet immediately via the Hyperliquid UI from a separate trusted device if possible, then stop using the old wallet entirely. This is the one leak this doc cannot make routine — it is the master key, it can empty the account, and speed is the only mitigation. |
-| `PATHIEL_OPERATOR_TOKEN` | Anywhere: `openssl rand -hex 16`, then `flyctl secrets set PATHIEL_OPERATOR_TOKEN=...` (or the k8s/systemd equivalent) | Yes | Rotate immediately (see above). Worst case with the old token still valid: someone can flip config knobs and trigger manual closes through `/operator` — no fund transfer is reachable through that surface, but it's still real control of the bot. |
-| `OPENROUTER_API_KEY` | https://openrouter.ai/keys — revoke old, create new | Yes | Revoke at OpenRouter immediately. Worst case: someone burns your quota / sees prompts you sent (market context, not credentials). |
-| `BRAVE_API_KEY` | https://api.search.brave.com/ dashboard | Yes | Revoke at Brave. Low severity — a news-search key. |
+| `PATHIEL_OPERATOR_TOKEN` | Anywhere: `openssl rand -hex 16`, then update the k8s Secret (or `.env.local` on the operator's machine) | Yes | Rotate immediately (see above). Worst case with the old token still valid: someone can flip config knobs and trigger manual closes through `/operator` — no fund transfer is reachable through that surface, but it's still real control of the bot. |
 
 After rotating anything that touched a tracked file (it shouldn't have, but
 if `scripts/preflight_secrets.py`'s git-index scan ever fires): rotating the
@@ -204,6 +180,6 @@ every deploy:
 
 `--deploy` forces the deploy-mode checks (currently just
 `HYPERLIQUID_MASTER_PRIVATE_KEY` absence) even when run from a CI runner that
-doesn't carry Fly/k8s platform env vars itself. On the actual Fly machine or
-k8s pod, `FLY_APP_NAME`/`KUBERNETES_SERVICE_HOST` are set automatically and
-`--deploy` isn't needed — running the bare command is enough.
+doesn't carry the k8s platform env var itself. In the actual pod
+`KUBERNETES_SERVICE_HOST` is set automatically and `--deploy` isn't needed —
+running the bare command is enough.

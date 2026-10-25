@@ -53,7 +53,6 @@ from pathiel.agents.bracket import min_tradable_equity as _min_tradable_equity
 from pathiel.agents.config_store import read_agent_config
 from pathiel.client.account_snapshot import account_state
 from pathiel.client.hl_client import resolve_user_address
-from pathiel.positions_snapshot import read_snapshot as read_position_snapshot
 
 _LOG_PATH = Path(session_log.SESSION_LOG_FILE)
 
@@ -328,15 +327,6 @@ def _positions_payload() -> List[Dict[str, Any]]:
 
 
 def _positions_payload_uncached() -> List[Dict[str, Any]]:
-    # Prefer the loop's snapshot: it already fetched account state this cycle,
-    # so reading the file avoids a duplicate fetch_account_state (~9 HL POSTs)
-    # from this separate process — that duplication was tripping HL's per-IP
-    # rate limit. Fall back to a live fetch only when the snapshot is missing
-    # or stale (loop not running), so a standalone dashboard still works.
-    snap = read_position_snapshot(max_age_s=120.0)
-    if snap is not None:
-        return _rows_from_state(snap)
-
     user = resolve_user_address()
     if not user:
         # Was `return []` — the exact "failure reads as flat" bug the comment
@@ -1095,159 +1085,6 @@ def _viewer_account_payload(address: str, now: Optional[float] = None) -> Dict[s
     with _ACCOUNT_CACHE_LOCK:
         _ACCOUNT_CACHE[addr] = (now, out)
     return out
-
-
-# Ripped-out, fully-graded books (operator order 2026-07-17): premium_fade_short
-# (REFUTED f967e6b) and neg_funding_fade (REFUTED 6916b85) no longer render
-# ANYWHERE in the UI. Their ledger .jsonl files stay on disk as the refutation
-# evidence, and pnl_by_book.py keeps their names for historical attribution
-# only — but the league skips them entirely instead of showing a DEAD row.
-
-
-# ── news feed ────────────────────────────────────────────────────────────────
-
-
-# ── prediction markets ───────────────────────────────────────────────────────
-
-
-# ── on-demand analyze jobs (background, so a 1-4min web-search call never
-# blocks the request) ─────────────────────────────────────────────────────────
-_ANALYZE_JOBS: "collections.OrderedDict[str, Dict[str, Any]]" = collections.OrderedDict()
-_ANALYZE_LOCK = threading.Lock()
-_ANALYZE_JOBS_MAX = 64
-_ANALYZE_JOB_TTL_S = 900
-
-
-def _analyze_job(job_id: str) -> Optional[Dict[str, Any]]:
-    with _ANALYZE_LOCK:
-        job = _ANALYZE_JOBS.get(job_id)
-        return dict(job) if job else None
-
-
-def _prune_analyze_jobs(now: float) -> None:
-    while len(_ANALYZE_JOBS) > _ANALYZE_JOBS_MAX:
-        _ANALYZE_JOBS.popitem(last=False)
-    dead = [k for k, v in _ANALYZE_JOBS.items()
-            if now - float(v.get("started", now)) > _ANALYZE_JOB_TTL_S]
-    for k in dead:
-        _ANALYZE_JOBS.pop(k, None)
-
-
-# The lanes the tab serves. Module level because it is a contract: the page,
-# the refresh/AI routes and scripts/smoke_trends.py all have to agree on it.
-_TREND_LANES = ("hl",)
-_REFRESH_TIMEOUT_S = 600.0
-
-
-def _refresh_lane_subprocess(lane: str, timeout_s: float = _REFRESH_TIMEOUT_S,
-                             runner: Optional[Callable[..., Any]] = None,
-                             loader: Optional[Callable[[str], Dict[str, Any]]] = None,
-                             ) -> Dict[str, Any]:
-    """Refresh one lane in its OWN process, the way the scheduler does.
-
-    Not `cache.refresh()` in-process: `restart.sh` starts the server on a
-    hard-throttled HL token bucket (refill 2/s, capacity 60) so its background
-    polls yield to the trading loop on a shared, per-IP rate limit. An HL scan
-    is ~26 coins x `candleSnapshot` at weight 20, which inside that budget means
-    every request waits its 30s ceiling and then SKIPS — the log fills with
-    `rate budget exhausted for candleSnapshot`, the job never finishes, and the
-    button reads as dead. The child inherits everything except the throttle, so
-    an operator refresh costs exactly what the scheduler's 30-minute job costs.
-
-    `PATHIEL_STATE_READONLY` is deliberately NOT stripped: it guards agent memory
-    and DSL exits, neither of which a lane refresh has any business writing.
-    """
-    import subprocess
-    import sys
-    run = runner or subprocess.run
-    load = loader or (lambda ln: __import__(
-        "services.trend_engine.cache", fromlist=["load"]).load(ln))
-    env = {k: v for k, v in os.environ.items() if not k.startswith("PATHIEL_HL_RATE_")}
-    cmd = [sys.executable, "-m", "services.trend_engine.run",
-           "--refresh-all", "--lanes", lane]
-    try:
-        proc = run(cmd, cwd=str(Path(__file__).resolve().parent.parent), env=env,
-                   capture_output=True, text=True, timeout=timeout_s)
-    except subprocess.TimeoutExpired:
-        return {"status": "error",
-                "error": f"{lane} refresh exceeded {int(timeout_s)}s and was killed"}
-    if proc.returncode != 0:
-        tail = (proc.stderr or proc.stdout or "").strip().splitlines()
-        return {"status": "error",
-                "error": (tail[-1] if tail else f"exit {proc.returncode}")[:200]}
-    payload = load(lane)
-    return {"status": payload.get("status"),
-            "generated_at": payload.get("generated_at")}
-
-
-def _start_trend_job(kind: str, lane: str, web_search: bool = False,
-                     **kw: Any) -> str:
-    """Background job for the trend tab: `refresh` (network) or `ai` (model call).
-
-    Shares the analyze-job store so both kinds prune and expire together. Both
-    are far too slow for a request: a full HL scan is ~20s and an AI pass with
-    search is minutes.
-    """
-    import uuid
-    job_id = uuid.uuid4().hex[:16]
-    now = time.time()
-    with _ANALYZE_LOCK:
-        _prune_analyze_jobs(now)
-        _ANALYZE_JOBS[job_id] = {"status": "running", "started": now,
-                                 "kind": kind, "lane": lane, "result": None}
-
-    def _work() -> None:
-        try:
-            from services.trend_engine import cache
-            if kind == "refresh":
-                result = _refresh_lane_subprocess(lane)
-            elif kind == "ai":
-                from services.trend_engine.ai import analyze
-                payload = cache.load(lane)
-                if payload.get("status") == "empty":
-                    raise RuntimeError(f"{lane} cache is empty — refresh it first")
-                ai = analyze(lane, payload, web_search=web_search)
-                cache.attach_ai(lane, ai)
-                result = ai
-            else:
-                raise ValueError(f"unknown job kind: {kind}")
-            with _ANALYZE_LOCK:
-                j = _ANALYZE_JOBS.get(job_id)
-                if j is not None:
-                    j["status"] = "done" if result.get("status") in ("ok", None) else "error"
-                    j["result"] = result
-                    if result.get("status") not in ("ok", None):
-                        j["error"] = str(result.get("error") or result.get("status"))[:200]
-            _TTL_CACHE.pop(f"trends:{lane}", None)
-        except Exception as exc:
-            with _ANALYZE_LOCK:
-                j = _ANALYZE_JOBS.get(job_id)
-                if j is not None:
-                    j["status"] = "error"
-                    j["error"] = str(exc)[:200]
-
-    threading.Thread(target=_work, daemon=True).start()
-    return job_id
-
-
-# ── trend lanes (services/trend_engine) ──────────────────────────────────────
-
-
-def _trends_payload(lane: str) -> Dict[str, Any]:
-    """One trend lane, PURE CACHE READ (`.state/trend_engine/<lane>.json`).
-
-    Every lane does live network work
-    (HL candles / Binance klines / Gamma + CLOB), so none of it happens inside
-    a request. The refresher is `python -m services.trend_engine.run
-    --refresh-all` (scheduler) or the operator-gated POST below. A missing
-    cache renders as `status: empty` with the command to fill it.
-    """
-    try:
-        from services.trend_engine import cache
-    except Exception:
-        return {"status": "empty", "lane": lane, "stale": True,
-                "hint": "services.trend_engine not importable in this tree"}
-    return cache.load(lane)
 
 
 # ── HTML ─────────────────────────────────────────────────────────────────────

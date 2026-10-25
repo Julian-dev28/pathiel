@@ -83,18 +83,6 @@ def _rate_limit(request: Request) -> None:
 
 # ── authorization helpers ───────────────────────────────────────────────────────
 
-def _require_control(request: Request, main_address: str) -> None:
-    """401 if nobody is signed in and this is not a local request; 403 if a
-    session exists but names a different address (and is not the
-    deployment's operator). Exactly the split
-    `integration.session_may_control_account`'s own docstring documents."""
-    if integration.session_may_control_account(request, main_address):
-        return
-    if integration.session_address(request) is None and not integration.is_local_mode(request):
-        raise HTTPException(status_code=401, detail="sign in required")
-    raise HTTPException(status_code=403, detail="not authorized for this account")
-
-
 def _require_operator_or_local(request: Request, *, allow_bootstrap: bool = False) -> None:
     """Account management is single-operator off the local machine: pathiel
     runs ONE bot on ONE active account, and letting any signed-in wallet add

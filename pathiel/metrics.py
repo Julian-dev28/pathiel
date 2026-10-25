@@ -18,6 +18,10 @@ read), SUPERVISOR_AGE and ALERT_EVAL_AGE/ALERTS_FIRING (both scheduler jobs)
 are all dropped rather than kept and left reading a permanent, false
 "dead"/"zero" — the same reasoning that dropped GRADING_AGE in wave 1. Every
 gauge below still has a real writer.
+
+2026-10-25: BRAIN_READY (`pathiel_ai_brain_ready`) dropped the same way. The
+AI brain module it probed is deleted; the one LLM step left (the desk thesis
+writer, services/llm) has no provider to be "ready" ahead of a call.
 """
 
 from __future__ import annotations
@@ -36,9 +40,6 @@ LIVE_MODE = Gauge("pathiel_live_mode", "1 when agent mode is LIVE, 0 otherwise")
 # own trace; these are the failures a human would otherwise have to notice.
 DISK_FREE = Gauge("pathiel_disk_free_bytes", "Free bytes on the state filesystem")
 LOG_DIR_BYTES = Gauge("pathiel_log_dir_bytes", "Total bytes under logs/")
-BRAIN_READY = Gauge(
-    "pathiel_ai_brain_ready", "1 when the selected AI brain can actually run. A "
-    "dead brain returns empty completions, which downstream reads as a PASS")
 CAN_TRADE = Gauge(
     "pathiel_can_trade", "1 when equity clears the structural minimum. LIVE mode "
     "with 0 here means every order attempt is refused")
@@ -101,13 +102,6 @@ def _refresh() -> None:
         LOG_DIR_BYTES.set(float(g.log_dir_bytes))
     except Exception as e:  # noqa: BLE001
         logger.debug(f"[metrics] disk read failed: {e}")
-
-    try:
-        from pathiel.agents.ai_brain import provider_readiness
-
-        BRAIN_READY.set(1.0 if provider_readiness().get("ready") else 0.0)
-    except Exception as e:  # noqa: BLE001
-        logger.debug(f"[metrics] brain read failed: {e}")
 
     try:
         from pathiel import dashboard as _db

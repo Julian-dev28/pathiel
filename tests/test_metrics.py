@@ -27,7 +27,6 @@ def test_metrics_endpoint_serves_prometheus_text():
     for name in (
         "pathiel_live_mode",
         "pathiel_can_trade",
-        "pathiel_ai_brain_ready",
         "pathiel_backup_age_seconds",
     ):
         assert name in body

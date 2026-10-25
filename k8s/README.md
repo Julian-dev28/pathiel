@@ -1,14 +1,16 @@
 # pathiel on Kubernetes (local, $0)
 
-Run the full system on a local kind cluster with Prometheus + Grafana
-observability — **no cloud spend**. This is a skill-signal / demo layer; the
-live bot still runs on Fly.io (see `../DEPLOY.md`).
+Run the web half of the system on a local kind cluster with Prometheus +
+Grafana observability — **no cloud spend**. The live desk itself runs on the
+operator's machine (`scripts/restart.sh` for the server, Claude through the
+MCP server for the trading); this is the containerised form of that server,
+and the only deploy target since Fly.io was dropped on 2026-10-25 (see
+`../DEPLOY.md`).
 
 ## Topology
 
-One `StatefulSet` pod, two containers, one shared `PersistentVolumeClaim` at
-`/data` — the faithful translation of the Fly setup (`scripts/restart.sh`'s
-managed processes, each its own container).
+One `StatefulSet` pod, two containers, one `PersistentVolumeClaim` at `/data`
+(`scripts/restart.sh`'s managed processes, each its own container).
 
 2026-10-23 (wave 2): the `loop` (scripts/trading_loop.py) and `sched`
 (scripts/scheduler.py) containers this topology used to run are retired
@@ -52,12 +54,13 @@ kind load docker-image pathiel:local --name pathiel
 ```bash
 kubectl apply -f k8s/namespace.yaml
 
-# Real keys from your gitignored .env.local (bot trades in LIVE per config),
-# OR dummy values for a pure screenshot demo (bot boots in OFF mode):
+# Real keys from your gitignored .env.local (the account can then be traded
+# through the MCP server), OR dummy values for a pure screenshot demo (the
+# server boots in OFF mode and serves the Desk pages):
 kubectl create secret generic pathiel-secrets -n pathiel \
-  --from-literal=OPENROUTER_API_KEY="${OPENROUTER_API_KEY:-sk-or-dummy}" \
   --from-literal=HYPERLIQUID_WALLET_ADDRESS="${HYPERLIQUID_WALLET_ADDRESS:-0xdummy}" \
   --from-literal=HYPERLIQUID_PRIVATE_KEY="${HYPERLIQUID_PRIVATE_KEY:-0xdummy}" \
+  --from-literal=HYPERLIQUID_MASTER_ADDRESS="${HYPERLIQUID_MASTER_ADDRESS:-0xdummy}" \
   --from-literal=PATHIEL_OPERATOR_TOKEN="$(openssl rand -hex 16)"
 ```
 
@@ -66,7 +69,7 @@ kubectl create secret generic pathiel-secrets -n pathiel \
 ```bash
 kubectl apply -k k8s/
 kubectl -n pathiel rollout status statefulset/pathiel
-kubectl -n pathiel get pods         # expect pathiel-0  5/5  Running
+kubectl -n pathiel get pods         # expect pathiel-0  2/2  Running
 ```
 
 ## 4. Install Prometheus + Grafana (free, in-cluster)
@@ -116,7 +119,6 @@ module docstring for the full account.
 |--------|---------|
 | `pathiel_live_mode` | 1 = LIVE, 0 = OFF |
 | `pathiel_can_trade` | 1 when equity clears the structural minimum |
-| `pathiel_ai_brain_ready` | 1 when the selected AI brain can actually run |
 | `pathiel_disk_free_bytes` | Free bytes on the state filesystem |
 | `pathiel_log_dir_bytes` | Total bytes under logs/ |
 | `pathiel_drawdown_pct` / `pathiel_max_drawdown_pct` | Current / worst drawdown from peak |

@@ -1,9 +1,10 @@
-"""Gate test for the deploy config: Dockerfile, .dockerignore, fly.toml, and
-k8s/statefulset.yaml.
+"""Gate test for the deploy config: Dockerfile, .dockerignore and
+k8s/statefulset.yaml. (fly.toml was dropped 2026-10-25; Kubernetes is the one
+container target.)
 
 This is the test that would have caught `services/` going missing from a
-3-months-stale Dockerfile (the app grew services/trend_engine and
-after the last deploy-config touch; the Dockerfile never learned about it).
+3-months-stale Dockerfile (the app grew a services/ tree after the last
+deploy-config touch; the Dockerfile never learned about it).
 It works by NOT hardcoding the expected package
 list — it statically scans every import under pathiel/, scripts/, and
 services/ for `import services.<x>` / `from services.<x> import ...` /
@@ -17,24 +18,20 @@ The process side works the same way in reverse: scripts/restart.sh defines
 one `<NAME>_PATTERN` string per managed process (used for `pgrep -f`, so
 they're already designed to be a distinctive substring of that process's
 real command line). This test asserts every one of those patterns shows up
-in both fly.toml's [processes] table and k8s/statefulset.yaml's containers,
-so a process restart.sh gains (or loses) can't silently drift out of sync
-with either deploy target.
+in k8s/statefulset.yaml's containers, so a process restart.sh gains (or
+loses) can't silently drift out of sync with the deploy target.
 
 Deterministic, offline (no docker, no network, no subprocess), <2s.
 """
 from __future__ import annotations
 
 import re
-import tomllib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 DOCKERFILE = ROOT / "Dockerfile"
 DOCKERIGNORE = ROOT / ".dockerignore"
-FLY_TOML = ROOT / "fly.toml"
 STATEFULSET = ROOT / "k8s" / "statefulset.yaml"
-CONFIGMAP = ROOT / "k8s" / "configmap.yaml"
 RESTART_SH = ROOT / "scripts" / "restart.sh"
 
 # Directories actually scanned for imports (mirrors what a managed process
@@ -79,7 +76,7 @@ _IMPORT_RE = re.compile(
 def _imported_top_level_packages() -> set[str]:
     """Every top-level package (or services.<subpackage>) referenced by an
     import statement anywhere under SCAN_DIRS. Returns entries like
-    {"pathiel", "services.trend_engine"}."""
+    {"pathiel", "services.strategies"}."""
     found: set[str] = set()
     for base in SCAN_DIRS:
         base_path = ROOT / base
@@ -118,14 +115,9 @@ def _restart_sh_process_patterns() -> dict[str, str]:
         name, pattern = m.group(1), m.group(2)
         # These are pgrep -f (basic regex) patterns; unescape the one thing
         # restart.sh actually escapes (a literal dot) so we can do a plain
-        # substring check against fly.toml / k8s command strings.
+        # substring check against the k8s command strings.
         patterns[name] = pattern.replace("\\.", ".")
     return patterns
-
-
-def _fly_processes() -> dict[str, str]:
-    data = tomllib.loads(FLY_TOML.read_text())
-    return dict(data.get("processes", {}))
 
 
 def _k8s_args_blob() -> str:
@@ -169,7 +161,7 @@ def test_scan_found_the_known_services_packages():
     """Sanity check on the scanner itself — if this fails, the import scan is
     broken, not the Dockerfile, and every other assertion below is moot."""
     assert "pathiel" in IMPORTED_PACKAGES
-    assert "services.trend_engine" in IMPORTED_PACKAGES
+    assert "services.strategies" in IMPORTED_PACKAGES
 
 
 # 2026-10-17 overhaul swarm: services.strategies and services.thesis were
@@ -189,8 +181,8 @@ _NOT_YET_BUILT_BY_ANOTHER_SWARM_AGENT: set = set()
 def test_dockerfile_copies_every_imported_top_level_package():
     """The regression test: every package pathiel/scripts/services
     actually imports must have a matching `COPY <pkg>/ <pkg>/` line in the
-    Dockerfile. This is what would have caught services/trend_engine being
-    entirely absent from the image."""
+    Dockerfile. This is what would have caught a whole services/<x> package
+    being absent from the image (it did, for the trend engine, in 2026-08)."""
     copies = _dockerfile_copy_sources()
     for pkg in sorted(IMPORTED_PACKAGES - _NOT_YET_BUILT_BY_ANOTHER_SWARM_AGENT):
         expected_dir = pkg.replace(".", "/") + "/"
@@ -249,7 +241,6 @@ def test_dockerfile_installs_the_package_before_copying_source():
 REQUIRED_DOCKERIGNORE_ENTRIES = [
     ".env.local",
     "logs/",
-    "research/",
     ".state/",
     ".git/",
 ]
@@ -283,7 +274,7 @@ def test_dockerignore_does_not_exclude_runtime_source():
         )
 
 
-# ── process completeness: restart.sh vs fly.toml vs k8s ────────────────────
+# ── process completeness: restart.sh vs k8s ────────────────────────────────
 
 RESTART_SH_PATTERNS = _restart_sh_process_patterns()
 
@@ -302,17 +293,6 @@ def test_restart_sh_defines_the_two_known_processes():
     assert "LOOP" not in RESTART_SH_PATTERNS and "SCHED" not in RESTART_SH_PATTERNS
 
 
-def test_every_restart_sh_process_is_in_fly_toml():
-    fly_processes = _fly_processes()
-    fly_commands = " ".join(fly_processes.values())
-    for name, pattern in RESTART_SH_PATTERNS.items():
-        assert pattern in fly_commands, (
-            f"scripts/restart.sh manages a {name} process (pgrep pattern "
-            f"{pattern!r}) but no command in fly.toml's [processes] table "
-            f"contains it — this process would never run on Fly."
-        )
-
-
 def test_every_restart_sh_process_is_in_k8s_statefulset():
     k8s_args = _k8s_args_blob()
     for name, pattern in RESTART_SH_PATTERNS.items():
@@ -324,42 +304,24 @@ def test_every_restart_sh_process_is_in_k8s_statefulset():
         )
 
 
-def test_fly_toml_mounts_data_volume_for_state_bearing_processes():
-    data = tomllib.loads(FLY_TOML.read_text())
-    # tomllib returns [[mounts]] as a list under the "mounts" key.
-    mount_procs: set[str] = set()
-    for m in data.get("mounts", []) if isinstance(data.get("mounts"), list) else []:
-        mount_procs.update(m.get("processes", []))
-    fly_processes = set(_fly_processes())
-    # web/loop/sched/sampler read or write /data (directly or via
-    # PATHIEL_STATE_DIR); rotator deliberately does not (see DEPLOY.md
-    # "Runtime state").
-    for proc in fly_processes - {"rotator"}:
-        assert proc in mount_procs, (
-            f"fly.toml process {proc!r} is not in [[mounts]].processes — "
-            f"it would boot without /data and lose state on every restart."
-        )
+def test_k8s_statefulset_has_exactly_one_container_per_restart_sh_process():
+    """restart.sh manages the server and the log rotator; the StatefulSet
+    runs one container for each, under the names the docs use, and nothing
+    else (a third container would be a process restart.sh does not know)."""
+    container_names = _k8s_container_names()
+    assert sorted(container_names) == ["rotator", "web"], container_names
+    assert len(container_names) == len(RESTART_SH_PATTERNS)
 
 
-def test_k8s_statefulset_has_a_container_per_process():
-    container_names = set(_k8s_container_names())
-    fly_processes = set(_fly_processes())
-    assert container_names == fly_processes, (
-        f"k8s containers {container_names} and fly.toml processes "
-        f"{fly_processes} have drifted apart — every process should exist "
-        f"in both deploy targets under the same name."
-    )
-
-
-def test_k8s_configmap_and_fly_env_declare_the_same_shared_config():
-    """fly.toml [env] and k8s/configmap.yaml `data:` are documented as
-    mirrors of each other (see configmap.yaml's own comment) — catch them
-    drifting apart."""
-    fly_env = tomllib.loads(FLY_TOML.read_text()).get("env", {})
-    cm_text = CONFIGMAP.read_text()
-    for key, value in fly_env.items():
-        assert re.search(rf'^\s*{re.escape(key)}:\s*"{re.escape(str(value))}"',
-                         cm_text, re.M), (
-            f"fly.toml [env] sets {key}={value!r} but k8s/configmap.yaml "
-            f"does not set the same value for it."
-        )
+def test_only_the_web_container_mounts_the_state_volume():
+    """web reads and writes /data (through PATHIEL_STATE_DIR); rotator
+    deliberately does not (see DEPLOY.md "Runtime state"). A rotator that
+    mounted the volume could truncate state files it mistook for logs; a web
+    that did not would lose every desk journal on restart."""
+    text = STATEFULSET.read_text()
+    web_start = text.index("- name: web")
+    rotator_start = text.index("- name: rotator")
+    web_block = text[web_start:rotator_start]
+    rotator_block = text[rotator_start:text.index("volumeClaimTemplates")]
+    assert "mountPath: /data" in web_block
+    assert "mountPath: /data" not in rotator_block

@@ -44,17 +44,10 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     # on disk never set one — permanently defeating migration for every
     # config that predates config v2, which is every real one today. See
     # read_risk_profile's docstring for the precedence this preserves.
-    "ai_brain": {
-        "provider": "openrouter",
-        "timeout_s": 120,
-        "claude_cli": {
-            "command": "claude",
-            "max_turns": 1,
-        },
-        "codex_cli": {
-            "command": "codex",
-        },
-    },
+    # 2026-10-25: the `ai_brain` block (provider, timeout_s, claude_cli/
+    # codex_cli commands) is gone with pathiel/agents/ai_brain.py. The desk
+    # thesis writer reads its own knobs from services/llm/config.py and the
+    # environment, never from this file.
     "enable_hip3": True,
     # 2026-08-29: restricted to majors. Bare tickers — the HIP-3 dex prefix is
     # stripped when matching, so "GOLD" covers xyz:GOLD and km:GOLD. Empty list

@@ -134,8 +134,3 @@ def fetch_cot(spec: DeskSpec) -> Tuple[List[PositioningItem], Optional[str]]:
 # cold-build budget note. A tuple of one so the same fan-out code in
 # api.py works uniformly across every sources/*.py module.
 ATOMIC_FETCHERS = (fetch_cot,)
-
-
-def fetch_positioning(spec: DeskSpec, now: datetime) -> Tuple[List[PositioningItem], List[str]]:
-    items, err = fetch_cot(spec)
-    return items, ([err] if err else [])

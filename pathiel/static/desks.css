@@ -9,8 +9,8 @@
 
    Deliberately free of Tailwind-shaped class names. scripts/build_static_css.py
    scans every pathiel/templates/*.html file and hard-fails the build if a new
-   utility-shaped token shows up unmapped, and two gate tests (test_dashboard_
-   pages.py, test_trend_engine.py) assert the committed app.css is byte-exact
+   utility-shaped token shows up unmapped, and a gate test (test_dashboard_
+   pages.py) asserts the committed app.css is byte-exact
    with what that scanner emits right now. This file — and desks.html / desk.html
    — stay off that scanner's radar by using only bespoke, non-utility class
    names, the same way every component in pathiel.css already does.

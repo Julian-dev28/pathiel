@@ -10,8 +10,7 @@ This script is the gate — it is deterministic, offline, and exits non-zero
 the moment anything is wrong, with a precise message naming what and where.
 
 Checks (see CHECKS below for the authoritative list):
-  1. every REQUIRED secret is present and non-empty (some conditionally, e.g.
-     OPENROUTER_API_KEY only when AI_BRAIN_PROVIDER resolves to "openrouter")
+  1. every REQUIRED secret is present and non-empty
   2. the Hyperliquid trading key is an AGENT wallet, not the MASTER wallet —
      HYPERLIQUID_WALLET_ADDRESS must differ from HYPERLIQUID_MASTER_ADDRESS.
      This is the single highest-value check here: an agent wallet cannot
@@ -66,7 +65,7 @@ ENV_FILE_CANDIDATES: Tuple[str, ...] = (".env.local", ".env", ".env.old", ".env.
 # Signals that this process is running inside an already-deployed container,
 # not on the operator's laptop. Both are set automatically by the respective
 # platform — nothing in this repo has to opt in for the signal to be honest.
-_DEPLOY_ENV_SIGNALS: Tuple[str, ...] = ("FLY_APP_NAME", "KUBERNETES_SERVICE_HOST")
+_DEPLOY_ENV_SIGNALS: Tuple[str, ...] = ("KUBERNETES_SERVICE_HOST",)
 
 
 # ── Secret registry ──────────────────────────────────────────────────────────
@@ -76,16 +75,21 @@ _DEPLOY_ENV_SIGNALS: Tuple[str, ...] = ("FLY_APP_NAME", "KUBERNETES_SERVICE_HOST
 #
 # required:
 #   "always"       — preflight fails if missing/empty, unconditionally
-#   "openrouter"   — required only when AI_BRAIN_PROVIDER resolves to "openrouter"
 #   "optional"     — feature degrades gracefully without it (documented per-var
 #                    in SECRETS.md); preflight never fails on absence
 #   "local_only"   — must NEVER be present in a deployed environment; checked
 #                    by check_master_key_not_deployed(), not the required-set check
+#
+# 2026-10-25: OPENROUTER_API_KEY (the AI brain's key; the brain module is
+# deleted), BRAVE_API_KEY and HYDROMANCER_API_KEY (no reader since the
+# research pipeline left 2026-10-23) are out of the registry. The desk intel
+# keys (EIA_API_KEY, FRED_API_KEY, CONGRESS_API_KEY) are free data keys, not
+# secrets that can move money; scripts/intel_keys.py reports on them.
 @dataclass(frozen=True)
 class SecretSpec:
     name: str
     purpose: str
-    required: str  # "always" | "openrouter" | "optional" | "local_only"
+    required: str  # "always" | "optional" | "local_only"
 
 
 REGISTRY: Tuple[SecretSpec, ...] = (
@@ -93,10 +97,7 @@ REGISTRY: Tuple[SecretSpec, ...] = (
     SecretSpec("HYPERLIQUID_PRIVATE_KEY", "agent/API wallet private key — signs orders", "always"),
     SecretSpec("HYPERLIQUID_MASTER_ADDRESS", "master account public address (funds live here)", "always"),
     SecretSpec("PATHIEL_OPERATOR_TOKEN", "bearer token gating the dashboard operator surface", "always"),
-    SecretSpec("OPENROUTER_API_KEY", "OpenRouter API key for the default AI brain provider", "openrouter"),
     SecretSpec("HYPERLIQUID_MASTER_PRIVATE_KEY", "master account private key — treasury transfers only", "local_only"),
-    SecretSpec("BRAVE_API_KEY", "Brave Search API key — news context for research (optional)", "optional"),
-    SecretSpec("HYDROMANCER_API_KEY", "Hydromancer data-plane API key (research/backfill only)", "optional"),
 )
 
 
@@ -111,7 +112,7 @@ class Finding:
 # ── env loading ───────────────────────────────────────────────────────────────
 
 def parse_env_file(path: Path) -> Dict[str, str]:
-    """KEY=VALUE parser matching services/trend_engine/env.py's loader. Never
+    """KEY=VALUE parser matching services/*/env.py's loaders. Never
     logs or returns anything derived from a value beyond the value itself in
     memory — callers must not print it."""
     out: Dict[str, str] = {}
@@ -130,7 +131,7 @@ def parse_env_file(path: Path) -> Dict[str, str]:
 def effective_env(env_file: Path, process_env: Optional[Mapping[str, str]] = None) -> Dict[str, str]:
     """What the app will actually see: the file provides values, a real
     process env var of the same name wins (matches every `.setdefault`
-    loader in this repo — pathiel/server.py, services/trend_engine/env.py,
+    loader in this repo — pathiel/server.py, services/*/env.py,
     scripts/*.py all load the file first, then `setdefault`)."""
     merged = parse_env_file(env_file)
     merged.update(dict(process_env if process_env is not None else os.environ))
@@ -238,11 +239,9 @@ def _vault_active_trade_account(env: Mapping[str, str]) -> Optional[Dict[str, An
 
 def check_required_present(env: Mapping[str, str]) -> List[Finding]:
     findings: List[Finding] = []
-    provider = _effective_ai_brain_provider(env)
     vault_account = _vault_active_trade_account(env)
     for spec in REGISTRY:
-        applies = spec.required == "always" or (spec.required == "openrouter" and provider == "openrouter")
-        if not applies:
+        if spec.required != "always":
             continue
         val = (env.get(spec.name) or "").strip()
         if val:
@@ -254,24 +253,9 @@ def check_required_present(env: Mapping[str, str]) -> List[Finding]:
                 f"vault (active account {vault_account.get('label', '?')!r}, "
                 f"source={vault_account.get('source', '?')})"))
         else:
-            reason = "required" if spec.required == "always" else \
-                "required because AI_BRAIN_PROVIDER resolves to 'openrouter'"
             findings.append(Finding("required_present", "FAIL", spec.name,
-                                     f"missing or empty ({reason}) — {spec.purpose}"))
+                                     f"missing or empty (required) — {spec.purpose}"))
     return findings
-
-
-def _effective_ai_brain_provider(env: Mapping[str, str]) -> str:
-    """Mirrors pathiel/agents/ai_brain.py's _normalise_provider() +
-    DEFAULT_AI_BRAIN_PROVIDER. Kept standalone (no project import) so this
-    script has zero dependency on the app's import graph — it must still run
-    when the app itself is broken."""
-    raw = (env.get("AI_BRAIN_PROVIDER") or "").strip().lower().replace("-", "_")
-    aliases = {"claude": "claude_cli", "codex": "codex_cli", "open_router": "openrouter"}
-    provider = aliases.get(raw, raw)
-    if provider in {"openrouter", "claude_cli", "codex_cli"}:
-        return provider
-    return "openrouter"  # DEFAULT_AI_BRAIN_PROVIDER
 
 
 def check_master_not_agent(env: Mapping[str, str]) -> List[Finding]:
@@ -484,43 +468,15 @@ def check_git_index_for_secrets(repo_root: Path, secrets: Mapping[str, str]) -> 
 
 # ── orchestration ─────────────────────────────────────────────────────────────
 
-def check_ai_brain_usable(env: Mapping[str, str], deploy_mode: bool) -> List[Finding]:
-    """The selected AI brain must be able to actually run.
-
-    Every failure here is silent: a missing CLI binary makes the brain return an
-    empty completion, an empty completion fails to parse, and an unparseable
-    verdict has historically defaulted to PASS. So "the brain is broken" and
-    "the brain looked and declined" are indistinguishable at runtime.
-
-    Under --deploy this also FAILS on a CLI provider, because claude_cli and
-    codex_cli shell out to a binary on the operator's machine and neither exists
-    in a container. An image built with either selected would run with a
-    permanently dead brain.
-    """
-    out: List[Finding] = []
-    try:
-        sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-        for k, v in env.items():                 # readiness reads os.environ
-            os.environ.setdefault(k, v)
-        from pathiel.agents.ai_brain import provider_readiness
-        r = provider_readiness()
-    except Exception as exc:
-        return [Finding("ai_brain_usable", "WARN", "-",
-                        f"could not evaluate the AI brain: {str(exc)[:120]}")]
-
-    name = str(r.get("provider"))
-    if not r.get("ready"):
-        out.append(Finding("ai_brain_usable", "FAIL", name,
-                           r.get("reason") or "selected brain is not usable"))
-    elif deploy_mode and not r.get("deployable"):
-        out.append(Finding("ai_brain_deployable", "FAIL", name,
-                           r.get("deploy_note") or
-                           "provider cannot run in a deployed container"))
-    else:
-        note = "" if r.get("deployable") else f" ({r.get('deploy_note')})"
-        out.append(Finding("ai_brain_usable", "PASS", name,
-                           f"selected brain is usable{note}"))
-    return out
+def _index_scan_values(env: Mapping[str, str]) -> Dict[str, str]:
+    """The registry values the git-index scan looks for: keys and tokens,
+    never addresses. A wallet address is public by construction (it is on
+    chain, and the desk-tick skill and the README name the account the loop
+    tracks on purpose), so finding one in a tracked file is not a leak and
+    must not fail the preflight. 2026-10-25: HYPERLIQUID_MASTER_ADDRESS in
+    .claude/skills/desk-tick/SKILL.md failed every run until this."""
+    return {spec.name: (env.get(spec.name) or "") for spec in REGISTRY
+            if not spec.name.endswith("_ADDRESS")}
 
 
 def run_all(repo_root: Path, env: Mapping[str, str], deploy_mode: bool) -> List[Finding]:
@@ -531,9 +487,7 @@ def run_all(repo_root: Path, env: Mapping[str, str], deploy_mode: bool) -> List[
     findings += check_env_files_gitignored(repo_root)
     findings += check_env_files_not_tracked(repo_root)
     findings += check_env_file_permissions(repo_root)
-    findings += check_ai_brain_usable(env, deploy_mode)
-    scan_values = {spec.name: (env.get(spec.name) or "") for spec in REGISTRY}
-    findings += check_git_index_for_secrets(repo_root, scan_values)
+    findings += check_git_index_for_secrets(repo_root, _index_scan_values(env))
     return findings
 
 

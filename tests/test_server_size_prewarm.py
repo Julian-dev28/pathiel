@@ -1,7 +1,8 @@
 """The server warms "Your size" metadata at startup, off the request path.
 
 2026-10-19: the first POST /api/risk/size after a server restart took 2.8 s
-(scripts/site_latency_eval.py, twice): it built the SDK client, which reads
+(measured twice with the site latency eval of the time): it built the SDK
+client, which reads
 every dex's meta, inside the request for the first desk a user opened. The
 trading loop has always prewarmed this; the server never did.
 """

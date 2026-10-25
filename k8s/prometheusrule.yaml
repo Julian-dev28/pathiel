@@ -4,6 +4,10 @@
 # for weeks before these rules existed. Every rule below corresponds to a
 # silent failure this system has actually had.
 #
+# 2026-10-25: PathielBrainUnusable is gone with the AI brain module it
+# watched (pathiel/agents/ai_brain.py, deleted; the desk thesis writer goes
+# through services/llm and has no standing provider to probe).
+#
 # 2026-10-23 (wave 2): the autonomous scan/research/execute engine is
 # retired, so the rules that watched IT are gone too — PathielLoopDead (the
 # trading loop's heartbeat), PathielFeedDegraded (the scanner's feed
@@ -26,7 +30,7 @@ spec:
     - name: pathiel.silent-failures
       rules:
         # LIVE mode against an account that cannot place an order. Harmless
-        # because the executor refuses, but it means the config says something
+        # because place_bracket refuses, but it means the config says something
         # the system cannot do.
         - alert: PathielLiveButCannotTrade
           expr: pathiel_live_mode == 1 and pathiel_can_trade == 0
@@ -35,22 +39,8 @@ spec:
           annotations:
             summary: "Mode is LIVE but equity is below the structural minimum"
             description: >-
-              The executor refuses every order under the dust floor. Either fund
+              place_bracket refuses every order under the dust floor. Either fund
               the account or take it out of LIVE so the config matches reality.
-
-        # A dead brain returns empty completions, which downstream has
-        # historically defaulted to PASS — so it looks like a brain that looked
-        # and declined.
-        - alert: PathielBrainUnusable
-          expr: pathiel_ai_brain_ready == 0
-          for: 10m
-          labels: {severity: critical}
-          annotations:
-            summary: "The selected AI brain cannot run"
-            description: >-
-              Empty completions read as PASS downstream, so this fails silently.
-              In a container the cause is almost always AI_BRAIN_PROVIDER set to
-              a CLI provider that needs a local binary.
 
         # An unrotated log directory took this system down before anything else
         # noticed it was low.
@@ -61,8 +51,8 @@ spec:
           annotations:
             summary: "Under 2GB free on the state filesystem"
             description: >-
-              The loop refuses to start below the critical floor. Check
-              `python scripts/log_rotate.py --guard`.
+              restart.sh refuses to start a process below the critical floor.
+              Check `python scripts/log_rotate.py --guard`.
 
         - alert: PathielLogDirOversized
           expr: pathiel_log_dir_bytes > 8e8

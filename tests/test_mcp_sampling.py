@@ -63,7 +63,6 @@ def test_server_request_raises_on_client_error(monkeypatch):
 # The "research seam: injected brain wins, empty result falls back" tests
 # that used to live here covered pathiel.agents.research._call_ai, deleted
 # 2026-10-23 (wave 2) with the rest of the autonomous scan/research/execute
-# engine. No surviving caller of pathiel.agents.ai_brain.get_brain()
-# (services/trend_engine/ai.py, the MCP server's desk_refresh path) uses the
-# same brain-injection parameter — each calls get_brain() directly — so there
-# is no equivalent seam left to test.
+# engine. get_brain() itself and its last caller (services/trend_engine/ai.py)
+# were deleted 2026-10-25; desk_refresh goes through services/llm, which has
+# its own seam and tests, so there is no equivalent seam left to test here.

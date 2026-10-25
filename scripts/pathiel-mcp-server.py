@@ -176,7 +176,7 @@ TOOLS = [
         "description": (
             "Read the agent config (no arguments), or change it: passing ANY field "
             "rewrites the live config. Every top-level key in .agent-config.json is "
-            "accepted (read first to see them); the ai_brain block is deep-merged. "
+            "accepted (read first to see them); nested objects are deep-merged. "
             "Sizing is the risk profile now (risk_limits), not a config knob."
         ),
         "inputSchema": {
@@ -1128,9 +1128,9 @@ def handle_config(params: Dict[str, Any]) -> str:
         "hip3_dex_allowlist", "hip3_dex_blocklist",
         "coin_allowlist", "coin_blocklist",
     ]
-    _NESTED_KEYS = [
-        "ai_brain",
-    ]
+    # 2026-10-25: `ai_brain` left this list with pathiel/agents/ai_brain.py.
+    # Nested blocks still deep-merge through the generic path below.
+    _NESTED_KEYS: List[str] = []
 
     updates: Dict[str, Any] = {}
     for key in _DIRECT_KEYS:
@@ -1183,60 +1183,6 @@ def handle_config(params: Dict[str, Any]) -> str:
             return json.dumps({"status": "error", "error": str(e)})
 
     return json.dumps(config)
-
-
-def _float_param(params: Dict[str, Any], *keys: str, default: float = 0.0) -> float:
-    for key in keys:
-        if key not in params or params[key] is None:
-            continue
-        try:
-            return float(params[key])
-        except (TypeError, ValueError):
-            return default
-    return default
-
-
-def _clamp_confidence(raw: Any) -> float:
-    try:
-        conf = float(raw)
-    except (TypeError, ValueError):
-        conf = 0.0
-    return max(0.0, min(1.0, conf))
-
-
-def _analysis_flags_from_perception(perception: Dict[str, Any]) -> Dict[str, Any]:
-    triggers = perception.get("triggers") or []
-    return {
-        "momentum_burst_fired": any(
-            t.get("name") == "momentumBurst" and t.get("fired") for t in triggers
-        ),
-        "slow_burn_fired": any(
-            t.get("name") in ("volumeBuildup1h", "trendFlip1h", "higherLows1h") and t.get("fired")
-            for t in triggers
-        ),
-        "slow_burn_count": sum(
-            1 for t in triggers
-            if t.get("name") in ("volumeBuildup1h", "trendFlip1h", "higherLows1h") and t.get("fired")
-        ),
-        "daily_mover_fired": any(
-            t.get("name") == "dailyMover" and t.get("fired") for t in triggers
-        ),
-        "breakout_fired": any(
-            t.get("name") == "breakout" and t.get("fired") for t in triggers
-        ),
-        "shock_day_fired": any(
-            t.get("name") == "shockDay" and t.get("fired") for t in triggers
-        ),
-        "volume_spike_fired": any(
-            t.get("name") == "volumeSpike" and t.get("fired") for t in triggers
-        ),
-        "uptrend_momentum_fired": any(
-            t.get("name") == "uptrendMomentum" and t.get("fired") for t in triggers
-        ),
-        "downtrend_momentum_fired": any(
-            t.get("name") == "downtrendMomentum" and t.get("fired") for t in triggers
-        ),
-    }
 
 
 def handle_market_get_asset_data(params: Dict[str, Any]) -> str:
@@ -2481,10 +2427,6 @@ def _result_msg(msg_id: Any, result: Dict[str, Any]) -> Dict[str, Any]:
 
 def _error_msg(msg_id: Any, code: int, message: str) -> Dict[str, Any]:
     return {"jsonrpc": "2.0", "id": msg_id, "error": {"code": code, "message": message}}
-
-
-def write_response(msg_id: Any, result: Dict[str, Any]) -> None:
-    _send(_result_msg(msg_id, result))
 
 
 def _server_request(method: str, params: Dict[str, Any], timeout_s: float = 120.0) -> Dict[str, Any]:

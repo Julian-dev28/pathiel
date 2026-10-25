@@ -58,18 +58,6 @@ def check_secrets(r: Report) -> None:
                 "python scripts/preflight_secrets.py")
 
 
-def check_brain(r: Report) -> None:
-    from pathiel.agents.ai_brain import provider_readiness
-    x = provider_readiness()
-    if x.get("ready"):
-        note = "" if x.get("deployable") else "local-only provider"
-        r.ok("ai brain", f"{x['provider']} {note}")
-    else:
-        r.block("ai brain", x.get("reason", "not usable"),
-                "set AI_BRAIN_PROVIDER=openrouter with OPENROUTER_API_KEY, "
-                "or install the CLI binary")
-
-
 def _live_limits():
     """Live equity of the ACTIVE account (HIP-3 dexes included) and the limits
     the executor derives from it. The dashboard's risk payload is a snapshot of
@@ -165,7 +153,7 @@ def main(argv=None) -> int:
     argparse.ArgumentParser(description=__doc__).parse_args(argv)
     print(f"\n{DIM}pathiel — live readiness{OFF}\n")
     r = Report()
-    for check in (check_secrets, check_brain, check_capital, check_margin_headroom,
+    for check in (check_secrets, check_capital, check_margin_headroom,
                   check_disk, check_backup):
         try:
             check(r)

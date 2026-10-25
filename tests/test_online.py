@@ -76,15 +76,14 @@ def test_get_hl_atr_live():
 
 
 def test_funding_rate_live():
-    """Verifies the funding-rate bug fix (_make_info -> fetch_funding_history)."""
+    """Verifies the funding-rate bug fix (_make_info -> fetch_funding_history).
+    The `_fetch_funding_rate` half of this test went with pathiel.agents.research
+    (deleted 2026-10-23); the venue read it wrapped is what is left to check."""
     from pathiel.client.hl_client import fetch_funding_history
-    from pathiel.agents.research import _fetch_funding_rate
     hist = fetch_funding_history("BTC", int(time.time() * 1000) - 86_400_000)
     assert isinstance(hist, list) and hist
     assert "fundingRate" in hist[-1]
-    rate = _fetch_funding_rate("BTC")
-    assert rate != "N/A"          # was permanently "N/A" before the fix
-    assert rate.endswith("%/hr")
+    assert float(hist[-1]["fundingRate"]) == float(hist[-1]["fundingRate"])  # parses
 
 
 def test_market_get_funding_regime_live():
@@ -106,46 +105,3 @@ def test_account_state_has_available():
     assert isinstance(state["available"], float)
     assert state["available"] >= 0
     assert state["available"] <= state["equity"] + 1e-6  # free <= total
-
-
-def test_ta_filter_gate_live():
-    """The TA filter that trading_loop.py uses to gate AI research."""
-    from pathiel.agents.ta_filter import analyze_perception
-    ta = analyze_perception({"coin": "BTC", "composite_score": 50})
-    assert ta["signal"] in ("CONFIRMED", "WEAK", "REJECTED")
-    assert 0 <= ta["score"] <= 100
-    for key in ("trend4h", "rsi4h", "atr4pct", "adx4h", "ema_cross",
-                "volume_confirm", "reason"):
-        assert key in ta
-
-
-def test_research_pipeline_live_without_llm(monkeypatch):
-    """Full research data pipeline against the live API, minus the paid LLM call.
-
-    With no OPENROUTER_API_KEY, _call_ai returns "" and the verdict defaults to
-    PASS — so this exercises candle/funding/indicator fetching without spending.
-    """
-    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
-    monkeypatch.setenv("AI_BRAIN_PROVIDER", "openrouter")
-    from pathiel.agents.research import research
-    perception = {"coin": "BTC", "type": "perp", "mid": 0,
-                  "composite_score": 0, "triggers": []}
-    analysis = research("BTC", perception)
-    assert analysis["coin"] == "BTC"
-    assert analysis["verdict"] == "PASS"   # no LLM key -> safe default
-    assert analysis["id"] and analysis["created_at"]
-
-
-def test_scan_once_live(monkeypatch):
-    """A live market scan over a small universe; any results must be well-formed."""
-    monkeypatch.setenv("PATHIEL_MAX_MARKETS", "10")
-    from pathiel.agents.perception import scan_once
-    from pathiel.client.universe import get_universe
-    perceptions = scan_once(universe=get_universe(), min_score=0)
-    assert isinstance(perceptions, list)
-    for p in perceptions:
-        for key in ("id", "coin", "type", "fired_at", "mid", "triggers", "composite_score"):
-            assert key in p and p[key] not in (None, ""), f"perception field missing/empty: {key}"
-        assert p["mid"] > 0
-        assert 0 <= p["composite_score"] <= 100
-        assert isinstance(p["triggers"], list) and p["triggers"]

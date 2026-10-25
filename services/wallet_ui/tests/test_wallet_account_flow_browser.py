@@ -20,9 +20,15 @@ import json
 
 import pytest
 from eth_account import Account as EthAccount
-from playwright.sync_api import Page, sync_playwright
 
-from services.wallet_ui.tests.fake_accounts_server import build_app
+# The browser lane is deselected by default (pyproject addopts) but pytest
+# still COLLECTS this module, and CI does not install playwright: the bare
+# import broke collection for the whole gate on 2026-10-24. Skip the module
+# at collection time instead, the way tests/browser/ imports it lazily.
+pytest.importorskip("playwright", reason="browser lane only: pip install playwright")
+from playwright.sync_api import Page, sync_playwright  # noqa: E402
+
+from services.wallet_ui.tests.fake_accounts_server import build_app  # noqa: E402
 from services.wallet_ui.tests.wallet_harness import (
     ORIGIN,
     console_error_collector,
