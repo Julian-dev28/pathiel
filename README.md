@@ -173,10 +173,13 @@ Where things live for a plugin install:
 The web Desk page (`python -m pathiel.server`) is not part of the plugin.
 It needs a checkout: see "Running it" above.
 
-For maintainers: `skills/desk-tick/SKILL.md` is generated from the project
-skill `.claude/skills/desk-tick/SKILL.md` by `scripts/build_plugin_skill.py`
-(the gate fails when the copy is stale), `scripts/pathiel-mcp` and
-`scripts/pathiel-py` are the plugin's entry points, and `claude plugin
+For maintainers: `skills/desk-tick/SKILL.md` and `agents/desk-tick.md` are
+generated from the project copies under `.claude/` by
+`scripts/build_plugin_skill.py` (the gate fails when a copy is stale). The
+skill does the slot check and launches the `desk-tick` agent, which carries
+the whole tick procedure and is pinned to Opus at medium effort so a
+15-minute loop does not spend the session's own model. `scripts/pathiel-mcp`
+and `scripts/pathiel-py` are the plugin's entry points, and `claude plugin
 validate .` checks the manifests.
 
 ## MCP server
@@ -325,9 +328,28 @@ CONGRESS_API_KEY=...   # free, api.congress.gov/sign-up/
                                  # local Claude Code CLI; there is no LLM API key
 ```
 
-`.env.local.example` at the repo root does not yet list the `services/intel`
-keys above; they are real, read by `services/intel/sources/*.py` directly
-from the environment, just undocumented in that file today.
+`.env.local.example` at the repo root lists the same keys with the sign-up
+URL for each; `scripts/intel_keys.py` says which are set.
+
+## Security
+
+What leaves the machine and what does not, and the checks that enforce it.
+
+| rule | how it is enforced |
+|---|---|
+| Keys live in one file the operator owns: `.env.local` in a checkout, `~/.pathiel/.env.local` for a plugin install, mode 0600, gitignored. Precedence: `PATHIEL_ENV_FILE`, then the checkout, then home | `scripts/_state_env.py` is the one loader; `tests/test_plugin.py` pins the precedence |
+| The trading key is an agent wallet, never the master key. `HYPERLIQUID_MASTER_PRIVATE_KEY` exists only for `scripts/treasury.py` on the operator's machine | `scripts/preflight_secrets.py` fails on a master key in a deploy, on a missing required key, on a world-readable env file, on a tracked env file, and on any secret value found in the git index |
+| No LLM API key anywhere. The one model call (the desk thesis writer) goes through the local Claude Code CLI; a container cannot write a thesis and says so | `services/llm`; the brain module that held hosted-provider keys was deleted 2026-10-25 |
+| Live-money MCP tools (`place_bracket`, `bracket_sweep`, `close_position`, `set_leverage`, `cancel_order`, `config` with arguments) run only on an explicit ask in the conversation; one position per account; stop inside half the distance to liquidation | the MCP server's instructions, `pathiel/agents/bracket.py`, `services/risk` |
+| Nothing secret in the image, the k8s ConfigMap or any tracked file; the k8s Secret is created from the operator's shell | `DEPLOY.md`, `k8s/secret.example.yaml`, `tests/test_deploy_config.py` |
+| The test gate makes no network calls and starts from an empty venue cache, so a warm cache on one machine cannot hide a leak CI would hit | `conftest.py` refuses every non-loopback host and errors the test at teardown |
+| Dependencies are pinned (`requirements.lock`, `services/wallet_ui/package-lock.json`); CI installs from the locks | `.github/workflows/ci.yml` |
+
+The inventory of every secret, who reads it and how to rotate it is
+`docs/SECRETS.md`. A supply-chain review of the Node and Python dependency
+graph against the autumn 2026 npm compromises is in progress on its own
+branch; its report lands under `docs/security/` and this section will link
+it.
 
 ## Running it
 

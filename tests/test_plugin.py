@@ -60,6 +60,7 @@ def test_the_plugin_manifest_has_no_component_paths_outside_the_defaults():
                       "repository", "license", "keywords", "mcpServers"}, sorted(m)
     assert (ROOT / "skills" / "desk-tick" / "SKILL.md").is_file()
     assert (ROOT / "skills" / "pathiel-agent" / "SKILL.md").is_file()
+    assert (ROOT / "agents" / "desk-tick.md").is_file()
     assert (ROOT / "commands" / "setup.md").is_file()
     assert sorted(p.name for p in (ROOT / ".claude-plugin").iterdir()) == ["marketplace.json", "plugin.json"]
 
@@ -161,18 +162,37 @@ def test_the_mcp_server_and_the_web_server_use_the_same_precedence():
 
 # ── the skill and the command ────────────────────────────────────────────────
 
-def test_the_plugin_desk_tick_skill_is_generated_from_the_project_skill():
-    """Two files, one text. The committed plugin copy must equal what the
-    generator renders from .claude/skills/desk-tick/SKILL.md."""
+def test_the_plugin_desk_tick_skill_and_agent_are_generated_from_the_project_ones():
+    """Two copies, one text. Each committed plugin file must equal what the
+    generator renders from its .claude/ source."""
     sys.path.insert(0, str(ROOT / "scripts"))
     import build_plugin_skill as gen
-    rendered = gen.build(gen.SOURCE.read_text())
-    assert gen.OUT.read_text() == rendered, "rerun scripts/build_plugin_skill.py"
-    assert '"${CLAUDE_PLUGIN_ROOT}/scripts/pathiel-py" scripts/desk_slot.py' in rendered
-    assert "python3 scripts/" not in rendered
-    assert "0x2c2e4efF574B3Fd9879AdeF9c5CAC6fD7C916985" not in rendered
-    assert "Julien" not in rendered
-    assert rendered.startswith("---\nname: desk-tick\n")
+    rendered = dict(gen.render_all())
+    assert set(p.relative_to(ROOT).as_posix() for p in rendered) == {
+        "skills/desk-tick/SKILL.md", "agents/desk-tick.md"}
+    for out, text in rendered.items():
+        assert out.read_text() == text, f"rerun scripts/build_plugin_skill.py ({out.name} is stale)"
+        assert "python3 scripts/" not in text
+        assert "0x2c2e4efF574B3Fd9879AdeF9c5CAC6fD7C916985" not in text
+        assert "Julien" not in text and "/Users/" not in text
+        assert text.startswith("---\nname: desk-tick\n")
+    skill = rendered[ROOT / "skills" / "desk-tick" / "SKILL.md"]
+    agent = rendered[ROOT / "agents" / "desk-tick.md"]
+    assert '"${CLAUDE_PLUGIN_ROOT}/scripts/pathiel-py" scripts/desk_slot.py' in skill
+    assert "`subagent_type` `pathiel:desk-tick`" in skill
+    assert '"${CLAUDE_PLUGIN_ROOT}/scripts/pathiel-py" scripts/oil_levels.py --check' in agent
+
+
+def test_the_tick_agent_runs_on_opus_at_medium_effort():
+    """Operator, 2026-10-25: "fable is valuable and the tick is eating my
+    usage". The session model dispatches; the tick itself runs here."""
+    for path in (ROOT / ".claude" / "agents" / "desk-tick.md", ROOT / "agents" / "desk-tick.md"):
+        head = path.read_text().split("\n---\n", 1)[0]
+        assert "\nmodel: opus\n" in head + "\n", path
+        assert "\neffort: medium\n" in head + "\n", path
+    skill = (ROOT / ".claude" / "skills" / "desk-tick" / "SKILL.md").read_text()
+    assert "`subagent_type` `desk-tick`" in skill
+    assert "scripts/desk_slot.py" in skill, "the slot check stays in the dispatcher: one script call"
 
 
 def test_the_setup_command_names_files_that_exist_and_never_prints_a_key():
