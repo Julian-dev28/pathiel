@@ -286,7 +286,8 @@ class TestHip3Reads:
         _, body = _call("get_max_trade_size", {"coin": "xyz:CL"})
         assert body["dex"] == "xyz" and body["margin_available"] == 15.0
         assert body["leverage_ceiling"] == 10.0              # starter 10x < coin 20x
-        assert body["max_notional_by_margin"] == round(15.0 * 0.9 * 10.0, 2)
+        # the venue rules' 2% fee reserve stays free (10% until 2026-10-26)
+        assert body["max_notional_by_margin"] == round(15.0 * 0.98 * 10.0, 2)
 
     def test_user_state_reads_the_dex_it_is_asked_for(self, info):
         info["clearinghouseState"] = lambda kw: {"marginSummary": {

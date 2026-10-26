@@ -3278,24 +3278,36 @@ def handle_place_bracket(params: Dict[str, Any]) -> str:
                 return json.dumps({"ok": False, "coin": coin, "placed": False,
                                    "error": "position read failed; not trading blind"})
             # ...and never more than the free margin on that dex can carry at
-            # this leverage, keeping the venue rule's 10% floor free: the open
-            # position may hold more margin than its size implies (the venue
-            # keeps isolated margin when leverage is raised), so equity alone
-            # over-sizes the top-up and the venue would reject it.
+            # this leverage, keeping the venue rules' fee reserve free
+            # (VenueRules.free_margin_floor_frac, 2% since 2026-10-26; it was a
+            # hard-coded 10% here): the open position may hold more margin
+            # than its size implies (the venue keeps isolated margin when
+            # leverage is raised), so equity alone over-sizes the top-up and
+            # the venue would reject it.
             from pathiel.client.account_snapshot import account_state
+            from services.risk.derive import VenueRules
+            floor_frac = float(getattr(venue or VenueRules(), "free_margin_floor_frac", 0.02))
             st = account_state(user, include_hip3=True)
             dex = coin.split(":", 1)[0] if ":" in coin else ""
             free = float((st.get("dex_available") or {}).get(dex, st.get("available") or 0) or 0)
             equity = float(st.get("equity") or 0)
-            budget = max(0.0, free - 0.10 * equity)
+            budget = max(0.0, free - floor_frac * equity)
             cap = _round_size(budget * float(sized.leverage or leverage or 1) / ref, sz_dec)
-            size = _round_size(min(size - abs(held), cap), sz_dec)
+            wanted = _round_size(size - abs(held), sz_dec)
+            size = _round_size(min(wanted, cap), sz_dec)
             topup = {"held": held, "full_size": sized.size, "free_margin_usd": round(free, 2),
                      "topup_cap_size": cap, "topup_size": size}
             if size <= 0:
+                # Say which limit stopped it: on 2026-10-26 a position at 8.58
+                # of a 9.5 full-port size was refused as "already at or above
+                # the full-port size" when the real limit was the free margin.
+                if wanted <= 0:
+                    reason = f"position {abs(held)} already at or above the full-port size {sized.size}"
+                else:
+                    reason = (f"no free margin to add: ${free:.2f} free on {dex or 'main'}, "
+                              f"${floor_frac * equity:.2f} kept as the fee reserve")
                 return json.dumps({"ok": True, "coin": coin, "placed": False, "add": True, **topup,
-                                   "reason": f"position {abs(held)} already at or above the full-port size {sized.size}"},
-                                  default=str)
+                                   "reason": reason}, default=str)
     except Exception as e:
         return json.dumps({"ok": False, "coin": coin, "error": f"sizing failed: {e}"})
     if not sized.can_trade or not sized.size:

@@ -87,7 +87,14 @@ class VenueRules:
     exchange will actually accept.
     """
     min_order_notional_usd: float = 10.0
-    free_margin_floor_frac: float = 0.10   # mirrors executor.py's min_available_margin_pct default
+    # What sizing leaves free: a fee reserve, not a stacking guard. 0.10 until
+    # 2026-10-26, a copy of the retired executor's min_available_margin_pct
+    # that guarded against many correlated legs. With one isolated position
+    # per account there is nothing to stack, and the operator wants "the
+    # entire equity used in the position". 0.02 covers a taker round trip on
+    # a full-port position at 20x (2 x 4.5 bps x 20 = 1.8% of equity), so the
+    # venue never refuses the close or a stop for fees.
+    free_margin_floor_frac: float = 0.02
 
 
 @dataclass(frozen=True)

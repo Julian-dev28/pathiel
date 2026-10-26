@@ -105,7 +105,7 @@ class Params:
     taker_fee: float = 0.00045         # 4.5 bps
     maker_fee: float = 0.00015         # 1.5 bps
     starting_equity: float = 64.0
-    free_margin_floor: float = 0.10    # place_bracket's 10% free-margin floor
+    free_margin_floor: float = 0.02    # place_bracket's fee reserve (10% until 2026-10-26)
     atr_rest_frac: float = 0.25        # rest an entry within this many ATR of the edge
     atr_cancel_frac: float = 1.0       # cancel a resting entry beyond this many ATR from mid
     tick_minutes: int = 15             # one decision per 15m bar (the loop until 2026-10-25) or per

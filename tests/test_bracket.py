@@ -265,18 +265,19 @@ def test_handler_add_sizes_the_top_up_as_full_port_minus_what_is_held(monkeypatc
     monkeypatch.setattr(size_mod, "size_trade", lambda *a, **k: SimpleNamespace(
         can_trade=True, size=10.4, leverage=20.0, reason="", notional_usd=1158.6,
         margin_usd=57.9, risk_usd=7.3, risk_pct=11.3))
-    # free margin on xyz: $46.30 of $64.50 equity; the 10% floor ($6.45) stays
-    # free, so $39.85 x 20 / 111.4 = 7.15 contracts is all the venue can carry
+    # free margin on xyz: $40.30 of $64.50 equity; the 2% fee reserve ($1.29)
+    # stays free, so $39.01 x 20 / 111.4 = 7.00 contracts is all the venue can
+    # carry (2026-10-26: the reserve was a hard-coded 10% before)
     import pathiel.client.account_snapshot as snap
     monkeypatch.setattr(snap, "account_state", lambda user, include_hip3=True, **kw: {
-        "equity": 64.5, "dex_available": {"": 0.0, "xyz": 46.3}})
+        "equity": 64.5, "dex_available": {"": 0.0, "xyz": 40.3}})
     seen = {}
     monkeypatch.setattr(br, "place_bracket", lambda coin, **k: seen.update(coin=coin, **k) or {"ok": True, "placed": True})
     out = json.loads(mcp.handle_place_bracket(
         {"coin": COIN, "entry_px": 111.4, "stop_px": 110.9, "tp_px": 114.0, "add": True}))
-    assert out["placed"] and out["topup"] == {"held": 1.62, "full_size": 10.4, "free_margin_usd": 46.3,
-                                              "topup_cap_size": 7.15, "topup_size": 7.15}
-    assert seen["size"] == 7.15 and seen["add"] is True and seen["leverage"] == 20
+    assert out["placed"] and out["topup"] == {"held": 1.62, "full_size": 10.4, "free_margin_usd": 40.3,
+                                              "topup_cap_size": 7.0, "topup_size": 7.0}
+    assert seen["size"] == 7.0 and seen["add"] is True and seen["leverage"] == 20
     # with plenty of free margin the top-up is simply full-port minus held
     monkeypatch.setattr(snap, "account_state", lambda user, include_hip3=True, **kw: {
         "equity": 64.5, "dex_available": {"xyz": 500.0}})
@@ -290,6 +291,50 @@ def test_handler_add_sizes_the_top_up_as_full_port_minus_what_is_held(monkeypatc
         {"coin": COIN, "entry_px": 111.4, "stop_px": 110.9, "tp_px": 114.0, "add": "true"}))
     assert out["ok"] and not out["placed"] and "already at or above the full-port size" in out["reason"]
     assert not seen, "nothing is placed when the position is already full"
+
+
+def test_handler_add_says_free_margin_not_full_size_when_margin_is_the_limit(monkeypatch):
+    """2026-10-26, live: 8.58 held of a 9.5 full-port size, $5.19 free of $58
+    equity under the old 10% floor. The refusal read "already at or above the
+    full-port size", which was false. The fee reserve is 2% now, and when
+    free margin is still the limit the reason says so."""
+    mcp = _mcp()
+    from pathiel.agents import bracket as br
+    import pathiel.client.exchange as ex
+    import pathiel.client.account_snapshot as snap
+    import services.risk.size as size_mod
+    monkeypatch.setattr(ex, "resolve_user_address", lambda: "0xu")
+    monkeypatch.setattr(ex, "_position_size_on_coin", lambda user, coin: 8.58)
+    monkeypatch.setattr(br, "slot_taken_by", lambda user, coin, n: None)
+    monkeypatch.setattr(mcp, "_risk_inputs", lambda: (SimpleNamespace(max_leverage=20.0), [], None))
+    monkeypatch.setattr(mcp, "_coin_specs", lambda c: (20.0, 2))
+    monkeypatch.setattr(mcp, "_live_equity", lambda: 58.01)
+    monkeypatch.setattr(size_mod, "size_trade", lambda *a, **k: SimpleNamespace(
+        can_trade=True, size=10.35, leverage=20.0, reason="", notional_usd=1137.0,
+        margin_usd=56.85, risk_usd=10.9, risk_pct=18.8))
+    seen = {}
+    monkeypatch.setattr(br, "place_bracket", lambda coin, **k: seen.update(coin=coin, **k) or {"ok": True, "placed": True})
+
+    # the live numbers: $5.19 free, $1.16 reserve -> $4.03 x 20 / 109.85 = 0.73
+    monkeypatch.setattr(snap, "account_state", lambda user, include_hip3=True, **kw: {
+        "equity": 58.01, "dex_available": {"xyz": 5.19}})
+    out = json.loads(mcp.handle_place_bracket(
+        {"coin": COIN, "entry_px": 109.85, "stop_px": 108.8, "tp_px": 111.49, "add": True}))
+    assert out["placed"] and out["topup"]["topup_size"] == 0.73 and seen["size"] == 0.73
+
+    # nothing free beyond the reserve: refused, and the reason names margin
+    seen.clear()
+    monkeypatch.setattr(snap, "account_state", lambda user, include_hip3=True, **kw: {
+        "equity": 58.01, "dex_available": {"xyz": 1.0}})
+    out = json.loads(mcp.handle_place_bracket(
+        {"coin": COIN, "entry_px": 109.85, "stop_px": 108.8, "tp_px": 111.49, "add": True}))
+    assert not out["placed"] and "no free margin to add" in out["reason"]
+    assert "full-port" not in out["reason"] and not seen
+
+
+def test_the_default_fee_reserve_is_two_percent():
+    from services.risk.derive import VenueRules
+    assert VenueRules().free_margin_floor_frac == 0.02
 
 
 # ------------------------------------------------- the 20x rule (leverage gate)
