@@ -393,6 +393,34 @@ class TestDeskTools:
         assert "Your size: " in body["markdown"]
         assert size["notional_usd"] >= 10.5                  # never under the venue minimum
 
+    def test_brief_sizes_at_the_leverage_place_bracket_uses(self, monkeypatch, risk):
+        """Live, 2026-10-27: the brief sized the 5x thesis call (2.93 Brent)
+        while place_bracket sized at the profile's 20x (11.84 held), so the
+        tick never topped up and $7.24 of $69.85 sat idle. The brief's size
+        must be the size a bracket would place."""
+        from services.risk.size import size_trade
+        profile = RiskProfile(preset="starter", max_leverage=20)
+        venue = VenueRules(min_order_notional_usd=10.5)
+        monkeypatch.setattr(M, "_risk_inputs", lambda: (profile, [], venue))
+        monkeypatch.setattr(M, "_live_equity", lambda: 69.85)
+        facade = _Facade(thesis=True)
+        facade.analytics = facade.analytics.model_copy(update={"account": None})
+        call = facade.thesis.call
+        assert call.leverage == 5.0                          # the thesis's own, lower leverage
+        monkeypatch.setattr(M, "_strategies_facade", lambda: facade)
+        _, body = _call("desk_brief", {"desk": "oil"})
+        size = body["your_size"]
+        bracket = size_trade(69.85, profile, [], entry_px=call.entry_px, stop_px=call.stop_px,
+                             leverage=M._bracket_leverage(profile), coin_max_leverage=20.0,
+                             targets=call.targets or [], venue=venue, sz_decimals=3)
+        assert size["leverage"] == 20.0
+        assert size["size"] == bracket.size
+
+    def test_bracket_leverage_is_the_callers_else_the_profile_cap(self):
+        assert M._bracket_leverage(RiskProfile(preset="starter", max_leverage=20)) == 20
+        assert M._bracket_leverage(RiskProfile(preset="starter", max_leverage=20), "7") == 7.0
+        assert M._bracket_leverage(RiskProfile(preset="starter")) is None
+
     def test_refresh_reports_each_stage_as_progress(self, monkeypatch):
         monkeypatch.setattr(M, "_strategies_facade", lambda: _Facade(thesis=True))
         out = _run(monkeypatch, [_tool(1, "desk_refresh", {"desk": "oil"},

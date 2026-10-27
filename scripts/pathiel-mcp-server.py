@@ -3046,8 +3046,13 @@ def _thesis_sizing(brief: Any) -> "Dict[str, Any] | None":
         acct = getattr(brief.analytics, "account", None) if brief.analytics else None
         equity = acct.equity_usd if acct is not None and acct.source == "venue" else _live_equity()
         coin_max, sz_dec = _coin_specs(call.instrument)
+        # FIXED 2026-10-27: this sized at the thesis's own leverage (5x) while
+        # place_bracket sizes at the profile's (20x), so "Your size" read 2.93
+        # against an 11.84 position and the tick's top-up rule ("brief size
+        # bigger than the position") never fired: $7.24 of a $69.85 account
+        # sat idle. Same leverage as place_bracket, so the two sizes agree.
         sized = size_trade(equity, profile, books, entry_px=call.entry_px, stop_px=call.stop_px,
-                           leverage=call.leverage, coin_max_leverage=coin_max,
+                           leverage=_bracket_leverage(profile), coin_max_leverage=coin_max,
                            targets=call.targets or [], venue=venue, sz_decimals=sz_dec)
         out = {"coin": call.instrument, "equity_usd": equity, **sized.model_dump(mode="json")}
         if sized.warnings:
@@ -3262,7 +3267,7 @@ def handle_place_bracket(params: Dict[str, Any]) -> str:
             return json.dumps({"ok": False, "coin": coin, "placed": False,
                                "error": f"slot taken by {taken}: the account allows {slots} open position(s)"})
         ref = entry if entry is not None else float(get_hl_price(coin))
-        leverage = _fnum(lev_raw) if lev_raw not in (None, "") else (profile.max_leverage or None)
+        leverage = _bracket_leverage(profile, lev_raw)
         sized = size_trade(_live_equity(), profile, books, entry_px=ref, stop_px=stop,
                            leverage=leverage, coin_max_leverage=coin_max, targets=[tp],
                            venue=venue, sz_decimals=sz_dec)
@@ -3321,6 +3326,15 @@ def handle_place_bracket(params: Dict[str, Any]) -> str:
     if topup:
         out["topup"] = topup
     return json.dumps(out, default=str)
+
+
+def _bracket_leverage(profile: Any, lev_raw: Any = None) -> "float | None":
+    """The leverage place_bracket sizes at: the caller's, else the risk
+    profile's cap (20x on the live account). desk_brief's "Your size" uses
+    the same, so the size the brief shows is the size a bracket places."""
+    if lev_raw not in (None, ""):
+        return _fnum(lev_raw)
+    return getattr(profile, "max_leverage", None) or None
 
 
 def _as_bool(v: Any) -> bool:
