@@ -105,7 +105,7 @@ class Params:
     taker_fee: float = 0.00045         # 4.5 bps
     maker_fee: float = 0.00015         # 1.5 bps
     starting_equity: float = 64.0
-    free_margin_floor: float = 0.02    # place_bracket's fee reserve (10% until 2026-10-26)
+    free_margin_floor: float = 0.0     # place_bracket's reserve (10% until 2026-10-26, 2% until 10-27)
     atr_rest_frac: float = 0.25        # rest an entry within this many ATR of the edge
     atr_cancel_frac: float = 1.0       # cancel a resting entry beyond this many ATR from mid
     tick_minutes: int = 15             # one decision per 15m bar (the loop until 2026-10-25) or per
@@ -202,9 +202,11 @@ def _levels(closed_1h: Sequence[Candle]) -> Optional[Dict[str, Any]]:
 
 
 def _full_size_notional(equity: float, params: Params) -> float:
-    """90% of equity as margin, times leverage — the full-port cap
-    `place_bracket add=True` tops a position up to."""
-    margin = equity * (1.0 - params.free_margin_floor)
+    """Equity less the floor, as margin net of the opening taker fee, times
+    leverage: the full-port size place_bracket sizes and tops up to
+    (services.risk.derive.margin_after_open_fee)."""
+    usable = equity * (1.0 - params.free_margin_floor)
+    margin = usable / (1.0 + params.leverage * params.taker_fee)
     return margin * params.leverage
 
 

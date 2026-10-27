@@ -87,14 +87,26 @@ class VenueRules:
     exchange will actually accept.
     """
     min_order_notional_usd: float = 10.0
-    # What sizing leaves free: a fee reserve, not a stacking guard. 0.10 until
-    # 2026-10-26, a copy of the retired executor's min_available_margin_pct
-    # that guarded against many correlated legs. With one isolated position
-    # per account there is nothing to stack, and the operator wants "the
-    # entire equity used in the position". 0.02 covers a taker round trip on
-    # a full-port position at 20x (2 x 4.5 bps x 20 = 1.8% of equity), so the
-    # venue never refuses the close or a stop for fees.
-    free_margin_floor_frac: float = 0.02
+    # What sizing leaves free. 0.10 until 2026-10-26 (a copy of the retired
+    # executor's stacking guard), then 0.02 as a fee reserve, then 0 on
+    # 2026-10-27: the operator, "the fees are taken out at time of trade
+    # against the position, ive literally used 100% of equity on
+    # hyperliquid". The measured xyz taker fee is 0.9 bps ($0.0104 on a $115
+    # fill), so 2% of equity sat idle to cover about $0.13.
+    free_margin_floor_frac: float = 0.0
+    # The opening taker fee, the only thing sizing holds back: margin + fee =
+    # usable equity, i.e. margin = usable / (1 + leverage x rate). This is
+    # the account's published perp taker rate (userCrossRate 4.5 bps), an
+    # upper bound on what xyz charges; at 20x it leaves 0.9% of equity.
+    taker_fee_rate: float = 0.00045
+
+
+def margin_after_open_fee(funds_usd: float, leverage: float, venue: "VenueRules") -> float:
+    """The margin `funds_usd` can post so that margin plus the opening taker
+    fee on margin x leverage of notional uses all of it, less the floor."""
+    usable = max(0.0, funds_usd * (1.0 - venue.free_margin_floor_frac))
+    lev = leverage if leverage and leverage > 0 else 1.0
+    return usable / (1.0 + lev * max(0.0, venue.taker_fee_rate))
 
 
 @dataclass(frozen=True)
@@ -223,7 +235,7 @@ def _price_risk_scaled_book(book: BookSpec, equity_usd: float, resolved: RiskPro
     # across every book in the roster — not recomputed per book.
     target_notional = (risk_per_trade_usd / stop_frac) if stop_frac > 0 else 0.0
 
-    usable_margin = equity_usd * (1.0 - venue.free_margin_floor_frac)
+    usable_margin = margin_after_open_fee(equity_usd, leverage_cap, venue)
     margin_share = usable_margin / max(1, max_open_positions)
     cap_leverage = (leverage_cap * equity_usd) if leverage_cap > 0 else target_notional
     cap_margin_share = (leverage_cap * margin_share) if leverage_cap > 0 else target_notional

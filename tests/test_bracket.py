@@ -265,9 +265,9 @@ def test_handler_add_sizes_the_top_up_as_full_port_minus_what_is_held(monkeypatc
     monkeypatch.setattr(size_mod, "size_trade", lambda *a, **k: SimpleNamespace(
         can_trade=True, size=10.4, leverage=20.0, reason="", notional_usd=1158.6,
         margin_usd=57.9, risk_usd=7.3, risk_pct=11.3))
-    # free margin on xyz: $40.30 of $64.50 equity; the 2% fee reserve ($1.29)
-    # stays free, so $39.01 x 20 / 111.4 = 7.00 contracts is all the venue can
-    # carry (2026-10-26: the reserve was a hard-coded 10% before)
+    # free margin on xyz: $40.30 of $64.50 equity. Margin plus the opening fee
+    # uses all of it: 40.30 / (1 + 20 x 4.5 bps) x 20 / 111.4 = 7.17 contracts
+    # (a 10% reserve until 2026-10-26, 2% until 2026-10-27)
     import pathiel.client.account_snapshot as snap
     monkeypatch.setattr(snap, "account_state", lambda user, include_hip3=True, **kw: {
         "equity": 64.5, "dex_available": {"": 0.0, "xyz": 40.3}})
@@ -276,8 +276,8 @@ def test_handler_add_sizes_the_top_up_as_full_port_minus_what_is_held(monkeypatc
     out = json.loads(mcp.handle_place_bracket(
         {"coin": COIN, "entry_px": 111.4, "stop_px": 110.9, "tp_px": 114.0, "add": True}))
     assert out["placed"] and out["topup"] == {"held": 1.62, "full_size": 10.4, "free_margin_usd": 40.3,
-                                              "topup_cap_size": 7.0, "topup_size": 7.0}
-    assert seen["size"] == 7.0 and seen["add"] is True and seen["leverage"] == 20
+                                              "topup_cap_size": 7.17, "topup_size": 7.17}
+    assert seen["size"] == 7.17 and seen["add"] is True and seen["leverage"] == 20
     # with plenty of free margin the top-up is simply full-port minus held
     monkeypatch.setattr(snap, "account_state", lambda user, include_hip3=True, **kw: {
         "equity": 64.5, "dex_available": {"xyz": 500.0}})
@@ -296,8 +296,8 @@ def test_handler_add_sizes_the_top_up_as_full_port_minus_what_is_held(monkeypatc
 def test_handler_add_says_free_margin_not_full_size_when_margin_is_the_limit(monkeypatch):
     """2026-10-26, live: 8.58 held of a 9.5 full-port size, $5.19 free of $58
     equity under the old 10% floor. The refusal read "already at or above the
-    full-port size", which was false. The fee reserve is 2% now, and when
-    free margin is still the limit the reason says so."""
+    full-port size", which was false. No reserve since 2026-10-27, only the
+    opening fee; when free margin is still the limit the reason says so."""
     mcp = _mcp()
     from pathiel.agents import bracket as br
     import pathiel.client.exchange as ex
@@ -315,26 +315,36 @@ def test_handler_add_says_free_margin_not_full_size_when_margin_is_the_limit(mon
     seen = {}
     monkeypatch.setattr(br, "place_bracket", lambda coin, **k: seen.update(coin=coin, **k) or {"ok": True, "placed": True})
 
-    # the live numbers: $5.19 free, $1.16 reserve -> $4.03 x 20 / 109.85 = 0.73
+    # the live numbers: $5.19 free -> 5.19 / 1.009 x 20 / 109.85 = 0.94
+    # (0.73 under the 2% reserve, 0.25 under the old 10%)
     monkeypatch.setattr(snap, "account_state", lambda user, include_hip3=True, **kw: {
         "equity": 58.01, "dex_available": {"xyz": 5.19}})
     out = json.loads(mcp.handle_place_bracket(
         {"coin": COIN, "entry_px": 109.85, "stop_px": 108.8, "tp_px": 111.49, "add": True}))
-    assert out["placed"] and out["topup"]["topup_size"] == 0.73 and seen["size"] == 0.73
+    assert out["placed"] and out["topup"]["topup_size"] == 0.94 and seen["size"] == 0.94
 
-    # nothing free beyond the reserve: refused, and the reason names margin
+    # two cents free buys under one size step: refused, and the reason names margin
     seen.clear()
     monkeypatch.setattr(snap, "account_state", lambda user, include_hip3=True, **kw: {
-        "equity": 58.01, "dex_available": {"xyz": 1.0}})
+        "equity": 58.01, "dex_available": {"xyz": 0.02}})
     out = json.loads(mcp.handle_place_bracket(
         {"coin": COIN, "entry_px": 109.85, "stop_px": 108.8, "tp_px": 111.49, "add": True}))
     assert not out["placed"] and "no free margin to add" in out["reason"]
     assert "full-port" not in out["reason"] and not seen
 
 
-def test_the_default_fee_reserve_is_two_percent():
-    from services.risk.derive import VenueRules
-    assert VenueRules().free_margin_floor_frac == 0.02
+def test_sizing_holds_back_only_the_opening_fee():
+    """Operator, 2026-10-27: "the fees are taken out at time of trade against
+    the position, ive literally used 100% of equity on hyperliquid". No
+    reserve: margin plus the opening taker fee is the whole equity."""
+    from services.risk.derive import VenueRules, margin_after_open_fee
+    venue = VenueRules()
+    assert venue.free_margin_floor_frac == 0.0 and venue.taker_fee_rate == 0.00045
+    margin = margin_after_open_fee(72.76, 20, venue)
+    fee = margin * 20 * venue.taker_fee_rate
+    assert margin + fee == pytest.approx(72.76)
+    assert 72.76 - margin < 0.01 * 72.76              # under 1% idle at 20x, was 2%
+    assert margin_after_open_fee(-5, 20, venue) == 0.0
 
 
 # ------------------------------------------------- the 20x rule (leverage gate)
