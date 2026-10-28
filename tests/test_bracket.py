@@ -543,3 +543,97 @@ def test_without_add_a_position_still_blocks_a_second_trade():
     out = bracket.place_bracket(COIN, entry_px=111.40, stop_px=110.90, tp_px=114.0, size=8.8,
                                 leverage=20, coin_max_leverage=20, ex=ex)
     assert not out["placed"] and "already in a position" in out["reason"]
+
+
+# ----------------------------------------- one stop and one target per position
+class BookEx(FakeEx):
+    """FakeEx whose resting orders change as orders are placed and cancelled."""
+    def __init__(self, pos, orders, refuse=()):
+        super().__init__(pos=pos, orders=[dict(o) for o in orders])
+        self.refuse, self.next_oid = set(refuse), 900
+
+    def place_hl_trigger_order(self, is_long, size, px, kind, coin):
+        self.calls.append((kind, is_long, size, px))
+        if kind in self.refuse:
+            return {"ok": False, "error": "venue said no"}
+        self.next_oid += 1
+        self.orders.append({"oid": self.next_oid, "coin": coin, "reduceOnly": True, "sz": str(size),
+                            "triggerPx": str(px),
+                            "orderType": "Stop Market" if kind == "sl" else "Take Profit Market"})
+        return {"ok": True, "order_id": self.next_oid}
+
+    def cancel_orders(self, oid, coin=None):
+        self.calls.append(("cancel", oid))
+        self.orders = [o for o in self.orders if int(o.get("oid") or 0) != oid]
+        return {"ok": True}
+
+
+def _leg(oid, kind, sz, px):
+    return {"oid": oid, "coin": COIN, "reduceOnly": True, "sz": str(sz), "triggerPx": str(px),
+            "orderType": "Stop Market" if kind == "sl" else "Take Profit Market"}
+
+
+# the live book on 2026-10-28: three fills, three stops and three targets
+LIVE_LEGS = [_leg(1, "sl", 11.84, 108.95), _leg(2, "tp", 11.84, 113.75),
+             _leg(3, "sl", 1.05, 108.95), _leg(4, "tp", 1.05, 113.75),
+             _leg(5, "sl", 0.19, 108.95), _leg(6, "tp", 0.19, 113.75)]
+
+
+def test_three_fills_become_one_stop_and_one_target():
+    """Operator, 2026-10-28: "IT SEEMS REDUNDANT": 108.95 x3, 113.75 x3."""
+    ex = BookEx(pos=13.08, orders=LIVE_LEGS)
+    out = bracket.consolidate_protection(COIN, ex=ex)
+    assert out["ok"] and [m["kind"] for m in out["merged"]] == ["sl", "tp"]
+    stops = [o for o in ex.orders if "Stop" in o["orderType"]]
+    tps = [o for o in ex.orders if "Take Profit" in o["orderType"]]
+    assert [(o["sz"], o["triggerPx"]) for o in stops] == [("13.08", "108.95")]
+    assert [(o["sz"], o["triggerPx"]) for o in tps] == [("13.08", "113.75")]
+    # the new stop goes on BEFORE any old one is cancelled: never unprotected
+    first_cancel = next(i for i, c in enumerate(ex.calls) if c[0] == "cancel")
+    assert ex.calls.index(("sl", True, 13.08, 108.95)) < first_cancel
+
+
+def test_a_refused_merge_keeps_the_old_stops():
+    ex = BookEx(pos=13.08, orders=LIVE_LEGS, refuse={"sl"})
+    out = bracket.consolidate_protection(COIN, ex=ex)
+    assert not out["ok"] and "old ones stay" in out["left"][0]
+    assert sum(float(o["sz"]) for o in ex.orders if "Stop" in o["orderType"]) == pytest.approx(13.08)
+    assert not any(c == ("cancel", 1) or c == ("cancel", 3) or c == ("cancel", 5) for c in ex.calls)
+
+
+def test_targets_at_different_prices_are_a_scale_out_and_stay():
+    legs = [_leg(1, "sl", 10, 108.95), _leg(2, "tp", 5, 112.0), _leg(3, "tp", 5, 114.0)]
+    ex = BookEx(pos=10, orders=legs)
+    out = bracket.consolidate_protection(COIN, ex=ex)
+    assert out["merged"] == [] and "scale-out" in out["left"][0] and len(ex.orders) == 3
+
+
+def test_a_short_merges_on_the_short_side_and_flat_does_nothing():
+    legs = [_leg(1, "sl", 2, 115.0), _leg(2, "sl", 1, 115.0)]
+    ex = BookEx(pos=-3, orders=legs)
+    bracket.consolidate_protection(COIN, ex=ex)
+    assert ("sl", False, 3, 115.0) in ex.calls
+    flat = BookEx(pos=0.0, orders=legs)
+    assert bracket.consolidate_protection(COIN, ex=flat)["merged"] == [] and not flat.calls
+
+
+def test_sweep_folds_the_fills_into_one_pair_and_reports_it():
+    ex = BookEx(pos=13.08, orders=LIVE_LEGS)
+    out = bracket.sweep(COIN, ex=ex)
+    assert out["ok"] and out["stop_px"] == ["108.95"] and out["tp_px"] == ["113.75"]
+    assert out["stop_covers"] == pytest.approx(13.08) and len(out["consolidated"]["merged"]) == 2
+    # an under-covered position is never touched, only flagged
+    naked = BookEx(pos=13.08, orders=[_leg(1, "sl", 1.05, 108.95), _leg(2, "sl", 0.19, 108.95)])
+    out = bracket.sweep(COIN, ex=naked)
+    assert not out["ok"] and "consolidated" not in out and not naked.calls
+
+
+def test_a_market_top_up_ends_with_one_stop_and_one_target():
+    legs = [_leg(1, "sl", 11.84, 108.95), _leg(2, "tp", 11.84, 113.75)]
+    ex = BookEx(pos=11.84, orders=legs)
+    ex.fill, ex.mid = 1.05, 109.54
+    ex._position_size_on_coin = lambda user, coin: 11.84 if not any(c[0] == "ioc" for c in ex.calls) else 12.89
+    out = bracket.place_bracket(COIN, entry_px=None, stop_px=108.95, tp_px=113.75, size=1.05,
+                                leverage=20, coin_max_leverage=20, add=True, ex=ex)
+    assert out["placed"] and len(out["consolidated"]["merged"]) == 2
+    assert [(o["sz"], o["triggerPx"]) for o in ex.orders if "Stop" in o["orderType"]] == [("12.89", "108.95")]

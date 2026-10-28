@@ -263,6 +263,53 @@ def place_bracket(coin: str, *, entry_px: Optional[float], stop_px: float, tp_px
            "avg_px": entry.get("avg_px"), "result": {"entry": entry, "sl": sl, "tp": tp}}
     if not sl.get("ok"):
         out["reason"] = "FILLED WITHOUT A STOP: place one now"
+    elif adding:
+        # the top-up got its own stop and target; fold them into one pair
+        out["consolidated"] = consolidate_protection(coin, ex=ex)
+    return out
+
+
+def consolidate_protection(coin: str, ex: Any = None) -> Dict[str, Any]:
+    """One stop and one target for the whole open position.
+
+    Every top-up places its own reduce-only stop and target for the size it
+    added, so a position built in three fills carried three stops and three
+    targets at the same two prices (operator, 2026-10-28: "IT SEEMS
+    REDUNDANT"). When every stop sits at one price (and likewise every
+    target), this places ONE order for the full position size at that price
+    and only then cancels the old ones, so the position is never without a
+    stop: if the new order fails, the old ones stay. Different prices are a
+    deliberate scale-out and are left alone. Never opens, closes or moves a
+    level."""
+    if ex is None:
+        from pathiel.client import exchange as ex   # noqa: N813
+    user = ex.resolve_user_address()
+    pos = ex._position_size_on_coin(user, coin)
+    if not pos:
+        return {"coin": coin, "ok": pos is not None, "merged": [],
+                **({"reason": "position read failed"} if pos is None else {})}
+    orders = ex._resting_orders_for_coin(user, coin)
+    is_long, size = pos > 0, abs(pos)
+    out: Dict[str, Any] = {"coin": coin, "ok": True, "position": pos, "merged": [], "left": []}
+    for kind, label in (("sl", "Stop"), ("tp", "Take Profit")):
+        rows = [o for o in orders if o.get("reduceOnly") and label in str(o.get("orderType", ""))]
+        if len(rows) < 2:
+            continue
+        levels = {float(o.get("triggerPx") or 0) for o in rows}
+        if len(levels) != 1:
+            out["left"].append(f"{kind}: {len(rows)} orders at {len(levels)} prices, a scale-out, left as is")
+            continue
+        px = levels.pop()
+        new = ex.place_hl_trigger_order(is_long, size, px, kind, coin)
+        if not new.get("ok"):
+            out["ok"] = False
+            out["left"].append(f"{kind}: one {size:g} order at {px:g} was refused, the old ones stay: "
+                               f"{new.get('error') or new}")
+            continue
+        failed = [o.get("oid") for o in rows
+                  if not ex.cancel_orders(int(o.get("oid") or 0), coin).get("ok")]
+        out["merged"].append({"kind": kind, "px": px, "size": size, "replaced": len(rows),
+                              **({"cancel_failed": failed} if failed else {})})
     return out
 
 
@@ -293,7 +340,17 @@ def sweep(coin: str, ex: Any = None) -> Dict[str, Any]:
     stops = [o for o in orders if o.get("reduceOnly") and "Stop" in str(o.get("orderType", ""))]
     tps = [o for o in orders if o.get("reduceOnly") and "Take Profit" in str(o.get("orderType", ""))]
     covered = sum(float(o.get("sz") or 0) for o in stops)
+    consolidated = None
+    if covered + 1e-9 >= abs(pos) and (len(stops) > 1 or len(tps) > 1):
+        # several stops/targets at one price (one per fill): fold into one pair
+        consolidated = consolidate_protection(coin, ex=ex)
+        if consolidated.get("merged"):
+            orders = ex._resting_orders_for_coin(user, coin)
+            stops = [o for o in orders if o.get("reduceOnly") and "Stop" in str(o.get("orderType", ""))]
+            tps = [o for o in orders if o.get("reduceOnly") and "Take Profit" in str(o.get("orderType", ""))]
+            covered = sum(float(o.get("sz") or 0) for o in stops)
     return {"coin": coin, "ok": covered + 1e-9 >= abs(pos), "position": pos,
+            **({"consolidated": consolidated} if consolidated else {}),
             "stop_px": [o.get("triggerPx") for o in stops], "tp_px": [o.get("triggerPx") for o in tps],
             "stop_covers": covered,
             **({} if covered + 1e-9 >= abs(pos) else {"reason": "POSITION NOT FULLY COVERED BY A STOP"})}

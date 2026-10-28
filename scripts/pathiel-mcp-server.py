@@ -964,7 +964,9 @@ TOOLS = [
         "name": "bracket_sweep",
         "description": "Flat: cancel leftover reduce-only orders (sibling of a fired "
                        "stop/target), list resting entries. In a position: say whether a "
-                       "stop covers it. Never opens or closes.",
+                       "stop covers it, and fold several stops (or targets) at one price, one "
+                       "per fill, into a single order for the whole size. Never opens, closes "
+                       "or moves a level.",
         "inputSchema": {
             "type": "object",
             "properties": {"coin": {"type": "string"}},
