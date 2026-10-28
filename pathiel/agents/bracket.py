@@ -173,6 +173,9 @@ def check_levels(entry_px: float, stop_px: float, tp_px: float,
     return out
 
 
+MIN_ORDER_NOTIONAL_USD = 10.0     # Hyperliquid's minimum order value
+
+
 def place_bracket(coin: str, *, entry_px: Optional[float], stop_px: float, tp_px: float,
                   size: float, leverage: int, min_r: float = DEFAULT_MIN_R,
                   coin_max_leverage: Optional[float] = None,
@@ -238,14 +241,23 @@ def place_bracket(coin: str, *, entry_px: Optional[float], stop_px: float, tp_px
     if entries:
         return {**base, "ok": False, "placed": False,
                 "reason": f"{len(entries)} entry order(s) already resting on {coin}; cancel first"}
+    # Refuse what the venue would refuse BEFORE any live call. 2026-10-28: a 0.07
+    # top-up ($7.73) was sent, the venue said "Order must have minimum value of $10",
+    # and the set_leverage that ran first had already moved the open position 20x -> 19x.
+    if size * ref_px < MIN_ORDER_NOTIONAL_USD:
+        return {**base, "ok": False, "placed": False,
+                "reason": f"size {size:g} is ${size * ref_px:.2f}, under the venue's "
+                          f"${MIN_ORDER_NOTIONAL_USD:g} minimum order"}
     if dry_run:
         return {**base, "placed": False, "dry_run": True}
 
     if not adding:
         ex.cancel_stranded_reduce_only_orders(coin)   # old triggers must not hit the new trade
-    lev = ex.set_leverage(coin, int(leverage), is_cross=False, strict=True)
-    if not lev.get("ok"):
-        return {**base, "ok": False, "placed": False, "reason": f"set_leverage failed: {lev.get('error')}"}
+        lev = ex.set_leverage(coin, int(leverage), is_cross=False, strict=True)
+        if not lev.get("ok"):
+            return {**base, "ok": False, "placed": False, "reason": f"set_leverage failed: {lev.get('error')}"}
+    # A top-up never touches leverage: the venue applies the setting to the WHOLE open
+    # position, so a top-up asking for 19x re-levers the position it is adding to.
     is_buy = gate["side"] == "long"
 
     if not market:

@@ -680,3 +680,26 @@ def test_a_lone_market_target_becomes_a_limit_and_a_limit_is_left_alone():
     ex.calls.clear()
     out = bracket.sweep(COIN, ex=ex)
     assert "consolidated" not in out and not ex.calls
+
+
+def test_a_top_up_never_changes_the_open_positions_leverage():
+    """Live, 2026-10-28 16:08Z: a top-up asked for 19x and set_leverage ran before the
+    order; the venue refused the order, but the 13.08 Brent position was left at 19x."""
+    ex = FakeEx(pos=13.08, orders=[STOP_ROW, TP_ROW])
+    out = bracket.place_bracket(COIN, entry_px=111.40, stop_px=110.90, tp_px=114.0, size=1.0,
+                                leverage=19, coin_max_leverage=20, add=True, ex=ex)
+    assert out["placed"]
+    assert not any(c[0] == "lev" for c in ex.calls), "a top-up must not re-lever the open position"
+    # a fresh entry still sets its leverage
+    flat = FakeEx(pos=0.0)
+    bracket.place_bracket(COIN, entry_px=107.2, stop_px=106.7, tp_px=108.45, size=1.27,
+                          leverage=20, coin_max_leverage=20, ex=flat)
+    assert ("lev", COIN, 20, False) in flat.calls
+
+
+def test_an_order_under_the_venue_minimum_is_refused_before_any_live_call():
+    ex = FakeEx(pos=13.08, orders=[STOP_ROW, TP_ROW])
+    out = bracket.place_bracket(COIN, entry_px=111.40, stop_px=110.90, tp_px=114.0, size=0.07,
+                                leverage=19, coin_max_leverage=20, add=True, ex=ex)
+    assert not out["placed"] and "under the venue's $10 minimum" in out["reason"]
+    assert not ex.calls, "nothing reaches the venue"
