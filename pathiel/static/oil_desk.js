@@ -101,6 +101,12 @@ async function loadCall() {
 let lastThesisCall = null;
 let lastPositionsByCoin = {};
 
+// position_line.js, loaded just before this file. A server still serving an
+// older cached oil_desk.html loads this file without it: fall back to the
+// call's own numbers instead of a ReferenceError that blanks the card.
+const PositionLine = window.PathielPositionLine
+  || { positionForCall: () => null, positionLine: () => null };
+
 const MISMATCH_PX_TOL = 0.003; // 0.3% — past this, "entry 109.24" is not "entry 111.57"
 
 /** Pure comparison, no DOM: null when the two agree (or there is nothing to
@@ -126,7 +132,7 @@ function callPositionMismatch(call, position) {
   }
   if (!diffs.length) return null;
   return `This call has not caught up with your open position (${diffs.join(', ')}). `
-    + `Trade off the Wallets card below, not this text, until the desk is refreshed.`;
+    + `The 20x box below and the Wallets card show the live position; this text is the plan from before the fill.`;
 }
 
 function renderPositionMismatch() {
@@ -137,6 +143,22 @@ function renderPositionMismatch() {
   const message = callPositionMismatch(lastThesisCall, position);
   el.textContent = message || '';
   el.hidden = !message;
+  renderCallLeverage();
+  renderLine();
+}
+
+/** The call card's Leverage row: the position's own leverage once one is
+ *  open on the call's coin (2026-10-28: the row read "5x" while the account
+ *  ran 20x), the thesis's text otherwise. */
+let lastLeverageText = null;
+function renderCallLeverage() {
+  const el = document.getElementById('call-leverage');
+  if (!el || lastLeverageText === null) return;
+  const p = PositionLine.positionForCall(lastThesisCall, lastPositionsByCoin);
+  const callLev = lastThesisCall && lastThesisCall.leverage;
+  el.textContent = p && p.leverage != null
+    ? `${p.leverage}x, your open position${callLev != null && Number(callLev) !== Number(p.leverage) ? ` (the call said ${callLev}x)` : ''}`
+    : lastLeverageText;
 }
 
 function fmtR(entries) {
@@ -175,7 +197,9 @@ function renderCallCard(brief, deskName) {
   document.getElementById('call-decision-badge').innerHTML =
     f.decision ? `<span class="badge ${DECISION_CLASS[f.decision] || 'b-flat'}">${esc(f.decision)}</span>` : '';
   set('call-instrument', f.instrument || '');
-  set('call-leverage', f.leverage_text || '—');
+  lastLeverageText = f.leverage_text || '—';
+  set('call-leverage', lastLeverageText);
+  renderCallLeverage();
   set('call-pays', f.pays ? `${Number(f.pays.r).toFixed(1)}R to ${f.pays.target}` : '—');
   set('call-risk', f.biggest_risk ? f.biggest_risk.text : 'none named');
   set('call-catalyst', f.next_catalyst ? `${f.next_catalyst.title} · ${fmtCountdown(f.next_catalyst.at)}` : 'none scheduled');
@@ -199,40 +223,70 @@ function renderLevSeg() {
   });
 }
 
+// The call's line from the server (null until loaded, {error} on a failed
+// load). renderLine() paints the box from the LIVE position instead whenever
+// one is open on the call's coin (position_line.js), so the box follows the
+// ticks: entry, leverage, the venue's liquidation price and the resting
+// stop and targets, not the thesis's plan from before the fill.
+let lastCallLine = null;
+
 async function loadLine() {
   try {
-    const line = await fetchJson(`/api/desks/${encodeURIComponent(activeDesk)}/line?leverage=${encodeURIComponent(currentLeverage)}`);
-    if (!line.ok && !line.verdict) {
-      // No line to show at all (no call yet, no entry/stop, no venue data) —
-      // the reason is the whole story here.
-      show('line-card', false); show('line-empty', true);
-      document.getElementById('line-empty-detail').textContent = line.reason || 'No 20x line to show.';
-      return;
-    }
-    show('line-empty', false); show('line-card', true);
-    const lev = Number(line.leverage || currentLeverage);
-    document.getElementById('line-liq-label').textContent = `Liquidation at ${lev}x`;
-    document.getElementById('line-liq-px').textContent = fmtPrice(line.liq_px);
-    document.getElementById('line-stop-frac').textContent = pctUnsigned(line.stop_frac_of_liq);
-    document.getElementById('line-entry').textContent = fmtPrice(line.entry_px);
-    document.getElementById('line-stop').textContent = fmtPrice(line.stop_px);
-    document.getElementById('line-r-targets').textContent = fmtR(line.r_to_targets);
-    // The verdict in words a trader reads at a glance: "20x OK" from the
-    // server means the stop fires well before the exchange would liquidate.
-    const badgeClass = line.ok ? 'b-hold' : 'b-avoid';
-    const badgeText = line.ok ? `Stop clears ${lev}x liquidation` : `Stop too close for ${lev}x`;
-    document.getElementById('line-verdict-badge').innerHTML = `<span class="badge ${badgeClass}">${esc(badgeText)}</span>`;
-    const gate = line.r_gate;
-    const explain = (line.liq_px != null && line.stop_frac_of_liq != null)
-      ? `At ${lev}x the exchange liquidates at ${fmtPrice(line.liq_px)}; the stop at ${fmtPrice(line.stop_px)} uses ${pctUnsigned(line.stop_frac_of_liq)} of that distance (limit 50%).`
-      : '';
-    document.getElementById('line-reason').textContent =
-      [explain, gate && !gate.ok ? (gate.reason || '') : ''].filter(Boolean).join(' ');
+    lastCallLine = await fetchJson(`/api/desks/${encodeURIComponent(activeDesk)}/line?leverage=${encodeURIComponent(currentLeverage)}`);
   } catch (e) {
-    show('line-card', false); show('line-empty', true);
-    document.getElementById('line-empty-detail').textContent = 'Could not load the leverage line: ' + e.message;
-    reportRefreshFailure('oil desk line', e, document.getElementById('line-empty'));
+    lastCallLine = { error: e };
   }
+  renderLine();
+}
+
+function renderLine() {
+  const position = PositionLine.positionForCall(lastThesisCall, lastPositionsByCoin);
+  const live = PositionLine.positionLine(position);
+  const seg = document.getElementById('line-seg');
+  if (seg) seg.hidden = !!live;            // the leverage choice prices a call, not a filled position
+  if (live) { paintLine(live, true); return; }
+  const line = lastCallLine;
+  if (!line) return;
+  if (line.error) {
+    show('line-card', false); show('line-empty', true);
+    document.getElementById('line-empty-detail').textContent = 'Could not load the leverage line: ' + line.error.message;
+    reportRefreshFailure('oil desk line', line.error, document.getElementById('line-empty'));
+    return;
+  }
+  if (!line.ok && !line.verdict) {
+    // No line to show at all (no call yet, no entry/stop, no venue data) —
+    // the reason is the whole story here.
+    show('line-card', false); show('line-empty', true);
+    document.getElementById('line-empty-detail').textContent = line.reason || 'No 20x line to show.';
+    return;
+  }
+  paintLine(line, false);
+}
+
+function paintLine(line, isPosition) {
+  show('line-empty', false); show('line-card', true);
+  const lev = Number(line.leverage || currentLeverage);
+  document.getElementById('line-liq-label').textContent =
+    isPosition ? `Your position: liquidation at ${lev}x` : `Liquidation at ${lev}x`;
+  document.getElementById('line-liq-px').textContent = fmtPrice(line.liq_px);
+  document.getElementById('line-stop-frac').textContent = pctUnsigned(line.stop_frac_of_liq);
+  document.getElementById('line-entry').textContent = fmtPrice(line.entry_px);
+  document.getElementById('line-stop').textContent = fmtPrice(line.stop_px);
+  document.getElementById('line-r-targets').textContent = fmtR(line.r_to_targets);
+  // The verdict in words a trader reads at a glance: "20x OK" from the
+  // server means the stop fires well before the exchange would liquidate.
+  const badgeClass = line.ok ? 'b-hold' : 'b-avoid';
+  const badgeText = line.no_stop ? 'NO STOP on the open position'
+    : line.ok ? `Stop clears ${lev}x liquidation` : `Stop too close for ${lev}x`;
+  document.getElementById('line-verdict-badge').innerHTML = `<span class="badge ${badgeClass}">${esc(badgeText)}</span>`;
+  const gate = line.r_gate;
+  const what = isPosition ? 'your open position' : 'it';
+  const explain = (line.liq_px != null && line.stop_frac_of_liq != null)
+    ? `At ${lev}x the exchange liquidates ${what} at ${fmtPrice(line.liq_px)}; the stop at ${fmtPrice(line.stop_px)} uses ${pctUnsigned(line.stop_frac_of_liq)} of that distance (limit 50%).`
+    : '';
+  const source = isPosition ? 'Live from the venue, not the call.' : '';
+  document.getElementById('line-reason').textContent =
+    [explain, gate && !gate.ok ? (gate.reason || '') : '', source].filter(Boolean).join(' ');
 }
 
 // ── 2. WALLETS ───────────────────────────────────────────────────────────────
