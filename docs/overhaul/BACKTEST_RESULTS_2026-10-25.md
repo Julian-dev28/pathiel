@@ -393,3 +393,61 @@ Verdict: keep the fixed stop. On the journaled theses it returns +6.03R against
 control in both windows. The journaled sample is 13 trades, so this is a direction,
 not a proof; the always-long control (51 and 77 trades) agrees. Re-run when the
 journal has 30+ trades.
+
+## 2026-10-28: other markets
+
+Operator: "is it replicable with other markets?" `services/strategies/evals/cross_market_backtest.py`
+runs the same simulator (15m clock, fixed stop, 1.5R gate, the 20x rule, no-reserve sizing)
+on Brent, gold, BTC and the S&P 500 perp (`xyz:SP500`, the most liquid index perp on xyz).
+The other markets have no journaled theses, so every market is compared on the oil eval's
+mechanics-only controls (always long, always short, daily 20-day trend sign). Oil's
+journaled run is shown as the reference row.
+
+- **Leverage**, two modes: *matched* = min(venue max, round(20 x oil ATR% / coin ATR%)),
+  with ATR% the mean 1h ATR14 as a share of price over the window; *flat20* = 20x capped
+  at the venue max. Venue max on 2026-10-28: Brent 20, gold 25, BTC 40, S&P 500 50.
+- **Stop buffer**: the sim's $0.50 is about one 1h ATR on Brent, so each market gets the
+  same buffer in ATR terms. A gate test checks that the same chart at 36x the price trades
+  identically, so markets are judged on shape, not price level.
+
+30 days (2026-09-28 to 2026-10-28), from $64. R per trade does not depend on leverage
+(full-equity sizing), so the matched and flat rows differ only in dollars:
+
+| market | 1h ATR% | lev matched / flat | series | trades | win | total R | $ matched | $ flat | max DD matched |
+|---|---|---|---|---|---|---|---|---|---|
+| Brent | 0.56% | 20 / 20 | journaled (reference) | 13 | 31% | **+6.03** | **$116.89** | $116.89 | 42.3% |
+| Brent | 0.56% | 20 / 20 | always long | 50 | 18% | -1.44 | $22.50 | $22.50 | 78.8% |
+| Brent | 0.56% | 20 / 20 | daily sign | 60 | 18% | -23.62 | $3.73 | $3.73 | 96.2% |
+| Brent | 0.56% | 20 / 20 | always short | 45 | 7% | -40.48 | $0.88 | $0.88 | 99.0% |
+| Gold | 0.24% | 25 / 20 | always long | 59 | 7% | -59.99 | $2.39 | $4.78 | 96.4% |
+| Gold | 0.24% | 25 / 20 | daily sign | 58 | 21% | -24.83 | $15.85 | $21.90 | 79.0% |
+| Gold | 0.24% | 25 / 20 | always short | 54 | 24% | -13.86 | $26.97 | $33.58 | 72.6% |
+| BTC | 0.47% | 24 / 20 | always long | 52 | 12% | -34.63 | $1.19 | $2.51 | 98.7% |
+| BTC | 0.47% | 24 / 20 | daily sign | 33 | 15% | -3.65 | $18.74 | $25.34 | 84.5% |
+| BTC | 0.47% | 24 / 20 | always short | 36 | 14% | -9.50 | $11.14 | $16.32 | 87.3% |
+| S&P 500 | 0.15% | 50 / 20 | always long | 45 | 13% | -44.05 | $2.65 | $19.35 | 97.6% |
+| S&P 500 | 0.15% | 50 / 20 | daily sign | 45 | 16% | -35.68 | $4.27 | $23.85 | 95.5% |
+| S&P 500 | 0.15% | 50 / 20 | always short | 52 | 13% | -45.06 | $2.17 | $18.48 | 97.0% |
+
+No run liquidated in either window or mode. The 50-day rerun is worse everywhere: every
+control in every market ends under $20 from $64. Best: gold always short, -23.84R, $12.83
+matched / $19.19 flat. Brent's journaled reference stays at the same 13 trades and +6.03R
+(the theses only cover the last 10 days). Full rows: `report.json` -> `rows`.
+
+Two findings:
+
+1. **The mechanics alone lose money everywhere, Brent included.** Range-edge entries,
+   a structural stop and a 24h target do not make money without a direction call: the best
+   control on 30 days is Brent always long at -1.44R. The only profitable row is Brent with
+   the journaled theses. The edge so far is the thesis (direction, invalidation, never
+   chasing above its entry), not the market and not the leverage.
+2. **Volatility-matched leverage changes only the size of the loss, not the sign.** BTC's
+   1h ATR (0.47%) was below Brent's (0.56%) in this window, so matched BTC leverage is 24x.
+   Gold and the S&P 500 are calmer, so matching pushes them to the venue cap (25x, 50x),
+   which deepens their losses: S&P 500 always long ends at $2.65 matched against $19.35 flat.
+
+Verdict: the method carries over only as far as there is a thesis to trade. Without one,
+the backtest says no market works, so nothing here supports turning on a gold, BTC or
+index desk on the mechanics. The test would be journaled theses for that market,
+replayed the way the Brent ones are. Confidence: the controls (33 to 98 trades per run,
+two windows) are a solid negative; Brent's positive rests on 13 trades.
