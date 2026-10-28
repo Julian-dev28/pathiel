@@ -3,6 +3,10 @@
   python3 scripts/thesis_due.py --desk oil
   -> {"due": true, "reasons": ["daily: thesis is 24.3h old"], "thesis_id": "...", ...}
 
+(The 1.5% move is measured from the price when the thesis was written: the
+operator said "from the thesis entry", but a WAIT thesis's entry sits away
+from price on purpose and would trigger a rewrite every hour.)
+
 The desk-tick agent runs this after the brief and calls `desk_refresh` only
 when `due` is true (operator, 2026-10-28: "Rewrite once a day, plus after
 each scheduled catalyst (API on Tuesday, EIA on Wednesday, OPEC), after a
@@ -28,26 +32,22 @@ sys.path.insert(0, _SCRIPTS)
 
 DAILY_HOURS = 24.0
 MIN_GAP_MINUTES = 60.0           # at most one rewrite an hour
-MOVE_FRAC = 0.015                # 1.5% from the thesis entry
+MOVE_FRAC = 0.015                # 1.5% from where price stood when the thesis was written
 CATALYST_KINDS = ("api_weekly", "eia_weekly", "opec_meeting")
 CATALYST_SETTLE_MINUTES = 15.0   # let the number print and the market react first
 
 
-def _ref_price(call: Dict[str, Any]) -> Optional[float]:
-    """The thesis's entry: its exact entry, else the middle of its entry zone."""
-    if call.get("entry_px"):
-        return float(call["entry_px"])
-    zone = call.get("entry_zone") or []
-    if zone:
-        return (float(zone[0]) + float(zone[-1])) / 2.0
-    return None
-
-
 def refresh_due(thesis: Dict[str, Any], now: datetime, mid: Optional[float],
-                closes_since: Iterable[Dict[str, Any]] = ()) -> Dict[str, Any]:
+                closes_since: Iterable[Dict[str, Any]] = (),
+                px_at_writing: Optional[float] = None) -> Dict[str, Any]:
     """Pure. `thesis` = the journal's thesis as a dict (created_at, expires_at,
     call, catalysts); `closes_since` = closing fills on this desk's coins after
-    the thesis was written. Returns {due, reasons, age_h, ...}."""
+    the thesis was written; `px_at_writing` = the price when it was written.
+
+    The 1.5% move is measured from `px_at_writing`, not from the call's entry:
+    a WAIT thesis puts its entry away from price on purpose (2026-10-28: a
+    110.50 to 111.00 dip zone with Brent at 112.45, already 1.5% apart), and
+    measuring from it would rewrite every hour, about $24 a day."""
     created = _ts(thesis["created_at"])
     age_h = (now - created).total_seconds() / 3600.0
     out: Dict[str, Any] = {"thesis_id": thesis.get("id"), "age_h": round(age_h, 2), "reasons": []}
@@ -69,12 +69,12 @@ def refresh_due(thesis: Dict[str, Any], now: datetime, mid: Optional[float],
     closes = list(closes_since)
     if closes:
         reasons.append(f"position closed since the thesis ({len(closes)} closing fill(s))")
-    ref = _ref_price(thesis.get("call") or {})
+    ref = px_at_writing
     if ref and mid:
         move = abs(mid - ref) / ref
-        out["move_from_entry_pct"] = round(move * 100, 2)
+        out["move_since_written_pct"] = round(move * 100, 2)
         if move >= MOVE_FRAC:
-            reasons.append(f"price moved {move:.1%} from the thesis entry {ref:g} (mid {mid:g})")
+            reasons.append(f"price moved {move:.1%} since the thesis was written ({ref:g} -> {mid:g})")
     out.update(due=bool(reasons), reasons=reasons)
     return out
 
@@ -85,6 +85,16 @@ def _ts(v: Any) -> datetime:
     s = str(v).replace("Z", "+00:00")
     d = datetime.fromisoformat(s)
     return d if d.tzinfo else d.replace(tzinfo=timezone.utc)
+
+
+def _px_at(coin: str, when: datetime) -> Optional[float]:
+    """Close of the last 15m candle that opened at or before `when`."""
+    from pathiel.client.exchange import _http_post
+    t = int(when.timestamp() * 1000)
+    rows = _http_post("/info", {"type": "candleSnapshot", "req": {
+        "coin": coin, "interval": "15m", "startTime": t - 2 * 15 * 60_000, "endTime": t + 15 * 60_000}}) or []
+    before = [r for r in rows if int(r.get("t") or 0) <= t]
+    return float(before[-1]["c"]) if before else None
 
 
 def _closing_fills(user: str, coins: List[str], since: datetime) -> List[Dict[str, Any]]:
@@ -123,8 +133,13 @@ def main(argv: Optional[List[str]] = None) -> int:
             closes = _closing_fills(acct.main_address, coins, _ts(thesis["created_at"]))
     except Exception as e:  # noqa: BLE001 - a missing fill read only drops that reason
         print(f"[thesis_due] fills unavailable: {e}", file=sys.stderr)
-    out = refresh_due(thesis, datetime.now(timezone.utc), mid, closes)
-    out.update(desk=a.desk, coin=coin, mid=mid)
+    px0 = None
+    try:
+        px0 = _px_at(coin, _ts(thesis["created_at"]))
+    except Exception as e:  # noqa: BLE001 - a missing candle only drops the price reason
+        print(f"[thesis_due] price at writing unavailable: {e}", file=sys.stderr)
+    out = refresh_due(thesis, datetime.now(timezone.utc), mid, closes, px_at_writing=px0)
+    out.update(desk=a.desk, coin=coin, mid=mid, px_at_writing=px0)
     print(json.dumps(out, default=str))
     return 0
 

@@ -42,7 +42,7 @@ ToolSearch call: `select:mcp__pathiel__desk_brief,mcp__pathiel__bracket_sweep,mc
    `desk_refresh {desk: DESK}` only when it says `"due": true`, and put its
    first reason in your report. It is due once a day, after an API, EIA or
    OPEC release the thesis listed, after a position on the desk closed, and
-   when the mid is 1.5% or more from the thesis entry; never inside an hour
+   when the mid has moved 1.5% or more since the thesis was written; never inside an hour
    of the last thesis (operator, 2026-10-28; about one dollar a rewrite on
    Fable 5.1). After a rewrite, read the brief again.
 2. **Housekeeping.** `bracket_sweep {coin: COIN}`. Cancels the sibling left

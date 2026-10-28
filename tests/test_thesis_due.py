@@ -68,19 +68,22 @@ def test_a_closed_position_triggers():
     assert out["due"] and "position closed" in out["reasons"][0]
 
 
-def test_a_1_5_percent_move_from_the_entry_triggers_either_way():
-    up = M.refresh_due(_thesis(), T0 + timedelta(hours=3), mid=112.10)        # +1.54% from 110.40
-    down = M.refresh_due(_thesis(), T0 + timedelta(hours=3), mid=108.70)      # -1.54%
-    small = M.refresh_due(_thesis(), T0 + timedelta(hours=3), mid=111.90)     # +1.36%
+def test_a_1_5_percent_move_since_writing_triggers_either_way():
+    up = M.refresh_due(_thesis(), T0 + timedelta(hours=3), mid=112.10, px_at_writing=110.40)    # +1.54%
+    down = M.refresh_due(_thesis(), T0 + timedelta(hours=3), mid=108.70, px_at_writing=110.40)  # -1.54%
+    small = M.refresh_due(_thesis(), T0 + timedelta(hours=3), mid=111.90, px_at_writing=110.40)  # +1.36%
     assert up["due"] and down["due"] and small["due"] is False
-    assert up["move_from_entry_pct"] == 1.54
+    assert up["move_since_written_pct"] == 1.54
 
 
-def test_a_flat_thesis_measures_from_the_middle_of_its_zone():
+def test_a_wait_thesis_does_not_loop_on_its_own_dip_zone():
+    """2026-10-28: the flat thesis's buy zone (110.50 to 111.00) sat 1.5% under
+    Brent at 112.45. Measured from the zone it would rewrite every hour."""
     t = _thesis(call={"side": "flat", "entry_px": None, "entry_zone": [110.5, 111.0]})
-    out = M.refresh_due(t, T0 + timedelta(hours=3), mid=112.45)                # 1.53% above 110.75
-    assert out["due"] and out["move_from_entry_pct"] == 1.53
-    assert M.refresh_due(t, T0 + timedelta(hours=3), mid=111.5)["due"] is False  # 0.68%
+    out = M.refresh_due(t, T0 + timedelta(hours=3), mid=112.45, px_at_writing=112.24)
+    assert out["due"] is False and out["move_since_written_pct"] == 0.19
+    # no price at writing: the price reason is skipped, never guessed
+    assert M.refresh_due(t, T0 + timedelta(hours=3), mid=112.45)["due"] is False
 
 
 def test_never_more_than_one_rewrite_an_hour():

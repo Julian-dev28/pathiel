@@ -153,7 +153,7 @@ tick, in order:
 2. **`desk_brief`** (quick mode): the current call. `scripts/thesis_due.py`
    says when to `desk_refresh` (a new thesis on Fable 5.1, about $1): once a
    day, after an API, EIA or OPEC release the thesis listed, after a position
-   closes, and when the mid is 1.5% or more from the thesis entry; never
+   closes, and when the mid has moved 1.5% or more since it was written; never
    inside an hour of the last one. A flat or WAIT thesis never closes an open
    position; that position keeps its own stop and target.
 3. **`bracket_sweep`**: cancel a stranded sibling order, confirm an open
