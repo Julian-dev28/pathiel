@@ -56,6 +56,19 @@ def _mark_fields(side: str, entry: float, mark: Optional[float], stops: List[Any
     return out
 
 
+def _roe_pct(raw: Dict[str, Any], row: Dict[str, Any]) -> Optional[float]:
+    """Return on the margin, the % Hyperliquid's own frontend prints next to
+    uPnL ("+$21.74 (+30.4%)", operator 2026-10-28): the venue's
+    returnOnEquity, else the price move times leverage."""
+    roe = _f(raw.get("returnOnEquity"))
+    if roe is not None:
+        return round(roe * 100, 2)
+    lev = _f(row.get("leverage"))
+    if row.get("pnl_pct") is not None and lev:
+        return round(row["pnl_pct"] * lev, 2)
+    return None
+
+
 def _resting_entries(orders: List[Dict[str, Any]], mids: Optional[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """The entry orders that have not filled: every open order that is not
     reduce-only and not a trigger, with the stop and take-profit children
@@ -142,6 +155,7 @@ def assess(state: Dict[str, Any], orders: List[Dict[str, Any]], dex: str = "",
             **_mark_fields("long" if szi > 0 else "short", entry, _f((mids or {}).get(coin)),
                            [o.get("triggerPx") for o in stops], [o.get("triggerPx") for o in tps]),
         })
+        positions[-1]["roe_pct"] = _roe_pct(p, positions[-1])
     equity = float(ms.get("accountValue") or 0)
     margin_used = round(sum(p["margin_usd"] for p in positions), 2)
     return {"dex": dex or "main", "equity_usd": equity,

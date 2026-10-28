@@ -3,6 +3,8 @@ Hyperliquid returns. (Moved out of scripts/watch_wallet.py 2026-10-23; that
 script is now a thin CLI importing this module.)"""
 from __future__ import annotations
 
+from pathlib import Path
+
 from services.accounts.positions import assess
 
 # Julien's wallet on 2026-10-23 16:40 UTC, as the venue returned it.
@@ -73,3 +75,26 @@ def test_mark_fields_show_where_the_position_stands():
 def test_without_mids_the_mark_fields_are_none_and_nothing_else_changes():
     p = assess(STATE, [STOP, TP], "xyz")["positions"][0]
     assert p["mark_px"] is None and p["pnl_pct"] is None and p["r_now"] is None and p["naked"] is False
+
+
+def test_pnl_percent_is_on_the_margin_like_hyperliquids_frontend():
+    """Operator, 2026-10-28: show "+$21.74 (+30.4%)" like Hyperliquid, not
+    the 0.3% the price moved. The venue's returnOnEquity is used as-is."""
+    live = {"marginSummary": {"accountValue": "90"}, "assetPositions": [{"position": {
+        "coin": "xyz:BRENTOIL", "szi": "13.08", "entryPx": "109.4579", "leverage": {"type": "isolated", "value": 20},
+        "positionValue": "1453.4", "marginUsed": "71.6", "unrealizedPnl": "21.74",
+        "returnOnEquity": "0.30373", "liquidationPx": "106.6556"}}]}
+    p = assess(live, [], "xyz", mids={"xyz:BRENTOIL": "111.12"})["positions"][0]
+    assert p["roe_pct"] == 30.37 and p["upnl_usd"] == 21.74
+    # no returnOnEquity from the venue: the price move times leverage
+    del live["assetPositions"][0]["position"]["returnOnEquity"]
+    q = assess(live, [], "xyz", mids={"xyz:BRENTOIL": "111.12"})["positions"][0]
+    assert q["roe_pct"] == round(q["pnl_pct"] * 20, 2)
+    # neither: None, never a made-up number
+    assert assess(live, [], "xyz")["positions"][0]["roe_pct"] is None
+
+
+def test_the_wallets_table_prints_pnl_as_dollars_and_return_on_margin():
+    js = (Path(__file__).resolve().parents[1] / "pathiel" / "static" / "oil_desk.js").read_text()
+    assert "fmtPnl(p.upnl_usd, p.roe_pct)" in js
+    assert '<th class="num">P&amp;L</th>' in js and '<th class="num">uPnL</th>' not in js

@@ -369,6 +369,14 @@ function renderWalletAccount(account, snapshot) {
     return `<div class="card" style="margin-bottom:14px">${head}${body}${strandedNote}${restingBlock}${stale}</div>`;
   }
 
+  // uPnL and its return on margin, the way Hyperliquid prints it:
+  // "+$21.74 (+30.4%)". The % is on the margin, so it is the price move
+  // times leverage, not the 0.3% the price itself moved (operator 2026-10-28).
+  const fmtPnl = (usd, roe) => {
+    if (usd == null || !isFinite(usd)) return '—';
+    const money = (usd >= 0 ? '+$' : '-$') + Math.abs(usd).toFixed(2);
+    return roe == null || !isFinite(roe) ? money : `${money} (${roe >= 0 ? '+' : ''}${Number(roe).toFixed(1)}%)`;
+  };
   const rows = positions.map(p => `
     <tr>
       <td>${esc(p.dex)}</td>
@@ -377,13 +385,12 @@ function renderWalletAccount(account, snapshot) {
       <td class="num">${esc(p.size)}</td>
       <td class="num">${fmtPrice(p.entry_px)}</td>
       <td class="num">${fmtPrice(p.mark_px)}</td>
-      <td class="num ${p.pnl_pct > 0 ? 'pos' : p.pnl_pct < 0 ? 'neg' : ''}">${p.pnl_pct != null ? (p.pnl_pct > 0 ? '+' : '') + p.pnl_pct.toFixed(2) + '%' : '—'}</td>
+      <td class="num ${p.upnl_usd > 0 ? 'pos' : p.upnl_usd < 0 ? 'neg' : ''}">${fmtPnl(p.upnl_usd, p.roe_pct)}</td>
       <td class="num">${p.r_now != null ? (p.r_now > 0 ? '+' : '') + p.r_now.toFixed(2) + 'R' : '—'}</td>
       <td class="num">${p.leverage != null ? p.leverage + 'x' : '—'}</td>
       <td class="num">${p.margin_usd != null ? fmtMoney(p.margin_usd) : '—'}</td>
       <td class="num">${fmtPrice(p.liq_px)}</td>
       <td class="num">${pctUnsigned(p.liq_dist_pct != null ? p.liq_dist_pct / 100 : null)}</td>
-      <td class="num">${fmtMoney(p.upnl_usd)}</td>
       <td>${(p.stop_px || []).map(fmtPrice).join(', ') || '—'}${p.to_stop_pct != null ? ` <span class="muted">(${p.to_stop_pct.toFixed(2)}% away)</span>` : ''}</td>
       <td>${(p.tp_px || []).map(fmtPrice).join(', ') || '—'}${p.to_tp_pct != null ? ` <span class="muted">(${p.to_tp_pct.toFixed(2)}% away)</span>` : ''}</td>
       <td>${p.naked ? '<span class="badge b-fail">NAKED</span>' : ''}</td>
@@ -391,8 +398,8 @@ function renderWalletAccount(account, snapshot) {
 
   return `<div class="card" style="margin-bottom:14px">${head}${marginLine}${failed}${stale}
     <div class="scroll-x"><table>
-      <thead><tr><th>Dex</th><th>Coin</th><th>Side</th><th class="num">Size</th><th class="num">Entry</th><th class="num">Mark</th><th class="num">P&amp;L %</th><th class="num">R now</th>
-        <th class="num">Lev</th><th class="num">Margin</th><th class="num">Liq</th><th class="num">Dist</th><th class="num">uPnL</th>
+      <thead><tr><th>Dex</th><th>Coin</th><th>Side</th><th class="num">Size</th><th class="num">Entry</th><th class="num">Mark</th><th class="num">P&amp;L</th><th class="num">R now</th>
+        <th class="num">Lev</th><th class="num">Margin</th><th class="num">Liq</th><th class="num">Dist</th>
         <th>Stop</th><th>Target</th><th></th></tr></thead>
       <tbody>${rows}</tbody>
     </table></div>${strandedNote}${restingBlock}</div>`;
