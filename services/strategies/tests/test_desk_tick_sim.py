@@ -356,3 +356,96 @@ def test_parse_invalidation_px():
     assert D.parse_invalidation_px("Daily close below 94.30 (the 10x stop level).") == 94.30
     assert D.parse_invalidation_px("Brent closes above $4,028.50 or we're wrong.") == 4028.50
     assert D.parse_invalidation_px("no numbers here") is None
+
+
+# ── moving the stop (2026-10-28): breakeven and trailing variants ────────────
+#
+# One scenario for every variant: long rests at the 8h low 99, fills on bar 1
+# (stop 98.75, so 1R = 0.25), bar 2 trades 0.30 in favour (> 1R, < 2R) and
+# dips only to 99.00, bar 3 dips to 98.95. A fixed stop survives bar 3; a
+# breakeven stop at 99.00 is hit on bar 3, never on bar 2 (the move reads the
+# finished bar and applies from the next one).
+
+def _stop_scenario(bar3_open: float = 99.0):
+    c1h = _warmup_1h()                              # range [99,101], ATR14 = 2.0
+    h24 = 24 * HOUR_MS
+    c15 = [
+        _c15(h24 + 0 * FIFTEEN_MS, 99.3, 99.3, 99.3, 99.3),        # rest at 99
+        _c15(h24 + 1 * FIFTEEN_MS, 99.2, 99.3, 98.9, 99.0),        # fills at 99
+        _c15(h24 + 2 * FIFTEEN_MS, 99.1, 99.30, 99.0, 99.2),       # +0.30 = 1.2R, low 99.00
+        _c15(h24 + 3 * FIFTEEN_MS, bar3_open, 99.15, 98.95, 99.05),  # dips to 98.95
+    ]
+    return c15, c1h
+
+
+def _p(**kw):
+    base = dict(taker_fee=0.0, maker_fee=0.0, slippage=0.0, stop_buffer=0.25)
+    return Params(**{**base, **kw})
+
+
+def test_fixed_stop_never_moves():
+    c15, c1h = _stop_scenario()
+    run = simulate(c15, c1h, const_direction("long"), _p())
+    assert run.trades == [] and run.open_position_at_end is not None
+
+
+def test_breakeven_after_1r_stops_out_flat_on_the_next_bar_only():
+    c15, c1h = _stop_scenario()
+    run = simulate(c15, c1h, const_direction("long"), _p(stop_mode="breakeven", stop_trigger_r=1.0))
+    assert len(run.trades) == 1
+    t = run.trades[0]
+    assert t.exit_reason == "stop" and t.exit_time == c15[3].t      # bar 3, not bar 2 (low 99.00)
+    assert t.stop_moved and t.orig_stop_px == pytest.approx(98.75)
+    assert t.stop_px == pytest.approx(99.0) and t.exit_px == pytest.approx(99.0)
+    assert t.net_pnl_usd == pytest.approx(0.0, abs=1e-9)
+
+
+def test_breakeven_at_2r_does_not_arm_on_a_1_2r_move():
+    c15, c1h = _stop_scenario()
+    run = simulate(c15, c1h, const_direction("long"), _p(stop_mode="breakeven", stop_trigger_r=2.0))
+    assert run.trades == []
+
+
+def test_breakeven_covers_the_round_trip_fee():
+    c15, c1h = _stop_scenario(bar3_open=99.1)        # opens above the stop: fills at the stop
+    run = simulate(c15, c1h, const_direction("long"),
+                   _p(stop_mode="breakeven", maker_fee=0.00015, taker_fee=0.00045))
+    t = run.trades[0]
+    assert t.stop_px == pytest.approx(99.0 * 1.0006)
+    assert abs(t.net_pnl_usd) < 0.001 * t.size        # nets about zero after both fees
+
+
+def test_trail_tightens_and_a_gap_through_fills_at_the_open():
+    c15, c1h = _stop_scenario()
+    # best close 99.2 - 0.05 x ATR 2.0 = 99.10; bar 3 opens at 99.00, under it
+    run = simulate(c15, c1h, const_direction("long"), _p(stop_mode="trail", trail_atr=0.05))
+    t = run.trades[0]
+    assert t.stop_px == pytest.approx(99.1) and t.stop_moved
+    assert t.exit_px == pytest.approx(99.0)          # the open, not the 99.10 stop
+
+
+def test_a_trail_wider_than_the_stop_never_widens_it():
+    c15, c1h = _stop_scenario()
+    # 99.2 - 2 x 2.0 = 95.2, far under 98.75: the stop stays where it was
+    run = simulate(c15, c1h, const_direction("long"), _p(stop_mode="trail", trail_atr=2.0))
+    assert run.trades == [] and run.open_position_at_end is not None
+
+
+def test_breakeven_on_a_short_mirrors_the_long():
+    c1h = _warmup_1h()
+    h24 = 24 * HOUR_MS
+    c15 = [
+        _c15(h24 + 0 * FIFTEEN_MS, 100.7, 100.7, 100.7, 100.7),     # rest a short at the 8h high 101
+        _c15(h24 + 1 * FIFTEEN_MS, 100.8, 101.1, 100.7, 101.0),     # fills at 101, stop 101.25
+        _c15(h24 + 2 * FIFTEEN_MS, 100.9, 101.0, 100.70, 100.8),    # -0.30 in favour, high 101.00
+        _c15(h24 + 3 * FIFTEEN_MS, 101.0, 101.05, 100.85, 100.95),  # rises to 101.05
+    ]
+    run = simulate(c15, c1h, const_direction("short"), _p(stop_mode="breakeven"))
+    t = run.trades[0]
+    assert t.side == "short" and t.exit_time == c15[3].t and t.exit_px == pytest.approx(101.0)
+
+
+def test_an_unknown_stop_mode_is_an_error_not_a_silent_fixed_stop():
+    c15, c1h = _stop_scenario()
+    with pytest.raises(ValueError):
+        simulate(c15, c1h, const_direction("long"), _p(stop_mode="moon"))
