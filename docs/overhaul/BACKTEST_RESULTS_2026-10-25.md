@@ -344,3 +344,52 @@ number to watch is the live journaled R per trade over the next ten trades; unde
 15-minute clock ("go back to 15 minute clock"). Live rule: tick every 15 minutes,
 structure and invalidation on closed 1h candles, 20x. `Params.tick_minutes` stays so
 the two clocks keep being compared in the nightly eval.
+
+## 2026-10-28: moving the stop
+
+Operator: "we tested that its not more profitable right?" It had not been. The
+simulator now has `Params.stop_mode` ("fixed", "breakeven", "trail"; see the module
+docstring) and the eval runs five variants on every direction series, 15m clock, 20x,
+the live entry rules and the new no-reserve sizing:
+
+- **fixed**: the stop never moves (the live rule).
+- **be_1r / be_2r**: once a finished bar has traded 1R (2R) in favour, the stop
+  moves to entry plus the round-trip fee.
+- **trail_1atr / trail_2atr**: after 1R, the stop follows the best 15m close minus
+  1 (2) ATR14, only tightening.
+
+A moved stop the next bar opens through fills at that open. "Cut" counts trades a
+moved stop closed that then reached the original target before the original stop.
+
+Window: 2026-09-28 to 2026-10-28 (30 days), rerun on 50 days (the most 15m history
+the venue returns). Journaled theses: 7 (`pathia/.state/strategies/oil/theses`, read
+only), so the journaled rows are the same on both windows.
+
+| series | stop | trades | win | avg R | total R | $64 ends at | max DD | moved | cut |
+|---|---|---|---|---|---|---|---|---|---|
+| journaled | **fixed** | 13 | 31% | **+0.46** | **+6.03** | **$112.74** | 42.3% | 0 | 0 |
+| journaled | be_1r | 15 | 20% | +0.08 | +1.19 | $60.01 | 36.4% | 6 | 1 |
+| journaled | be_2r | 13 | 23% | +0.10 | +1.35 | $80.84 | 36.4% | 4 | 1 |
+| journaled | trail_1atr | 15 | 47% | +0.13 | +1.97 | $68.10 | 36.9% | 6 | 2 |
+| journaled | trail_2atr | 14 | 29% | -0.31 | -4.32 | $52.24 | 52.7% | 5 | 2 |
+| always_long, 30d | **fixed** | 51 | 18% | **-0.05** | **-2.62** | **$19.13** | 81.7% | 0 | 0 |
+| always_long, 30d | be_1r | 57 | 11% | -0.15 | -8.80 | $10.48 | 84.9% | 22 | 4 |
+| always_long, 30d | trail_1atr | 67 | 30% | -0.16 | -10.42 | $10.69 | 89.5% | 26 | 9 |
+| always_long, 50d | **fixed** | 77 | 18% | **-0.09** | **-7.20** | **$7.48** | 95.0% | 0 | 0 |
+| always_long, 50d | be_2r | 85 | 14% | -0.16 | -13.41 | $4.91 | 96.3% | 24 | 2 |
+| always_long, 50d | trail_1atr | 107 | 27% | -0.26 | -27.80 | $1.40 | 98.9% | 40 | 12 |
+
+The always-short and daily-sign controls lose under every variant (all end under $4
+on 30 days); no variant rescues them. Full rows: `report.json` -> `stop_variants`.
+
+Why fixed wins: this strategy's edge is a few big winners (a 24h-range target is
+often 5R to 9R away) paying for many small losers. A breakeven or trailing stop
+turns some of those big winners into scratches ("cut" column: 1 to 2 of the 4
+journaled winners, 9 to 12 on always-long) while the losers it saves were small
+anyway. Trailing doubles the win rate and still loses money: more, smaller wins.
+
+Verdict: keep the fixed stop. On the journaled theses it returns +6.03R against
++1.97R for the best moving variant, and fixed is also best on the always-long
+control in both windows. The journaled sample is 13 trades, so this is a direction,
+not a proof; the always-long control (51 and 77 trades) agrees. Re-run when the
+journal has 30+ trades.

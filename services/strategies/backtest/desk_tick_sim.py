@@ -52,6 +52,20 @@ flips to the opposite side while a position is open closes it the same way
 (`direction_flip`) — the one-slot rule means a reversed call cannot sit
 next to the old position.
 
+Moving the stop (2026-10-28)
+----------------------------
+`Params.stop_mode` "fixed" (the live rule: the stop never moves),
+"breakeven" or "trail". Both arm once a bar after the fill has traded
+`stop_trigger_r` R in the position's favour (R = the per-unit risk at the
+fill). "breakeven" then moves the stop to the entry plus the round-trip fee
+(maker in, taker out), so a stop-out there nets about zero. "trail" moves it
+to the best tick-bar close since the fill minus `trail_atr` x ATR14 (closed
+1h bars), re-evaluated every bar. The stop only ever tightens. The decision
+reads the bar that just finished and applies from the next bar (no
+lookahead). A moved stop that the next bar opens through fills at that
+open, not at the stop price: a stop above the market triggers at once.
+Fixed stops keep the sim's original fill at the stop price.
+
 Liquidation
 -----------
 Checked every bar a position is open against Hyperliquid's isolated-margin
@@ -110,6 +124,9 @@ class Params:
     atr_cancel_frac: float = 1.0       # cancel a resting entry beyond this many ATR from mid
     tick_minutes: int = 15             # one decision per 15m bar (the loop until 2026-10-25) or per
                                        # 1h bar (60: the hourly loop the operator switched to that day)
+    stop_mode: str = "fixed"           # fixed | breakeven | trail (see "Moving the stop")
+    stop_trigger_r: float = 1.0        # R in favour before a breakeven/trail stop arms
+    trail_atr: float = 1.0             # trail distance in ATR14 (stop_mode "trail")
 
 
 # ── outputs ──────────────────────────────────────────────────────────────
@@ -133,6 +150,8 @@ class Trade:
     risk_usd: float = 0.0                         # |entry-stop| * initial size, at open
     r_multiple: Optional[float] = None
     added: bool = False                           # a top-up filled during this trade
+    orig_stop_px: Optional[float] = None          # the stop at the fill, before any move
+    stop_moved: bool = False                      # a breakeven/trail move tightened the stop
 
 
 @dataclass
@@ -178,6 +197,10 @@ class _Position:
     funding_usd: float = 0.0
     risk_usd: float = 0.0
     added: bool = False
+    orig_stop_px: float = 0.0
+    best_close: Optional[float] = None
+    armed: bool = False
+    stop_moved: bool = False
 
 
 def _levels(closed_1h: Sequence[Candle]) -> Optional[Dict[str, Any]]:
@@ -213,7 +236,38 @@ def _full_size_notional(equity: float, params: Params) -> float:
 def _open_position(resting: _Resting, fill_px: float, t: int, params: Params) -> _Position:
     risk_usd = abs(fill_px - resting.stop_px)
     return _Position(side=resting.side, size=0.0, avg_entry=fill_px, stop_px=resting.stop_px,
-                     target_px=resting.target_px, opened_at=t, risk_usd=risk_usd)
+                     target_px=resting.target_px, opened_at=t, risk_usd=risk_usd,
+                     orig_stop_px=resting.stop_px)
+
+
+def _manage_stop(pos: _Position, bar: Candle, atr14: Optional[float], params: Params) -> None:
+    """Tighten the stop after `bar` closed, per `params.stop_mode`. Never
+    widens. Pure on its inputs; mutates `pos`."""
+    if params.stop_mode == "fixed" or pos.risk_usd <= 0:
+        return
+    is_long = pos.side == "long"
+    sign = 1.0 if is_long else -1.0
+    pos.best_close = bar.c if pos.best_close is None else (
+        max(pos.best_close, bar.c) if is_long else min(pos.best_close, bar.c))
+    if not pos.armed:
+        excursion = (bar.h - pos.avg_entry) if is_long else (pos.avg_entry - bar.l)
+        if excursion + 1e-12 >= params.stop_trigger_r * pos.risk_usd:
+            pos.armed = True
+    if not pos.armed:
+        return
+    if params.stop_mode == "breakeven":
+        fees = params.maker_fee + params.taker_fee
+        new_stop = pos.avg_entry * (1.0 + sign * fees)
+    elif params.stop_mode == "trail":
+        if not atr14:
+            return
+        new_stop = pos.best_close - sign * params.trail_atr * atr14
+    else:
+        raise ValueError(f"unknown stop_mode {params.stop_mode!r}")
+    tighter = new_stop > pos.stop_px + 1e-12 if is_long else new_stop < pos.stop_px - 1e-12
+    if tighter:
+        pos.stop_px = new_stop
+        pos.stop_moved = True
 
 
 def _close_trade(pos: _Position, exit_px: float, t: int, reason: str, fee_rate: float,
@@ -233,7 +287,8 @@ def _close_trade(pos: _Position, exit_px: float, t: int, reason: str, fee_rate: 
                 stop_px=pos.stop_px, target_px=pos.target_px, exit_time=t, exit_px=exit_px,
                 exit_reason=reason, gross_pnl_usd=gross, fees_usd=fees, exit_fee_usd=exit_fee,
                 funding_usd=pos.funding_usd, net_pnl_usd=net, risk_usd=risk,
-                r_multiple=(net / risk) if risk > 1e-12 else None, added=pos.added)
+                r_multiple=(net / risk) if risk > 1e-12 else None, added=pos.added,
+                orig_stop_px=pos.orig_stop_px, stop_moved=pos.stop_moved)
 
 
 def _funding_rate_at(funding_sorted: Sequence[Tuple[int, float]], t: int) -> Optional[float]:
@@ -352,7 +407,11 @@ def simulate(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], direct
             target_hit = bar.h >= position.target_px if is_long else bar.l <= position.target_px
             if stop_hit:
                 side_sign = 1.0 if is_long else -1.0
-                exit_px = position.stop_px * (1.0 - side_sign * params.slippage)
+                trigger_px = position.stop_px
+                if position.stop_moved:
+                    # a moved stop the bar opened through fills at the open
+                    trigger_px = min(trigger_px, bar.o) if is_long else max(trigger_px, bar.o)
+                exit_px = trigger_px * (1.0 - side_sign * params.slippage)
                 trade = _close_trade(position, exit_px, t, "stop", params.taker_fee, initial_size)
                 equity += trade.gross_pnl_usd - trade.exit_fee_usd
                 run.trades.append(trade)
@@ -404,6 +463,7 @@ def simulate(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], direct
                                 position.size = total
                                 position.added = True
                             resting_add = None
+                    _manage_stop(position, bar, lv["atr14"] if lv else None, params)
 
         # 5. new entry evaluation when flat
         if position is None and resting is None:

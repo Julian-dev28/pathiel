@@ -63,6 +63,17 @@ SWEEP_SLIPPAGE = (0.0002, 0.0005)
 SWEEP_LEVERAGE = (10.0, 20.0)
 TICK_MINUTES = (15, 60)             # 15m: the loop until 2026-10-25; 60: the hourly loop since
 
+# Moving the stop (operator, 2026-10-28: "we tested that its not more
+# profitable right?" -- it had not been). Each runs on the 15m clock with
+# every other rule unchanged; "fixed" is the live rule.
+STOP_VARIANTS: Tuple[Tuple[str, Dict[str, Any]], ...] = (
+    ("fixed", {}),
+    ("be_1r", {"stop_mode": "breakeven", "stop_trigger_r": 1.0}),
+    ("be_2r", {"stop_mode": "breakeven", "stop_trigger_r": 2.0}),
+    ("trail_1atr", {"stop_mode": "trail", "stop_trigger_r": 1.0, "trail_atr": 1.0}),
+    ("trail_2atr", {"stop_mode": "trail", "stop_trigger_r": 1.0, "trail_atr": 2.0}),
+)
+
 
 # ── direction series builders ───────────────────────────────────────────────
 
@@ -167,6 +178,41 @@ def aggregate(name: str, run: Run) -> Dict[str, Any]:
         "open_position_at_end": run.open_position_at_end,
         "params": asdict(run.params) if run.params else None,
     }
+
+
+def cut_short(trades: Sequence[Trade], candles_15m: Sequence[Candle]) -> int:
+    """How many trades a MOVED stop closed that would have gone on to the
+    original target: after the exit, price reached the target before the
+    original stop (a bar touching both counts as the stop first, the sim's
+    own conservative intrabar read). Trades still short of either when the
+    data ends are not counted."""
+    bars = sorted(candles_15m, key=lambda c: c.t)
+    n = 0
+    for tr in trades:
+        if tr.exit_reason != "stop" or not tr.stop_moved or tr.exit_time is None or tr.orig_stop_px is None:
+            continue
+        long = tr.side == "long"
+        for b in bars:
+            if b.t <= tr.exit_time:
+                continue
+            if (b.l <= tr.orig_stop_px) if long else (b.h >= tr.orig_stop_px):
+                break
+            if (b.h >= tr.target_px) if long else (b.l <= tr.target_px):
+                n += 1
+                break
+    return n
+
+
+def stop_variant_row(series: str, variant: str, run: Run, candles_15m: Sequence[Candle]) -> Dict[str, Any]:
+    """One row of the moving-the-stop table: the usual aggregate plus total
+    R, the trades whose stop moved, and the winners a moved stop cut short."""
+    row = aggregate(f"{series}_{variant}", run)
+    r_values = [t.r_multiple for t in run.trades if t.r_multiple is not None]
+    row.update(series=series, variant=variant,
+               total_r=sum(r_values) if r_values else 0.0,
+               n_stop_moved=sum(1 for t in run.trades if t.stop_moved),
+               cut_short=cut_short(run.trades, candles_15m))
+    return row
 
 
 # ── calibration against the live log (plan section 6 / step 4) ─────────────
@@ -342,6 +388,17 @@ def main(argv: Optional[List[str]] = None) -> int:
                         rep.update(side=side, stop_buffer=sb, slippage=sl, leverage=lev, tick_minutes=tick)
                         sweep_rows.append(rep)
 
+    # Moving the stop: every variant on every direction series, 15m clock.
+    stop_series = [("always_long", always_direction("long")), ("always_short", always_direction("short")),
+                   ("daily_sign", daily_sign_at)]
+    if theses:
+        stop_series.insert(0, ("journaled", journaled_direction(theses)))
+    stop_rows: List[Dict[str, Any]] = []
+    for series, direction_at in stop_series:
+        for variant, kw in STOP_VARIANTS:
+            run = simulate(c15_window, c1h_window, direction_at, Params(tick_minutes=15, **kw), funding)
+            stop_rows.append(stop_variant_row(series, variant, run, c15_window))
+
     calibration = None
     if not args.no_calibration:
         log_rows = parse_progress_log(args.progress_log)
@@ -358,12 +415,14 @@ def main(argv: Optional[List[str]] = None) -> int:
         "window_end": datetime.fromtimestamp(now_ms / 1000, tz=timezone.utc).isoformat(),
         "daily_sign_days_with_signal": n_signal_days, "daily_sign_days_without_signal": n_no_signal_days,
         "n_theses": len(theses), "runs": rows, "sweep": sweep_rows, "calibration": calibration,
+        "stop_variants": stop_rows,
     }
     report_path = os.path.join(args.out_dir, "report.json")
     with open(report_path, "w") as fh:
         json.dump(report, fh, indent=2, default=str)
 
     _print_table(rows)
+    _print_stop_table(stop_rows)
     print(f"\nreport: {report_path}")
     print(f"trades CSVs: {args.out_dir}/trades_<run>.csv")
 
@@ -388,6 +447,17 @@ def _print_table(rows: List[Dict[str, Any]]) -> None:
         fill = f"{r['fill_rate']:.0%}" if r.get("fill_rate") is not None else "n/a"
         print(f"{r['name']:<14} {r['n_trades']:>7} {win:>6} {exp_r:>7} {dd:>7} "
              f"{'YES' if r.get('liquidated') else 'no':>4} {fill:>6}")
+
+
+def _print_stop_table(rows: List[Dict[str, Any]]) -> None:
+    print(f"\n{'series':<13} {'stop':<11} {'trades':>6} {'win%':>5} {'avgR':>6} {'totR':>6} "
+          f"{'end$':>8} {'maxDD':>6} {'moved':>5} {'cut':>4}")
+    for r in rows:
+        win = f"{r['win_rate']:.0%}" if r.get("win_rate") is not None else "n/a"
+        avg = f"{r['avg_r']:+.2f}" if r.get("avg_r") is not None else "n/a"
+        print(f"{r['series']:<13} {r['variant']:<11} {r['n_trades']:>6} {win:>5} {avg:>6} "
+              f"{r['total_r']:>+6.2f} {r['final_equity']:>8.2f} {r['max_drawdown_pct']:>6.1%} "
+              f"{r['n_stop_moved']:>5} {r['cut_short']:>4}")
 
 
 if __name__ == "__main__":

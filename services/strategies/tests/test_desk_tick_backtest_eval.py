@@ -155,3 +155,40 @@ def test_parse_progress_log_parses_known_lines_and_skips_others(tmp_path):
 
 def test_parse_progress_log_missing_file_returns_empty():
     assert E.parse_progress_log("/does/not/exist.log") == []
+
+
+# ── moving the stop (2026-10-28): cut_short() and the variant row ───────────
+
+def _bar(t, h, l):
+    return Candle(t=t, o=(h + l) / 2, h=h, l=l, c=(h + l) / 2, v=1.0)
+
+
+def test_cut_short_counts_only_moved_stops_that_then_reach_the_target_first():
+    moved = _trade(exit_reason="stop", stop_moved=True, orig_stop_px=95.0, target_px=110.0,
+                   exit_time=HOUR_MS, r_multiple=0.0)
+    bars_target_first = [_bar(HOUR_MS, 101, 99),            # the exit bar itself is ignored
+                         _bar(2 * HOUR_MS, 104, 97),
+                         _bar(3 * HOUR_MS, 111, 103)]        # target 110 before stop 95
+    assert E.cut_short([moved], bars_target_first) == 1
+    bars_stop_first = [_bar(2 * HOUR_MS, 104, 94), _bar(3 * HOUR_MS, 111, 103)]
+    assert E.cut_short([moved], bars_stop_first) == 0
+    both_in_one_bar = [_bar(2 * HOUR_MS, 111, 94)]           # conservative: stop first
+    assert E.cut_short([moved], both_in_one_bar) == 0
+    never = [_bar(2 * HOUR_MS, 104, 97)]                     # data ends short of both
+    assert E.cut_short([moved], never) == 0
+    fixed_stop = _trade(exit_reason="stop", stop_moved=False, orig_stop_px=95.0, exit_time=HOUR_MS)
+    assert E.cut_short([fixed_stop], bars_target_first) == 0
+    short = _trade(side="short", exit_reason="stop", stop_moved=True, orig_stop_px=105.0,
+                   target_px=90.0, exit_time=HOUR_MS)
+    assert E.cut_short([short], [_bar(2 * HOUR_MS, 103, 89)]) == 1
+
+
+def test_stop_variant_row_adds_total_r_moved_and_cut_short():
+    a = _trade(r_multiple=2.0)
+    b = _trade(exit_reason="stop", stop_moved=True, orig_stop_px=95.0, r_multiple=0.0,
+               net_pnl_usd=0.0, exit_time=HOUR_MS)
+    run = Run(trades=[a, b], final_equity=70.0, params=Params(stop_mode="breakeven"))
+    row = E.stop_variant_row("journaled", "be_1r", run, [_bar(2 * HOUR_MS, 111, 99)])
+    assert row["series"] == "journaled" and row["variant"] == "be_1r"
+    assert row["total_r"] == pytest.approx(2.0) and row["n_stop_moved"] == 1 and row["cut_short"] == 1
+    assert [v for v, _ in E.STOP_VARIANTS] == ["fixed", "be_1r", "be_2r", "trail_1atr", "trail_2atr"]
