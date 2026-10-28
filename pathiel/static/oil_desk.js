@@ -369,14 +369,17 @@ function renderWalletAccount(account, snapshot) {
     return `<div class="card" style="margin-bottom:14px">${head}${body}${strandedNote}${restingBlock}${stale}</div>`;
   }
 
-  // uPnL and its return on margin, the way Hyperliquid prints it:
-  // "+$21.74 (+30.4%)". The % is on the margin, so it is the price move
-  // times leverage, not the 0.3% the price itself moved (operator 2026-10-28).
-  const fmtPnl = (usd, roe) => {
-    if (usd == null || !isFinite(usd)) return '—';
-    const money = (usd >= 0 ? '+$' : '-$') + Math.abs(usd).toFixed(2);
-    return roe == null || !isFinite(roe) ? money : `${money} (${roe >= 0 ? '+' : ''}${Number(roe).toFixed(1)}%)`;
-  };
+  // uPnL in dollars and ROE % in its own column, the way Hyperliquid
+  // prints "+$21.74 (+30.4%)": ROE is the return on the margin, i.e. the
+  // price move times leverage, not the 0.3% the price itself moved
+  // (operator 2026-10-28). roe_pct comes from the venue's returnOnEquity; a
+  // server that does not send it yet gets price move x leverage here.
+  const fmtUsd = usd => (usd == null || !isFinite(usd)) ? '—'
+    : (usd >= 0 ? '+$' : '-$') + Math.abs(usd).toFixed(2);
+  const roeOf = p => p.roe_pct != null ? Number(p.roe_pct)
+    : (p.pnl_pct != null && p.leverage != null ? Number(p.pnl_pct) * Number(p.leverage) : null);
+  const fmtRoe = roe => (roe == null || !isFinite(roe)) ? '—' : `${roe >= 0 ? '+' : ''}${roe.toFixed(1)}%`;
+  const tone = v => v > 0 ? 'pos' : v < 0 ? 'neg' : '';
   const rows = positions.map(p => `
     <tr>
       <td>${esc(p.dex)}</td>
@@ -385,7 +388,8 @@ function renderWalletAccount(account, snapshot) {
       <td class="num">${esc(p.size)}</td>
       <td class="num">${fmtPrice(p.entry_px)}</td>
       <td class="num">${fmtPrice(p.mark_px)}</td>
-      <td class="num ${p.upnl_usd > 0 ? 'pos' : p.upnl_usd < 0 ? 'neg' : ''}">${fmtPnl(p.upnl_usd, p.roe_pct)}</td>
+      <td class="num ${tone(p.upnl_usd)}">${fmtUsd(p.upnl_usd)}</td>
+      <td class="num ${tone(roeOf(p))}">${fmtRoe(roeOf(p))}</td>
       <td class="num">${p.r_now != null ? (p.r_now > 0 ? '+' : '') + p.r_now.toFixed(2) + 'R' : '—'}</td>
       <td class="num">${p.leverage != null ? p.leverage + 'x' : '—'}</td>
       <td class="num">${p.margin_usd != null ? fmtMoney(p.margin_usd) : '—'}</td>
@@ -398,7 +402,7 @@ function renderWalletAccount(account, snapshot) {
 
   return `<div class="card" style="margin-bottom:14px">${head}${marginLine}${failed}${stale}
     <div class="scroll-x"><table>
-      <thead><tr><th>Dex</th><th>Coin</th><th>Side</th><th class="num">Size</th><th class="num">Entry</th><th class="num">Mark</th><th class="num">P&amp;L</th><th class="num">R now</th>
+      <thead><tr><th>Dex</th><th>Coin</th><th>Side</th><th class="num">Size</th><th class="num">Entry</th><th class="num">Mark</th><th class="num">P&amp;L</th><th class="num">ROE %</th><th class="num">R now</th>
         <th class="num">Lev</th><th class="num">Margin</th><th class="num">Liq</th><th class="num">Dist</th>
         <th>Stop</th><th>Target</th><th></th></tr></thead>
       <tbody>${rows}</tbody>

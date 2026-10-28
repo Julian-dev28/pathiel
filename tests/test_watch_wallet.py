@@ -96,5 +96,8 @@ def test_pnl_percent_is_on_the_margin_like_hyperliquids_frontend():
 
 def test_the_wallets_table_prints_pnl_as_dollars_and_return_on_margin():
     js = (Path(__file__).resolve().parents[1] / "pathiel" / "static" / "oil_desk.js").read_text()
-    assert "fmtPnl(p.upnl_usd, p.roe_pct)" in js
-    assert '<th class="num">P&amp;L</th>' in js and '<th class="num">uPnL</th>' not in js
+    assert "fmtUsd(p.upnl_usd)" in js and "fmtRoe(roeOf(p))" in js
+    assert '<th class="num">P&amp;L</th><th class="num">ROE %</th>' in js
+    assert '<th class="num">uPnL</th>' not in js
+    # an older server without roe_pct still shows ROE: price move x leverage
+    assert "Number(p.pnl_pct) * Number(p.leverage)" in js
