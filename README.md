@@ -111,15 +111,36 @@ the rest:
 - `check_leverage` is the 20x rule: the stop must sit inside half the
   distance to liquidation at the requested leverage, or the tool refuses.
 - `check_levels` refuses any bracket paying under 1.5R to its target.
-- Never add to an open position. The next bracket after a close sizes
-  full-port again; a filled position is left alone until its stop or
-  target fires.
+- **The whole equity, every position** (operator, 2026-10-27). Sizing holds
+  nothing back but the opening taker fee: margin + fee = equity
+  (`services/risk/derive.py::margin_after_open_fee`, 4.5 bps, the account's
+  published taker rate; at 20x that leaves 0.9% of equity, the fee itself).
+  There was a 10% floor until 2026-10-26 and a 2% fee reserve until 10-27.
+- **Top-ups** (`place_bracket ... add: true`): with a position open, one add
+  on the same side, at a stop no wider than the resting one, sized as
+  full-port minus what is held and capped by the free margin. The brief's
+  "Your size" sizes at the same leverage `place_bracket` uses (the profile's
+  20x, not the thesis's own suggestion), so the tick's top-up rule compares
+  like with like.
+- **One stop and one target per position.** Each fill gets its own stop and
+  target; `bracket.consolidate_protection` folds stops (and targets) at one
+  price into a single order for the whole size, placing the new order
+  before cancelling the old ones so the position is never unprotected.
+  Targets at different prices are a scale-out and stay. `bracket_sweep`
+  runs it on every covered position, a market top-up right after its fill.
+- **Stops never move.** No breakeven, no trail: backtested 2026-10-28, the
+  fixed stop made +6.03R against +1.97R for the best moving rule
+  (`docs/overhaul/BACKTEST_RESULTS_2026-10-25.md`, "moving the stop").
 
 ## The trading loop
 
-`.claude/skills/desk-tick/SKILL.md` is the loop, run on a cron per desk
-(`/loop 15m /desk-tick oil`; metals, ai and gas every 30 minutes). Each tick,
-in order:
+`.claude/skills/desk-tick/SKILL.md` is the loop, run on a 15-minute cron
+(`/loop 15m /desk-tick oil`). Oil is the only active desk since 2026-10-26
+(`active_desks: ["oil"]`); the other desks' ticks and trading are off. The
+edge is the thesis, not the market: run without theses, the same entry
+rules lost on Brent, gold, BTC and the S&P 500 at any leverage
+(`docs/overhaul/BACKTEST_RESULTS_2026-10-25.md`, "other markets"). Each
+tick, in order:
 
 1. **Slot check** (`scripts/desk_slot.py`): if another desk's coin holds the
    account's one slot, log and stop. No brief, no levels, no MCP calls.
@@ -127,7 +148,8 @@ in order:
    the brief says the thesis is stale, a headline moved the market past
    1.5%, or the target already hit.
 3. **`bracket_sweep`**: cancel a stranded sibling order, confirm an open
-   position is covered by a stop.
+   position is covered by a stop, and fold one-per-fill stops and targets
+   into one pair.
 4. **Levels** (`scripts/oil_levels.py`): mid, last closed 1h candle, 8h/24h/48h
    range, ATR14, 15m micro range; `--check ENTRY STOP TP --lev 20` judges one
    level against the R gate and the 20x line.
@@ -203,8 +225,8 @@ read the same tools.
 | `accounts` | Registered accounts, which is active |
 | `risk_limits` | Positions at once, $ per stop-out, daily pause, max leverage |
 | `risk_size_trade` | Size one trade for this account: size, margin, $ at risk, payoff, liquidation |
-| `place_bracket` | **Live money.** One entry with exact stop and target, refuses under 1.5R or a taken slot |
-| `bracket_sweep` | **Live money.** Cancel a stranded sibling order, confirm stop coverage |
+| `place_bracket` | **Live money.** One entry with exact stop and target, sized to the whole equity less the opening fee, refuses under 1.5R or a taken slot; `add: true` tops an open position up to full size |
+| `bracket_sweep` | **Live money.** Cancel a stranded sibling order, confirm stop coverage, fold one-per-fill stops/targets at one price into a single pair |
 | `close_position` | **Live money.** Close a coin through the reduce-only close helper |
 | `set_leverage` | **Live money.** Set leverage, keeping the position's own margin type |
 | `cancel_order` | **Live money.** Cancel one resting order by id |
@@ -223,7 +245,7 @@ visitor's account; `connected_wallets` says so in its own response
 
 | Path | Page | What it shows |
 |---|---|---|
-| `/` | Desk | The active desk's call as a card (from `quick_fields`), a banner when the call drifts from the open position, one row per wallet with entry/mark/P&L/R/leverage/margin/liquidation/stop/target (a flat watch-only wallet gets no row), the wallet's resting bracket entries with their stop and target (an unfilled entry holds the account's one slot, so it is shown even when there is no position), Levels, headlines and catalysts, the loop log, the track record |
+| `/` | Desk | The active desk's call as a card (from `quick_fields`), a banner when the call drifts from the open position, one row per wallet with entry/mark/P&L in dollars/ROE % (return on margin, as Hyperliquid prints it)/R/leverage/margin/liquidation/stop/target (a flat watch-only wallet gets no row), a 20x box that shows the open position's own entry, leverage, venue liquidation and stop once one is open (`pathiel/static/position_line.js`), the call's plan otherwise, the wallet's resting bracket entries with their stop and target (an unfilled entry holds the account's one slot, so it is shown even when there is no position), Levels, headlines and catalysts, the loop log, the track record |
 | `/desk/{id}` | Thesis | The full reading room for one desk: the call, a leverage picker (5/10/20x, same 20x line as `/`), scenarios, bull vs bear, what changes the call, desk school, track record, make-your-own-call |
 | `/account` | Account | Connect or switch a Hyperliquid account, risk preset with a live preview |
 

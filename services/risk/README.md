@@ -90,7 +90,9 @@ Two shapes — `BookSpec` can model either, though the one entry path left
 - **Risk-scaled** (the live roster today — `stop_pct` set): `notional =
   risk_budget_usd / stop_distance`, then capped by (1) the profile's
   `max_leverage`, (2) a per-coin leverage cap, and (3) a **margin share** —
-  equity's usable margin split across `max_open_positions`, so one entry
+  equity's usable margin (`margin_after_open_fee`: all of it less the
+  opening taker fee, `VenueRules.taker_fee_rate`; no reserve since
+  2026-10-27) split across `max_open_positions`, so one entry
   can't be sized as if it owned the whole account when others might be
   open too. If the result is under Hyperliquid's minimum, it's bumped UP
   to exactly that minimum only when the profile allows it AND the
