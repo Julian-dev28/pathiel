@@ -39,6 +39,7 @@ SKILL_RULES = (
 AGENT_RULES = (
     ("`python3 scripts/desk_slot.py", f"`{PY} scripts/desk_slot.py", 1),
     ("`python3 scripts/oil_levels.py", f"`{PY} scripts/oil_levels.py", 2),
+    ("`python3 scripts/thesis_due.py", f"`{PY} scripts/thesis_due.py", 1),
     ("Work from the repo root: the working\ndirectory you are given is the pathiel checkout.",
      "The scripts below run through the plugin's own Python from the plugin\nroot; no checkout is needed.", 1),
     ("The only\n   wallet this loop tracks is pathiel's own,\n"

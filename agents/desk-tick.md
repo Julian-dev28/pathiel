@@ -38,11 +38,13 @@ ToolSearch call: `select:mcp__pathiel__desk_brief,mcp__pathiel__bracket_sweep,mc
    instrument is COIN for the rest of the tick (oil: xyz:BRENTOIL, metals:
    xyz:GOLD or xyz:SILVER, ai: whichever equity the call names, gas:
    xyz:NATGAS). The card shows "Pays X.XR"; a call under 1.5R never trades.
-   Call `desk_refresh` only when the brief says the thesis is stale or
-   expired, a headline moved the market more than 1.5%, or the thesis's
-   target has already been hit (the card would otherwise keep describing
-   a trade that is over); at most once an hour per desk (about one dollar
-   a rewrite with the current model).
+   **Rewrite check:** `"${CLAUDE_PLUGIN_ROOT}/scripts/pathiel-py" scripts/thesis_due.py --desk DESK`. Call
+   `desk_refresh {desk: DESK}` only when it says `"due": true`, and put its
+   first reason in your report. It is due once a day, after an API, EIA or
+   OPEC release the thesis listed, after a position on the desk closed, and
+   when the mid is 1.5% or more from the thesis entry; never inside an hour
+   of the last thesis (operator, 2026-10-28; about one dollar a rewrite on
+   Fable 5.1). After a rewrite, read the brief again.
 2. **Housekeeping.** `bracket_sweep {coin: COIN}`. Cancels the sibling left
    after a stop or target fired; reports a resting entry with its attached
    stop and target; says whether an open position is covered. "NOT FULLY
@@ -60,8 +62,15 @@ ToolSearch call: `select:mcp__pathiel__desk_brief,mcp__pathiel__bracket_sweep,mc
    - **In a position on COIN:** HOLD. `close_position` only if the thesis
      invalidation triggered on a CLOSED hourly candle, or a headline from
      the brief's `what_changes_my_mind` landed. After any close, sweep again.
-     **Top-up (operator, 2026-10-24: "add to position when possible"):** if
-     the position is under the full-port size (the brief's "Your size" is
+     **A newer thesis that is flat or WAIT does not close the position**
+     (2026-10-28: a rewrite went flat at 112.24 because no NEW long paid
+     1.5R there): the position keeps its own resting stop and target, and
+     its invalidation is the 1h close below that stop. Close it on a newer
+     thesis only when that thesis calls the OPPOSITE side and its
+     invalidation of the old view has printed on a closed hourly candle.
+     **Top-up (operator, 2026-10-24: "add to position when possible"):** only
+     when the current thesis is on the position's side (a flat or WAIT thesis
+     adds nothing), and if the position is under the full-port size (the brief's "Your size" is
      bigger than the position) and nothing is resting on COIN, rest ONE
      top-up at the thesis's own entry level with `place_bracket {coin,
      entry_px, stop_px, tp_px, add: true}`: the stop is the position's

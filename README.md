@@ -150,9 +150,12 @@ tick, in order:
 
 1. **Slot check** (`scripts/desk_slot.py`): if another desk's coin holds the
    account's one slot, log and stop. No brief, no levels, no MCP calls.
-2. **`desk_brief`** (quick mode): the current call. `desk_refresh` only when
-   the brief says the thesis is stale, a headline moved the market past
-   1.5%, or the target already hit.
+2. **`desk_brief`** (quick mode): the current call. `scripts/thesis_due.py`
+   says when to `desk_refresh` (a new thesis on Fable 5.1, about $1): once a
+   day, after an API, EIA or OPEC release the thesis listed, after a position
+   closes, and when the mid is 1.5% or more from the thesis entry; never
+   inside an hour of the last one. A flat or WAIT thesis never closes an open
+   position; that position keeps its own stop and target.
 3. **`bracket_sweep`**: cancel a stranded sibling order, confirm an open
    position is covered by a stop, and fold one-per-fill stops and targets
    into one pair.
