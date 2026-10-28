@@ -115,6 +115,7 @@ python-service/test_tiered_kelly.py
 .scanner-config.json
 
 ONE_PAGER.md
+ROI.md
 THREAD.md
 DISTRIBUTE.md
 
