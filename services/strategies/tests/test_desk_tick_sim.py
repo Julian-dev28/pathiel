@@ -449,3 +449,84 @@ def test_an_unknown_stop_mode_is_an_error_not_a_silent_fixed_stop():
     c15, c1h = _stop_scenario()
     with pytest.raises(ValueError):
         simulate(c15, c1h, const_direction("long"), _p(stop_mode="moon"))
+
+
+# ── target execution: touch (default) vs market vs limit (2026-10-28) ───────
+# Operator: "actually test it first before u do that" about moving the live
+# target from a Take Profit Market trigger to a resting limit. Same pullback
+# as test_pullback_fills_and_hits_target: rest at 99, fill, target 101.
+
+def _target_scenario(bar2_high: float, bar3=None):
+    c1h = _warmup_1h()
+    h24 = 24 * HOUR_MS
+    c15 = [
+        _c15(h24 + 0 * FIFTEEN_MS, 99.3, 99.3, 99.3, 99.3),
+        _c15(h24 + 1 * FIFTEEN_MS, 99.2, 99.3, 98.9, 99.0),        # fills at 99
+        _c15(h24 + 2 * FIFTEEN_MS, 99.5, bar2_high, 99.4, 100.8),
+    ]
+    if bar3:
+        c15.append(_c15(h24 + 3 * FIFTEEN_MS, *bar3))
+    return c15, c1h
+
+
+def test_a_limit_target_fills_on_a_trade_through_at_its_own_price_and_maker_fee():
+    c15, c1h = _target_scenario(bar2_high=101.01)               # one tick through 101
+    run = simulate(c15, c1h, const_direction("long"), _p(target_mode="limit", maker_fee=0.00015))
+    t = run.trades[0]
+    assert t.exit_reason == "target" and t.exit_px == pytest.approx(101.0)
+    assert t.exit_fee_usd == pytest.approx(0.00015 * 101.0 * t.size)
+    assert t.target_missed is False
+
+
+def test_a_bare_touch_does_not_fill_a_limit_target_but_does_fill_the_default():
+    c15, c1h = _target_scenario(bar2_high=101.0)                # touches 101, no trade-through
+    limit = simulate(c15, c1h, const_direction("long"), _p(target_mode="limit"))
+    assert limit.trades == [] and limit.open_position_at_end is not None
+    touch = simulate(c15, c1h, const_direction("long"), _p())    # the default is unchanged
+    assert touch.trades[0].exit_reason == "target"
+
+
+def test_a_touch_that_reverses_to_the_stop_takes_the_stop_and_counts_as_missed():
+    c15, c1h = _target_scenario(bar2_high=101.0, bar3=(100.0, 100.1, 98.5, 98.6))  # back through 98.75
+    run = simulate(c15, c1h, const_direction("long"), _p(target_mode="limit"))
+    t = run.trades[0]
+    assert t.exit_reason == "stop" and t.target_missed is True
+
+
+def test_a_market_target_pays_the_taker_fee_and_the_exit_slip():
+    c15, c1h = _target_scenario(bar2_high=101.0)
+    run = simulate(c15, c1h, const_direction("long"),
+                   _p(target_mode="market", taker_fee=0.00045, slippage=0.0003))
+    t = run.trades[0]
+    assert t.exit_reason == "target" and t.exit_px == pytest.approx(101.0 * (1 - 0.0003))
+    assert t.exit_fee_usd == pytest.approx(0.00045 * t.exit_px * t.size)
+
+
+def test_an_unknown_target_mode_is_an_error():
+    c15, c1h = _target_scenario(bar2_high=101.01)
+    with pytest.raises(ValueError, match="target_mode"):
+        simulate(c15, c1h, const_direction("long"), _p(target_mode="moon"))
+
+
+def test_the_exit_slip_curve_is_the_measured_book():
+    from services.strategies.backtest.desk_tick_sim import exit_slip_bps, _market_exit_slip
+    assert exit_slip_bps(0) == pytest.approx(0.9)
+    assert exit_slip_bps(1_000_000) == pytest.approx(3.8)
+    assert exit_slip_bps(750_000) == pytest.approx(3.3)            # linear between points
+    assert exit_slip_bps(8_000_000) == pytest.approx(34.1 + 7.9)   # last slope (7.9 bps per $1M) extended
+    # off: the flat slippage; on: the larger of it and the curve
+    assert _market_exit_slip(Params(slippage=0.0003), 5_000_000) == pytest.approx(0.0003)
+    assert _market_exit_slip(Params(slippage=0.0003, size_slippage=True), 100_000) == pytest.approx(0.0003)
+    assert _market_exit_slip(Params(slippage=0.0003, size_slippage=True), 5_000_000) == pytest.approx(0.00217)
+
+
+def test_size_slippage_makes_a_big_stop_fill_worse_and_a_limit_target_pays_none():
+    c15, c1h = _target_scenario(bar2_high=100.5, bar3=(100.0, 100.1, 98.5, 98.6))  # stops out
+    small = simulate(c15, c1h, const_direction("long"), _p(size_slippage=True, slippage=0.0))
+    big = simulate(c15, c1h, const_direction("long"),
+                   _p(size_slippage=True, slippage=0.0, starting_equity=500_000.0))
+    assert big.trades[0].exit_px < small.trades[0].exit_px      # $10M notional slips far more
+    c15w, c1hw = _target_scenario(bar2_high=101.01)
+    lim = simulate(c15w, c1hw, const_direction("long"),
+                   _p(target_mode="limit", size_slippage=True, starting_equity=500_000.0))
+    assert lim.trades[0].exit_px == pytest.approx(101.0)

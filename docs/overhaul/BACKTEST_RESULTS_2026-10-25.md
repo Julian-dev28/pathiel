@@ -451,3 +451,84 @@ the backtest says no market works, so nothing here supports turning on a gold, B
 index desk on the mechanics. The test would be journaled theses for that market,
 replayed the way the Brent ones are. Confidence: the controls (33 to 98 trades per run,
 two windows) are a solid negative; Brent's positive rests on 13 trades.
+
+## 2026-10-28: limit vs market target
+
+Operator, before switching the live target from a Hyperliquid "Take Profit
+Market" trigger to a resting limit: "actually test it first". Nothing live
+changed; `place_bracket` and `bracket.py` are untouched.
+
+**What the sim did until now.** It filled the target on a bare touch, at the
+exact target price, maker fee, no slippage: an ideal resting limit. The live
+order is a take-profit MARKET (taker fee plus exit slippage), so every
+backtest number above priced the winners slightly better than the live
+bracket actually exits them.
+
+`Params.target_mode` now picks one of three (default unchanged):
+
+| mode | fills when | price | fee |
+|---|---|---|---|
+| `touch` (default, the old sim) | a bar touches the target | the target | maker |
+| `market` (the live order) | a bar touches the target | target minus exit slip | taker |
+| `limit` (proposed) | a bar trades THROUGH the target by one tick (0.01) | the target | maker |
+
+A limit target touched but never traded through is counted
+(`Trade.target_missed`); if price then reverses to the stop, the trade takes
+the stop. `Params.size_slippage` prices every market exit (stops, market
+targets, invalidation and direction-flip closes) off `EXIT_SLIP_CURVE`, the
+per-side slip walked on the live Brent book that day: 0.9 bps small, 3.8 bps
+at $1M, 12.9 at $3M, 21.7 at $5M, 34.1 at $7M (max of that and the flat 3 bps
+`slippage`). Limit targets pay none. Runs below: 20x, 15m clock, size
+slippage on, compounded from each starting equity
+(`desk_tick_backtest.target_mode_rows`, report key `target_modes`).
+
+30 days (journaled theses cover the last ~10 days; the 50-day window gives
+identical journaled rows):
+
+| series | mode | start | trades | targets hit | limit missed | total R | final equity | closed only |
+|---|---|---|---|---|---|---|---|---|
+| journaled | market | $64 | 13 | 3 | - | +5.45 | $107.95 | $81.38 |
+| journaled | limit | $64 | 13 | 3 | 0 | +5.84 | $110.71 | $83.46 |
+| journaled | market | $1k | 13 | 3 | - | +5.45 | $1,686.71 | $1,271.51 |
+| journaled | limit | $1k | 13 | 3 | 0 | +5.84 | $1,729.89 | $1,304.06 |
+| journaled | market | $5k | 13 | 3 | - | +5.45 | $8,433.56 | $6,357.55 |
+| journaled | limit | $5k | 13 | 3 | 0 | +5.84 | $8,649.44 | $6,520.29 |
+| journaled | market | $20k | 13 | 3 | - | +5.41 | $33,627.24 | $25,349.55 |
+| journaled | limit | $20k | 13 | 3 | 0 | +5.80 | $34,480.05 | $25,992.43 |
+| journaled | market | $100k | 13 | 3 | - | +3.21 | $136,808.00 | $103,131.30 |
+| journaled | limit | $100k | 13 | 3 | 0 | +3.90 | $142,823.20 | $107,665.80 |
+| always long (30d) | market | $64 | 45 | 9 | - | +3.30 | $38.09 | $28.71 |
+| always long (30d) | limit | $64 | 45 | 9 | 0 | +4.43 | $41.04 | $30.94 |
+| always long (50d) | market | $64 | 77 | 14 | - | -8.92 | $6.65 | $5.01 |
+| always long (50d) | limit | $64 | 77 | 14 | 0 | -7.20 | $7.48 | $5.64 |
+
+"Final equity" marks the position still open at the window end (the journaled
+run ends long, as the live account is); "closed only" counts closed trades.
+`touch` rows equal `limit` rows in every run here, so they are left out.
+
+Read:
+
+- **The limit target never missed.** Across 26 target exits (3 journaled, 9
+  and 14 always-long) every bar that reached the target also traded at least
+  one tick through it, so the conservative limit rule filled each one.
+- **The limit is worth about 0.13R per target exit on a small account**:
+  the taker-maker fee gap (3 bps) plus the 3 bps exit slip, against a ~0.46%
+  stop. On the journaled run that is +0.39R (+5.84R vs +5.45R) and $2.76 on
+  $64. On the always-long control, with three times the target exits, it is
+  +1.13R (30 days) and +1.72R (50 days).
+- **It grows with size.** At $100k the journaled run's exits are millions
+  of notional; the limit saves 0.69R and $6,015 (+4.4% of the ending balance),
+  against 0.39R at $64.
+- **The size-aware slip mostly bites the stops**, which stay market orders in
+  every mode: the journaled run falls from +5.84R at $20k to +3.90R at $100k
+  in limit mode too.
+- **Not modelled:** queue position and depth at the target price. A
+  trade-through proves the level cleared, not that a multi-million-dollar
+  resting sell was absorbed in that bar; past about $1M of position, a limit
+  exit could fill in pieces over a few bars. The 26 exits here are a small
+  sample.
+
+Verdict: switch the target to a resting limit. It never missed here, it is
+strictly cheaper at every account size (+0.39R on the live-sized account,
++0.69R at $100k), and the stop, the exit that carries the risk, stays a
+market order.

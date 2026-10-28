@@ -52,6 +52,20 @@ flips to the opposite side while a position is open closes it the same way
 (`direction_flip`) — the one-slot rule means a reversed call cannot sit
 next to the old position.
 
+Target execution (2026-10-28)
+-----------------------------
+`Params.target_mode`: "touch" (the default, unchanged: the target fills on
+a bare touch at the target price, maker fee, no slippage, i.e. an ideal
+resting limit), "market" (the live order: Hyperliquid "Take Profit Market",
+so a touch triggers a market sell, taker fee plus exit slippage) or "limit"
+(a resting reduce-only limit at the target that fills only when a bar
+trades THROUGH it by `tick_size`, maker fee, no slippage; a bare touch does
+not fill, and a touch that reverses to the stop takes the stop).
+`Params.size_slippage` (default off) prices every market exit (stops,
+market targets, invalidation and direction-flip closes) off
+`EXIT_SLIP_CURVE`, the per-side slip measured on the live Brent book, so a
+big position's exit costs more than a small one's.
+
 Moving the stop (2026-10-28)
 ----------------------------
 `Params.stop_mode` "fixed" (the live rule: the stop never moves),
@@ -127,6 +141,37 @@ class Params:
     stop_mode: str = "fixed"           # fixed | breakeven | trail (see "Moving the stop")
     stop_trigger_r: float = 1.0        # R in favour before a breakeven/trail stop arms
     trail_atr: float = 1.0             # trail distance in ATR14 (stop_mode "trail")
+    target_mode: str = "touch"         # touch | market | limit (see "Target execution")
+    tick_size: float = 0.01            # xyz:BRENTOIL price step; a limit target needs a trade-through
+    size_slippage: bool = False        # price market exits off EXIT_SLIP_CURVE by notional
+
+
+# Per-side market-sell slippage (bps) by notional (USD), walked on the live
+# xyz:BRENTOIL book 2026-10-28 ~15:30Z (l2Book nSigFigs=5 for the top $2.2M,
+# nSigFigs=4 for the next 175 bps, $7.9M resting). Linear between points, the
+# last slope extended past $7M.
+EXIT_SLIP_CURVE: Tuple[Tuple[float, float], ...] = (
+    (0.0, 0.9), (500_000.0, 2.8), (1_000_000.0, 3.8), (2_000_000.0, 7.5), (3_000_000.0, 12.9),
+    (4_000_000.0, 16.8), (5_000_000.0, 21.7), (6_000_000.0, 26.2), (7_000_000.0, 34.1))
+
+
+def exit_slip_bps(notional_usd: float) -> float:
+    """Per-side slippage in bps for a market exit of `notional_usd`."""
+    n = max(0.0, float(notional_usd))
+    pts = EXIT_SLIP_CURVE
+    for (x0, y0), (x1, y1) in zip(pts, pts[1:]):
+        if n <= x1:
+            return y0 + (y1 - y0) * (n - x0) / (x1 - x0)
+    (x0, y0), (x1, y1) = pts[-2], pts[-1]
+    return y1 + (y1 - y0) / (x1 - x0) * (n - x1)
+
+
+def _market_exit_slip(params: "Params", notional_usd: float) -> float:
+    """Fractional slip for a market exit: the flat `slippage`, or, with
+    size_slippage on, the larger of that and the book curve at this size."""
+    if not params.size_slippage:
+        return params.slippage
+    return max(params.slippage, exit_slip_bps(notional_usd) / 1e4)
 
 
 # ── outputs ──────────────────────────────────────────────────────────────
@@ -152,6 +197,7 @@ class Trade:
     added: bool = False                           # a top-up filled during this trade
     orig_stop_px: Optional[float] = None          # the stop at the fill, before any move
     stop_moved: bool = False                      # a breakeven/trail move tightened the stop
+    target_missed: bool = False                   # limit target touched, never traded through, closed elsewhere
 
 
 @dataclass
@@ -201,6 +247,7 @@ class _Position:
     best_close: Optional[float] = None
     armed: bool = False
     stop_moved: bool = False
+    target_touched: bool = False                  # a bar touched the target without filling it (limit mode)
 
 
 def _levels(closed_1h: Sequence[Candle]) -> Optional[Dict[str, Any]]:
@@ -288,7 +335,8 @@ def _close_trade(pos: _Position, exit_px: float, t: int, reason: str, fee_rate: 
                 exit_reason=reason, gross_pnl_usd=gross, fees_usd=fees, exit_fee_usd=exit_fee,
                 funding_usd=pos.funding_usd, net_pnl_usd=net, risk_usd=risk,
                 r_multiple=(net / risk) if risk > 1e-12 else None, added=pos.added,
-                orig_stop_px=pos.orig_stop_px, stop_moved=pos.stop_moved)
+                orig_stop_px=pos.orig_stop_px, stop_moved=pos.stop_moved,
+                target_missed=pos.target_touched and reason != "target")
 
 
 def _funding_rate_at(funding_sorted: Sequence[Tuple[int, float]], t: int) -> Optional[float]:
@@ -309,6 +357,8 @@ def _funding_rate_at(funding_sorted: Sequence[Tuple[int, float]], t: int) -> Opt
 def simulate(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], direction_at: DirectionAt,
             params: Optional[Params] = None, funding_history: Optional[Sequence[Dict[str, Any]]] = None) -> Run:
     params = params or Params()
+    if params.target_mode not in ("touch", "market", "limit"):
+        raise ValueError(f"unknown target_mode {params.target_mode!r}")
     c15 = sorted(candles_15m, key=lambda c: c.t)
     c1h = sorted(candles_1h, key=lambda c: c.t)
     funding_sorted: List[Tuple[int, float]] = sorted(
@@ -357,7 +407,11 @@ def simulate(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], direct
             if position is not None and d is not None and d.invalidation_px is not None:
                 breached = (c1.c <= d.invalidation_px) if position.side == "long" else (c1.c >= d.invalidation_px)
                 if breached:
-                    trade = _close_trade(position, c1.c, close_time, "invalidation", params.taker_fee, initial_size)
+                    inv_px = c1.c
+                    if params.size_slippage:
+                        sgn = 1.0 if position.side == "long" else -1.0
+                        inv_px = c1.c * (1.0 - sgn * _market_exit_slip(params, position.size * c1.c))
+                    trade = _close_trade(position, inv_px, close_time, "invalidation", params.taker_fee, initial_size)
                     equity += trade.gross_pnl_usd - trade.exit_fee_usd
                     run.trades.append(trade)
                     run.gross_pnl_usd += trade.gross_pnl_usd
@@ -369,7 +423,11 @@ def simulate(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], direct
         if position is not None:
             d = direction_at(t)
             if d is not None and d.side != position.side:
-                trade = _close_trade(position, mid, t, "direction_flip", params.taker_fee, initial_size)
+                flip_px = mid
+                if params.size_slippage:
+                    sgn = 1.0 if position.side == "long" else -1.0
+                    flip_px = mid * (1.0 - sgn * _market_exit_slip(params, position.size * mid))
+                trade = _close_trade(position, flip_px, t, "direction_flip", params.taker_fee, initial_size)
                 equity += trade.gross_pnl_usd - trade.exit_fee_usd
                 run.trades.append(trade)
                 run.gross_pnl_usd += trade.gross_pnl_usd
@@ -404,14 +462,23 @@ def simulate(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], direct
         if position is not None and position.opened_at < t:
             is_long = position.side == "long"
             stop_hit = bar.l <= position.stop_px if is_long else bar.h >= position.stop_px
-            target_hit = bar.h >= position.target_px if is_long else bar.l <= position.target_px
+            target_touch = bar.h >= position.target_px if is_long else bar.l <= position.target_px
+            if params.target_mode == "limit":
+                # a resting limit fills only when price trades THROUGH it
+                through = (bar.h >= position.target_px + params.tick_size - 1e-9 if is_long
+                           else bar.l <= position.target_px - params.tick_size + 1e-9)
+                target_hit = through
+                if target_touch and not through:
+                    position.target_touched = True
+            else:
+                target_hit = target_touch
             if stop_hit:
                 side_sign = 1.0 if is_long else -1.0
                 trigger_px = position.stop_px
                 if position.stop_moved:
                     # a moved stop the bar opened through fills at the open
                     trigger_px = min(trigger_px, bar.o) if is_long else max(trigger_px, bar.o)
-                exit_px = trigger_px * (1.0 - side_sign * params.slippage)
+                exit_px = trigger_px * (1.0 - side_sign * _market_exit_slip(params, position.size * trigger_px))
                 trade = _close_trade(position, exit_px, t, "stop", params.taker_fee, initial_size)
                 equity += trade.gross_pnl_usd - trade.exit_fee_usd
                 run.trades.append(trade)
@@ -420,7 +487,14 @@ def simulate(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], direct
                 position = None
                 resting_add = None
             elif target_hit:
-                trade = _close_trade(position, position.target_px, t, "target", params.maker_fee, initial_size)
+                if params.target_mode == "market":
+                    # Take Profit Market: the touch triggers a market sell
+                    side_sign = 1.0 if is_long else -1.0
+                    tgt_px = position.target_px * (1.0 - side_sign * _market_exit_slip(
+                        params, position.size * position.target_px))
+                    trade = _close_trade(position, tgt_px, t, "target", params.taker_fee, initial_size)
+                else:
+                    trade = _close_trade(position, position.target_px, t, "target", params.maker_fee, initial_size)
                 equity += trade.gross_pnl_usd - trade.exit_fee_usd
                 run.trades.append(trade)
                 run.gross_pnl_usd += trade.gross_pnl_usd

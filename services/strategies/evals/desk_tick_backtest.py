@@ -203,6 +203,37 @@ def cut_short(trades: Sequence[Trade], candles_15m: Sequence[Candle]) -> int:
     return n
 
 
+# Target execution (2026-10-28): the sim's default "touch" (ideal limit), the
+# live "market" (Take Profit Market) and a conservative "limit" (trade-through
+# only), with size-aware exit slippage on, from several starting equities so
+# the cost of a big exit shows.
+TARGET_MODES = ("touch", "market", "limit")
+TARGET_STARTS = (64.0, 1_000.0, 5_000.0, 20_000.0, 100_000.0)
+
+
+def target_mode_row(series: str, mode: str, start: float, run: Run) -> Dict[str, Any]:
+    """One row of the target-execution table."""
+    row = aggregate(f"{series}_target_{mode}_{start:g}", run)
+    rs = [t.r_multiple for t in run.trades if t.r_multiple is not None]
+    row.update(series=series, target_mode=mode, starting_equity=start,
+               targets_hit=sum(1 for t in run.trades if t.exit_reason == "target"),
+               targets_missed=sum(1 for t in run.trades if t.target_missed),
+               total_r=sum(rs),
+               closed_equity=start + sum(t.net_pnl_usd for t in run.trades))
+    return row
+
+
+def target_mode_rows(series_list, c15: Sequence[Candle], c1h: Sequence[Candle],
+                     funding, starts=TARGET_STARTS, modes=TARGET_MODES) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+    for series, direction_at in series_list:
+        for start in starts:
+            for mode in modes:
+                p = Params(tick_minutes=15, target_mode=mode, starting_equity=start, size_slippage=True)
+                out.append(target_mode_row(series, mode, start, simulate(c15, c1h, direction_at, p, funding)))
+    return out
+
+
 def stop_variant_row(series: str, variant: str, run: Run, candles_15m: Sequence[Candle]) -> Dict[str, Any]:
     """One row of the moving-the-stop table: the usual aggregate plus total
     R, the trades whose stop moved, and the winners a moved stop cut short."""
@@ -399,6 +430,11 @@ def main(argv: Optional[List[str]] = None) -> int:
             run = simulate(c15_window, c1h_window, direction_at, Params(tick_minutes=15, **kw), funding)
             stop_rows.append(stop_variant_row(series, variant, run, c15_window))
 
+    target_series = [("always_long", always_direction("long"))]
+    if theses:
+        target_series.insert(0, ("journaled", journaled_direction(theses)))
+    target_rows = target_mode_rows(target_series, c15_window, c1h_window, funding)
+
     calibration = None
     if not args.no_calibration:
         log_rows = parse_progress_log(args.progress_log)
@@ -415,7 +451,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         "window_end": datetime.fromtimestamp(now_ms / 1000, tz=timezone.utc).isoformat(),
         "daily_sign_days_with_signal": n_signal_days, "daily_sign_days_without_signal": n_no_signal_days,
         "n_theses": len(theses), "runs": rows, "sweep": sweep_rows, "calibration": calibration,
-        "stop_variants": stop_rows,
+        "stop_variants": stop_rows, "target_modes": target_rows,
     }
     report_path = os.path.join(args.out_dir, "report.json")
     with open(report_path, "w") as fh:
