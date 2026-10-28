@@ -189,7 +189,10 @@ def test_exchange_bracket_is_one_normaltpsl_action(monkeypatch):
     assert entry["order_type"] == {"limit": {"tif": "Gtc"}}
     for leg, kind, px in ((sl, "sl", 106.7), (tp, "tp", 108.45)):
         assert leg["is_buy"] is False and leg["reduce_only"] is True and leg["sz"] == 1.27
-        assert leg["order_type"]["trigger"] == {"triggerPx": px, "isMarket": True, "tpsl": kind}
+        # the stop fires at market; the target is a limit at the target itself
+        # (backtested 2026-10-28: never missed, no slippage on winners)
+        assert leg["order_type"]["trigger"] == {"triggerPx": px, "isMarket": kind == "sl", "tpsl": kind}
+        assert leg["limit_px"] == px
 
 
 def test_exchange_bracket_reports_a_rejected_leg(monkeypatch):
@@ -559,7 +562,7 @@ class BookEx(FakeEx):
         self.next_oid += 1
         self.orders.append({"oid": self.next_oid, "coin": coin, "reduceOnly": True, "sz": str(size),
                             "triggerPx": str(px),
-                            "orderType": "Stop Market" if kind == "sl" else "Take Profit Market"})
+                            "orderType": "Stop Market" if kind == "sl" else "Take Profit Limit"})
         return {"ok": True, "order_id": self.next_oid}
 
     def cancel_orders(self, oid, coin=None):
@@ -637,3 +640,43 @@ def test_a_market_top_up_ends_with_one_stop_and_one_target():
                                 leverage=20, coin_max_leverage=20, add=True, ex=ex)
     assert out["placed"] and len(out["consolidated"]["merged"]) == 2
     assert [(o["sz"], o["triggerPx"]) for o in ex.orders if "Stop" in o["orderType"]] == [("12.89", "108.95")]
+
+
+def test_a_standalone_target_is_a_limit_and_a_stop_is_market(monkeypatch):
+    """Top-ups and the one-pair merge place their stop and target through
+    place_hl_trigger_order: same rule as the bracket."""
+    from pathiel.client import exchange
+    sent = []
+
+    class FakeSdk:
+        def order(self, coin, is_buy, sz, limit_px, order_type, reduce_only=False):
+            sent.append((is_buy, sz, limit_px, order_type, reduce_only))
+            return {"status": "ok", "response": {"data": {"statuses": [{"resting": {"oid": 7}}]}}}
+
+    monkeypatch.setattr(exchange, "_has_usable_credential", lambda: True)
+    monkeypatch.setattr(exchange, "get_coin_index", lambda c: (0, 2, 0))
+    monkeypatch.setattr(exchange, "_make_exchange", lambda: FakeSdk())
+    assert exchange.place_hl_trigger_order(True, 13.08, 113.75, "tp", COIN)["ok"]
+    assert exchange.place_hl_trigger_order(True, 13.08, 108.95, "sl", COIN)["ok"]
+    (tp_buy, _, tp_px, tp_type, tp_ro), (sl_buy, _, sl_px, sl_type, sl_ro) = sent
+    assert tp_type["trigger"] == {"triggerPx": 113.75, "isMarket": False, "tpsl": "tp"} and tp_px == 113.75
+    assert sl_type["trigger"] == {"triggerPx": 108.95, "isMarket": True, "tpsl": "sl"}
+    assert tp_buy is False and sl_buy is False and tp_ro and sl_ro       # closing a long, reduce-only
+
+
+def test_a_lone_market_target_becomes_a_limit_and_a_limit_is_left_alone():
+    """2026-10-28: targets are limits now; the position's existing take-profit
+    market (13.08 @ 113.75) is re-placed as a limit, new order first."""
+    legs = [_leg(1, "sl", 13.08, 108.95), _leg(2, "tp", 13.08, 113.75)]     # tp is a market trigger
+    ex = BookEx(pos=13.08, orders=legs)
+    out = bracket.sweep(COIN, ex=ex)
+    assert out["ok"] and out["consolidated"]["merged"] == [
+        {"kind": "tp", "px": 113.75, "size": 13.08, "replaced": 1, "to_limit": True}]
+    tps = [o for o in ex.orders if "Take Profit" in o["orderType"]]
+    assert [(o["orderType"], o["sz"], o["triggerPx"]) for o in tps] == [("Take Profit Limit", "13.08", "113.75")]
+    assert ex.calls.index(("tp", True, 13.08, 113.75)) < ex.calls.index(("cancel", 2))
+    # the stop is untouched, and a second sweep changes nothing
+    assert [o["oid"] for o in ex.orders if "Stop" in o["orderType"]] == [1]
+    ex.calls.clear()
+    out = bracket.sweep(COIN, ex=ex)
+    assert "consolidated" not in out and not ex.calls

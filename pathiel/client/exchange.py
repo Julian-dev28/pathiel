@@ -781,8 +781,13 @@ def place_hl_trigger_order(
 ) -> Dict[str, Any]:
     """Place a reduce-only trigger order (stop-loss or take-profit).
 
-    Triggers a market order in the position-closing direction once the
-    trigger price is crossed.
+    A stop triggers a MARKET order: it must fill in a fast move, whatever the
+    price. A take-profit triggers a LIMIT at the target itself (Hyperliquid
+    "Take Profit Limit"), so a winner never sells below the target and pays
+    no slippage. Backtested 2026-10-28 before switching: across 26 target
+    exits every bar that reached the target traded through it, so the limit
+    never missed, and it beat the market target at every account size
+    (docs/overhaul/BACKTEST_RESULTS_2026-10-25.md, "limit vs market target").
     """
     if not _has_usable_credential():
         return {"ok": False, "error": "HYPERLIQUID_PRIVATE_KEY not set"}
@@ -806,7 +811,7 @@ def place_hl_trigger_order(
         order_type = OrderType(
             trigger=TriggerOrderType(
                 triggerPx=trigger_f,
-                isMarket=True,
+                isMarket=(kind == "sl"),       # stop: market; target: limit at the target
                 tpsl="sl" if kind == "sl" else "tp",
             )
         )
@@ -816,7 +821,8 @@ def place_hl_trigger_order(
             f"trigger={trigger_str} size={size_str}"
         )
 
-        # isMarket=True fills at market on trigger; limit_px is a reference.
+        # A stop fills at market on trigger (limit_px is a reference); a target
+        # rests as a limit at limit_px = the target.
         result = exchange.order(
             coin,
             is_buy,
@@ -896,7 +902,7 @@ def place_hl_bracket_order(coin: str, is_buy: bool, size: float, entry_px: float
         def _trigger(px: float, kind: str) -> Dict[str, Any]:
             return {"coin": coin, "is_buy": close_is_buy, "sz": size_f, "limit_px": px,
                     "order_type": OrderType(trigger=TriggerOrderType(
-                        triggerPx=px, isMarket=True, tpsl=kind)),
+                        triggerPx=px, isMarket=(kind == "sl"), tpsl=kind)),
                     "reduce_only": True}
 
         reqs = [

@@ -128,6 +128,12 @@ the rest:
   before cancelling the old ones so the position is never unprotected.
   Targets at different prices are a scale-out and stay. `bracket_sweep`
   runs it on every covered position, a market top-up right after its fill.
+- **Targets rest as limits, stops fire at market.** A take-profit triggers a
+  limit at the target itself, so a winner never sells below it and pays no
+  slippage; the stop stays a market order so it always fills. Backtested
+  2026-10-28 before switching: the limit never missed across 26 target
+  exits and beat the market target at every account size. The sweep
+  re-places any older market target as a limit.
 - **Stops never move.** No breakeven, no trail: backtested 2026-10-28, the
   fixed stop made +6.03R against +1.97R for the best moving rule
   (`docs/overhaul/BACKTEST_RESULTS_2026-10-25.md`, "moving the stop").

@@ -279,7 +279,9 @@ def consolidate_protection(coin: str, ex: Any = None) -> Dict[str, Any]:
     target), this places ONE order for the full position size at that price
     and only then cancels the old ones, so the position is never without a
     stop: if the new order fails, the old ones stay. Different prices are a
-    deliberate scale-out and are left alone. Never opens, closes or moves a
+    deliberate scale-out and are left alone. A target still resting as a
+    market trigger is re-placed as a limit at the same price (targets are
+    limits since 2026-10-28). Never opens, closes or moves a
     level."""
     if ex is None:
         from pathiel.client import exchange as ex   # noqa: N813
@@ -293,7 +295,10 @@ def consolidate_protection(coin: str, ex: Any = None) -> Dict[str, Any]:
     out: Dict[str, Any] = {"coin": coin, "ok": True, "position": pos, "merged": [], "left": []}
     for kind, label in (("sl", "Stop"), ("tp", "Take Profit")):
         rows = [o for o in orders if o.get("reduceOnly") and label in str(o.get("orderType", ""))]
-        if len(rows) < 2:
+        # a target still resting as a MARKET trigger (placed before 2026-10-28) is
+        # re-placed as a limit at the same price even when it is the only one
+        market_target = kind == "tp" and any("Market" in str(o.get("orderType", "")) for o in rows)
+        if len(rows) < 2 and not market_target:
             continue
         levels = {float(o.get("triggerPx") or 0) for o in rows}
         if len(levels) != 1:
@@ -309,6 +314,7 @@ def consolidate_protection(coin: str, ex: Any = None) -> Dict[str, Any]:
         failed = [o.get("oid") for o in rows
                   if not ex.cancel_orders(int(o.get("oid") or 0), coin).get("ok")]
         out["merged"].append({"kind": kind, "px": px, "size": size, "replaced": len(rows),
+                              **({"to_limit": True} if market_target else {}),
                               **({"cancel_failed": failed} if failed else {})})
     return out
 
@@ -341,7 +347,8 @@ def sweep(coin: str, ex: Any = None) -> Dict[str, Any]:
     tps = [o for o in orders if o.get("reduceOnly") and "Take Profit" in str(o.get("orderType", ""))]
     covered = sum(float(o.get("sz") or 0) for o in stops)
     consolidated = None
-    if covered + 1e-9 >= abs(pos) and (len(stops) > 1 or len(tps) > 1):
+    market_tp = any("Market" in str(o.get("orderType", "")) for o in tps)
+    if covered + 1e-9 >= abs(pos) and (len(stops) > 1 or len(tps) > 1 or market_tp):
         # several stops/targets at one price (one per fill): fold into one pair
         consolidated = consolidate_protection(coin, ex=ex)
         if consolidated.get("merged"):
