@@ -532,3 +532,61 @@ Verdict: switch the target to a resting limit. It never missed here, it is
 strictly cheaper at every account size (+0.39R on the live-sized account,
 +0.69R at $100k), and the stop, the exit that carries the risk, stays a
 market order.
+
+## 2026-10-29: closer targets and re-entry (full scenario sweep)
+
+Operator: "test .3% lower targets and then reentry", widened to a full sweep
+("DONT MAKE CHANGES JUST GIVE ME RESULTS"). Sim only; nothing live changed.
+Runner: `services/strategies/evals/scenario_sweep.py`. New `Params`:
+`target_offset_frac` (the take-profit that fraction of price inside the
+structural target) and `reentry_after_target` (default True: the sim has
+always re-entered under the same call once flat; False waits for the next
+thesis, or the next UTC day for the controls).
+
+Grid, 540 combos: offset 0 / 0.1 / 0.2 / 0.3 / 0.5%, re-entry on/off, stop
+fixed / breakeven at +1R / trail 1 ATR after +1R, limit/market target,
+10/15/20x, stop buffer 0.25 / 0.50 / 0.75. 15m clock, $64 start, size-aware
+exit slippage, 8 journaled theses, always-long control over 30 and 49 days.
+The journaled 30-day and 49-day runs are identical (the theses start
+2026-10-18), so the long window is only informative on the control.
+
+Live config (offset 0, re-entry, fixed, limit, 20x, $0.50 buffer) ranks 21
+of 540 on journaled final equity: $123.91, +11.19R, 14 trades, 36% won,
+43% max drawdown; control $34.11 (30d) / $6.04 (49d).
+
+Top 5 by journaled final equity (30d):
+
+| # | offset | stop | target | lev | buffer | journaled | control 30d | control 49d | 1h clock |
+|---|---|---|---|---|---|---|---|---|---|
+| 1 | 0.5% | fixed | limit | 20x | 0.75 | $199.60, +10.3R, 7 trades, 71% won | $75.28 | $5.48 | $149.02 |
+| 2 | 0.5% | fixed | market | 20x | 0.75 | $190.76, +9.9R, 7 | $68.98 | $4.95 | $143.93 |
+| 3 | 0.5% | fixed | limit | 20x | 0.50 | $162.86, +13.3R, 12 | $65.03 | $10.25 | $110.79 |
+| 4 | 0.5% | fixed | limit | 15x | 0.75 | $157.60, +10.3R, 7 | $85.37 | $13.32 | $126.90 |
+| 5 | 0.5% | fixed | market | 20x | 0.50 | $155.66, +12.7R, 12 | $58.41 | $8.89 | $107.94 |
+
+All top-10 rows re-enter after a target. Changing one thing at a time from
+the live config (journaled / control 30d / control 49d):
+
+| change | journaled | control 30d | control 49d |
+|---|---|---|---|
+| none (live) | $123.91 | $34.11 | $6.04 |
+| offset 0.3% (the test asked for) | $126.24 | $28.64 | $4.48 |
+| offset 0.5% | $162.86 | $65.03 | $10.25 |
+| buffer 0.75 | $146.09 | $48.79 | $5.84 |
+| offset 0.5% + buffer 0.75 | $199.60 | $75.28 | $5.48 |
+| re-entry off | $90.30 | $34.51 | n/a |
+
+Consistent across the journaled run, both control windows and the grid
+means: fixed stop beats breakeven and trail; a wider buffer (0.75) beats
+0.50 beats 0.25; a 0.5% closer target beats none; limit edges market.
+Not consistent: leverage (20x wins on the journaled run, 10x on the losing
+control, as leverage only scales the sign of the edge); re-entry (on wins by
+$34 on the journaled run, a wash on the control).
+
+Verdict: the 0.3% offset alone does not help (worse on both controls).
+Re-entry should stay on. The best combo, offset 0.5% + buffer 0.75, beats
+the live config on three of four checks, but its journaled win rests on 7
+trades against 14 and less total R (+10.3R vs +11.2R): fewer stop-outs,
+not bigger wins. That is not beyond noise. Re-run after 30+ live trades
+before changing the live rules; offset 0.5% alone ($162.86, +13.3R, and
+better on every control) is the safer single candidate.

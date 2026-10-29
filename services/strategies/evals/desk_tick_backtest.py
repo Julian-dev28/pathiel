@@ -98,7 +98,7 @@ def journaled_direction(theses: Sequence[D.ThesisDirection]):
         if active is None:
             return None
         return Direction(side=active.side, invalidation_px=active.invalidation_px,
-                         entry_ceiling=active.entry_px)
+                         entry_ceiling=active.entry_px, regime_id=str(active.created_at_ms))
 
     return direction_at
 

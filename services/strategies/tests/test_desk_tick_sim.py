@@ -530,3 +530,62 @@ def test_size_slippage_makes_a_big_stop_fill_worse_and_a_limit_target_pays_none(
     lim = simulate(c15w, c1hw, const_direction("long"),
                    _p(target_mode="limit", size_slippage=True, starting_equity=500_000.0))
     assert lim.trades[0].exit_px == pytest.approx(101.0)
+
+
+# ── closer targets and re-entry (2026-10-29) ───────────────────────────────
+# Operator: "test .3% lower targets and then reentry". Same pullback: rest at
+# 99, fill, structural target 101, stop 98.75.
+
+def test_offset_target_moves_toward_the_entry_on_both_sides():
+    from services.strategies.backtest.desk_tick_sim import offset_target
+    assert offset_target(101.0, "long", 0.003) == pytest.approx(100.697)
+    assert offset_target(99.0, "short", 0.003) == pytest.approx(99.297)
+    assert offset_target(101.0, "long", 0.0) == 101.0
+
+
+def test_a_closer_target_fills_a_move_that_stops_short_of_the_structural_one():
+    c15, c1h = _target_scenario(bar2_high=100.8)                # never reaches 101
+    base = simulate(c15, c1h, const_direction("long"), _p(target_mode="limit"))
+    assert base.trades == []                                     # still open at 101
+    closer = simulate(c15, c1h, const_direction("long"), _p(target_mode="limit", target_offset_frac=0.003))
+    t = closer.trades[0]
+    assert t.exit_reason == "target" and t.exit_px == pytest.approx(100.697)
+    assert t.orig_target_px == pytest.approx(101.0) and t.offset_capture is True
+
+
+def test_a_short_target_offsets_upward():
+    c1h = _warmup_1h()                              # 8h high 101: a short rests there
+    h24 = 24 * HOUR_MS
+    c15 = [
+        _c15(h24 + 0 * FIFTEEN_MS, 100.7, 100.7, 100.7, 100.7),
+        _c15(h24 + 1 * FIFTEEN_MS, 100.8, 101.1, 100.7, 101.0),     # fills at 101
+        _c15(h24 + 2 * FIFTEEN_MS, 100.5, 100.6, 99.2, 99.4),        # low 99.2: short of 99, through 99.297
+    ]
+    run = simulate(c15, c1h, const_direction("short"), _p(target_mode="limit", target_offset_frac=0.003))
+    t = run.trades[0]
+    assert t.side == "short" and t.exit_reason == "target" and t.exit_px == pytest.approx(99.297)
+
+
+def _reentry_scenario():
+    c15, c1h = _target_scenario(bar2_high=101.2)                # target trades through on bar 2
+    c15.append(_c15(24 * HOUR_MS + 3 * FIFTEEN_MS, 99.2, 99.3, 98.9, 99.0))   # back to the 99 edge
+    return c15, c1h
+
+
+def test_the_default_re_enters_under_the_same_call_after_a_target():
+    c15, c1h = _reentry_scenario()
+    run = simulate(c15, c1h, const_direction("long"), _p(target_mode="limit"))
+    assert run.trades[0].exit_reason == "target"
+    assert run.rested == 2 and run.filled == 2                  # a second entry under the same call
+
+
+def test_no_re_entry_waits_for_the_next_call():
+    c15, c1h = _reentry_scenario()
+    run = simulate(c15, c1h, const_direction("long"), _p(target_mode="limit", reentry_after_target=False))
+    assert run.rested == 1 and run.filled == 1 and run.open_position_at_end is None
+    # a new call (a fresh regime_id) at bar 2 lifts the block
+    def two_calls(t):
+        return Direction(side="long", regime_id="a" if t < 24 * HOUR_MS + 2 * FIFTEEN_MS + 1 else "b")
+    c15b = c15 + [_c15(24 * HOUR_MS + 4 * FIFTEEN_MS, 99.2, 99.3, 98.9, 99.0)]
+    run2 = simulate(c15b, c1h, two_calls, _p(target_mode="limit", reentry_after_target=False))
+    assert run2.rested == 2

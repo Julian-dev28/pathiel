@@ -115,6 +115,11 @@ class Direction:
     side: str                                   # "long" | "short"
     invalidation_px: Optional[float] = None
     entry_ceiling: Optional[float] = None
+    # Which call this answer belongs to (a journaled thesis's created_at).
+    # `Params.reentry_after_target=False` blocks a new entry under the same
+    # call after a target filled; a series with no calls (the controls) is
+    # treated as one call per UTC day, the desk's daily-rewrite floor.
+    regime_id: Optional[str] = None
 
 
 DirectionAt = Callable[[int], Optional[Direction]]
@@ -144,6 +149,14 @@ class Params:
     target_mode: str = "touch"         # touch | market | limit (see "Target execution")
     tick_size: float = 0.01            # xyz:BRENTOIL price step; a limit target needs a trade-through
     size_slippage: bool = False        # price market exits off EXIT_SLIP_CURVE by notional
+    # Closer targets (2026-10-29, operator: "test .3% lower targets and then
+    # reentry"): the take-profit sits this fraction of price inside the
+    # structural target (a long's target x (1 - f), a short's x (1 + f)).
+    target_offset_frac: float = 0.0
+    # After a target fills, may the desk re-enter under the SAME call? True
+    # is what the sim has always done (the next tick evaluates a new entry);
+    # False waits for the next call (see Direction.regime_id).
+    reentry_after_target: bool = True
 
 
 # Per-side market-sell slippage (bps) by notional (USD), walked on the live
@@ -198,6 +211,8 @@ class Trade:
     orig_stop_px: Optional[float] = None          # the stop at the fill, before any move
     stop_moved: bool = False                      # a breakeven/trail move tightened the stop
     target_missed: bool = False                   # limit target touched, never traded through, closed elsewhere
+    orig_target_px: Optional[float] = None        # the structural target before any offset
+    offset_capture: bool = False                  # filled the offset target; never traded through the original
 
 
 @dataclass
@@ -229,6 +244,7 @@ class _Resting:
     target_px: float
     placed_at: int
     is_add: bool = False
+    orig_target_px: Optional[float] = None
 
 
 @dataclass
@@ -248,6 +264,8 @@ class _Position:
     armed: bool = False
     stop_moved: bool = False
     target_touched: bool = False                  # a bar touched the target without filling it (limit mode)
+    orig_target_px: Optional[float] = None
+    reached_orig_target: bool = False             # a bar traded through the structural target
 
 
 def _levels(closed_1h: Sequence[Candle]) -> Optional[Dict[str, Any]]:
@@ -284,7 +302,26 @@ def _open_position(resting: _Resting, fill_px: float, t: int, params: Params) ->
     risk_usd = abs(fill_px - resting.stop_px)
     return _Position(side=resting.side, size=0.0, avg_entry=fill_px, stop_px=resting.stop_px,
                      target_px=resting.target_px, opened_at=t, risk_usd=risk_usd,
-                     orig_stop_px=resting.stop_px)
+                     orig_stop_px=resting.stop_px,
+                     orig_target_px=resting.orig_target_px if resting.orig_target_px is not None
+                     else resting.target_px)
+
+
+def offset_target(target_px: float, side: str, frac: float) -> float:
+    """The take-profit `frac` of price inside the structural target: closer
+    to the entry, so a move that only approaches the target still fills."""
+    if frac <= 0:
+        return target_px
+    return target_px * (1.0 - frac) if side == "long" else target_px * (1.0 + frac)
+
+
+def regime_key(d: Optional["Direction"], t: int) -> Optional[Tuple[str, Any]]:
+    """The call a tick belongs to: the direction's own regime_id, else its UTC day."""
+    if d is None:
+        return None
+    if d.regime_id is not None:
+        return ("call", d.regime_id)
+    return ("day", t // 86_400_000)
 
 
 def _manage_stop(pos: _Position, bar: Candle, atr14: Optional[float], params: Params) -> None:
@@ -373,6 +410,7 @@ def simulate(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], direct
     resting_add: Optional[_Resting] = None
     position: Optional[_Position] = None
     initial_size = 0.0          # the size the position opened with, for R-multiple risk
+    blocked_regime: Optional[Tuple[str, Any]] = None   # no re-entry under this call (reentry_after_target=False)
     seen_1h_close: set = set()
 
     # The tick series: one decision per 15m bar, or per 1h bar for the hourly
@@ -461,6 +499,10 @@ def simulate(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], direct
         # 4. in position: stop/target fill, top-up, liquidation
         if position is not None and position.opened_at < t:
             is_long = position.side == "long"
+            if position.orig_target_px is not None and (
+                    bar.h >= position.orig_target_px + params.tick_size - 1e-9 if is_long
+                    else bar.l <= position.orig_target_px - params.tick_size + 1e-9):
+                position.reached_orig_target = True
             stop_hit = bar.l <= position.stop_px if is_long else bar.h >= position.stop_px
             target_touch = bar.h >= position.target_px if is_long else bar.l <= position.target_px
             if params.target_mode == "limit":
@@ -495,6 +537,10 @@ def simulate(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], direct
                     trade = _close_trade(position, tgt_px, t, "target", params.taker_fee, initial_size)
                 else:
                     trade = _close_trade(position, position.target_px, t, "target", params.maker_fee, initial_size)
+                trade.orig_target_px = position.orig_target_px
+                trade.offset_capture = (params.target_offset_frac > 0 and not position.reached_orig_target)
+                if not params.reentry_after_target:
+                    blocked_regime = regime_key(direction_at(t), t)
                 equity += trade.gross_pnl_usd - trade.exit_fee_usd
                 run.trades.append(trade)
                 run.gross_pnl_usd += trade.gross_pnl_usd
@@ -542,6 +588,8 @@ def simulate(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], direct
         # 5. new entry evaluation when flat
         if position is None and resting is None:
             d = direction_at(t)
+            if blocked_regime is not None and regime_key(d, t) == blocked_regime:
+                d = None            # a target filled under this call: wait for the next one
             if d is not None and lv is not None and lv["atr14"] and lv["range_24h_low"] is not None:
                 is_long = d.side == "long"
                 edge = lv["range_8h_low"] if is_long else lv["range_8h_high"]
@@ -549,7 +597,8 @@ def simulate(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], direct
                     edge = min(edge, d.entry_ceiling) if is_long else max(edge, d.entry_ceiling)
                 if abs(mid - edge) <= params.atr_rest_frac * lv["atr14"]:
                     stop_px = edge - params.stop_buffer if is_long else edge + params.stop_buffer
-                    target_px = lv["range_24h_high"] if is_long else lv["range_24h_low"]
+                    structural_target = lv["range_24h_high"] if is_long else lv["range_24h_low"]
+                    target_px = offset_target(structural_target, d.side, params.target_offset_frac)
                     lev_gate = check_leverage(edge, stop_px, params.leverage, params.max_leverage)
                     r_gate = check_levels(edge, stop_px, target_px, params.min_r)
                     if not lev_gate["ok"]:
@@ -558,7 +607,8 @@ def simulate(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], direct
                         run.refused["min_r"] += 1
                     else:
                         resting = _Resting(side=d.side, limit_px=edge, stop_px=stop_px,
-                                          target_px=target_px, placed_at=t)
+                                          target_px=target_px, placed_at=t,
+                                          orig_target_px=structural_target)
                         run.rested += 1
 
         # Safety net: the dedicated liq-price check (step 4) can only fire
@@ -603,4 +653,4 @@ def simulate(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], direct
     return run
 
 
-__all__ = ["Direction", "DirectionAt", "Params", "Trade", "Run", "simulate"]
+__all__ = ["Direction", "DirectionAt", "Params", "Trade", "Run", "simulate", "offset_target", "regime_key"]
