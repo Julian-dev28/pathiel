@@ -44,7 +44,7 @@ mcp_servers:
 
 ## Primary Tools
 
-The server exposes 59 tools, every one of them implemented. The 7 trading-core tools below
+The server exposes 60 tools, every one of them implemented. The 7 trading-core tools below
 are the ones you call directly.
 
 Six stubs were promoted on 2026-09-06 after an audit found the capability

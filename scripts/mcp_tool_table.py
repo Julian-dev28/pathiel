@@ -27,7 +27,7 @@ SECTIONS: Dict[str, List[str]] = {
         "place_bracket", "bracket_sweep",
     ],
     "Agent loop and live-money actions": [
-        "close_position", "set_leverage", "cancel_order", "state", "config",
+        "close_position", "set_leverage", "cancel_order", "set_target", "state", "config",
     ],
     "Wallet / dashboard (read-only)": ["connected_wallets", "wallet_account"],
     "Market data": [

@@ -132,7 +132,7 @@ Start here
 
 Coins: main-dex perps by name (BTC, ETH). HIP-3 perps as dex:SYMBOL (xyz:BRENTOIL = Brent, the oil desk's price; xyz:CL = WTI; xyz:GOLD; xyz:NATGAS).
 
-LIVE MONEY: place_bracket, bracket_sweep, close_position, set_leverage, cancel_order act on the real account, and config with arguments rewrites the live trading config. Call them only when the operator asked for that exact action in this conversation. Every other tool only reads (desk_refresh, desk_submit_call and desk_grade write the desk journal; desk_grade never places or touches an order, it only grades what already happened)."""
+LIVE MONEY: place_bracket, bracket_sweep, set_target, close_position, set_leverage, cancel_order act on the real account, and config with arguments rewrites the live trading config. Call them only when the operator asked for that exact action in this conversation. Every other tool only reads (desk_refresh, desk_submit_call and desk_grade write the desk journal; desk_grade never places or touches an order, it only grades what already happened)."""
 
 
 # Tools definition
@@ -973,6 +973,17 @@ TOOLS = [
             "required": ["coin"],
         },
     },
+    {
+        "name": "set_target",
+        "description": "Move an open position's take-profit: one limit target for the whole "
+                       "size at tp_px goes on first, then the old target(s) are cancelled. "
+                       "Refuses a target on the losing side of the mark. Never touches the stop.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"coin": {"type": "string"}, "tp_px": {"type": "number"}},
+            "required": ["coin", "tp_px"],
+        },
+    },
 ]
 
 
@@ -980,7 +991,7 @@ TOOLS = [
 # Clients use these to decide what needs a human's yes. Every tool lands in
 # exactly one bucket; tests/test_mcp_shoreup.py fails on a tool with none.
 LIVE_MONEY_TOOLS = frozenset({"close_position", "set_leverage", "cancel_order",
-                              "place_bracket", "bracket_sweep"})
+                              "place_bracket", "bracket_sweep", "set_target"})
 LIVE_CONFIG_TOOLS = frozenset({"config"})
 LOCAL_WRITE_TOOLS = frozenset({"desk_refresh", "desk_submit_call", "desk_grade"})
 
@@ -1311,6 +1322,7 @@ def _tool_handlers() -> Dict[str, Any]:
         "risk_size_trade": handle_risk_size_trade,
         "place_bracket": handle_place_bracket,
         "bracket_sweep": handle_bracket_sweep,
+        "set_target": handle_set_target,
     }
 
     for _name in _STUB_TOOL_NAMES:
@@ -3349,6 +3361,21 @@ def _round_size(size: float, sz_decimals: Any) -> float:
     except (TypeError, ValueError):
         d = 2
     return round(max(0.0, size), d)
+
+
+def handle_set_target(params: Dict[str, Any]) -> str:
+    from pathiel.agents import bracket
+    coin = _norm_coin(str(params.get("coin") or ""))
+    try:
+        tp = float(params["tp_px"])
+    except (KeyError, TypeError, ValueError):
+        return json.dumps({"ok": False, "coin": coin, "error": "tp_px is required"})
+    if not coin:
+        return json.dumps({"ok": False, "error": "coin is required"})
+    try:
+        return json.dumps(bracket.set_target(coin, tp), default=str)
+    except Exception as e:
+        return json.dumps({"ok": False, "coin": coin, "error": str(e)})
 
 
 def handle_bracket_sweep(params: Dict[str, Any]) -> str:

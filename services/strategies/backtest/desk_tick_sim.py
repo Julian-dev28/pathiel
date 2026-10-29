@@ -307,6 +307,14 @@ def _open_position(resting: _Resting, fill_px: float, t: int, params: Params) ->
                      else resting.target_px)
 
 
+# The live desk's rules as of 2026-10-29 (operator adopted the scenario sweep's
+# best combination: 0.5% target offset, 0.75 stop buffer, limit target, fixed
+# stop, 20x, re-entry on). Params() keeps the older defaults the existing
+# evals and tests pin; compare a variant against live_params().
+def live_params() -> "Params":
+    return Params(stop_buffer=0.75, target_offset_frac=0.005, target_mode="limit", leverage=20.0)
+
+
 def offset_target(target_px: float, side: str, frac: float) -> float:
     """The take-profit `frac` of price inside the structural target: closer
     to the entry, so a move that only approaches the target still fills."""

@@ -175,12 +175,30 @@ def check_levels(entry_px: float, stop_px: float, tp_px: float,
 
 MIN_ORDER_NOTIONAL_USD = 10.0     # Hyperliquid's minimum order value
 
+# The take-profit sits this fraction of price inside the structure target:
+# closer to the entry, so a move that only approaches the target still pays.
+# Operator, 2026-10-29, adopting the scenario sweep's best combination
+# (0.5% offset + 0.75 stop buffer: $64 -> $199.60 vs $123.91 for the old
+# rules on the journaled theses; services/strategies/evals/scenario_sweep.py,
+# docs/overhaul/BACKTEST_RESULTS_2026-10-25.md "2026-10-29").
+TARGET_OFFSET_FRAC = 0.005
+
+
+def offset_target(target_px: float, side: str, frac: float = TARGET_OFFSET_FRAC) -> float:
+    """The take-profit `frac` of price inside the structure target, the same
+    formula the backtest used (desk_tick_sim.offset_target): long x (1 - frac),
+    short x (1 + frac)."""
+    if frac <= 0:
+        return target_px
+    return target_px * (1.0 - frac) if side == "long" else target_px * (1.0 + frac)
+
 
 def place_bracket(coin: str, *, entry_px: Optional[float], stop_px: float, tp_px: float,
                   size: float, leverage: int, min_r: float = DEFAULT_MIN_R,
                   coin_max_leverage: Optional[float] = None,
                   max_stop_frac: float = DEFAULT_MAX_STOP_FRAC_OF_LIQ,
-                  dry_run: bool = False, add: bool = False, ex: Any = None) -> Dict[str, Any]:
+                  dry_run: bool = False, add: bool = False, ex: Any = None,
+                  target_offset_frac: Optional[float] = None) -> Dict[str, Any]:
     """Place one bracket. entry_px None = market now (IOC), checked against
     the live mid; otherwise a resting limit with stop and target attached.
 
@@ -201,9 +219,20 @@ def place_bracket(coin: str, *, entry_px: Optional[float], stop_px: float, tp_px
         from pathiel.client import exchange as ex   # noqa: N813
     market = entry_px is None
     ref_px = float(ex.get_hl_price(coin)) if market else float(entry_px)
+    # A new trade's take-profit goes TARGET_OFFSET_FRAC inside the structure
+    # target the caller names; a top-up (add) keeps the position's own target
+    # as passed, so the offset is never applied twice.
+    structure_tp = tp_px
+    if target_offset_frac is None:
+        target_offset_frac = TARGET_OFFSET_FRAC
+    if not add and target_offset_frac > 0:
+        side = "long" if stop_px < ref_px else "short"
+        tp_px = round(offset_target(tp_px, side, target_offset_frac), 6)
     gate = check_levels(ref_px, stop_px, tp_px, min_r)
     base = {"coin": coin, "mode": "market" if market else "limit", "entry_px": ref_px,
             "stop_px": stop_px, "tp_px": tp_px, "size": size, "leverage": leverage, **gate}
+    if tp_px != structure_tp:
+        base["structure_tp_px"] = structure_tp
     if not gate["ok"]:
         return {**base, "placed": False}
     if coin_max_leverage:
@@ -329,6 +358,36 @@ def consolidate_protection(coin: str, ex: Any = None) -> Dict[str, Any]:
                               **({"to_limit": True} if market_target else {}),
                               **({"cancel_failed": failed} if failed else {})})
     return out
+
+
+def set_target(coin: str, tp_px: float, ex: Any = None) -> Dict[str, Any]:
+    """Move the open position's take-profit to `tp_px`: one limit take-profit
+    for the whole size goes on FIRST, then every other take-profit is
+    cancelled, so the position is never without a target and a refused new
+    order leaves the old one in place. Refuses a target on the losing side of
+    the mark (it would fill at once). Never touches the stop or the size.
+    Added 2026-10-29 to move the live trade onto the 0.5% offset target."""
+    if ex is None:
+        from pathiel.client import exchange as ex   # noqa: N813
+    user = ex.resolve_user_address()
+    pos = ex._position_size_on_coin(user, coin)
+    if pos is None:
+        return {"coin": coin, "ok": False, "reason": "position read failed"}
+    if pos == 0:
+        return {"coin": coin, "ok": False, "reason": "no open position"}
+    is_long, size = pos > 0, abs(pos)
+    mark = float(ex.get_hl_price(coin))
+    if (is_long and tp_px <= mark) or (not is_long and tp_px >= mark):
+        return {"coin": coin, "ok": False, "mark": mark,
+                "reason": f"target {tp_px:g} is on the wrong side of the mark {mark:g}"}
+    orders = ex._resting_orders_for_coin(user, coin)
+    old = [o for o in orders if o.get("reduceOnly") and "Take Profit" in str(o.get("orderType", ""))]
+    new = ex.place_hl_trigger_order(is_long, size, tp_px, "tp", coin)
+    if not new.get("ok"):
+        return {"coin": coin, "ok": False, "reason": f"new target refused, old kept: {new.get('error') or new}"}
+    failed = [o.get("oid") for o in old if not ex.cancel_orders(int(o.get("oid") or 0), coin).get("ok")]
+    return {"coin": coin, "ok": True, "position": pos, "tp_px": tp_px, "size": size,
+            "replaced": [o.get("triggerPx") for o in old], **({"cancel_failed": failed} if failed else {})}
 
 
 def sweep(coin: str, ex: Any = None) -> Dict[str, Any]:

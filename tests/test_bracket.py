@@ -19,6 +19,13 @@ from pathiel.agents import bracket
 COIN = "xyz:BRENTOIL"
 
 
+@pytest.fixture(autouse=True)
+def _no_target_offset(monkeypatch):
+    """Most tests here pin stacking, leverage, sizing and wiring on tight
+    hand-made setups; the 0.5% target offset has its own tests below."""
+    monkeypatch.setattr(bracket, "TARGET_OFFSET_FRAC", 0.0)
+
+
 class FakeEx:
     def __init__(self, pos=0.0, orders=None, mid=107.6, fill=1.27, sl_ok=True):
         self.pos, self.orders, self.mid, self.fill, self.sl_ok = pos, orders or [], mid, fill, sl_ok
@@ -703,3 +710,85 @@ def test_an_order_under_the_venue_minimum_is_refused_before_any_live_call():
                                 leverage=19, coin_max_leverage=20, add=True, ex=ex)
     assert not out["placed"] and "under the venue's $10 minimum" in out["reason"]
     assert not ex.calls, "nothing reaches the venue"
+
+
+# ------------------------------------------------- the 0.5% target offset
+def test_offset_target_matches_the_backtest_formula():
+    from services.strategies.backtest.desk_tick_sim import offset_target as sim_offset
+    for side in ("long", "short"):
+        for px in (113.75, 98.2):
+            assert bracket.offset_target(px, side, 0.005) == pytest.approx(sim_offset(px, side, 0.005))
+    assert bracket.offset_target(113.75, "long", 0.005) == pytest.approx(113.18125)
+    assert bracket.offset_target(100.0, "short", 0.005) == pytest.approx(100.5)
+    assert bracket.offset_target(113.75, "long", 0.0) == 113.75
+
+
+def test_a_new_bracket_takes_profit_0_5_percent_inside_the_structure(monkeypatch):
+    """Operator, 2026-10-29: adopt the sweep's best combo (0.5% closer target)."""
+    monkeypatch.setattr(bracket, "TARGET_OFFSET_FRAC", 0.005)
+    ex = FakeEx(pos=0.0)
+    out = bracket.place_bracket(COIN, entry_px=109.45, stop_px=108.95, tp_px=113.75, size=13.0,
+                                leverage=20, coin_max_leverage=20, ex=ex)
+    assert out["placed"] and out["structure_tp_px"] == 113.75
+    assert out["tp_px"] == pytest.approx(113.18125)
+    assert ex.calls[-1][-1] == pytest.approx(113.18125)          # the bracket carries the offset target
+    # a short goes the other way
+    ex = FakeEx(pos=0.0, mid=110.0)
+    out = bracket.place_bracket(COIN, entry_px=110.0, stop_px=110.6, tp_px=106.0, size=1.0,
+                                leverage=20, coin_max_leverage=20, ex=ex)
+    assert out["tp_px"] == pytest.approx(106.53)
+
+
+def test_the_offset_can_push_a_thin_setup_under_1_5r_and_it_is_refused(monkeypatch):
+    monkeypatch.setattr(bracket, "TARGET_OFFSET_FRAC", 0.005)
+    ex = FakeEx(pos=0.0)
+    out = bracket.place_bracket(COIN, entry_px=107.2, stop_px=106.7, tp_px=108.45, size=1.27,
+                                leverage=20, coin_max_leverage=20, ex=ex)
+    assert not out["placed"] and "1.5R" in out["reason"] and not ex.calls
+
+
+def test_a_top_up_keeps_the_positions_own_target(monkeypatch):
+    monkeypatch.setattr(bracket, "TARGET_OFFSET_FRAC", 0.005)
+    ex = FakeEx(pos=1.62, orders=[STOP_ROW, TP_ROW])
+    out = bracket.place_bracket(COIN, entry_px=111.40, stop_px=110.90, tp_px=114.0, size=1.0,
+                                leverage=20, coin_max_leverage=20, add=True, ex=ex)
+    assert out["placed"] and out["tp_px"] == 114.0 and "structure_tp_px" not in out
+
+
+def test_the_sims_live_params_match_the_live_bracket_rules():
+    """The backtest's idea of 'live' must not drift from what place_bracket does."""
+    from services.strategies.backtest.desk_tick_sim import live_params
+    lp = live_params()
+    import importlib
+    real = importlib.reload(bracket)      # the autouse fixture zeroed the module constant
+    assert lp.target_offset_frac == real.TARGET_OFFSET_FRAC == 0.005
+    assert lp.stop_buffer == 0.75 and lp.target_mode == "limit" and lp.leverage == 20.0
+    agent = (Path(__file__).resolve().parents[1] / ".claude" / "agents" / "desk-tick.md").read_text()
+    assert "Stop 0.75 beyond the structure on Brent" in agent
+
+
+# ------------------------------------------------- set_target
+def test_set_target_moves_the_take_profit_new_order_first():
+    """2026-10-29: the live 13.08 long moves from 113.75 to the 0.5% offset target."""
+    ex = BookEx(pos=13.08, orders=[_leg(1, "sl", 13.08, 108.95), _leg(2, "tp", 13.08, 113.75)])
+    ex.mid = 109.86
+    out = bracket.set_target(COIN, 113.18, ex=ex)
+    assert out["ok"] and out["replaced"] == ["113.75"]
+    tps = [(o["sz"], o["triggerPx"]) for o in ex.orders if "Take Profit" in o["orderType"]]
+    assert tps == [("13.08", "113.18")]
+    assert ex.calls.index(("tp", True, 13.08, 113.18)) < ex.calls.index(("cancel", 2))
+    assert [o["oid"] for o in ex.orders if "Stop" in o["orderType"]] == [1]   # stop untouched
+
+
+def test_set_target_refuses_the_wrong_side_and_a_flat_coin_and_keeps_the_old_one():
+    ex = BookEx(pos=13.08, orders=[_leg(2, "tp", 13.08, 113.75)])
+    ex.mid = 109.86
+    out = bracket.set_target(COIN, 109.0, ex=ex)
+    assert not out["ok"] and "wrong side" in out["reason"] and not ex.calls
+    flat = BookEx(pos=0.0, orders=[])
+    assert not bracket.set_target(COIN, 113.0, ex=flat)["ok"]
+    refused = BookEx(pos=13.08, orders=[_leg(2, "tp", 13.08, 113.75)], refuse={"tp"})
+    refused.mid = 109.86
+    out = bracket.set_target(COIN, 113.18, ex=refused)
+    assert not out["ok"] and "old kept" in out["reason"]
+    assert [o["oid"] for o in refused.orders] == [2]

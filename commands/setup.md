@@ -35,7 +35,7 @@ Never print the value of any key, ever. Names only.
    Every line must be PASS or WARN. A FAIL names the variable; fix it and rerun.
 
 4. **Connect the tools.** Tell the user to run `/mcp` and confirm the
-   `pathiel` server shows as connected with 59 tools. If it does not, the
+   `pathiel` server shows as connected with 60 tools. If it does not, the
    error is in the MCP panel; the usual cause is step 1 not having finished.
 
 5. **Prove it end to end** (read-only calls against the live venue, about a

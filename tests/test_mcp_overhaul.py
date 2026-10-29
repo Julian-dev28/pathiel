@@ -84,8 +84,10 @@ class TestToolsListBudget:
         funding/fee reads kept -- + 1 desk_grade tool added the same day for
         the grade-everything build) so a drift -- someone re-adding a
         duplicate schema, or silently dropping a tool -- shows up as a
-        failing assert, not a surprise someone has to notice by eye."""
-        assert len(M.TOOLS) == 59
+        failing assert, not a surprise someone has to notice by eye.
+        2026-10-30: +1 set_target (move an open trade's target to the
+        0.5%-closer level the sweep's best combo uses) = 60."""
+        assert len(M.TOOLS) == 60
 
     def test_desk_tools_are_present(self):
         names = {t["name"] for t in M.TOOLS}
@@ -103,9 +105,10 @@ class TestToolsListBudget:
         desk_grade tool for grade-everything: 59 tools, 26115 chars. The cap
         drops to 26115 + 10% (28727) so it keeps biting instead of riding the
         old 80-tool ceiling. A future PR that blows through this number has
-        to touch this test."""
+        to touch this test. 2026-10-30: +set_target, 60 tools, 27052 chars,
+        still under the cap."""
         payload = json.dumps({"tools": M.TOOLS})
-        assert len(M.TOOLS) <= 59, "tool count crept back up -- did a duplicate return?"
+        assert len(M.TOOLS) <= 60, "tool count crept back up -- did a duplicate return?"
         assert len(payload) <= 28727, f"tools/list grew to {len(payload)} chars"
 
     def test_no_duplicate_names_between_tools_and_aliases(self):
@@ -648,7 +651,7 @@ class TestStdioE2E:
             names = {t["name"] for t in listing["result"]["tools"]}
             assert "get_server_time" in names and "desk_list" in names
             assert "get_coin_price" not in names, "hidden alias leaked into tools/list"
-            assert len(names) == len(M.TOOLS) == 59
+            assert len(names) == len(M.TOOLS) == 60
 
             send({"jsonrpc": "2.0", "id": 3, "method": "tools/call",
                  "params": {"name": "get_server_time", "arguments": {}}})

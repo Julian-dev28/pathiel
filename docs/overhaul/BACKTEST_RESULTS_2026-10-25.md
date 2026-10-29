@@ -590,3 +590,16 @@ trades against 14 and less total R (+10.3R vs +11.2R): fewer stop-outs,
 not bigger wins. That is not beyond noise. Re-run after 30+ live trades
 before changing the live rules; offset 0.5% alone ($162.86, +13.3R, and
 better on every control) is the safer single candidate.
+
+### Adopted live (2026-10-30)
+
+Operator picked combo #1 (0.5% closer target + 0.75 stop buffer, 20x,
+limit target, fixed stop, re-entry on: $64 -> $199.60, 7 trades, 71% wins,
+30% max drawdown). Where it lives:
+
+| Rule | Code |
+|---|---|
+| Target 0.5% inside the structure | `pathiel/agents/bracket.py` `TARGET_OFFSET_FRAC`, applied by `place_bracket` on new trades only (a top-up keeps the position's target) |
+| Stop 0.75 beyond the structure | `.claude/agents/desk-tick.md` setup rule |
+| Backtest twin | `desk_tick_sim.live_params()`; `tests/test_bracket.py` checks the two stay in sync |
+| Move an open trade's target | MCP `set_target {coin, tp_px}`: new target first, then the old one is cancelled |
