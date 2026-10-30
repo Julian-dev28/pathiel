@@ -137,6 +137,18 @@ Each was one change from the old rules; per day with thesis, old = 11.2%.
 
 ## Risks and when to re-check
 
+- **Live result, first trade under the 0.5% offset target (2026-10-30).**
+  The 13.08 long from 109.46 closed at 113.22 for +$49.21 (account $121.29).
+  Brent then ran to 114.07, so the old 113.75 target would also have filled,
+  for $6.93 more. The offset pays on moves that stall short of the edge;
+  this one did not. Keep a tally of both outcomes per trade before the
+  30-trade re-check.
+- **A triggered limit target can fill as a taker.** The take-profit is a
+  trigger order with a limit price; when it triggers with the market already
+  through the limit, it crosses the book (`crossed: true`, 0.9 bps on the
+  xyz dex, $0.13 on this trade). The backtest assumes the maker fee, a
+  difference of under 1 bp.
+
 - **Sample size.** 8 thesis trades, all long, in a rising market. The
   per-day rates rank the setups; they are not a forecast.
 - **20x drawdowns.** On the 50-day no-thesis run the new rules' worst day
