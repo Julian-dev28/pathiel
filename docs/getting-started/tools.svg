@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 560" width="900" height="560" font-family="-apple-system,Helvetica,Arial,sans-serif">
+  <title>Read-only tools vs live-money tools</title>
+  <desc>Of the 60 pathiel MCP tools, 6 act on the real account and are marked LIVE MONEY; every other tool only reads the venue, your account, or the desk journal. A client asks before every LIVE MONEY call.</desc>
+
+  <rect x="0" y="0" width="900" height="560" fill="#ffffff"/>
+
+  <!-- Left: read-only -->
+  <rect x="30" y="30" width="380" height="430" rx="10" fill="#eef2ff" stroke="#3730a3" stroke-width="1.5"/>
+  <text x="220" y="58" text-anchor="middle" font-size="16" font-weight="700" fill="#1e1b4b">Read-only</text>
+  <text x="220" y="76" text-anchor="middle" font-size="11" fill="#1e1b4b">54 of 60 tools - reports only, never moves money</text>
+
+  <g font-size="12" fill="#1e1b4b">
+    <rect x="50" y="92" width="160" height="30" rx="6" fill="#ffffff" stroke="#3730a3"/>
+    <text x="130" y="111" text-anchor="middle">desk_list</text>
+    <rect x="220" y="92" width="170" height="30" rx="6" fill="#ffffff" stroke="#3730a3"/>
+    <text x="305" y="111" text-anchor="middle">desk_brief</text>
+
+    <rect x="50" y="132" width="160" height="30" rx="6" fill="#ffffff" stroke="#3730a3"/>
+    <text x="130" y="151" text-anchor="middle">account_overview</text>
+    <rect x="220" y="132" width="170" height="30" rx="6" fill="#ffffff" stroke="#3730a3"/>
+    <text x="305" y="151" text-anchor="middle">risk_limits</text>
+
+    <rect x="50" y="172" width="160" height="30" rx="6" fill="#ffffff" stroke="#3730a3"/>
+    <text x="130" y="191" text-anchor="middle">risk_size_trade</text>
+    <rect x="220" y="172" width="170" height="30" rx="6" fill="#ffffff" stroke="#3730a3"/>
+    <text x="305" y="191" text-anchor="middle">get_price</text>
+
+    <rect x="50" y="212" width="160" height="30" rx="6" fill="#ffffff" stroke="#3730a3"/>
+    <text x="130" y="231" text-anchor="middle">get_candles</text>
+    <rect x="220" y="212" width="170" height="30" rx="6" fill="#ffffff" stroke="#3730a3"/>
+    <text x="305" y="231" text-anchor="middle">get_l2_book</text>
+
+    <rect x="50" y="252" width="160" height="30" rx="6" fill="#ffffff" stroke="#3730a3"/>
+    <text x="130" y="271" text-anchor="middle">get_asset_positions</text>
+    <rect x="220" y="252" width="170" height="30" rx="6" fill="#ffffff" stroke="#3730a3"/>
+    <text x="305" y="271" text-anchor="middle">get_open_orders</text>
+
+    <rect x="50" y="292" width="160" height="30" rx="6" fill="#ffffff" stroke="#3730a3"/>
+    <text x="130" y="311" text-anchor="middle">connected_wallets</text>
+    <rect x="220" y="292" width="170" height="30" rx="6" fill="#ffffff" stroke="#3730a3"/>
+    <text x="305" y="311" text-anchor="middle">wallet_account</text>
+  </g>
+
+  <rect x="50" y="340" width="340" height="94" rx="6" fill="#f3f4f6" stroke="#4b5563"/>
+  <text x="220" y="360" text-anchor="middle" font-size="11" font-weight="600" fill="#1f2937">Writes the desk journal, not the account</text>
+  <text x="220" y="378" text-anchor="middle" font-size="11" fill="#1f2937">desk_refresh, desk_submit_call, desk_grade</text>
+  <text x="220" y="398" text-anchor="middle" font-size="11" fill="#1f2937">config (no arguments) reads; config with</text>
+  <text x="220" y="414" text-anchor="middle" font-size="11" fill="#1f2937">arguments rewrites live config - asks first too</text>
+
+  <!-- Right: live money -->
+  <rect x="490" y="30" width="380" height="430" rx="10" fill="#fff3e0" stroke="#92400e" stroke-width="1.5"/>
+  <text x="680" y="58" text-anchor="middle" font-size="16" font-weight="700" fill="#5c2d00">LIVE MONEY</text>
+  <text x="680" y="76" text-anchor="middle" font-size="11" fill="#5c2d00">6 tools - act on the real account, ask first</text>
+
+  <g font-size="13" fill="#5c2d00" font-weight="600">
+    <rect x="530" y="96" width="300" height="34" rx="6" fill="#ffffff" stroke="#92400e" stroke-width="1.5"/>
+    <text x="680" y="118" text-anchor="middle">place_bracket</text>
+
+    <rect x="530" y="142" width="300" height="34" rx="6" fill="#ffffff" stroke="#92400e" stroke-width="1.5"/>
+    <text x="680" y="164" text-anchor="middle">bracket_sweep</text>
+
+    <rect x="530" y="188" width="300" height="34" rx="6" fill="#ffffff" stroke="#92400e" stroke-width="1.5"/>
+    <text x="680" y="210" text-anchor="middle">set_target</text>
+
+    <rect x="530" y="234" width="300" height="34" rx="6" fill="#ffffff" stroke="#92400e" stroke-width="1.5"/>
+    <text x="680" y="256" text-anchor="middle">close_position</text>
+
+    <rect x="530" y="280" width="300" height="34" rx="6" fill="#ffffff" stroke="#92400e" stroke-width="1.5"/>
+    <text x="680" y="302" text-anchor="middle">set_leverage</text>
+
+    <rect x="530" y="326" width="300" height="34" rx="6" fill="#ffffff" stroke="#92400e" stroke-width="1.5"/>
+    <text x="680" y="348" text-anchor="middle">cancel_order</text>
+  </g>
+
+  <rect x="530" y="380" width="300" height="60" rx="6" fill="#ffffff" stroke="#92400e" stroke-dasharray="4,3"/>
+  <text x="680" y="400" text-anchor="middle" font-size="11" fill="#5c2d00">One position per account, up to 20x,</text>
+  <text x="680" y="417" text-anchor="middle" font-size="11" fill="#5c2d00">a stop that never widens, under 2R refused</text>
+
+  <text x="450" y="520" text-anchor="middle" font-size="12" fill="#374151">Every LIVE MONEY tool runs only on an explicit ask in the conversation.</text>
+</svg>

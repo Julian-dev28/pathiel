@@ -1,0 +1,75 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 420" width="1000" height="420" font-family="-apple-system,Helvetica,Arial,sans-serif">
+  <title>One desk-tick, step by step</title>
+  <desc>The desk-tick agent's procedure for one tick: slot check, read or refresh the thesis, housekeeping with bracket_sweep, read levels, make exactly one decision, write one log line. A slot held by another desk skips the rest of the tick.</desc>
+
+  <defs>
+    <marker id="arrow2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#374151"/>
+    </marker>
+    <marker id="arrowRed" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#991b1b"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="1000" height="420" fill="#ffffff"/>
+
+  <!-- step boxes -->
+  <g font-size="12">
+    <rect x="30" y="140" width="130" height="100" rx="8" fill="#eef2ff" stroke="#3730a3" stroke-width="1.5"/>
+    <text x="95" y="162" text-anchor="middle" font-weight="700" fill="#1e1b4b">0. Slot</text>
+    <text x="95" y="180" text-anchor="middle" fill="#1e1b4b">desk_slot.py</text>
+    <text x="95" y="196" text-anchor="middle" fill="#1e1b4b">held by us,</text>
+    <text x="95" y="211" text-anchor="middle" fill="#1e1b4b">free, or</text>
+    <text x="95" y="226" text-anchor="middle" fill="#1e1b4b">another desk</text>
+
+    <rect x="190" y="140" width="140" height="100" rx="8" fill="#eef2ff" stroke="#3730a3" stroke-width="1.5"/>
+    <text x="260" y="162" text-anchor="middle" font-weight="700" fill="#1e1b4b">1. Thesis</text>
+    <text x="260" y="180" text-anchor="middle" fill="#1e1b4b">desk_brief</text>
+    <text x="260" y="196" text-anchor="middle" fill="#1e1b4b">thesis_due.py</text>
+    <text x="260" y="212" text-anchor="middle" fill="#1e1b4b">desk_refresh</text>
+    <text x="260" y="227" text-anchor="middle" fill="#1e1b4b">only if due</text>
+
+    <rect x="360" y="140" width="150" height="100" rx="8" fill="#eef2ff" stroke="#3730a3" stroke-width="1.5"/>
+    <text x="435" y="162" text-anchor="middle" font-weight="700" fill="#1e1b4b">2. Housekeep</text>
+    <text x="435" y="180" text-anchor="middle" fill="#1e1b4b">bracket_sweep</text>
+    <text x="435" y="196" text-anchor="middle" fill="#1e1b4b">cancel stranded</text>
+    <text x="435" y="211" text-anchor="middle" fill="#1e1b4b">order, confirm</text>
+    <text x="435" y="226" text-anchor="middle" fill="#1e1b4b">stop coverage</text>
+
+    <rect x="540" y="140" width="140" height="100" rx="8" fill="#eef2ff" stroke="#3730a3" stroke-width="1.5"/>
+    <text x="610" y="162" text-anchor="middle" font-weight="700" fill="#1e1b4b">3. Levels</text>
+    <text x="610" y="180" text-anchor="middle" fill="#1e1b4b">oil_levels.py</text>
+    <text x="610" y="196" text-anchor="middle" fill="#1e1b4b">mid, 8h/24h/48h</text>
+    <text x="610" y="211" text-anchor="middle" fill="#1e1b4b">range, ATR14,</text>
+    <text x="610" y="226" text-anchor="middle" fill="#1e1b4b">2R + 20x check</text>
+
+    <rect x="700" y="140" width="140" height="100" rx="8" fill="#fff3e0" stroke="#92400e" stroke-width="1.5"/>
+    <text x="770" y="162" text-anchor="middle" font-weight="700" fill="#5c2d00">4. Decide</text>
+    <text x="770" y="180" text-anchor="middle" fill="#5c2d00">hold, top up,</text>
+    <text x="770" y="196" text-anchor="middle" fill="#5c2d00">cancel a stale</text>
+    <text x="770" y="211" text-anchor="middle" fill="#5c2d00">entry, or place</text>
+    <text x="770" y="226" text-anchor="middle" fill="#5c2d00">ONE bracket</text>
+
+    <rect x="860" y="140" width="120" height="100" rx="8" fill="#f3f4f6" stroke="#4b5563" stroke-width="1.5"/>
+    <text x="920" y="162" text-anchor="middle" font-weight="700" fill="#1f2937">5. Log</text>
+    <text x="920" y="180" text-anchor="middle" fill="#1f2937">one line to</text>
+    <text x="920" y="196" text-anchor="middle" fill="#1f2937">/tmp/oil-loop/</text>
+    <text x="920" y="211" text-anchor="middle" fill="#1f2937">progress.log</text>
+  </g>
+
+  <!-- arrows between steps -->
+  <line x1="160" y1="190" x2="188" y2="190" stroke="#374151" stroke-width="1.5" marker-end="url(#arrow2)"/>
+  <line x1="330" y1="190" x2="358" y2="190" stroke="#374151" stroke-width="1.5" marker-end="url(#arrow2)"/>
+  <line x1="510" y1="190" x2="538" y2="190" stroke="#374151" stroke-width="1.5" marker-end="url(#arrow2)"/>
+  <line x1="680" y1="190" x2="698" y2="190" stroke="#374151" stroke-width="1.5" marker-end="url(#arrow2)"/>
+  <line x1="840" y1="190" x2="858" y2="190" stroke="#374151" stroke-width="1.5" marker-end="url(#arrow2)"/>
+
+  <!-- skip branch -->
+  <line x1="95" y1="240" x2="95" y2="300" stroke="#991b1b" stroke-width="1.5" marker-end="url(#arrowRed)"/>
+  <rect x="20" y="300" width="300" height="60" rx="8" fill="#fef2f2" stroke="#991b1b" stroke-width="1.5"/>
+  <text x="170" y="324" text-anchor="middle" font-size="12" font-weight="700" fill="#991b1b">SKIP - another desk holds the slot</text>
+  <text x="170" y="342" text-anchor="middle" font-size="11" fill="#991b1b">log the line and stop: no brief, no MCP calls</text>
+
+  <text x="500" y="40" text-anchor="middle" font-size="16" font-weight="700" fill="#1f2937">One tick: slot -&gt; thesis -&gt; housekeeping -&gt; levels -&gt; one decision -&gt; log</text>
+  <text x="500" y="62" text-anchor="middle" font-size="12" fill="#1f2937">.claude/agents/desk-tick.md, run every 15 minutes by /loop 15m /desk-tick oil</text>
+</svg>

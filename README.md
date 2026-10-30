@@ -7,6 +7,9 @@
 
 ## Read this first
 
+- **New here?** [`docs/GETTING_STARTED.md`](docs/GETTING_STARTED.md) walks
+  through setup, permissions, and the prompts that take you from reading
+  the oil call to placing and tracking a trade.
 - **Headless since 2026-10-23.** The autonomous scan/research/execute
   engine, the seven strategy books it ran, and the DSL exit loop are all
   deleted. Claude is the only trader on the wallet, calling `place_bracket`
