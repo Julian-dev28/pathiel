@@ -77,7 +77,11 @@ def test_system_prompt_states_the_realistic_targets_and_calibration_rules(oil):
     assert "REACH" in text
     assert "p50" in text and "p75" in text
     assert "calibrated" in text
-    assert "median daily range" in text
+    # 2026-10-30 replay: requiring the stop outside the median daily range
+    # as well as 1.5R inside p50 reach made a trade impossible (29 of 30
+    # replayed days went flat). The rule is gone; the side rule replaces it.
+    assert "outside STRUCTURE's median daily range" not in text
+    assert "Do not go flat only" in text and "pullback level" in text
 
 
 # -- render_analytics_dense ---------------------------------------------------
@@ -141,7 +145,7 @@ def test_render_structure_includes_all_time_high_low_90d_and_median_range(oil):
     assert "no short target may sit below this" in text
     assert "90d range: 88.000 to 112.000" in text
     assert "median daily range (30d) 2.8%" in text
-    assert "beyond this from entry" in text
+    assert "one normal day's swing" in text and "beyond this from entry" not in text
 
 
 def test_render_forward_omits_reach_lines_when_absent(oil):
