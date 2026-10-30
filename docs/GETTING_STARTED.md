@@ -83,8 +83,9 @@ pathiel is allowed to sign orders with. Five steps, done once.
    API*, and generate a new API wallet, then approve it from your master
    account (`approveAgent`). Copy its address and private key before you
    leave that screen. This is the key pathiel actually signs orders with:
-   an agent wallet can trade but can never withdraw, so even a leaked
-   agent key only costs what's in the open position, never the account.
+   an agent wallet can trade but can never withdraw. A leaked agent key
+   could still lose money by trading, but it can never move funds out;
+   revoke it in the app and the leak is closed.
 4. **Put the credentials in the env file.** One file holds them: `.env.local`
    in a checkout, `~/.pathiel/.env.local` for a plugin install (mode 0600,
    gitignored either way). Precedence: `PATHIEL_ENV_FILE`, then the
