@@ -205,3 +205,5 @@ backtest-trades.csv
 
 # intel cache written at the repo root when PATHIEL_STATE_DIR is unset
 /intel/
+
+ROI.md
