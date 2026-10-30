@@ -603,3 +603,59 @@ limit target, fixed stop, re-entry on: $64 -> $199.60, 7 trades, 71% wins,
 | Stop 0.75 beyond the structure | `.claude/agents/desk-tick.md` setup rule |
 | Backtest twin | `desk_tick_sim.live_params()`; `tests/test_bracket.py` checks the two stay in sync |
 | Move an open trade's target | MCP `set_target {coin, tp_px}`: new target first, then the old one is cancelled |
+
+## 2026-10-30: strategy sweep, ranked by profit per day and per week
+
+Operator: "expand on various High ROI strategies, anything im failing to
+mention here should be tested ... think the most profit PER DAY, THEN PER
+WEEK". Runner: `services/strategies/evals/strategy_sweep.py` (gate tests in
+`services/strategies/tests/test_strategy_sweep.py`); new simulator options
+in `desk_tick_sim.Params` (gate tests in `test_strategy_variants.py`), every
+default unchanged (128 golden runs identical before and after; the sim is
+also 10x faster, a pointer instead of a rescan of the 1h bars each tick).
+
+New options: fixed-R targets (`target_r`), a scale-out at N R with optional
+breakeven (`partial_*`), a time stop, market entries (`entry_mode`, never
+above the thesis entry, can be stopped out on its own bar, no re-entry on
+a bar that just closed a trade), entry and target lookbacks, a UTC
+trading-hours window.
+
+Data: 9 journaled long theses over 11.83 days (2026-10-18 to 10-30), the
+always-long control over 30 and 50 days, $64 start, 15m clock,
+size-aware slippage. Per day is the compounding daily rate, per week is
+`(1 + day)^7 - 1`.
+
+Stage 1 (one change from live; 43 variants). Better on the theses and both
+controls: 2R gate. Worse on all three: partial exits, fixed-R targets,
+breakeven and trailing stops, 6h/12h time stops, resting further from the
+edge, re-entry off. Mixed: market entry, wider buffers, the 24h entry
+range, trading-hour windows, lower leverage.
+
+Stage 2: 1,944 combinations of the mixed and better changes; 1,660 beat
+live on both controls; live ranks 121 among them.
+
+| setup | per day | per week | $/day from $64 | $64 ends | trades / won | max dd | control 30d /day | control 50d /day |
+|---|---|---|---|---|---|---|---|---|
+| live | 11.2% | 110% | $13.58 | $224.63 | 8 / 62% | 30% | +1.01% | -4.88% (98% dd) |
+| market entry + 24h range + 2R gate | 18.7% | 233% | $35.82 | $487.66 | 8 / 75% | 29% | +9.48% | +4.67% (87% dd) |
+| same at 15x | 14.7% | 160% | $21.85 | $322.49 | 8 / 75% | 22% | +7.51% | +3.81% (81% dd) |
+| same at 10x | 10.2% | 97% | $11.66 | $201.93 | 8 / 75% | 16% | +5.60% | +2.69% (70% dd) |
+
+What each part adds (journaled / 50-day control, per day): market entry
+alone 12.4% / -4.22%; 24h range alone 7.0% / -0.35%; both 15.0% / +3.42%;
+all three 18.7% / +4.67%. Market entry plus the 24h range is the first
+rule set that makes the no-thesis control positive over 50 days, and its
+first half (Sep 11 to Oct 5, Brent flat to down) goes from -12.2%/day for
+live to -0.4%/day. Stress on the winner: double slippage 18.1%/day; the 1h
+clock 10.6%/day (it needs the 15m clock).
+
+Caveats: 8 trades on the theses; every thesis was long while Brent rose
+about 12%; the 50-day control's worst day for the winner is -57.7% and its
+worst week -61.2% at 20x. Per-day rates this high do not hold: they are a
+ranking, not a forecast.
+
+Live mapping if adopted (not done): the desk-tick agent takes the trade at
+the mid when price sits in the lower part of the 24h range (stop 0.75 under
+the 24h low, target 0.5% inside the 24h high, at least 2R, never above the
+thesis entry) instead of resting a limit at the 8h low; `place_bracket`'s
+gate `DEFAULT_MIN_R` 1.5 -> 2.0.
