@@ -24,6 +24,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+from datetime import datetime
 from typing import List, Optional, Tuple
 
 from pydantic import ValidationError
@@ -46,8 +47,29 @@ def write_thesis(
     analytics: DeskAnalytics,
     intel: Optional[IntelPacket],
     prev: Optional[Thesis],
+    model: Optional[str] = None,
+    now: Optional[datetime] = None,
 ) -> Thesis:
-    now = prompt_mod.utc_now()
+    """``model`` (default None) pins every services.llm.complete call this
+    thesis makes to one model alias ("opus", "fable", ...) instead of
+    services.llm's own default-model probe. ``now`` (default None ->
+    prompt_mod.utc_now(), the real wall clock) is the timestamp the
+    resulting Thesis is stamped with (created_at / expires_at / a
+    rejection's filename) -- NOT a lookahead knob: the market data itself
+    always comes from ``analytics`` as already built (analytics.as_of),
+    this only controls what the finished Thesis says its own clock was.
+    Both kwargs are additive: every existing caller (services.strategies.
+    pipeline's live refresh) passes 4 positional args and gets the old
+    wall-clock-timestamped, probed-default-model behavior unchanged.
+    Added 2026-10-30 for services/thesis/evals/replay.py, which must (1)
+    pin "opus" (never the live desk's "fable", per the operator's quota
+    note) regardless of what the probe would pick, and (2) stamp each
+    replayed Thesis with the historical day it replays, not the moment
+    the harness happened to run -- otherwise every day's thesis would
+    collide at nearly the same real timestamp and lose the chronological
+    order services.strategies.backtest.desk_tick_backtest.journaled_
+    direction depends on."""
+    now = now or prompt_mod.utc_now()
     tag = f"thesis:{spec.id}"
 
     try:
@@ -61,6 +83,7 @@ def write_thesis(
             system_prompt,
             user_prompt,
             max_output_tokens=spec.token_budget.max_output_tokens,
+            model=model,
             json_schema=schema,
             tag=tag,
             timeout_s=DEFAULT_TIMEOUT_S,
@@ -77,7 +100,7 @@ def write_thesis(
             # what triggers it must be visible in the log, not inferred.
             logger.warning(f"[thesis] {spec.id}: draft failed validation, repairing: "
                            + "; ".join(str(e) for e in errors)[:800])
-            result2 = _run_repair(system_prompt, user_prompt, errors, result1, spec, schema, tag)
+            result2 = _run_repair(system_prompt, user_prompt, errors, result1, spec, schema, tag, model=model)
             calls.append(result2)
             draft2, parse_err2 = _parse_draft(result2.text)
             draft2 = _normalize_instrument(draft2, analytics)
@@ -135,6 +158,7 @@ def _run_repair(
     spec: DeskSpec,
     schema: dict,
     tag: str,
+    model: Optional[str] = None,
 ) -> LlmResult:
     """One repair round. Prefers resuming result1's persisted session (short
     message: just the error list - the model already has the market data
@@ -150,6 +174,7 @@ def _run_repair(
                 system_prompt,
                 short_repair,
                 max_output_tokens=spec.token_budget.max_output_tokens,
+                model=model,
                 json_schema=schema,
                 tag=tag,
                 timeout_s=DEFAULT_TIMEOUT_S,
@@ -164,6 +189,7 @@ def _run_repair(
         system_prompt,
         full_repair,
         max_output_tokens=spec.token_budget.max_output_tokens,
+        model=model,
         json_schema=schema,
         tag=tag,
         timeout_s=DEFAULT_TIMEOUT_S,

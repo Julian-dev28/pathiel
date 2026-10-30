@@ -120,6 +120,15 @@ class Direction:
     # call after a target filled; a series with no calls (the controls) is
     # treated as one call per UTC day, the desk's daily-rewrite floor.
     regime_id: Optional[str] = None
+    # AI-informed variants (2026-10-30 replay build, Params.ai_levels /
+    # conviction_leverage): the thesis's own stop and first target, and its
+    # confidence. None on every direction series that doesn't set them
+    # (always-long/short, daily-sign, and journaled theses before this
+    # field existed) -- ai_levels/conviction_leverage then have nothing to
+    # act on and the sim behaves exactly as before these fields existed.
+    stop_px: Optional[float] = None
+    target_px: Optional[float] = None
+    confidence: Optional[float] = None
 
 
 DirectionAt = Callable[[int], Optional[Direction]]
@@ -181,6 +190,13 @@ class Params:
     flip_leverage: Optional[float] = None    # leverage for the flip (default: leverage)
     flip_stop_buffer: Optional[float] = None  # default: stop_buffer
     flip_time_stop_hours: Optional[float] = None
+    # ── AI-informed variants (2026-10-30, operator: "more AI informed, AI
+    # powered strategy that is more profitable" -- services/thesis/evals/
+    # replay.py's 30-day replay is what makes there be enough theses to test
+    # these against). Both off by default; off keeps every existing result
+    # byte-identical (see test_ai_variants.py's golden check).
+    ai_levels: bool = False               # try the thesis's own entry/stop/first target before the structural rule
+    conviction_leverage: Optional[Tuple[float, float, float]] = None   # (threshold, high_lev, low_lev); floored at 15x
 
 
 # Per-side market-sell slippage (bps) by notional (USD), walked on the live
@@ -270,6 +286,11 @@ class _Resting:
     placed_at: int
     is_add: bool = False
     orig_target_px: Optional[float] = None
+    # The leverage this entry will size and gate at (Params.conviction_
+    # leverage). None (every resting_add top-up, and every resting entry
+    # before this variant existed) means params.leverage, via
+    # _full_size_notional's own leverage-or-params.leverage fallback.
+    leverage: Optional[float] = None
 
 
 @dataclass
@@ -364,6 +385,62 @@ def offset_target(target_px: float, side: str, frac: float) -> float:
     return target_px * (1.0 - frac) if side == "long" else target_px * (1.0 + frac)
 
 
+# The operator's floor (2026-10-30): a conviction-sized trade's leverage
+# never drops below this, regardless of what Params.conviction_leverage's
+# low_lev is configured to.
+CONVICTION_LEVERAGE_FLOOR = 15.0
+
+
+def trade_leverage(d: Optional[Direction], params: Params) -> float:
+    """Per-trade leverage for a NEW entry (variant B, Params.conviction_
+    leverage = (threshold, high_lev, low_lev)): high_lev when the
+    direction's thesis confidence is >= threshold, else low_lev, both
+    floored at CONVICTION_LEVERAGE_FLOOR. Off (conviction_leverage is None)
+    or no confidence to read (a control direction series, e.g.
+    always_direction, or a journaled thesis predating this field):
+    params.leverage, unchanged from before this variant existed."""
+    if params.conviction_leverage is None:
+        return params.leverage
+    threshold, high_lev, low_lev = params.conviction_leverage
+    if d is not None and d.confidence is not None:
+        lev = high_lev if d.confidence >= threshold else low_lev
+    else:
+        lev = params.leverage
+    return max(lev, CONVICTION_LEVERAGE_FLOOR)
+
+
+def _ai_setup(d: Direction, mid: float, params: Params, leverage: float) -> Optional[Dict[str, Any]]:
+    """Variant A (Params.ai_levels): try the thesis's own entry
+    (`entry_ceiling`), stop (`stop_px`) and first target (`target_px`)
+    before the structural rule. None when the thesis doesn't carry all
+    three -- nothing to try, the caller falls back to `_setup`. Market
+    entry when the mid already pays the thesis's price or better (<=, a
+    long; >=, a short -- so it can never chase past the thesis entry, by
+    construction, same spirit as `Direction.entry_ceiling` elsewhere);
+    otherwise a resting limit AT the thesis entry. Gated by the same
+    check_leverage/check_levels the structural rule uses, at the trade's
+    own leverage (Params.conviction_leverage, when set): a thesis level
+    that fails either gate returns {"refused": ...}, same shape as
+    `_setup`'s refusal, and the caller falls back to the structural rule
+    rather than treating it as a hard stop. The thesis target gets the
+    same `target_offset_frac` discount the structural rule applies
+    (place_bracket's own convention: the take-profit sits a touch inside
+    the called level, so a move that only approaches it still fills)."""
+    entry_px = d.entry_ceiling
+    if entry_px is None or d.stop_px is None or d.target_px is None:
+        return None
+    is_long = d.side == "long"
+    is_market = (mid <= entry_px) if is_long else (mid >= entry_px)
+    entry = mid if is_market else entry_px
+    target_px = offset_target(d.target_px, d.side, params.target_offset_frac)
+    if not check_leverage(entry, d.stop_px, leverage, params.max_leverage)["ok"]:
+        return {"refused": "ai_leverage"}
+    if not check_levels(entry, d.stop_px, target_px, params.min_r)["ok"]:
+        return {"refused": "ai_min_r"}
+    return {"side": d.side, "entry_px": entry, "stop_px": d.stop_px, "target_px": target_px,
+            "orig_target_px": d.target_px, "is_market": is_market}
+
+
 def regime_key(d: Optional["Direction"], t: int) -> Optional[Tuple[str, Any]]:
     """The call a tick belongs to: the direction's own regime_id, else its UTC day."""
     if d is None:
@@ -451,14 +528,19 @@ def _in_session(t: int, session: Tuple[int, int]) -> bool:
     return start <= hr < end if start <= end else (hr >= start or hr < end)
 
 
-def _setup(d: Direction, mid: float, lv: Dict[str, Any], params: Params) -> Optional[Dict[str, Any]]:
+def _setup(d: Direction, mid: float, lv: Dict[str, Any], params: Params,
+          leverage: Optional[float] = None) -> Optional[Dict[str, Any]]:
     """The one setup a flat tick may take, or None (price not at the edge),
     or {"refused": reason}. Edge mode (the live rule): a limit at the entry
     range edge, capped at the thesis entry, only when the mid is within
     `atr_rest_frac` ATR of it. Market mode: the mid itself, refused above a
     long thesis's entry (below a short's: "never chase"), stop beyond the
     entry range (or beyond the mid if price already broke it). Target: the
-    far range edge, `target_offset_frac` inside it, or `target_r` x risk."""
+    far range edge, `target_offset_frac` inside it, or `target_r` x risk.
+    `leverage` (default None -> params.leverage, unchanged from before
+    Params.conviction_leverage existed) is the leverage the leverage gate
+    checks and the trade will actually size at."""
+    lev = params.leverage if leverage is None else leverage
     is_long = d.side == "long"
     edge = lv["entry_low"] if is_long else lv["entry_high"]
     if params.entry_mode == "market":
@@ -480,7 +562,7 @@ def _setup(d: Direction, mid: float, lv: Dict[str, Any], params: Params) -> Opti
         structural_target = target_px
     else:
         target_px = offset_target(structural_target, d.side, params.target_offset_frac)
-    if not check_leverage(entry, stop_px, params.leverage, params.max_leverage)["ok"]:
+    if not check_leverage(entry, stop_px, lev, params.max_leverage)["ok"]:
         return {"refused": "leverage"}
     if not check_levels(entry, stop_px, target_px, params.min_r)["ok"]:
         return {"refused": "min_r"}
@@ -662,7 +744,8 @@ def simulate(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], direct
             if filled:
                 run.filled += 1
                 position = _open_position(resting, resting.limit_px, t, params)
-                notional = _full_size_notional(equity, params)
+                position.leverage = resting.leverage
+                notional = _full_size_notional(equity, params, resting.leverage)
                 size = notional / resting.limit_px if resting.limit_px > 0 else 0.0
                 position.size = size
                 initial_size = size
@@ -762,7 +845,7 @@ def simulate(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], direct
                 else:
                     # top-up: one resting add at the original entry, while under
                     # full size; never after a scale-out (that would undo it)
-                    full = _full_size_notional(equity, params) / position.avg_entry
+                    full = _full_size_notional(equity, params, position.leverage) / position.avg_entry
                     if (resting_add is None and position.size < full - 1e-9 and not position.partial_done
                             and not position.is_flip):
                         resting_add = _Resting(side=position.side, limit_px=position.avg_entry,
@@ -817,16 +900,28 @@ def simulate(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], direct
             if d is not None and params.session_utc is not None and not _in_session(t, params.session_utc):
                 d = None
             if d is not None and lv is not None and lv["atr14"] and lv["target_low"] is not None:
-                setup = _setup(d, mid, lv, params)
+                # Variant A (Params.ai_levels): try the thesis's own levels
+                # first, at the leverage variant B (conviction_leverage)
+                # would size this trade at either way. A None/refused AI
+                # setup falls back to the structural rule exactly as if
+                # ai_levels were off.
+                lev = trade_leverage(d, params)
+                ai_setup = _ai_setup(d, mid, params, lev) if params.ai_levels else None
+                if ai_setup is not None and not ai_setup.get("refused"):
+                    setup = ai_setup
+                    open_now = setup["is_market"]
+                else:
+                    setup = _setup(d, mid, lv, params, lev)
+                    open_now = params.entry_mode == "market"
                 if setup is None:
                     pass
                 elif setup.get("refused"):
                     run.refused[setup["refused"]] += 1
-                elif params.entry_mode == "market" and len(run.trades) > trades_before_bar:
+                elif open_now and len(run.trades) > trades_before_bar:
                     pass            # a trade closed inside this bar: its open is in the past now
-                elif params.entry_mode == "market":
+                elif open_now:
                     run.filled += 1
-                    position, initial_size, equity = _market_open(setup, bar, t, equity, params)
+                    position, initial_size, equity = _market_open(setup, bar, t, equity, params, lev)
                     # conservative: the entry bar's own range can stop it out
                     is_long = position.side == "long"
                     if (bar.l <= position.stop_px) if is_long else (bar.h >= position.stop_px):
@@ -842,7 +937,7 @@ def simulate(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], direct
                 else:
                     resting = _Resting(side=d.side, limit_px=setup["entry_px"], stop_px=setup["stop_px"],
                                        target_px=setup["target_px"], placed_at=t,
-                                       orig_target_px=setup["orig_target_px"])
+                                       orig_target_px=setup["orig_target_px"], leverage=lev)
                     run.rested += 1
 
         # Safety net: the dedicated liq-price check (step 4) can only fire
@@ -887,4 +982,5 @@ def simulate(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], direct
     return run
 
 
-__all__ = ["Direction", "DirectionAt", "Params", "Trade", "Run", "simulate", "offset_target", "regime_key"]
+__all__ = ["Direction", "DirectionAt", "Params", "Trade", "Run", "simulate", "offset_target", "regime_key",
+          "trade_leverage", "CONVICTION_LEVERAGE_FLOOR", "live_params"]

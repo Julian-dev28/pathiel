@@ -96,6 +96,10 @@ class ThesisDirection:
     invalidation_px: Optional[float]
     targets: List[float]
     thesis_id: str
+    # The thesis call's own confidence (0-1), for Params.conviction_leverage
+    # (2026-10-30 AI-informed variants). None for a thesis written before
+    # this field was read, or any malformed value.
+    confidence: Optional[float] = None
 
 
 # "below 110.80", "above $4,028.50" — the first number after the directional
@@ -129,12 +133,18 @@ def load_thesis_file(path: str) -> Optional[ThesisDirection]:
     except (KeyError, ValueError):
         return None
     created_at_ms = int(created_at.astimezone(timezone.utc).timestamp() * 1000)
+    confidence = call.get("confidence")
+    try:
+        confidence = float(confidence) if confidence is not None else None
+    except (TypeError, ValueError):
+        confidence = None
     return ThesisDirection(
         created_at_ms=created_at_ms, side=side,
         entry_px=call.get("entry_px"), stop_px=call.get("stop_px"),
         invalidation_px=parse_invalidation_px(call.get("invalidation") or ""),
         targets=list(call.get("targets") or []),
         thesis_id=str(raw.get("id") or os.path.basename(path)),
+        confidence=confidence,
     )
 
 
