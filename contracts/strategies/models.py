@@ -449,6 +449,10 @@ class Thesis(_M):
 #                                           query: leverage (default 20)
 #                                           the 20x line for the desk's current
 #                                           call (services/strategies/call_line.py)
+#   GET  /api/desks/{desk_id}/next       -> {"ok", "verdict", "trigger_px", ...}
+#                                           query: leverage (default 20)
+#                                           the next trade by the tick's own rules
+#                                           (services/strategies/next_trade.py)
 #   GET  /api/desks/{desk_id}/levels     -> candle-derived levels, this desk's
 #                                           primary instrument (services/strategies/levels.py);
 #                                           only "oil" has a live loop today

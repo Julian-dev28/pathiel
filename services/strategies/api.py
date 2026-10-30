@@ -29,6 +29,7 @@ from contracts.strategies.models import DeskBrief, DeskCard, RefreshJob, Thesis,
 
 from services.strategies import desk_log, desks, facade, journal, levels
 from services.strategies.call_line import call_line
+from services.strategies import next_trade as next_trade_mod
 
 logger = logging.getLogger(__name__)
 
@@ -264,6 +265,44 @@ def get_call_line(desk_id: str, leverage: float = Query(20, gt=0, le=100)) -> Di
         logger.warning(f"[strategies.api] get_max_leverage({coin!r}) failed: {e}")
         coin_max_leverage = None
     return call_line(brief.thesis.call, coin_max_leverage, leverage)
+
+
+@router.get("/api/desks/{desk_id}/next")
+def get_next_trade(desk_id: str, leverage: float = Query(20, gt=0, le=100)) -> Dict[str, object]:
+    """The desk's next trade by the tick's own rules (services/strategies/
+    next_trade.py): would the tick buy at the mid now, else at what price,
+    with the stop, target, R and the leverage rule there. The thesis gives
+    the side and the never-chase ceiling; the 24h range gives the levels.
+    Read-only; answers {"ok": False, "reason"} rather than a 500."""
+    try:
+        brief = facade.get_brief(desk_id)
+    except desks.UnknownDeskError:
+        raise _unknown_desk(desk_id)
+    if brief.thesis is None:
+        return {"ok": False, "source": "desk_rules", "reason": "no thesis yet — call desk_refresh"}
+    call = brief.thesis.call
+    coin = call.instrument or _primary_coin(desk_id)
+    try:
+        lv = levels.summarize_coin(coin)
+    except Exception as e:  # noqa: BLE001 - no live levels means no answer, never a guess
+        return {"ok": False, "source": "desk_rules", "reason": f"could not read live levels for {coin}: {e}"}
+    r24 = lv.get("range_24h") or {}
+    if lv.get("mid") is None or r24.get("low") is None or r24.get("high") is None:
+        return {"ok": False, "source": "desk_rules", "reason": f"not enough closed candles for {coin}'s 24h range"}
+    from pathiel.client.exchange import get_max_leverage
+    try:
+        coin_max: Optional[float] = float(get_max_leverage(coin))
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"[strategies.api] get_max_leverage({coin!r}) failed: {e}")
+        coin_max = None
+    buf = next_trade_mod.stop_buffer_for(coin, lv.get("atr14_1h"))
+    if buf is None:
+        return {"ok": False, "source": "desk_rules", "reason": f"no ATR for {coin} to size the stop buffer"}
+    out = next_trade_mod.next_trade(call.side, float(lv["mid"]), float(r24["low"]), float(r24["high"]),
+                                    thesis_entry=call.entry_px, leverage=leverage,
+                                    coin_max_leverage=coin_max, stop_buffer=buf)
+    out["coin"] = coin
+    return out
 
 
 def _primary_coin(desk_id: str) -> str:

@@ -156,9 +156,11 @@ function renderCallLeverage() {
   if (!el || lastLeverageText === null) return;
   const p = PositionLine.positionForCall(lastThesisCall, lastPositionsByCoin);
   const callLev = lastThesisCall && lastThesisCall.leverage;
+  // Flat: the tick trades at the desk's leverage (the selector, 20x by
+  // default), not the thesis's own number (2026-10-30: the card read "5x").
   el.textContent = p && p.leverage != null
     ? `${p.leverage}x, your open position${callLev != null && Number(callLev) !== Number(p.leverage) ? ` (the call said ${callLev}x)` : ''}`
-    : lastLeverageText;
+    : `${currentLeverage}x, the desk's rule${callLev != null && Number(callLev) !== Number(currentLeverage) ? ` (the thesis says ${callLev}x)` : ''}`;
 }
 
 function fmtR(entries) {
@@ -218,7 +220,7 @@ function renderLevSeg() {
     </span>`).join('');
   seg.querySelectorAll('.lev-radio').forEach(radio => {
     radio.addEventListener('change', () => {
-      if (radio.checked) { currentLeverage = Number(radio.value); loadLine(); }
+      if (radio.checked) { currentLeverage = Number(radio.value); renderCallLeverage(); loadLine(); }
     });
   });
 }
@@ -232,7 +234,10 @@ let lastCallLine = null;
 
 async function loadLine() {
   try {
-    lastCallLine = await fetchJson(`/api/desks/${encodeURIComponent(activeDesk)}/line?leverage=${encodeURIComponent(currentLeverage)}`);
+    // The order the tick would send (services/strategies/next_trade.py),
+    // not the thesis's own entry/stop: since 2026-10-30 the tick builds its
+    // bracket off the 24h range.
+    lastCallLine = await fetchJson(`/api/desks/${encodeURIComponent(activeDesk)}/next?leverage=${encodeURIComponent(currentLeverage)}`);
   } catch (e) {
     lastCallLine = { error: e };
   }
@@ -244,6 +249,8 @@ function renderLine() {
   const live = PositionLine.positionLine(position);
   const seg = document.getElementById('line-seg');
   if (seg) seg.hidden = !!live;            // the leverage choice prices a call, not a filled position
+  const title = document.getElementById('line-title');
+  if (title) title.textContent = live ? 'Your open position' : "Next trade, by the tick's rules";
   if (live) { paintLine(live, true); return; }
   const line = lastCallLine;
   if (!line) return;
@@ -260,7 +267,31 @@ function renderLine() {
     document.getElementById('line-empty-detail').textContent = line.reason || 'No 20x line to show.';
     return;
   }
+  if (line.source === 'desk_rules') { paintNextTrade(line); return; }
   paintLine(line, false);
+}
+
+/** The next trade by the tick's own rules (GET /api/desks/{id}/next): the
+ *  box shows the order the tick would send, at the mid when it trades now,
+ *  else at the price where it would. */
+function paintNextTrade(n) {
+  paintLine(n, false);
+  const lev = Number(n.leverage || currentLeverage);
+  document.getElementById('line-liq-label').textContent =
+    n.ok ? `Liquidation at ${lev}x, buying now` : `Liquidation at ${lev}x, at ${fmtPrice(n.trigger_px)}`;
+  const badge = n.ok ? ['b-hold', n.side === 'short' ? 'Sells now' : 'Buys now']
+    : n.trigger_leverage_ok ? ['b-flat', 'Waiting']
+    : ['b-avoid', `Waiting, ${lev}x blocked`];
+  document.getElementById('line-verdict-badge').innerHTML = `<span class="badge ${badge[0]}">${esc(badge[1])}</span>`;
+  const long = n.side !== 'short';
+  const r24 = n.range_24h || {};
+  const parts = [
+    `Mid ${fmtPrice(n.mid)}: the tick ${n.verdict}.`,
+    `Stop ${fmtPrice(n.stop_px)} (0.75 ${long ? 'under the 24h low' : 'over the 24h high'} ${fmtPrice(long ? r24.low : r24.high)}),`
+      + ` target ${fmtPrice(n.tp_px)} (0.5% inside the 24h ${long ? 'high' : 'low'} ${fmtPrice(n.structure_tp_px)}), ${Number(n.min_r)}R or better.`,
+    n.blockers && n.blockers.length ? `Now: ${n.blockers.join('; ')}.` : '',
+  ];
+  document.getElementById('line-reason').textContent = parts.filter(Boolean).join(' ');
 }
 
 function paintLine(line, isPosition) {
@@ -580,6 +611,11 @@ async function loadLog() {
   try {
     const r = await fetchJson(`/api/desks/${encodeURIComponent(activeDesk)}/log?n=30`);
     body.textContent = (r.lines && r.lines.length) ? r.lines.join('\n') : 'no ticks yet';
+    const last = document.getElementById('call-last-tick');
+    if (last && r.lines && r.lines.length) {
+      last.textContent = 'Last tick: ' + r.lines[r.lines.length - 1].replace(/^DESK-TICK \S+ /, '');
+      last.hidden = false;
+    }
   } catch (e) {
     body.textContent = 'could not read the loop log: ' + e.message;
   }

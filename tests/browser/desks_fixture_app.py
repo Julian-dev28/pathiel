@@ -561,6 +561,10 @@ def create_app() -> FastAPI:
     async def call_line(desk_id: str, leverage: float = 20.0) -> dict:
         return {"ok": False, "reason": "fixture app: the leverage line is not modelled here"}
 
+    @app.get("/api/desks/{desk_id}/next")
+    async def next_trade(desk_id: str, leverage: float = 20.0) -> dict:
+        return {"ok": False, "source": "desk_rules", "reason": "fixture app: the next trade is not modelled here"}
+
     @app.get("/api/desks", response_model=List[DeskCard])
     async def list_desks() -> List[DeskCard]:
         return [card_for(did) for did in DESK_ORDER]

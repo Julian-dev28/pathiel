@@ -121,6 +121,10 @@ def create_app(scenario: str) -> FastAPI:
     async def line(desk_id: str, leverage: float = 20) -> dict:
         return {"ok": False, "reason": "fixture: no line computed"}
 
+    @app.get("/api/desks/{desk_id}/next")
+    async def next_trade(desk_id: str, leverage: float = 20) -> dict:
+        return {"ok": False, "source": "desk_rules", "reason": "fixture: no next trade computed"}
+
     @app.get("/api/desks/{desk_id}/levels")
     async def levels(desk_id: str) -> dict:
         return {"mid": 111.55, "last_closed_1h": None, "range_8h": None,

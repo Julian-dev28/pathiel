@@ -140,7 +140,7 @@
       <p class="call-sentence" id="call-sentence"></p>
       <div class="call-meta-row" id="call-meta">
         <div><div class="sec-label">Leverage</div><div class="kv kv-text" id="call-leverage">&mdash;</div></div>
-        <div><div class="sec-label">Pays</div><div class="kv" id="call-pays">&mdash;</div></div>
+        <div><div class="sec-label">Thesis plan pays</div><div class="kv" id="call-pays">&mdash;</div></div>
         <div><div class="sec-label">Biggest risk</div><div class="kv kv-text" id="call-risk">&mdash;</div></div>
         <div><div class="sec-label">Next catalyst</div><div class="kv kv-text" id="call-catalyst">&mdash;</div></div>
       </div>
@@ -156,10 +156,16 @@
            disagree, by comparing against the same position data the
            Wallets card already fetched (no extra request). -->
       <div id="call-position-mismatch" class="note warn" hidden></div>
+      <!-- The tick trades its own bracket off the 24h range (docs/strategy/
+           OIL_STRATEGY.md); the thesis's entry/stop/targets above are its plan.
+           The card below shows the order the tick would send. -->
+      <div class="note" id="call-rules-note">The thesis sets the side, the exit and the most it will pay. The tick builds the actual order from the 24h range (below).</div>
+      <div class="note mono" id="call-last-tick" hidden></div>
       <a href="/desk/oil" class="note" id="full-thesis-link">Full thesis &rarr;</a>
     </div>
 
     <div id="line-card" class="card lev-card" hidden>
+      <div class="sec-label" id="line-title">Next trade, by the tick's rules</div>
       <div class="lev-seg" id="line-seg" role="radiogroup" aria-label="Leverage"></div>
       <div class="lev-stats">
         <div><div class="sec-label" id="line-liq-label">Liquidation at this leverage</div><div class="kv" id="line-liq-px">&mdash;</div></div>
