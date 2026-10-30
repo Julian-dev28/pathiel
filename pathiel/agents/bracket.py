@@ -95,7 +95,10 @@ def min_tradable_equity(config: Optional[Dict[str, Any]] = None) -> float:
     return max(MIN_TRADABLE_EQUITY_USD, book_margin_requirement(cfg))
 
 
-DEFAULT_MIN_R = 1.5
+# The reward:risk a new trade must pay. 2R since 2026-10-30 (operator: "switch
+# it", adopting the strategy sweep's winner: market entry + 24h range + 2R;
+# docs/strategy/OIL_STRATEGY.md). 1.5R from 2026-10-23 until then.
+DEFAULT_MIN_R = 2.0
 # The stop may use at most this share of the distance to liquidation. At 20x
 # on Brent liquidation sits ~2.5% away and one average hour moves 2.7%; the
 # only 20x trades that survived were the ones whose stop sat far inside that

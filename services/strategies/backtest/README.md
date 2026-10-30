@@ -1,7 +1,8 @@
 # services/strategies/backtest
 
 Pure, offline replay of the desk-tick loop's mechanics — entry, stop,
-target, the 1.5R gate, the 20x leverage rule, full-port sizing, one
+target, the R gate (`Params.min_r`, 1.5 by default; the live desk runs
+2R since 2026-10-30, `desk_tick_sim.live_params()`), the 20x leverage rule, full-port sizing, one
 resting top-up, resting-order hygiene, fees and funding — against real
 Hyperliquid candles. Built from
 `docs/overhaul/BACKTEST_PLAN_2026-10-25.md`; results at

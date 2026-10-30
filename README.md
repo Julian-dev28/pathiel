@@ -110,7 +110,8 @@ the rest:
   account's one slot is held by another coin.
 - `check_leverage` is the 20x rule: the stop must sit inside half the
   distance to liquidation at the requested leverage, or the tool refuses.
-- `check_levels` refuses any bracket paying under 1.5R to its target.
+- `check_levels` refuses any bracket paying under 2R to its target (1.5R
+  until 2026-10-30; `bracket.DEFAULT_MIN_R`, see `docs/strategy/OIL_STRATEGY.md`).
 - **The whole equity, every position** (operator, 2026-10-27). Sizing holds
   nothing back but the opening taker fee: margin + fee = equity
   (`services/risk/derive.py::margin_after_open_fee`, 4.5 bps, the account's
@@ -234,7 +235,7 @@ read the same tools.
 | `accounts` | Registered accounts, which is active |
 | `risk_limits` | Positions at once, $ per stop-out, daily pause, max leverage |
 | `risk_size_trade` | Size one trade for this account: size, margin, $ at risk, payoff, liquidation |
-| `place_bracket` | **Live money.** One entry with exact stop and target, sized to the whole equity less the opening fee, refuses under 1.5R or a taken slot; `add: true` tops an open position up to full size |
+| `place_bracket` | **Live money.** One entry with exact stop and target, sized to the whole equity less the opening fee, refuses under 2R or a taken slot; `add: true` tops an open position up to full size |
 | `bracket_sweep` | **Live money.** Cancel a stranded sibling order, confirm stop coverage, fold one-per-fill stops/targets at one price into a single pair |
 | `close_position` | **Live money.** Close a coin through the reduce-only close helper |
 | `set_leverage` | **Live money.** Set leverage, keeping the position's own margin type |

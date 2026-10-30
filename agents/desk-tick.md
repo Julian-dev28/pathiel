@@ -85,19 +85,26 @@ ToolSearch call: `select:mcp__pathiel__desk_brief,mcp__pathiel__bracket_sweep,mc
      current structural edge (within 0.25 ATR of the 8h or 24h range low
      for a long, high for a short). Otherwise `cancel_order {order_id, coin}`
      and fall through.
-   - **Flat, slot free, nothing resting:** one setup in the thesis
-     direction, anchored on structure: a pullback to the 8h or 24h range
-     edge, or a breakout retest. Stop 0.75 beyond the structure on Brent
-     (operator, 2026-10-29, adopting the scenario sweep's best combination;
-     0.50 until then, 0.10 to 0.25 lost on every setting); on another
-     desk's instrument the same distance in ATR terms (0.75 / Brent's 1h
-     ATR14, about 1.3 ATR). Target at the next structure: pass that
-     structure level as `tp_px`; `place_bracket` itself puts the take-profit
-     0.5% of price inside it (bracket.TARGET_OFFSET_FRAC) and re-checks
-     1.5R on the offset target, so never shave the target yourself.
-     `--check` must say ok. `place_bracket {coin, entry_px, stop_px, tp_px}`
-     with `entry_px` set (resting limit). Let the tool size it. No setup:
-     no trade, one clause why.
+   - **Flat, slot free, nothing resting:** one MARKET entry in the thesis
+     direction, sized off the 24h range (operator, 2026-10-30: "switch it",
+     the strategy sweep's winner; it replaced resting a limit at the 8h
+     edge; docs/strategy/OIL_STRATEGY.md). From the levels script:
+       - **Stop:** 0.75 beyond the 24h low for a long (24h high for a
+         short), or 0.75 beyond the mid if price already trades through
+         that edge. On another desk's instrument the same distance in ATR
+         terms (0.75 / Brent's 1h ATR14, about 1.3 ATR).
+       - **Target:** the far 24h edge (24h high for a long) as `tp_px`;
+         `place_bracket` puts the take-profit 0.5% of price inside it
+         (bracket.TARGET_OFFSET_FRAC) and judges 2R on that offset target,
+         so never shave the target yourself.
+       - **Never chase:** no entry when the mid is above the thesis entry
+         for a long (below it for a short).
+     Judge it first: `place_bracket {coin, stop_px, tp_px, dry_run: true}`
+     (no `entry_px` = market at the live mid). Only when the dry run says
+     ok (2R or more on the offset target, the 20x line passes), send the
+     same call without `dry_run`. Let the tool size it. Most ticks the mid
+     sits too high in the range to pay 2R: no trade, one clause why
+     ("pays 1.4R at 111.40", "mid above thesis entry").
 6. **Log.** Append one line to `/tmp/oil-loop/progress.log` (create the
    directory if needed) and print it:
    `DESK-TICK DESK <utc> coin=<COIN> mid=<mid> pos=<size@entry or flat> action=<HOLD|PLACED|CANCELLED|CLOSED|NONE> <reason, under 15 words>`

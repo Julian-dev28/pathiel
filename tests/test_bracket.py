@@ -83,7 +83,7 @@ def test_check_levels_side_and_r(entry, stop, tp, side, r):
 def test_the_chase_that_happened_is_refused():
     # 2026-10-23: market at 107.61 with stop 106.70 / tp 108.45 paid 0.92R.
     g = bracket.check_levels(107.61, 106.70, 108.45)
-    assert not g["ok"] and "under the 1.5R minimum" in g["reason"]
+    assert not g["ok"] and "under the 2.0R minimum" in g["reason"]
 
 
 def test_the_desk_call_that_paid_047r_is_refused():
@@ -254,7 +254,7 @@ def test_handler_sizes_then_places(monkeypatch):
         {"coin": "xyz:BRENTOIL", "entry_px": 107.2, "stop_px": 106.7, "tp_px": 108.45}))
     assert out["ok"] and out["sizing"]["risk_usd"] == 0.64
     assert seen == {"coin": COIN, "entry_px": 107.2, "stop_px": 106.7, "tp_px": 108.45,
-                    "size": 1.27, "leverage": 10, "min_r": 1.5, "coin_max_leverage": 20.0, "dry_run": False,
+                    "size": 1.27, "leverage": 10, "min_r": 2.0, "coin_max_leverage": 20.0, "dry_run": False,
                     "add": False}
 
 
@@ -384,7 +384,7 @@ def test_max_leverage_for_stop_is_the_boundary():
 
 def test_place_bracket_refuses_a_stop_too_close_to_liquidation():
     ex = FakeEx()
-    out = bracket.place_bracket(COIN, entry_px=107.0, stop_px=101.65, tp_px=116.0,   # 1.68R: passes the R gate
+    out = bracket.place_bracket(COIN, entry_px=107.0, stop_px=101.65, tp_px=118.0,   # 2.06R: passes the R gate
                                 size=1.0, leverage=20, coin_max_leverage=20, ex=ex)
     assert not out["placed"] and "at most 8x" in out["reason"]
     assert out["liq"]["max_leverage_ok"] == 8
@@ -739,12 +739,12 @@ def test_a_new_bracket_takes_profit_0_5_percent_inside_the_structure(monkeypatch
     assert out["tp_px"] == pytest.approx(106.53)
 
 
-def test_the_offset_can_push_a_thin_setup_under_1_5r_and_it_is_refused(monkeypatch):
+def test_the_offset_can_push_a_thin_setup_under_the_gate_and_it_is_refused(monkeypatch):
     monkeypatch.setattr(bracket, "TARGET_OFFSET_FRAC", 0.005)
     ex = FakeEx(pos=0.0)
     out = bracket.place_bracket(COIN, entry_px=107.2, stop_px=106.7, tp_px=108.45, size=1.27,
                                 leverage=20, coin_max_leverage=20, ex=ex)
-    assert not out["placed"] and "1.5R" in out["reason"] and not ex.calls
+    assert not out["placed"] and "under the 2.0R minimum" in out["reason"] and not ex.calls
 
 
 def test_a_top_up_keeps_the_positions_own_target(monkeypatch):
@@ -763,8 +763,13 @@ def test_the_sims_live_params_match_the_live_bracket_rules():
     real = importlib.reload(bracket)      # the autouse fixture zeroed the module constant
     assert lp.target_offset_frac == real.TARGET_OFFSET_FRAC == 0.005
     assert lp.stop_buffer == 0.75 and lp.target_mode == "limit" and lp.leverage == 20.0
+    # 2026-10-30 "switch it": market entry off the 24h range, 2R gate
+    assert lp.min_r == real.DEFAULT_MIN_R == 2.0
+    assert lp.entry_mode == "market" and lp.entry_lookback_h == 24
     agent = (Path(__file__).resolve().parents[1] / ".claude" / "agents" / "desk-tick.md").read_text()
-    assert "Stop 0.75 beyond the structure on Brent" in agent
+    assert "one MARKET entry in the thesis" in agent
+    assert "0.75 beyond the 24h low for a long" in agent and "dry_run: true" in agent
+    assert "Never chase" in agent
 
 
 # ------------------------------------------------- set_target

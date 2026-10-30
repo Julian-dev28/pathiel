@@ -329,12 +329,15 @@ def _open_position(resting: _Resting, fill_px: float, t: int, params: Params) ->
                      else resting.target_px)
 
 
-# The live desk's rules as of 2026-10-29 (operator adopted the scenario sweep's
-# best combination: 0.5% target offset, 0.75 stop buffer, limit target, fixed
-# stop, 20x, re-entry on). Params() keeps the older defaults the existing
-# evals and tests pin; compare a variant against live_params().
+# The live desk's rules. 2026-10-30 (operator adopted the scenario sweep's
+# best combination): 0.5% target offset, 0.75 stop buffer, limit target, fixed
+# stop, 20x, re-entry on. 2026-10-30 later ("switch it", the strategy sweep's
+# winner): market entry, 24h entry range, 2R gate. Params() keeps the older
+# defaults the existing evals and tests pin; compare a variant against
+# live_params(). docs/strategy/OIL_STRATEGY.md has both rule sets.
 def live_params() -> "Params":
-    return Params(stop_buffer=0.75, target_offset_frac=0.005, target_mode="limit", leverage=20.0)
+    return Params(stop_buffer=0.75, target_offset_frac=0.005, target_mode="limit", leverage=20.0,
+                  entry_mode="market", entry_lookback_h=24, min_r=2.0)
 
 
 def offset_target(target_px: float, side: str, frac: float) -> float:

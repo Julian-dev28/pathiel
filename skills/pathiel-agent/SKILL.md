@@ -43,7 +43,7 @@ explicit confirmation.**
    entry with an exact stop and target. It sizes through
    `services/risk/size.py`'s `size_trade()` against the operator's saved
    risk profile, checks the stop against liquidation
-   (`pathiel.agents.bracket.check_leverage`), and refuses under the 1.5R
+   (`pathiel.agents.bracket.check_leverage`), and refuses under the 2R
    minimum or when a position/entry already exists on the coin.
 3. **Housekeep.** `bracket_sweep {coin}` after every close: cancels the
    stranded sibling order left by a fired stop/target and confirms an open

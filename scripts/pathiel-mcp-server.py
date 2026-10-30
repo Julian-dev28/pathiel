@@ -124,7 +124,7 @@ SERVER_INSTRUCTIONS = """pathiel: a headless trading desk on live Hyperliquid. R
 Start here
 - desk_list, then desk_brief {desk} for that desk's call. Quick mode is short markdown, call first, with "Your size" for the active account. The Desk page (http://localhost:8000/) shows the same call as a card plus the open position with margin in use.
 - desk_refresh {desk} writes a NEW thesis (news + one local model call, about a minute). Use it when asked, when the brief says the thesis is stale, or when its target has already been hit.
-- place_bracket {coin, entry_px, stop_px, tp_px}: one entry with an exact stop and target, sized to the whole equity less the opening fee (20x cap, ONE position per account), stop inside half the distance to liquidation. Refuses under 1.5R and a second position, except add=true: one same-side top-up to full size, stop no wider. bracket_sweep {coin}: cancel a stranded sibling, confirm the stop covers the position, fold per-fill stops/targets into one pair. Run it after every close.
+- place_bracket {coin, entry_px, stop_px, tp_px}: one entry with an exact stop and target, sized to the whole equity less the opening fee (20x cap, ONE position per account), stop inside half the distance to liquidation. Refuses under 2R and a second position, except add=true: one same-side top-up to full size, stop no wider. bracket_sweep {coin}: cancel a stranded sibling, confirm the stop covers the position, fold per-fill stops/targets into one pair. Run it after every close.
 - set_leverage {coin, leverage}: keeps an open position's own margin type; a venue refusal is an error. Confirm with get_asset_positions.
 - account_overview: equity and where it sits. HIP-3 money (xyz:BRENTOIL, xyz:CL, xyz:NVDA, ...) lives on its own dex (xyz), not main; main-dex-only reads look empty for it.
 - risk_limits / risk_size_trade: what this account may trade and how big, from the saved risk profile. Size every suggested trade with risk_size_trade, never by hand.
@@ -941,7 +941,7 @@ TOOLS = [
         "name": "place_bracket",
         "description": "One trade with exact stop and take-profit, sized like "
                        "risk_size_trade. entry_px = resting limit, stop/target attached on "
-                       "fill; omit for market. Refuses under min_r (1.5R) or an existing "
+                       "fill; omit for market. Refuses under min_r (2R) or an existing "
                        "position/entry on the coin, unless add=true: then it tops the open "
                        "position up to the full-port size on the same side, stop no wider "
                        "than the resting one, existing protection untouched. dry_run = size only.",
