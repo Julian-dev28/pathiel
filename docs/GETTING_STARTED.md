@@ -237,9 +237,9 @@ session.
 ```
 Stop the loop.
 ```
-End or interrupt the session. Nothing ticks between ticks and nothing
-ticks at all once the session stops, because the loop has no process of
-its own.
+Claude cancels the scheduled `/loop` job in this session; ending the
+session stops it too. The loop has no process of its own, so once it is
+cancelled nothing ticks and nothing trades.
 
 ## 5. Permissions and safety
 
