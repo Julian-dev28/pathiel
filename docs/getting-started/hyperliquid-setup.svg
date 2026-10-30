@@ -1,0 +1,70 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 320" width="1100" height="320" font-family="-apple-system,Helvetica,Arial,sans-serif">
+  <title>Hyperliquid account setup: master wallet to agent wallet to pathiel</title>
+  <desc>Connect a wallet at app.hyperliquid.xyz as the master account and deposit USDC there. Create an agent (API) wallet under More, API, approved by the master account; it can trade but can never withdraw. Copy its address and private key into .env.local alongside the master address. pathiel's MCP server reads that file and signs orders with the agent key against Hyperliquid, where the master account's funds sit.</desc>
+
+  <defs>
+    <marker id="arrowSetup" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#374151"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="1100" height="320" fill="#ffffff"/>
+
+  <text x="550" y="34" text-anchor="middle" font-size="16" font-weight="700" fill="#1f2937">Master wallet approves an agent wallet; the agent wallet trades, never withdraws</text>
+
+  <!-- 1: Master wallet -->
+  <rect x="20" y="100" width="190" height="130" rx="8" fill="#f3f4f6" stroke="#4b5563" stroke-width="1.5"/>
+  <text x="115" y="123" text-anchor="middle" font-size="13" font-weight="700" fill="#1f2937">Master wallet</text>
+  <text x="115" y="142" text-anchor="middle" font-size="11" fill="#1f2937">connect at</text>
+  <text x="115" y="158" text-anchor="middle" font-size="11" fill="#1f2937">app.hyperliquid.xyz</text>
+  <text x="115" y="178" text-anchor="middle" font-size="11" fill="#1f2937">deposit USDC there</text>
+  <text x="115" y="198" text-anchor="middle" font-size="11" font-weight="600" fill="#1f2937">can trade AND withdraw</text>
+
+  <!-- 2: Agent wallet -->
+  <rect x="250" y="100" width="190" height="130" rx="8" fill="#fff3e0" stroke="#92400e" stroke-width="1.5"/>
+  <text x="345" y="123" text-anchor="middle" font-size="13" font-weight="700" fill="#5c2d00">Agent (API) wallet</text>
+  <text x="345" y="142" text-anchor="middle" font-size="11" fill="#5c2d00">generated under</text>
+  <text x="345" y="158" text-anchor="middle" font-size="11" fill="#5c2d00">More, API in the app</text>
+  <text x="345" y="178" text-anchor="middle" font-size="11" fill="#5c2d00">approved by the master</text>
+  <text x="345" y="198" text-anchor="middle" font-size="11" font-weight="600" fill="#5c2d00">can trade, never withdraw</text>
+
+  <!-- 3: .env.local -->
+  <rect x="480" y="100" width="190" height="130" rx="8" fill="#f3f4f6" stroke="#4b5563" stroke-width="1.5"/>
+  <text x="575" y="123" text-anchor="middle" font-size="13" font-weight="700" fill="#1f2937">.env.local</text>
+  <text x="575" y="142" text-anchor="middle" font-size="11" fill="#1f2937">WALLET_ADDRESS +</text>
+  <text x="575" y="158" text-anchor="middle" font-size="11" fill="#1f2937">PRIVATE_KEY (agent)</text>
+  <text x="575" y="178" text-anchor="middle" font-size="11" fill="#1f2937">MASTER_ADDRESS</text>
+  <text x="575" y="198" text-anchor="middle" font-size="11" fill="#1f2937">(public, not a secret)</text>
+
+  <!-- 4: pathiel MCP server -->
+  <rect x="710" y="100" width="190" height="130" rx="8" fill="#eef2ff" stroke="#3730a3" stroke-width="1.5"/>
+  <text x="805" y="123" text-anchor="middle" font-size="13" font-weight="700" fill="#1e1b4b">pathiel MCP server</text>
+  <text x="805" y="142" text-anchor="middle" font-size="11" fill="#1e1b4b">reads .env.local at</text>
+  <text x="805" y="158" text-anchor="middle" font-size="11" fill="#1e1b4b">startup</text>
+  <text x="805" y="178" text-anchor="middle" font-size="11" fill="#1e1b4b">signs orders with the</text>
+  <text x="805" y="198" text-anchor="middle" font-size="11" fill="#1e1b4b">agent key</text>
+
+  <!-- 5: Hyperliquid venue -->
+  <rect x="940" y="100" width="140" height="130" rx="8" fill="#fff3e0" stroke="#92400e" stroke-width="1.5"/>
+  <text x="1010" y="123" text-anchor="middle" font-size="13" font-weight="700" fill="#5c2d00">Hyperliquid</text>
+  <text x="1010" y="142" text-anchor="middle" font-size="11" fill="#5c2d00">venue</text>
+  <text x="1010" y="162" text-anchor="middle" font-size="11" fill="#5c2d00">xyz:BRENTOIL</text>
+  <text x="1010" y="178" text-anchor="middle" font-size="11" fill="#5c2d00">(HIP-3 dex)</text>
+  <text x="1010" y="198" text-anchor="middle" font-size="11" fill="#5c2d00">master funds live here</text>
+
+  <!-- arrows -->
+  <line x1="210" y1="165" x2="248" y2="165" stroke="#374151" stroke-width="1.5" marker-end="url(#arrowSetup)"/>
+  <text x="229" y="150" text-anchor="middle" font-size="10" fill="#374151" transform="rotate(0 229 150)">approves</text>
+
+  <line x1="440" y1="165" x2="478" y2="165" stroke="#374151" stroke-width="1.5" marker-end="url(#arrowSetup)"/>
+  <text x="459" y="150" text-anchor="middle" font-size="10" fill="#374151">copy in once</text>
+
+  <line x1="670" y1="165" x2="708" y2="165" stroke="#374151" stroke-width="1.5" marker-end="url(#arrowSetup)"/>
+  <text x="689" y="150" text-anchor="middle" font-size="10" fill="#374151">on startup</text>
+
+  <line x1="900" y1="165" x2="938" y2="165" stroke="#374151" stroke-width="1.5" marker-end="url(#arrowSetup)"/>
+  <text x="919" y="150" text-anchor="middle" font-size="10" fill="#374151">orders</text>
+
+  <text x="550" y="264" text-anchor="middle" font-size="11" fill="#374151">Brent (xyz:BRENTOIL) margins on the xyz dex separately from the main dex -</text>
+  <text x="550" y="282" text-anchor="middle" font-size="11" fill="#374151">move funds to xyz in the Hyperliquid app before an oil trade can use them.</text>
+</svg>

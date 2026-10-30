@@ -64,29 +64,64 @@ cd pathiel
 cp .env.local.example .env.local
 ```
 
-### Keys
+### Connect your Hyperliquid account
 
-One file holds credentials: `.env.local` in a checkout, `~/.pathiel/.env.local`
-for a plugin install (mode 0600, gitignored either way). Precedence:
-`PATHIEL_ENV_FILE`, then the checkout's `.env.local`, then
-`~/.pathiel/.env.local`.
+pathiel trades on your real Hyperliquid account. Before it can read or
+trade anything, you need an account with funds on it and a separate key
+pathiel is allowed to sign orders with. Five steps, done once.
 
-Names only, never values, in this doc or anywhere else:
+1. **Connect your Hyperliquid account.** Go to app.hyperliquid.xyz and
+   connect a wallet; this becomes your master account, the one that holds
+   your funds. Deposit USDC in the Hyperliquid app.
+2. **Fund the dex oil trades on.** Brent (`xyz:BRENTOIL`) is a HIP-3 perp
+   on the xyz dex, and each HIP-3 dex margins separately from the main
+   dex: money on xyz only backs xyz:\* trades. Move funds to xyz in the
+   Hyperliquid app before an oil trade can use them, or `account_overview`
+   will show equity sitting on the wrong dex and the trade will be
+   refused.
+3. **Create the agent (API) wallet.** In the Hyperliquid app, go to *More,
+   API*, and generate a new API wallet, then approve it from your master
+   account (`approveAgent`). Copy its address and private key before you
+   leave that screen. This is the key pathiel actually signs orders with:
+   an agent wallet can trade but can never withdraw, so even a leaked
+   agent key only costs what's in the open position, never the account.
+4. **Put the credentials in the env file.** One file holds them: `.env.local`
+   in a checkout, `~/.pathiel/.env.local` for a plugin install (mode 0600,
+   gitignored either way). Precedence: `PATHIEL_ENV_FILE`, then the
+   checkout's `.env.local`, then `~/.pathiel/.env.local`. A checkout starts
+   this file with `cp .env.local.example .env.local`; a plugin install gets
+   it from `/pathiel:setup`. Fill in the **agent** wallet's address and key,
+   plus the master account's public address:
 
-- `HYPERLIQUID_WALLET_ADDRESS`, `HYPERLIQUID_PRIVATE_KEY`: an **agent
-  wallet**, created in the Hyperliquid UI under *More, API*, approved by
-  your master account (`approveAgent`). An agent wallet can trade; it can
-  never withdraw.
-- `HYPERLIQUID_MASTER_ADDRESS`: the account the agent wallet acts for. A
-  public address, not a secret, but still required: pathiel refuses to
-  start if the trading key and the master key are the same key.
-- `EIA_API_KEY`, `FRED_API_KEY`, `CONGRESS_API_KEY`: optional, free, each
-  one feeds `services/intel`; a missing key just skips that source. Run
-  `scripts/intel_keys.py` to see which are set.
+   ```
+   HYPERLIQUID_WALLET_ADDRESS=0xYOUR_AGENT_WALLET_ADDRESS
+   HYPERLIQUID_PRIVATE_KEY=0xYOUR_AGENT_WALLET_PRIVATE_KEY
+   HYPERLIQUID_MASTER_ADDRESS=0xYOUR_MASTER_ACCOUNT_ADDRESS
+   ```
 
-Never put the master account's own private key anywhere pathiel reads it.
-`HYPERLIQUID_MASTER_PRIVATE_KEY` exists only for `scripts/treasury.py`, run
-by hand on your own machine, never on a trading key path.
+   Never put the master account's own private key anywhere pathiel reads
+   it. `HYPERLIQUID_MASTER_PRIVATE_KEY` exists only for
+   `scripts/treasury.py`, run by hand on your own machine, never on a
+   trading key path. `EIA_API_KEY`, `FRED_API_KEY`, `CONGRESS_API_KEY` are
+   optional, free, and each feeds `services/intel`; a missing one just
+   skips that source. Run `scripts/intel_keys.py` to see which are set.
+5. **Check it, without printing anything.**
+
+   ```bash
+   .venv/bin/python scripts/preflight_secrets.py
+   ```
+
+   Every line must read PASS or WARN; a FAIL names the variable to fix. A
+   plugin install's `/pathiel:setup` already runs this check for you. Then
+   run `/mcp` and read `account_overview` (both covered next) to confirm
+   the account and the xyz equity show up.
+
+![Hyperliquid account setup: master wallet to agent wallet to pathiel](getting-started/hyperliquid-setup.svg)
+
+Figure 2. The master wallet holds the funds and approves an agent wallet
+that can trade but never withdraw. The agent's address and key go in
+`.env.local`; the pathiel MCP server reads that file and signs orders with
+the agent key against Hyperliquid, where the master account's funds sit.
 
 ### Connect
 
@@ -256,7 +291,7 @@ but never place or touch an order.
 
 ![Read-only tools vs live-money tools](getting-started/tools.svg)
 
-Figure 2. 54 of 60 tools only read. 6 act on the real account and are
+Figure 3. 54 of 60 tools only read. 6 act on the real account and are
 marked LIVE MONEY; a client asks before every one of them.
 
 The hard rules `place_bracket` and the desk-tick agent enforce, as the repo
@@ -377,7 +412,7 @@ Each tick runs the procedure in `.claude/agents/desk-tick.md`, launched by
 
 ![One desk-tick, step by step](getting-started/tick-flow.svg)
 
-Figure 3. Slot, thesis, housekeeping, levels, one decision, one log line.
+Figure 4. Slot, thesis, housekeeping, levels, one decision, one log line.
 A slot held by another desk skips everything after the first step.
 
 0. **Slot.** `scripts/desk_slot.py` says whether the account's one position
