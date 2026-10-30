@@ -110,7 +110,138 @@ whether it can trade right now.
 
 Both are plain reads. Neither touches the account.
 
-## 4. Permissions and safety
+## 4. Starter prompts
+
+Plain English, not tool-call syntax. Paste any of these into Claude Code
+once `pathiel` shows connected in `/mcp`; the line under each one names the
+real tool or file that answers it.
+
+### Look around (read-only)
+
+**Check your balance**
+
+```
+What's my account balance and do I have any open positions?
+```
+`account_overview`: equity, where it sits, open positions, whether the
+account can trade right now.
+
+**Read the oil call**
+
+```
+What's the oil desk's current call, and how much would I size it at?
+```
+`desk_brief {desk: "oil"}`: direction, entry, stop, target, the R it pays,
+plus "Your size" for this account.
+
+**Check the range**
+
+```
+Show me Brent's 24h range and where price sits in it.
+```
+Claude runs the levels script, `scripts/oil_levels.py`: mid, the last
+closed 1h candle, 8h/24h/48h range, ATR14, the 15m micro range.
+
+**Check your limits**
+
+```
+What are my risk limits?
+```
+`risk_limits`: positions at once, dollars lost per stop-out, daily pause,
+max leverage.
+
+### Understand the strategy (read-only)
+
+**Entry rules in plain English**
+
+```
+Explain the oil desk's entry rules in plain English.
+```
+No tool call. Claude reads [docs/strategy/OIL_STRATEGY.md](strategy/OIL_STRATEGY.md)
+and the current call from `desk_brief`.
+
+**Why the last tick held**
+
+```
+Why didn't the last tick take a trade?
+```
+Claude reads the tick's own log line in `/tmp/oil-loop/progress.log`, then
+`desk_brief {desk: "oil"}` for the call it was judged against.
+
+**What 2R means right now**
+
+```
+What does 2R mean for the trade on the table right now?
+```
+No tool call. Claude explains `desk_brief`'s R number against the 2R gate
+described in [docs/strategy/OIL_STRATEGY.md](strategy/OIL_STRATEGY.md).
+
+### Plan a trade (read-only)
+
+**Size it first**
+
+```
+Size this trade for my account before I commit to anything.
+```
+`risk_size_trade {coin: "xyz:BRENTOIL", entry_px: <price>, stop_px: <price>}`:
+size, margin, dollars at risk, payoff, liquidation price.
+
+**Dry-run a bracket**
+
+```
+Dry-run a bracket for the current oil setup and tell me if it passes the
+2R gate and the 20x rule.
+```
+`place_bracket {coin: "xyz:BRENTOIL", stop_px: <price>, tp_px: <price>, dry_run: true}`:
+judges the trade and reports the size it would use, without sending
+anything to the venue.
+
+### Act (LIVE MONEY, only when you mean it)
+
+**Place it**
+
+```
+Place the oil bracket you just dry-ran.
+```
+LIVE MONEY. The same `place_bracket` call without `dry_run`: sends a real
+order to Hyperliquid.
+
+**Move the target**
+
+```
+Move my Brent target to <price>.
+```
+LIVE MONEY. `set_target {coin: "xyz:BRENTOIL", tp_px: <price>}`: moves the
+open position's take-profit. Never touches the stop.
+
+**Sweep after a close**
+
+```
+Sweep Brent after that close.
+```
+LIVE MONEY. `bracket_sweep {coin: "xyz:BRENTOIL"}`: cancels a stranded
+sibling order and confirms the open position is covered by a stop.
+
+### Run the loop
+
+**Start it**
+
+```
+/loop 15m /desk-tick oil
+```
+Runs one desk-tick every 15 minutes for the rest of this Claude Code
+session.
+
+**Stop it**
+
+```
+Stop the loop.
+```
+End or interrupt the session. Nothing ticks between ticks and nothing
+ticks at all once the session stops, because the loop has no process of
+its own.
+
+## 5. Permissions and safety
 
 Of pathiel's 60 MCP tools, 6 are LIVE MONEY: `place_bracket`,
 `bracket_sweep`, `set_target`, `close_position`, `set_leverage`,
@@ -147,7 +278,7 @@ states them:
 - **Never chase.** No entry above a long thesis's entry (below it for a
   short).
 
-## 5. Walkthrough: from reading the market to placing and tracking a trade
+## 6. Walkthrough: from reading the market to placing and tracking a trade
 
 Read-only first. Each prompt below is something you type to Claude Code once
 `pathiel` shows connected in `/mcp`.
@@ -239,7 +370,7 @@ tail -f /tmp/oil-loop/progress.log
 One line per tick: coin, mid, position, the action taken (`HOLD`,
 `PLACED`, `CANCELLED`, `CLOSED`, `NONE`), and why.
 
-## 6. One tick, step by step
+## 7. One tick, step by step
 
 Each tick runs the procedure in `.claude/agents/desk-tick.md`, launched by
 `.claude/skills/desk-tick/SKILL.md` on the `/loop` schedule.
@@ -268,7 +399,7 @@ A slot held by another desk skips everything after the first step.
    trade.
 5. **Log.** One line appended to `/tmp/oil-loop/progress.log`.
 
-## 7. Disconnecting
+## 8. Disconnecting
 
 **Stop the loop.** The loop only runs while a Claude Code session is
 executing it (`/loop 15m /desk-tick oil`); end or interrupt that session and
@@ -289,7 +420,7 @@ flat before you revoke.
 scripts/restart.sh stop
 ```
 
-## 8. Where to go next
+## 9. Where to go next
 
 - [`docs/strategy/OIL_STRATEGY.md`](strategy/OIL_STRATEGY.md): the oil
   desk's entry, stop and target rules, and the backtests behind them.
