@@ -25,11 +25,20 @@ from typing import List, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-CONTRACT_VERSION = "1.2.0"   # 1.1.0 (2026-10-23): + DeskAnalytics.structure (candle-derived
+CONTRACT_VERSION = "1.3.0"   # 1.1.0 (2026-10-23): + DeskAnalytics.structure (candle-derived
                               # price structure for the primary instrument).
                               # 1.2.0 (2026-10-23, intel-hard-data): + IntelPacket.datapoints
                               # (hard numbers: venue/EIA/FRED/CBOE/CFTC/SEC). Both additive;
                               # old readers ignore either new field.
+                              # 1.3.0 (2026-10-30, realistic-targets): + InstrumentStructure.
+                              # all_time_high/all_time_low/range_90d/median_daily_range_30d_pct
+                              # (candle-derived price extremes, so a thesis target can never sit
+                              # above a price the venue has literally never traded) and +
+                              # ForwardStats.long_reach/short_reach (empirical 7-day max FAVOURABLE
+                              # excursion quantiles, alongside the existing MAE = max ADVERSE
+                              # excursion, so targets can be graded against how far price actually
+                              # travels, not just the thesis's own say-so). All additive and
+                              # Optional; old readers and old fixtures ignore every new field.
 
 Side = Literal["long", "short"]
 CallSide = Literal["long", "short", "flat", "pair"]
@@ -152,6 +161,16 @@ class ForwardStats(_M):
     final_ret_mean: float
     long_mae: Quantiles                        # max adverse excursion for a long (negative)
     short_mae: Quantiles                       # max adverse excursion for a short (positive)
+    # 1.3.0+: max FAVOURABLE excursion within the horizon - the empirical
+    # ceiling a thesis's targets should be judged against instead of an
+    # aspirational number. long_reach = max(high)/entry - 1 over the window
+    # (positive = how far up a long could have ridden); short_reach =
+    # 1 - min(low)/entry (positive = how far down a short could have ridden).
+    # Optional/None for a packet built before this field existed - callers
+    # (prompt.py, validator.py) must skip their reach-based checks, not treat
+    # None as zero reach.
+    long_reach: Optional[Quantiles] = None
+    short_reach: Optional[Quantiles] = None
     conditional: List[ConditionalStats] = []
 
 
@@ -188,6 +207,14 @@ class PriceRange(_M):
     low: float
 
 
+class PriceExtreme(_M):
+    """A single price extreme (the venue's all-time high or low) with the
+    date it happened, so a thesis can say "never traded above X (set on
+    DATE)" instead of a bare number. 1.3.0+."""
+    price: float
+    at: datetime
+
+
 class CandleBar(_M):
     """One closed candle's OHLC, plus the UTC time it closed."""
     open: float
@@ -208,6 +235,10 @@ class InstrumentStructure(_M):
     ("numbers are computed in DeskAnalytics... the Thesis may only quote
     numbers that exist in those payloads") applies to these fields exactly
     like every other analytics number.
+
+    1.3.0+: all_time_high/all_time_low/range_90d/median_daily_range_30d_pct
+    are built from the desk's DAILY candles instead of the hourly ones - see
+    each field's own doc comment below.
     """
     coin: str
     mid: float
@@ -217,6 +248,20 @@ class InstrumentStructure(_M):
     range_48h: Optional[PriceRange] = None
     atr14_1h_pct: Optional[float] = None       # ATR14 on 1h bars, fraction of mid
     mid_pos_in_24h: Optional[float] = None     # 0 = sits at the 24h low, 1 = at the 24h high
+    # 1.3.0+ (2026-10-30, realistic-targets): candle-derived price extremes
+    # from DAILY bars (whatever history the venue returns for this coin, up
+    # to analytics.py's DAILY_CANDLE_COUNT) - built alongside the hourly
+    # fields above by the same build_instrument_structure, just from the
+    # desk's existing daily fetch instead of the hourly one. None when there
+    # is no daily history passed in (old callers, tests that only exercise
+    # the hourly-derived fields).
+    all_time_high: Optional[PriceExtreme] = None   # highest daily high, and when it printed
+    all_time_low: Optional[PriceExtreme] = None    # lowest daily low, and when it printed
+    range_90d: Optional[PriceRange] = None          # 90-day high/low; None if <90 daily bars
+    # Median of each day's (high - low) / close over the last 30 daily bars
+    # - "how big is a normal day", the yardstick a stop should clear (the
+    # 2026-10-30 live Brent call's stop sat INSIDE this). None if <30 bars.
+    median_daily_range_30d_pct: Optional[float] = None
 
 
 class DeskAnalytics(_M):

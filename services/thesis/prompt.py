@@ -117,6 +117,10 @@ def build_system_prompt(spec: DeskSpec) -> str:
         "means about two 1h ATR14 past the edge (for Brent, 0.50), not "
         "right under it: a stop a few cents under the edge gets swept by "
         "the retest and lost on every setting a 30-day replay tried. The "
+        "stop must also sit outside STRUCTURE's median daily range (30d) "
+        "from entry - a stop inside one normal day's range gets hit by "
+        "noise, not your thesis being wrong; if it can't, drop to a lower "
+        "leverage rung instead of tightening past it. The "
         "LEVERAGE LADDER's stop_px for your chosen leverage is that "
         "leverage's LIMIT, not a target to copy - your stop may sit "
         "anywhere INSIDE that distance, never farther from entry than it. "
@@ -129,6 +133,21 @@ def build_system_prompt(spec: DeskSpec) -> str:
         "clear 1.5R together, either tighten the stop to the next edge in, "
         "or pick a different leverage/instrument; never widen the stop past "
         "the ladder limit to force a target to qualify.\n"
+        "- Targets are the MOST LIKELY reachable price, never an "
+        "aspirational one: the first target must sit at or inside the p50 "
+        "7-day REACH quantile in FORWARD (above in that section), and a "
+        "long target may never sit above STRUCTURE's all-time high (a short "
+        "target never below the all-time low) - this venue's real trade "
+        "history, not a round number. A second target may extend to the p75 "
+        "REACH quantile, still never past the all-time high/low. If the "
+        "venue has only ever traded up to a given price, that price is the "
+        "ceiling, full stop.\n"
+        "- scenarios must be calibrated to FORWARD's final-return quantiles: "
+        "give the most probability to the bucket containing the empirical "
+        "p50, unless a named catalyst justifies skewing it, and the set of "
+        "scenarios' own implied median (where cumulative probability "
+        "crosses 50%) must land between the empirical p25 and p75 - not an "
+        "optimistic skew dressed up as a range of outcomes.\n"
         "- scenarios must be 3 to 5 buckets of horizon-day return, "
         "non-overlapping and contiguous, with probabilities that sum to "
         "1.0. move_lo_pct and move_hi_pct are FRACTIONS: -0.05 means -5%, "
@@ -247,6 +266,18 @@ def render_analytics_dense(spec: DeskSpec, analytics: DeskAnalytics) -> str:
                 f"  short max adverse excursion: p10 {_pct(sq.p10)} p25 {_pct(sq.p25)} "
                 f"p50 {_pct(sq.p50)} p75 {_pct(sq.p75)} p90 {_pct(sq.p90)}"
             )
+            if fwd.long_reach is not None:
+                lr = fwd.long_reach
+                lines.append(
+                    f"  long max favourable excursion (REACH - use this for a long's targets): "
+                    f"p25 {_pct(lr.p25)} p50 {_pct(lr.p50)} p75 {_pct(lr.p75)} p90 {_pct(lr.p90)}"
+                )
+            if fwd.short_reach is not None:
+                sr = fwd.short_reach
+                lines.append(
+                    f"  short max favourable excursion (REACH - use this for a short's targets): "
+                    f"p25 {_pct(sr.p25)} p50 {_pct(sr.p50)} p75 {_pct(sr.p75)} p90 {_pct(sr.p90)}"
+                )
             for cond in fwd.conditional:
                 lines.append(
                     f"  conditional \"{cond.label}\" (n={cond.n}): mean {_pct(cond.mean)} "
@@ -316,6 +347,23 @@ def _render_structure(st: InstrumentStructure) -> str:
         bits.append(f"  ATR14 (1h) {_pct_abs(st.atr14_1h_pct)}")
     if st.mid_pos_in_24h is not None:
         bits.append(f"  mid sits at {st.mid_pos_in_24h * 100:.0f}% of the 24h range (0%=24h low, 100%=24h high)")
+    if st.range_90d is not None:
+        bits.append(f"  90d range: {_num(st.range_90d.low, 3)} to {_num(st.range_90d.high, 3)}")
+    if st.all_time_high is not None:
+        bits.append(
+            f"  ALL-TIME HIGH {_num(st.all_time_high.price, 3)} on {st.all_time_high.at.date()} - "
+            "no long target may sit above this"
+        )
+    if st.all_time_low is not None:
+        bits.append(
+            f"  ALL-TIME LOW {_num(st.all_time_low.price, 3)} on {st.all_time_low.at.date()} - "
+            "no short target may sit below this"
+        )
+    if st.median_daily_range_30d_pct is not None:
+        bits.append(
+            f"  median daily range (30d) {_pct_abs(st.median_daily_range_30d_pct)} - "
+            "the stop must sit beyond this from entry, or pick a lower leverage rung"
+        )
     return "\n".join(bits)
 
 

@@ -67,6 +67,19 @@ def test_system_prompt_states_the_structural_stop_and_r_rules(oil):
     assert "LIMIT" in text
 
 
+def test_system_prompt_states_the_realistic_targets_and_calibration_rules(oil):
+    """2026-10-30: the writer must treat targets as the most likely
+    reachable structure, never an aspirational number beyond the venue's
+    own trade history, and scenarios must be calibrated to the empirical
+    return distribution, not an optimistic skew."""
+    text = prompt_mod.build_system_prompt(oil.spec)
+    assert "all-time high" in text and "all-time low" in text
+    assert "REACH" in text
+    assert "p50" in text and "p75" in text
+    assert "calibrated" in text
+    assert "median daily range" in text
+
+
 # -- render_analytics_dense ---------------------------------------------------
 
 
@@ -96,6 +109,63 @@ def test_render_analytics_dense_omits_the_structure_block_when_empty(oil):
     analytics_no_structure = oil.analytics.model_copy(update={"structure": []})
     text = prompt_mod.render_analytics_dense(oil.spec, analytics_no_structure)
     assert "STRUCTURE" not in text
+
+
+def test_render_structure_omits_all_time_and_median_range_when_absent(oil):
+    """The real oil fixture predates the 2026-10-30 fields - every one of
+    them is None, and the render must say nothing about them rather than
+    print a blank or a None."""
+    text = prompt_mod.render_analytics_dense(oil.spec, oil.analytics)
+    assert "ALL-TIME HIGH" not in text
+    assert "ALL-TIME LOW" not in text
+    assert "90d range" not in text
+    assert "median daily range" not in text
+
+
+def test_render_structure_includes_all_time_high_low_90d_and_median_range(oil):
+    from contracts.strategies.models import PriceExtreme, PriceRange
+
+    st = oil.analytics.structure[0].model_copy(update={
+        "all_time_high": PriceExtreme(price=117.58, at=prompt_mod.utc_now().replace(
+            year=2026, month=3, day=9)),
+        "all_time_low": PriceExtreme(price=60.12, at=prompt_mod.utc_now().replace(
+            year=2026, month=4, day=1)),
+        "range_90d": PriceRange(high=112.0, low=88.0),
+        "median_daily_range_30d_pct": 0.0276,
+    })
+    analytics2 = oil.analytics.model_copy(update={"structure": [st]})
+    text = prompt_mod.render_analytics_dense(oil.spec, analytics2)
+    assert "ALL-TIME HIGH 117.580" in text and "2026-03-09" in text
+    assert "ALL-TIME LOW 60.120" in text and "2026-04-01" in text
+    assert "no long target may sit above this" in text
+    assert "no short target may sit below this" in text
+    assert "90d range: 88.000 to 112.000" in text
+    assert "median daily range (30d) 2.8%" in text
+    assert "beyond this from entry" in text
+
+
+def test_render_forward_omits_reach_lines_when_absent(oil):
+    """The real oil fixture predates the 2026-10-30 reach fields (None) -
+    the render must not print a REACH line with nothing behind it."""
+    text = prompt_mod.render_analytics_dense(oil.spec, oil.analytics)
+    assert "REACH" not in text
+
+
+def test_render_forward_includes_reach_quantiles_when_present(oil):
+    from contracts.strategies.models import Quantiles
+
+    fwd = oil.analytics.forward[0].model_copy(update={
+        "long_reach": Quantiles(p10=0.01, p25=0.02, p50=0.035, p75=0.06, p90=0.09),
+        "short_reach": Quantiles(p10=0.015, p25=0.03, p50=0.045, p75=0.07, p90=0.11),
+    })
+    analytics2 = oil.analytics.model_copy(update={"forward": [fwd]})
+    text = prompt_mod.render_analytics_dense(oil.spec, analytics2)
+    assert "long max favourable excursion (REACH" in text
+    assert "p50 +3.50%" in text
+    assert "short max favourable excursion (REACH" in text
+    assert "p50 +4.50%" in text
+    assert "use this for a long's targets" in text
+    assert "use this for a short's targets" in text
 
 
 def test_render_analytics_dense_ladder_header_names_the_stop_as_a_limit(oil):

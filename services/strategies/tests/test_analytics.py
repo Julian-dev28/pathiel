@@ -240,7 +240,8 @@ def test_forward_stats_insufficient_windows_is_none():
 
 def test_forward_stats_basic_counts_and_quantiles():
     # 30 bars, horizon 7 -> 23 windows. Flat series (no wiggle): every
-    # window's final return is 0, long_mae/short_mae are 0 too.
+    # window's final return is 0, long_mae/short_mae/long_reach/short_reach
+    # are 0 too - no excursion at all when every bar is flat.
     candles = make_candles([100.0] * 30, wiggle=0.0)
     fs = A.build_forward_stats("XYZ", candles, horizon_days=7)
     assert fs.n_windows == 30 - 7
@@ -248,6 +249,28 @@ def test_forward_stats_basic_counts_and_quantiles():
     assert fs.final_ret.p50 == pytest.approx(0.0)
     assert fs.long_mae.p50 == pytest.approx(0.0)
     assert fs.short_mae.p50 == pytest.approx(0.0)
+    assert fs.long_reach.p50 == pytest.approx(0.0)
+    assert fs.short_reach.p50 == pytest.approx(0.0)
+
+
+def test_forward_stats_reach_quantiles_hand_computed():
+    """30 bars flat at close=100, wiggle=0.05 -> every bar's high is 105 and
+    low is 95 (make_candles: o=c=100 for a flat series, so
+    h=max(o,c)*1.05=105, l=min(o,c)*0.95=95). Every 7-day window therefore
+    has the same hi=105/lo=95/entry=100, so every quantile collapses to one
+    hand-computable number: long_reach (max favourable excursion for a
+    long, hi/entry-1) = 0.05 everywhere, matching short_mae exactly (same
+    hi/entry-1 formula, different semantic use); short_reach (1-lo/entry) =
+    0.05 everywhere too, the MIRROR IMAGE of long_mae (lo/entry-1 = -0.05),
+    not the same number - proving the sign convention in each field's own
+    doc comment is what the code actually computes, not just restated."""
+    candles = make_candles([100.0] * 30, wiggle=0.05)
+    fs = A.build_forward_stats("XYZ", candles, horizon_days=7)
+    for q in (fs.long_reach, fs.short_reach):
+        assert q.p10 == q.p50 == q.p90 == pytest.approx(0.05)
+    assert fs.long_reach.p50 == pytest.approx(fs.short_mae.p50)      # same hi/e-1 formula
+    assert fs.short_reach.p50 == pytest.approx(-fs.long_mae.p50)     # mirror of lo/e-1
+    assert fs.long_mae.p50 == pytest.approx(-0.05)
 
 
 def test_forward_stats_conditional_bucket():
@@ -459,6 +482,85 @@ def test_build_instrument_structure_flat_range_leaves_mid_pos_none():
     assert st.mid_pos_in_24h is None
 
 
+# ── all-time extreme / 90d range / median daily range (2026-10-30) ────────
+
+def test_all_time_extreme_picks_the_bar_with_the_highest_high_and_lowest_low():
+    rows = [
+        {"o": 100.0, "h": 105.0, "l": 99.0, "c": 101.0},
+        {"o": 101.0, "h": 120.0, "l": 100.0, "c": 110.0},   # the all-time high bar
+        {"o": 110.0, "h": 112.0, "l": 80.0, "c": 90.0},     # the all-time low bar
+        {"o": 90.0, "h": 95.0, "l": 85.0, "c": 92.0},
+    ]
+    daily = make_candles_ohlc(rows, step=timedelta(days=1))
+    ath, atl = A._all_time_extreme(daily)
+    assert ath.price == 120.0 and ath.at == A._candle_dt(daily[1])
+    assert atl.price == 80.0 and atl.at == A._candle_dt(daily[2])
+
+
+def test_all_time_extreme_empty_history_is_none_none():
+    assert A._all_time_extreme([]) == (None, None)
+
+
+def test_price_range_lookback_needs_the_full_window():
+    daily = make_candles([100.0 + i for i in range(10)], wiggle=0.02)
+    assert A._price_range_lookback(daily, 90) is None   # only 10 bars
+    rng = A._price_range_lookback(daily, 10)
+    assert rng is not None
+    assert rng.high == max(c.h for c in daily)
+    assert rng.low == min(c.l for c in daily)
+
+
+def test_median_daily_range_pct_hand_computed():
+    # 3 bars with distinct (h-l)/c ranges: 0.10, 0.20, 0.30 -> median 0.20.
+    rows = [
+        {"o": 100.0, "h": 105.0, "l": 95.0, "c": 100.0},    # (105-95)/100 = 0.10
+        {"o": 100.0, "h": 110.0, "l": 90.0, "c": 100.0},    # (110-90)/100 = 0.20
+        {"o": 100.0, "h": 115.0, "l": 85.0, "c": 100.0},    # (115-85)/100 = 0.30
+    ]
+    daily = make_candles_ohlc(rows, step=timedelta(days=1))
+    assert A._median_daily_range_pct(daily, 3) == pytest.approx(0.20)
+    assert A._median_daily_range_pct(daily, 4) is None   # not enough bars
+
+
+def test_build_instrument_structure_with_daily_populates_new_fields():
+    """Same 50-bar hourly fixture as test_build_instrument_structure_hand_
+    computed, plus a 100-bar daily series with a known all-time high/low
+    and a known median 30d range, passed via the new `daily` kwarg."""
+    start = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    hourly_rows = [{"o": 100.0 + i, "h": 101.0 + i, "l": 99.0 + i, "c": 100.0 + i} for i in range(50)]
+    hourly = make_candles_ohlc(hourly_rows, start=start, step=timedelta(hours=1))
+    now = start + timedelta(hours=49, minutes=30)
+
+    daily_rows = [{"o": 100.0, "h": 101.0, "l": 99.0, "c": 100.0} for _ in range(99)]
+    daily_rows.append({"o": 100.0, "h": 150.0, "l": 60.0, "c": 100.0})   # bar 99: the extremes
+    daily_start = datetime(2025, 1, 1, tzinfo=timezone.utc)
+    daily = make_candles_ohlc(daily_rows, start=daily_start, step=timedelta(days=1))
+
+    st = A.build_instrument_structure("XYZ", hourly, 123.456, now, daily=daily)
+    assert st is not None
+    assert st.all_time_high.price == 150.0 and st.all_time_high.at == A._candle_dt(daily[-1])
+    assert st.all_time_low.price == 60.0 and st.all_time_low.at == A._candle_dt(daily[-1])
+    assert st.range_90d.high == 150.0 and st.range_90d.low == 60.0   # last 90 bars include bar 99
+    # Last 30 bars: 29 normal bars with (101-99)/100=0.02, plus the extreme
+    # bar (150-60)/100=0.90 -> sorted, nearest-rank p50 of 30 values (29x
+    # 0.02, 1x 0.90) is still 0.02 (quantile() is floor-indexed nearest-rank,
+    # not a mean).
+    assert st.median_daily_range_30d_pct == pytest.approx(0.02)
+
+
+def test_build_instrument_structure_without_daily_leaves_new_fields_none():
+    """Backward compatible: every existing caller of build_instrument_
+    structure passes no `daily` at all - the four new fields must default
+    to None, not raise."""
+    start = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    candles = make_candles([100.0, 101.0, 102.0], start=start, step=timedelta(hours=1))
+    now = start + timedelta(hours=2, minutes=30)
+    st = A.build_instrument_structure("XYZ", candles, 100.0, now)
+    assert st is not None
+    assert st.all_time_high is None and st.all_time_low is None
+    assert st.range_90d is None and st.median_daily_range_30d_pct is None
+
+
 # ── build_analytics entrypoint (desk-level, fully injected) ────────────────
 
 def test_build_analytics_end_to_end_with_fakes():
@@ -525,6 +627,16 @@ def test_build_analytics_builds_structure_for_primary_only():
 
     assert [s.coin for s in result.structure] == ["A"]
     assert result.structure[0].mid == next(s.mid for s in result.instruments if s.coin == "A")
+    # build_analytics passes the primary's already-fetched DAILY candles into
+    # build_instrument_structure (2026-10-30) - no second network call. 40
+    # daily bars is enough for the all-time extreme (needs >=1 bar) and the
+    # 30d median range (needs >=30), but not the 90d range (needs >=90).
+    st = result.structure[0]
+    assert st.all_time_high is not None and st.all_time_low is not None
+    assert st.all_time_high.price == max(c.h for c in daily_a)
+    assert st.all_time_low.price == min(c.l for c in daily_a)
+    assert st.median_daily_range_30d_pct is not None
+    assert st.range_90d is None
 
 
 def test_build_analytics_notes_a_failed_hourly_fetch_without_sinking_the_desk():

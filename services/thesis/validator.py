@@ -36,6 +36,23 @@ Rule inventory, and why each one is the shape it is:
   call whose stop WAS the ladder's liquidation-derived stop (~10% away at
   5x) with a best target paying 0.47R - sizing correctly refused it, and
   the validator had nothing that would have caught it first.
+- targets-reachable, scenarios-calibrated: added 2026-10-30 after the live
+  Brent desk shipped "Long Brent 5x at 113.87, targets 118.87 then 122.20"
+  on a venue whose all-time high is 117.58 - a target the market has
+  LITERALLY NEVER TRADED AT. check_targets_reachable rejects a target beyond
+  InstrumentStructure.all_time_high/low (any precision allowed below that;
+  it is a hard ceiling/floor, not a probability) and a target whose implied
+  move is beyond the empirical ForwardStats.long_reach/short_reach p90 (the
+  first target gets a slightly tighter p75 check - the prompt itself asks
+  for p50, this is deliberately a looser backstop so a normal draft is not
+  rejected over rounding). check_scenarios_calibrated catches the milder
+  version of the same failure mode: a scenario SET whose own implied median
+  return drifts outside the empirical p10-p90 (the prompt asks for p25-p75;
+  again a looser backstop). Both skip silently when the packet lacks the
+  underlying field (old analytics, most hand-built test fixtures) - they
+  are optional precision on top of the existing checks, never a new hard
+  requirement that would brick an otherwise-valid thesis for a desk whose
+  analytics predate this field.
 - cited ids exist: every bull/bear source id must resolve inside the given
   IntelPacket.
 - lessons count (exactly 1), leverage_reasons count (exactly
@@ -434,6 +451,114 @@ def check_targets_consistent(call: Call, analytics: DeskAnalytics) -> List[str]:
     return errors
 
 
+def check_targets_reachable(call: Call, analytics: DeskAnalytics) -> List[str]:
+    """Targets must be the MOST LIKELY reachable structure, not aspirational
+    (2026-10-30, root cause: the live Brent desk called a target of 118.87
+    on a venue whose all-time high was 117.58 - price has literally never
+    traded there). Two independent grounds, each skipped on its own when the
+    underlying analytics field is absent (old packets, hand-built test
+    fixtures without InstrumentStructure/ForwardStats - never treated as a
+    violation):
+
+    - a long target above InstrumentStructure.all_time_high (short: below
+      all_time_low) - a hard venue ceiling/floor, not a probability;
+    - a target whose implied horizon-day move is beyond ForwardStats'
+      empirical reach quantiles for the call's side: the FIRST target gets
+      a p75 bound (the prompt itself asks for p50 - this is a deliberately
+      looser backstop so a normal draft is not rejected over rounding), any
+      target (first or later) gets a hard p90 bound.
+
+    Skipped entirely for a flat/pair call or one missing entry/targets -
+    check_stop_side / check_targets_consistent cover their own shape."""
+    if call.side not in ("long", "short") or call.entry_px is None or not call.targets:
+        return []
+    structure = desk_lookup.find_structure(call.instrument, analytics)
+    forward = desk_lookup.find_forward(call.instrument, analytics)
+    extreme = None
+    if structure is not None:
+        extreme = structure.all_time_high if call.side == "long" else structure.all_time_low
+    reach = None
+    if forward is not None:
+        reach = forward.long_reach if call.side == "long" else forward.short_reach
+    if extreme is None and reach is None:
+        return []   # old packet or test fixture: nothing new to check against
+
+    errors: List[str] = []
+    for i, t in enumerate(call.targets):
+        if extreme is not None:
+            beyond = t > extreme.price if call.side == "long" else t < extreme.price
+            if beyond:
+                kind = "all-time high" if call.side == "long" else "all-time low"
+                errors.append(
+                    f"target {t:g} is beyond the venue's {kind} ({extreme.price:g} on "
+                    f"{extreme.at.date()}) - price has never traded there, not a realistic target"
+                )
+        if reach is not None:
+            implied = (t / call.entry_px - 1.0) if call.side == "long" else (1.0 - t / call.entry_px)
+            if implied > reach.p90:
+                errors.append(
+                    f"target {t:g} implies a {implied * 100:.1f}% move, beyond the empirical "
+                    f"p90 7-day reach ({reach.p90 * 100:.1f}%) - not a realistic target"
+                )
+            elif i == 0 and implied > reach.p75:
+                errors.append(
+                    f"first target {t:g} implies a {implied * 100:.1f}% move, beyond the empirical "
+                    f"p75 7-day reach ({reach.p75 * 100:.1f}%) - pick a closer, more likely target"
+                )
+    return errors
+
+
+def _scenario_implied_median(scenarios: List[Scenario]) -> Optional[float]:
+    """Where the scenario set's own cumulative probability crosses 0.5,
+    interpolated linearly within whichever bucket it crosses in. None for
+    an empty scenario list."""
+    if not scenarios:
+        return None
+    ordered = sorted(scenarios, key=lambda s: s.move_lo_pct)
+    cum = 0.0
+    for s in ordered:
+        new_cum = cum + s.probability
+        if new_cum >= 0.5 or s is ordered[-1]:
+            width = s.move_hi_pct - s.move_lo_pct
+            if width <= 0 or s.probability <= 0:
+                return s.move_lo_pct
+            frac = min(1.0, max(0.0, (0.5 - cum) / s.probability))
+            return s.move_lo_pct + frac * width
+        cum = new_cum
+    return ordered[-1].move_hi_pct  # unreachable: the loop always returns on its last iteration
+
+
+def check_scenarios_calibrated(
+    scenarios: List[Scenario], spec: DeskSpec, analytics: DeskAnalytics,
+) -> List[str]:
+    """The scenario set's own implied median (check_targets_reachable's
+    sibling, for scenarios rather than targets - 2026-10-30) must land
+    inside the empirical ForwardStats.final_ret [p10, p90] for the desk's
+    primary instrument - a looser backstop than the prompt's own p25-p75
+    ask, so only a real skew (not rounding) trips it. Skipped when there is
+    no primary forward stats to check against (old/thin-history packets) or
+    no scenarios at all."""
+    if not scenarios:
+        return []
+    primary = desk_lookup.primary_instrument(spec, analytics)
+    if primary is None:
+        return []
+    forward = desk_lookup.find_forward(primary.coin, analytics)
+    if forward is None:
+        return []
+    implied = _scenario_implied_median(scenarios)
+    if implied is None:
+        return []
+    q = forward.final_ret
+    if not (q.p10 <= implied <= q.p90):
+        return [
+            f"scenarios imply a median {implied * 100:.1f}% {spec.horizon_days}-day return, "
+            f"outside the empirical p10-p90 band [{q.p10 * 100:.1f}%, {q.p90 * 100:.1f}%] for "
+            f"{primary.coin} - re-weight toward the empirical median"
+        ]
+    return []
+
+
 DEFAULT_MIN_R = 1.5
 
 
@@ -622,6 +747,8 @@ def _run_all_rules(
     errors += check_instrument_known(call, analytics)
     errors += check_entry_near_mid(call, analytics)
     errors += check_targets_consistent(call, analytics)
+    errors += check_targets_reachable(call, analytics)
+    errors += check_scenarios_calibrated(scenarios, spec, analytics)
     errors += check_r_multiple(call)
     errors += check_stop_within_ladder(call, analytics)
     errors += check_leverage_not_avoid(call, analytics)

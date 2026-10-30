@@ -35,12 +35,12 @@ import statistics as st
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
-from typing import Any, Callable, Dict, List, Optional, Sequence
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 from contracts.strategies.models import (
     AccountSnapshot, CandleBar, ConditionalStats, DeskAnalytics, DeskSpec, ForwardStats,
-    Instrument, InstrumentSnapshot, InstrumentStructure, LadderRung, PairSnapshot, PriceRange,
-    Quantiles, Side,
+    Instrument, InstrumentSnapshot, InstrumentStructure, LadderRung, PairSnapshot, PriceExtreme,
+    PriceRange, Quantiles, Side,
 )
 from pathiel.client.rate_limit import carry_priority
 from pathiel.models.types import Candle
@@ -57,6 +57,8 @@ HOUR_MS = 3_600_000
 # bar the venue always includes as the last row of a candleSnapshot request.
 HOURLY_CANDLE_COUNT = 60
 MIN_WINDOWS_FOR_FORWARD_STATS = 10   # below this, forward stats / ladder are too thin to trust
+RANGE_90D_WINDOW_DAYS = 90           # InstrumentStructure.range_90d's lookback
+MEDIAN_RANGE_WINDOW_DAYS = 30        # InstrumentStructure.median_daily_range_30d_pct's lookback
 CONDITIONAL_LOOKBACK_DAYS = 5
 CONDITIONAL_MOVE_THRESHOLD = 0.05
 CONDITIONAL_LABEL = f"after +{int(CONDITIONAL_MOVE_THRESHOLD * 100)}% {CONDITIONAL_LOOKBACK_DAYS}d run"
@@ -285,12 +287,54 @@ def _price_range(candles: Sequence[Candle]) -> Optional[PriceRange]:
     return PriceRange(high=max(c.h for c in candles), low=min(c.l for c in candles))
 
 
+def _all_time_extreme(daily: Sequence[Candle]) -> Tuple[Optional[PriceExtreme], Optional[PriceExtreme]]:
+    """(all_time_high, all_time_low) over every daily bar given - "all
+    time" means the full history the caller passed in (whatever the venue
+    actually returns, DAILY_CANDLE_COUNT at most), not a fixed window. None,
+    None if there is no daily history at all."""
+    if not daily:
+        return None, None
+    hi_bar = max(daily, key=lambda c: c.h)
+    lo_bar = min(daily, key=lambda c: c.l)
+    return (PriceExtreme(price=hi_bar.h, at=_candle_dt(hi_bar)),
+            PriceExtreme(price=lo_bar.l, at=_candle_dt(lo_bar)))
+
+
+def _price_range_lookback(daily: Sequence[Candle], n: int) -> Optional[PriceRange]:
+    """High/low over the last n daily bars. None if there isn't even n bars
+    of history - same "Optional field reports None rather than guessing"
+    convention as InstrumentSnapshot.high_60d/low_60d."""
+    if len(daily) < n:
+        return None
+    window = daily[-n:]
+    return PriceRange(high=max(c.h for c in window), low=min(c.l for c in window))
+
+
+def _median_daily_range_pct(daily: Sequence[Candle], n: int) -> Optional[float]:
+    """Median of (high - low) / close over the last n daily bars - "how big
+    is a normal day", as a fraction of that day's close. None if there
+    isn't even n bars of history, or every close in the window is zero."""
+    if len(daily) < n:
+        return None
+    window = daily[-n:]
+    ranges = [(c.h - c.l) / c.c for c in window if c.c]
+    return st.median(ranges) if ranges else None
+
+
 def build_instrument_structure(coin: str, hourly: Sequence[Candle], mid: float,
-                               now: datetime) -> Optional[InstrumentStructure]:
+                               now: datetime, daily: Optional[Sequence[Candle]] = None
+                               ) -> Optional[InstrumentStructure]:
     """Deterministic candle-derived price structure for one primary
     instrument. None if there is not even one closed 1h bar - the caller
     should note why and drop the entry, never fabricate a structure from an
-    empty read."""
+    empty read.
+
+    `daily` is optional and additive (2026-10-30): when given, it feeds the
+    all_time_high/all_time_low/range_90d/median_daily_range_30d_pct fields,
+    computed from the desk's existing daily candle fetch (never a second
+    network call). Every existing caller that passes only (coin, hourly,
+    mid, now) keeps working exactly as before, with those four fields None.
+    """
     now_ms = int(now.timestamp() * 1000)
     closed = _hourly_closed(hourly, now_ms)
     if not closed:
@@ -311,6 +355,14 @@ def build_instrument_structure(coin: str, hourly: Sequence[Candle], mid: float,
     if r24 is not None and r24.high > r24.low:
         structure = structure.model_copy(update={
             "mid_pos_in_24h": round((mid - r24.low) / (r24.high - r24.low), 3),
+        })
+    if daily:
+        ath, atl = _all_time_extreme(daily)
+        structure = structure.model_copy(update={
+            "all_time_high": ath,
+            "all_time_low": atl,
+            "range_90d": _price_range_lookback(daily, RANGE_90D_WINDOW_DAYS),
+            "median_daily_range_30d_pct": _median_daily_range_pct(daily, MEDIAN_RANGE_WINDOW_DAYS),
         })
     return structure
 
@@ -366,7 +418,11 @@ def build_pair_snapshot(label: str, long_coin: str, short_coin: str,
 def _forward_windows(daily: Sequence[Candle], horizon_days: int) -> List[Dict[str, float]]:
     """One entry per historical entry-day i: final return, long MAE (worst
     drawdown a long would see, <=0), short MAE (worst adverse move for a
-    short, >=0). Ports the `wins` comprehension in oil_ladder.py exactly."""
+    short, >=0), and the 2026-10-30 addition - the mirror-image FAVOURABLE
+    excursions: reach_long (best a long could have ridden, >=0, the same
+    max-high read as mae_short) and reach_short (best a short could have
+    ridden, >=0, the mirror of mae_long). Ports the `wins` comprehension in
+    oil_ladder.py exactly, plus the two reach keys."""
     out = []
     for i in range(len(daily) - horizon_days):
         e = daily[i].c
@@ -375,6 +431,7 @@ def _forward_windows(daily: Sequence[Candle], horizon_days: int) -> List[Dict[st
         hi = max(c.h for c in window)
         fin = window[-1].c
         out.append({"entry": e, "mae_long": lo / e - 1.0, "mae_short": hi / e - 1.0,
+                   "reach_long": hi / e - 1.0, "reach_short": 1.0 - lo / e,
                    "fin": fin / e - 1.0})
     return out
 
@@ -405,6 +462,8 @@ def build_forward_stats(coin: str, daily: Sequence[Candle], horizon_days: int
         final_ret=quantiles(fins), final_ret_mean=st.mean(fins),
         long_mae=quantiles([w["mae_long"] for w in wins]),
         short_mae=quantiles([w["mae_short"] for w in wins]),
+        long_reach=quantiles([w["reach_long"] for w in wins]),
+        short_reach=quantiles([w["reach_short"] for w in wins]),
         conditional=conditional,
     )
 
@@ -692,7 +751,7 @@ def build_analytics(spec: DeskSpec, *, candle_fetcher: Optional[CandleFetcher] =
 
         if snap is not None:
             st = build_instrument_structure(instrument.coin, hourly_by_coin.get(instrument.coin) or [],
-                                            snap.mid, now)
+                                            snap.mid, now, daily=daily)
             if st is None:
                 notes.append(f"insufficient hourly history for {instrument.coin} structure")
             else:

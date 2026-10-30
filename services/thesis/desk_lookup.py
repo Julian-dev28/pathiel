@@ -8,7 +8,9 @@ from __future__ import annotations
 
 from typing import Optional
 
-from contracts.strategies.models import DeskAnalytics, DeskSpec, InstrumentSnapshot, PairSnapshot
+from contracts.strategies.models import (
+    DeskAnalytics, DeskSpec, ForwardStats, InstrumentSnapshot, InstrumentStructure, PairSnapshot,
+)
 
 
 def primary_coin(spec: DeskSpec) -> str:
@@ -35,6 +37,20 @@ def find_pair(label: str, analytics: DeskAnalytics) -> Optional[PairSnapshot]:
     for pair in analytics.pairs:
         if pair.label == label:
             return pair
+    return None
+
+
+def find_structure(coin: str, analytics: DeskAnalytics) -> Optional[InstrumentStructure]:
+    for st in analytics.structure:
+        if st.coin == coin:
+            return st
+    return None
+
+
+def find_forward(coin: str, analytics: DeskAnalytics) -> Optional[ForwardStats]:
+    for fwd in analytics.forward:
+        if fwd.coin == coin:
+            return fwd
     return None
 
 

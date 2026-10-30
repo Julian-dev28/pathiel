@@ -414,6 +414,247 @@ def test_reasonable_targets_pass(oil):
     assert validator.check_targets_consistent(call, oil.analytics) == []
 
 
+# -- targets reachable: venue all-time high/low + empirical reach (2026-10-30) --
+#
+# Root cause (operator, 2026-10-30): the live Brent desk's thesis called
+# "Long Brent 5x at 113.87, stop 111.29, targets 118.87 then 122.20" on a
+# venue whose all-time high was 117.58 - a price the market has literally
+# never traded at. The oil fixture predates these fields entirely (every one
+# is None), so every test here builds its own analytics with them populated.
+
+
+def _brent_structure_with_extremes(ath=117.58, atl=60.0):
+    from contracts.strategies.models import InstrumentStructure, PriceExtreme
+    from datetime import datetime, timezone
+
+    return InstrumentStructure(
+        coin="xyz:BRENTOIL", mid=113.87,
+        all_time_high=PriceExtreme(price=ath, at=datetime(2026, 3, 9, tzinfo=timezone.utc)),
+        all_time_low=PriceExtreme(price=atl, at=datetime(2026, 3, 4, tzinfo=timezone.utc)),
+    )
+
+
+def _brent_forward_with_reach(long_reach=None, short_reach=None):
+    from contracts.strategies.models import ForwardStats, Quantiles
+    from datetime import datetime, timezone
+
+    q = Quantiles(p10=-0.09, p25=-0.04, p50=0.01, p75=0.05, p90=0.1)
+    return ForwardStats(
+        coin="xyz:BRENTOIL", horizon_days=7, n_windows=200,
+        sample_start=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        sample_end=datetime(2026, 10, 1, tzinfo=timezone.utc),
+        final_ret=q, final_ret_mean=0.01,
+        long_mae=Quantiles(p10=-0.1, p25=-0.06, p50=-0.03, p75=-0.01, p90=-0.003),
+        short_mae=Quantiles(p10=0.003, p25=0.01, p50=0.03, p75=0.06, p90=0.1),
+        long_reach=long_reach, short_reach=short_reach,
+    )
+
+
+def _analytics_with_structure_and_forward(oil, *, structure=None, forward=None):
+    update = {}
+    if structure is not None:
+        update["structure"] = [s for s in oil.analytics.structure if s.coin != "xyz:BRENTOIL"] + [structure]
+    if forward is not None:
+        update["forward"] = [f for f in oil.analytics.forward if f.coin != "xyz:BRENTOIL"] + [forward]
+    return oil.analytics.model_copy(update=update)
+
+
+def test_targets_reachable_skips_silently_when_fields_absent(oil):
+    """The real oil fixture's structure/forward predate these fields -
+    check_targets_reachable must not invent a violation out of None."""
+    assert validator.check_targets_reachable(oil.thesis.call, oil.analytics) == []
+
+
+def test_long_target_above_all_time_high_fails():
+    from datetime import datetime, timezone
+
+    from contracts.strategies.models import DeskAnalytics, InstrumentStructure, PriceExtreme
+
+    structure = InstrumentStructure(
+        coin="xyz:BRENTOIL", mid=113.87,
+        all_time_high=PriceExtreme(price=117.58, at=datetime(2026, 3, 9, tzinfo=timezone.utc)))
+    call = Call(side="long", instrument="xyz:BRENTOIL", one_liner="x", entry_px=113.87,
+                targets=[118.87], confidence=0.5, invalidation="i")
+    analytics = DeskAnalytics(desk_id="x", as_of=datetime(2026, 10, 30, tzinfo=timezone.utc),
+                              instruments=[], structure=[structure])
+    errors = validator.check_targets_reachable(call, analytics)
+    assert len(errors) == 1
+    assert "all-time high" in errors[0] and "117.58" in errors[0] and "118.87" in errors[0]
+
+
+def test_short_target_below_all_time_low_fails():
+    from datetime import datetime, timezone
+
+    from contracts.strategies.models import DeskAnalytics, InstrumentStructure, PriceExtreme
+
+    structure = InstrumentStructure(
+        coin="xyz:BRENTOIL", mid=113.87,
+        all_time_low=PriceExtreme(price=60.0, at=datetime(2026, 3, 4, tzinfo=timezone.utc)))
+    call = Call(side="short", instrument="xyz:BRENTOIL", one_liner="x", entry_px=113.87,
+                targets=[55.0], confidence=0.5, invalidation="i")
+    analytics = DeskAnalytics(desk_id="x", as_of=datetime(2026, 10, 30, tzinfo=timezone.utc),
+                              instruments=[], structure=[structure])
+    errors = validator.check_targets_reachable(call, analytics)
+    assert len(errors) == 1
+    assert "all-time low" in errors[0] and "60" in errors[0]
+
+
+def test_target_at_or_below_all_time_high_passes():
+    from datetime import datetime, timezone
+
+    from contracts.strategies.models import DeskAnalytics, InstrumentStructure, PriceExtreme
+
+    structure = InstrumentStructure(
+        coin="xyz:BRENTOIL", mid=113.87,
+        all_time_high=PriceExtreme(price=117.58, at=datetime(2026, 3, 9, tzinfo=timezone.utc)))
+    call = Call(side="long", instrument="xyz:BRENTOIL", one_liner="x", entry_px=113.87,
+                targets=[117.58], confidence=0.5, invalidation="i")   # exactly the ATH
+    analytics = DeskAnalytics(desk_id="x", as_of=datetime(2026, 10, 30, tzinfo=timezone.utc),
+                              instruments=[], structure=[structure])
+    assert validator.check_targets_reachable(call, analytics) == []
+
+
+def test_first_target_beyond_p75_reach_fails(oil):
+    from contracts.strategies.models import Quantiles
+
+    forward = _brent_forward_with_reach(long_reach=Quantiles(p10=0.01, p25=0.02, p50=0.03, p75=0.045, p90=0.09))
+    analytics = _analytics_with_structure_and_forward(oil, forward=forward)
+    call = Call(side="long", instrument="xyz:BRENTOIL", one_liner="x", entry_px=113.87,
+                targets=[119.0], confidence=0.5, invalidation="i")   # implied +4.5...% > p75 4.5%, < p90 9%
+    errors = validator.check_targets_reachable(call, analytics)
+    assert len(errors) == 1 and "p75" in errors[0] and "first target" in errors[0]
+
+
+def test_any_target_beyond_p90_reach_fails_even_as_a_later_target(oil):
+    from contracts.strategies.models import Quantiles
+
+    forward = _brent_forward_with_reach(long_reach=Quantiles(p10=0.01, p25=0.02, p50=0.03, p75=0.045, p90=0.06))
+    analytics = _analytics_with_structure_and_forward(oil, forward=forward)
+    call = Call(side="long", instrument="xyz:BRENTOIL", one_liner="x", entry_px=113.87,
+                targets=[116.0, 122.20], confidence=0.5, invalidation="i")
+    errors = validator.check_targets_reachable(call, analytics)
+    assert len(errors) == 1 and "p90" in errors[0] and "122.2" in errors[0]
+
+
+def test_later_target_beyond_p75_but_within_p90_is_not_an_error(oil):
+    """Only the FIRST target gets the tighter p75 bound; a later one is
+    allowed up to p90 - the prompt asks the writer for p75 on later targets,
+    but the validator's backstop is deliberately looser there too."""
+    from contracts.strategies.models import Quantiles
+
+    forward = _brent_forward_with_reach(long_reach=Quantiles(p10=0.01, p25=0.02, p50=0.03, p75=0.04, p90=0.09))
+    analytics = _analytics_with_structure_and_forward(oil, forward=forward)
+    call = Call(side="long", instrument="xyz:BRENTOIL", one_liner="x", entry_px=113.87,
+                targets=[115.5, 119.0], confidence=0.5, invalidation="i")   # 1st +1.4% (ok), 2nd +4.5% (>p75, <p90)
+    assert validator.check_targets_reachable(call, analytics) == []
+
+
+def test_targets_reachable_skipped_for_flat_or_missing_targets():
+    flat = Call(side="flat", instrument="xyz:BRENTOIL", one_liner="x", confidence=0.0, invalidation="i")
+    from datetime import datetime, timezone
+
+    from contracts.strategies.models import DeskAnalytics
+
+    analytics = DeskAnalytics(desk_id="x", as_of=datetime(2026, 10, 30, tzinfo=timezone.utc), instruments=[])
+    assert validator.check_targets_reachable(flat, analytics) == []
+    no_targets = Call(side="long", instrument="xyz:BRENTOIL", one_liner="x", entry_px=113.87,
+                      confidence=0.5, invalidation="i")
+    assert validator.check_targets_reachable(no_targets, analytics) == []
+
+
+# -- scenarios calibrated to the empirical return distribution (2026-10-30) ----
+
+
+def test_scenarios_calibrated_golden_oil_fixture_passes(oil):
+    assert validator.check_scenarios_calibrated(oil.thesis.scenarios, oil.spec, oil.analytics) == []
+
+
+def test_scenario_set_skewed_far_bullish_of_the_empirical_distribution_fails(oil):
+    """xyz:CL's final_ret p90 is +10.59% (the real fixture). A scenario set
+    whose own implied median sits WAY above that - all probability loaded
+    onto a big-up bucket - is an optimistic skew dressed as a probability
+    distribution, exactly what the operator flagged on 2026-10-30."""
+    skewed = [
+        Scenario(name="Moon", probability=0.9, move_lo_pct=0.20, move_hi_pct=0.60, description="d"),
+        Scenario(name="Chop", probability=0.1, move_lo_pct=-0.02, move_hi_pct=0.20, description="d"),
+    ]
+    errors = validator.check_scenarios_calibrated(skewed, oil.spec, oil.analytics)
+    assert len(errors) == 1 and "outside the empirical p10-p90 band" in errors[0]
+
+
+def test_scenarios_calibrated_skipped_when_no_forward_stats():
+    from datetime import datetime, timezone
+
+    from contracts.strategies.models import DeskAnalytics, DeskSpec, Instrument
+
+    spec = DeskSpec(id="xx", name="X", tagline="t",
+                    instruments=[Instrument(coin="A", label="A", role="primary")])
+    analytics = DeskAnalytics(desk_id="x", as_of=datetime(2026, 10, 30, tzinfo=timezone.utc), instruments=[])
+    scenarios = [Scenario(name="s", probability=1.0, move_lo_pct=0.5, move_hi_pct=1.0, description="d")]
+    assert validator.check_scenarios_calibrated(scenarios, spec, analytics) == []
+
+
+def test_scenarios_calibrated_skipped_for_empty_scenarios(oil):
+    assert validator.check_scenarios_calibrated([], oil.spec, oil.analytics) == []
+
+
+# -- regression: the exact 2026-10-30 live call must now be rejected ----------
+
+
+def test_live_2026_10_30_brent_call_is_rejected_for_targets_beyond_the_all_time_high():
+    """The exact call the operator flagged: "Long Brent 5x at 113.87, stop
+    111.29, targets 118.87 then 122.20" on a venue whose all-time high was
+    117.58 (set 2026-03-09) - BOTH targets sit above a price Brent has
+    literally never traded at on this venue. Must be rejected."""
+    call = Call(
+        side="long", instrument="xyz:BRENTOIL",
+        one_liner="Long Brent 5x at 113.87, stop 111.29, targets 118.87 then 122.20.",
+        entry_px=113.87, stop_px=111.29, targets=[118.87, 122.20], leverage=5, confidence=0.5,
+        invalidation="Daily close below 111.29.",
+    )
+    structure = _brent_structure_with_extremes()
+    from contracts.strategies.models import Quantiles
+
+    forward = _brent_forward_with_reach(
+        long_reach=Quantiles(p10=0.01, p25=0.02, p50=0.03, p75=0.045, p90=0.06))
+    from datetime import datetime, timezone
+
+    from contracts.strategies.models import DeskAnalytics
+
+    analytics = DeskAnalytics(desk_id="oil", as_of=datetime(2026, 10, 30, tzinfo=timezone.utc),
+                              instruments=[], structure=[structure], forward=[forward])
+    errors = validator.check_targets_reachable(call, analytics)
+    assert errors, "the 2026-10-30 call must be rejected, not pass silently"
+    assert any("all-time high" in e and "117.58" in e for e in errors)
+    assert any("118.87" in e for e in errors) and any("122.2" in e for e in errors)
+    assert any("p90" in e for e in errors)   # the second target also blows the empirical reach
+
+
+def test_a_realistic_version_of_the_same_call_passes():
+    """Same desk, same entry/stop, but a target picked from the empirical
+    reach instead of an aspirational number, and under the venue's
+    all-time high - the shape the fix is supposed to produce."""
+    call = Call(
+        side="long", instrument="xyz:BRENTOIL",
+        one_liner="Long Brent 5x at 113.87, stop 111.29, target 116.5.",
+        entry_px=113.87, stop_px=112.5, targets=[116.5], leverage=5, confidence=0.5,
+        invalidation="Daily close below 112.5.",
+    )
+    structure = _brent_structure_with_extremes()
+    from contracts.strategies.models import Quantiles
+
+    forward = _brent_forward_with_reach(
+        long_reach=Quantiles(p10=0.01, p25=0.02, p50=0.03, p75=0.045, p90=0.09))
+    from datetime import datetime, timezone
+
+    from contracts.strategies.models import DeskAnalytics
+
+    analytics = DeskAnalytics(desk_id="oil", as_of=datetime(2026, 10, 30, tzinfo=timezone.utc),
+                              instruments=[], structure=[structure], forward=[forward])
+    assert validator.check_targets_reachable(call, analytics) == []
+    assert validator.check_r_multiple(call) == []
+
+
 # -- lessons / leverage_reasons count ------------------------------------------
 
 

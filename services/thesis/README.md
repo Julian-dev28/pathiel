@@ -75,6 +75,43 @@ right after the leverage line, reusing `check_levels` - the same number the
 dashboard's 20x line (`services/strategies/call_line.py`) and the validator
 compute, never a fourth copy of the math.
 
+## Realistic targets and calibrated scenarios (2026-10-30)
+
+Root cause (operator, 2026-10-30): the live Brent desk's thesis called "Long
+Brent 5x at 113.87, stop 111.29, targets 118.87 then 122.20" on a venue
+whose all-time high was 117.58 - a price Brent has literally never traded
+at on xyz:BRENTOIL. The stop (2.3% under entry) also sat inside one normal
+day's range (median daily high-low 2.76% over the trailing 30 days), so on
+this year's history the stop was hit before target 1 about 60% of the time.
+
+Three pieces, same shape as the 2026-10-23 structure/R-gate fix above:
+
+1. **New analytics fields** (contract 1.3.0, additive/Optional):
+   `InstrumentStructure.all_time_high`/`all_time_low` (candle-derived, with
+   the date each one happened), `.range_90d`, `.median_daily_range_30d_pct`
+   - all built from the desk's existing DAILY candle fetch (no second
+   network call), by `services/strategies/analytics.py::build_instrument_
+   structure`'s new `daily=` kwarg. `ForwardStats.long_reach`/`short_reach`
+   - the empirical 7-day max FAVOURABLE excursion quantiles, the mirror of
+   the existing max ADVERSE excursion (MAE) fields, from the same forward-
+   window loop.
+2. **The prompt** (prompt.py) renders ALL-TIME HIGH/LOW, the 90d range, and
+   the median daily range in STRUCTURE, and REACH quantiles in FORWARD, and
+   tells the model: targets are the MOST LIKELY reachable price (first
+   target at or inside the empirical p50 reach, never past the ladder's
+   all-time high/low), the stop must clear the median daily range or drop a
+   leverage rung, and scenario probabilities must be calibrated to the
+   empirical return distribution (implied median inside p25-p75).
+3. **The validator** adds `check_targets_reachable` (errors on a target
+   beyond the venue's all-time high/low, or beyond the empirical p90 reach
+   - a looser p75 bound for the first target specifically, since the
+   prompt's own ask is p50) and `check_scenarios_calibrated` (errors when
+   the scenario set's own implied median - where cumulative probability
+   crosses 50% - falls outside the empirical p10-p90, looser than the
+   prompt's p25-p75 ask). Both skip silently when the new fields are absent
+   (old packets, most hand-built test fixtures), same convention as every
+   other analytics-gated rule here.
+
 ## Real-eval findings (2026-10-17)
 
 Two real runs against the live CLI (oil fixture + evals/btc_fixture.py),

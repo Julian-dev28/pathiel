@@ -1,5 +1,5 @@
 {
-  "contract_version": "1.2.0",
+  "contract_version": "1.3.0",
   "desk_id": "oil",
   "as_of": "2026-10-17T02:10:00Z",
   "instruments": [
@@ -95,6 +95,8 @@
         "p75": 0.1089,
         "p90": 0.1556
       },
+      "long_reach": null,
+      "short_reach": null,
       "conditional": [
         {
           "label": "after +5% 5d run",
@@ -210,7 +212,11 @@
         "low": 95.5
       },
       "atr14_1h_pct": 0.0062,
-      "mid_pos_in_24h": 0.769
+      "mid_pos_in_24h": 0.769,
+      "all_time_high": null,
+      "all_time_low": null,
+      "range_90d": null,
+      "median_daily_range_30d_pct": null
     }
   ],
   "account": {
