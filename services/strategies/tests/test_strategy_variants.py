@@ -159,3 +159,54 @@ def test_a_longer_target_lookback_waits_for_the_history():
     run = simulate([Candle(t=48 * HOUR_MS + b.t - T0, o=b.o, h=b.h, l=b.l, c=b.c, v=1.0) for b in REST_AND_FILL],
                    _1h(48), _long(), _p(target_lookback_h=48))
     assert run.rested == 1
+
+
+# ── flip after a target (2026-10-30, operator: "upon long close short down to long entry") ──
+
+FLIP_BARS = REST_AND_FILL + [_b(2, 99.5, 101.2, 99.4, 101.0),      # long target 101 fills
+                             _b(3, 100.9, 101.0, 100.6, 100.7),    # next tick: short at 100.90
+                             _b(4, 100.5, 100.6, 98.9, 99.1)]      # back down through 99.00
+
+
+def test_after_a_long_target_the_next_tick_shorts_back_to_the_long_entry():
+    run = simulate(FLIP_BARS, _1h(), _long(), _p(flip_after_target=True))
+    long_, flip = run.trades[0], run.trades[1]
+    assert long_.exit_reason == "target" and not long_.is_flip
+    assert flip.is_flip and flip.side == "short"
+    assert flip.entry_px == pytest.approx(100.9) and flip.entry_time == T0 + 3 * FIFTEEN_MS
+    assert flip.target_px == pytest.approx(99.0)                  # the long's entry
+    assert flip.stop_px == pytest.approx(101.5)                   # 0.50 over the 101 range high
+    assert flip.exit_reason == "target" and flip.r_multiple == pytest.approx((100.9 - 99.0) / 0.6)
+
+
+def test_the_flip_is_off_by_default():
+    run = simulate(FLIP_BARS, _1h(), _long(), _p())
+    assert not any(t.is_flip for t in run.trades) and all(t.side == "long" for t in run.trades)
+
+
+def test_a_long_call_does_not_close_the_flip_short_against_it():
+    bars = FLIP_BARS[:4] + [_b(4, 100.6, 100.8, 100.4, 100.6)]    # quiet bar: neither stop nor target
+    run = simulate(bars, _1h(), _long(invalidation_px=100.0), _p(flip_after_target=True))
+    assert len(run.trades) == 1 and run.open_position_at_end["side"] == "short"
+
+
+def test_a_flip_never_flips_again():
+    bars = FLIP_BARS + [_b(5, 99.2, 99.3, 99.1, 99.2), _b(6, 99.2, 99.3, 99.1, 99.2)]
+    run = simulate(bars, _1h(), _long(), _p(flip_after_target=True))
+    assert sum(1 for t in run.trades if t.is_flip) == 1             # the flip's own target starts no flip
+
+
+def test_a_flip_whose_stop_is_too_wide_for_its_leverage_is_refused():
+    run = simulate(FLIP_BARS, _1h(), _long(), _p(flip_after_target=True, flip_stop_buffer=2.0))
+    assert run.refused["flip_leverage"] == 1 and not any(t.is_flip for t in run.trades)
+    # at 5x the liquidation rule passes, and the wide stop then fails the R gate (0.9R)
+    run5 = simulate(FLIP_BARS, _1h(), _long(), _p(flip_after_target=True, flip_stop_buffer=2.0, flip_leverage=5.0))
+    assert run5.refused["flip_leverage"] == 0 and run5.refused["flip_min_r"] == 1
+
+
+def test_flip_setup_refuses_a_target_on_the_wrong_side():
+    from services.strategies.backtest.desk_tick_sim import _flip_setup
+    lv = {"entry_high": 101.0, "entry_low": 99.0, "target_high": 101.0, "target_low": 99.0, "atr14": 2.0}
+    assert _flip_setup("short", 101.5, 100.9, lv, _p())["refused"] == "flip_no_room"
+    ok = _flip_setup("short", 99.0, 100.9, lv, _p())
+    assert ok["target_px"] == 99.0 and ok["stop_px"] == pytest.approx(101.5)

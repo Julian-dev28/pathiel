@@ -169,6 +169,18 @@ class Params:
     entry_lookback_h: int = 8               # closed 1h bars behind the entry edge and the stop
     target_lookback_h: int = 24             # closed 1h bars behind the far-edge target
     session_utc: Optional[Tuple[int, int]] = None  # new entries only when start <= UTC hour < end
+    # Flip after a target (2026-10-30, operator: "upon long close short down to
+    # long entry"): once a target fills, the next tick opens the OPPOSITE side
+    # at market, its target the closed trade's entry, its stop `flip_stop_buffer`
+    # beyond the far range extreme. One attempt per target; a flip never flips
+    # again; the thesis's invalidation and a direction flip do not close it
+    # (it trades against the call on purpose); its own stop, target, time stop
+    # and liquidation do. Off by default.
+    flip_after_target: bool = False
+    flip_min_r: Optional[float] = None       # R gate for the flip (default: min_r)
+    flip_leverage: Optional[float] = None    # leverage for the flip (default: leverage)
+    flip_stop_buffer: Optional[float] = None  # default: stop_buffer
+    flip_time_stop_hours: Optional[float] = None
 
 
 # Per-side market-sell slippage (bps) by notional (USD), walked on the live
@@ -225,6 +237,7 @@ class Trade:
     target_missed: bool = False                   # limit target touched, never traded through, closed elsewhere
     orig_target_px: Optional[float] = None        # the structural target before any offset
     offset_capture: bool = False                  # filled the offset target; never traded through the original
+    is_flip: bool = False                         # opened by flip_after_target, against the call
 
 
 @dataclass
@@ -280,6 +293,8 @@ class _Position:
     reached_orig_target: bool = False             # a bar traded through the structural target
     partial_done: bool = False                    # the scale-out (Params.partial_frac) already filled
     partial_gross_usd: float = 0.0                # realized P&L of the scale-out, already in equity
+    is_flip: bool = False                         # opened by flip_after_target
+    leverage: Optional[float] = None              # this position's leverage when it differs from Params.leverage
 
 
 def _levels(closed_1h: Sequence[Candle], entry_h: int = 8, target_h: int = 24) -> Optional[Dict[str, Any]]:
@@ -311,13 +326,14 @@ def _levels(closed_1h: Sequence[Candle], entry_h: int = 8, target_h: int = 24) -
     }
 
 
-def _full_size_notional(equity: float, params: Params) -> float:
+def _full_size_notional(equity: float, params: Params, leverage: Optional[float] = None) -> float:
     """Equity less the floor, as margin net of the opening taker fee, times
     leverage: the full-port size place_bracket sizes and tops up to
     (services.risk.derive.margin_after_open_fee)."""
+    lev = leverage or params.leverage
     usable = equity * (1.0 - params.free_margin_floor)
-    margin = usable / (1.0 + params.leverage * params.taker_fee)
-    return margin * params.leverage
+    margin = usable / (1.0 + lev * params.taker_fee)
+    return margin * lev
 
 
 def _open_position(resting: _Resting, fill_px: float, t: int, params: Params) -> _Position:
@@ -409,7 +425,7 @@ def _close_trade(pos: _Position, exit_px: float, t: int, reason: str, fee_rate: 
                 funding_usd=pos.funding_usd, net_pnl_usd=net, risk_usd=risk,
                 r_multiple=(net / risk) if risk > 1e-12 else None, added=pos.added,
                 orig_stop_px=pos.orig_stop_px, stop_moved=pos.stop_moved,
-                target_missed=pos.target_touched and reason != "target")
+                target_missed=pos.target_touched and reason != "target", is_flip=pos.is_flip)
 
 
 def _funding_rate_at(funding_sorted: Sequence[Tuple[int, float]], t: int) -> Optional[float]:
@@ -473,18 +489,45 @@ def _setup(d: Direction, mid: float, lv: Dict[str, Any], params: Params) -> Opti
 
 
 def _market_open(setup: Dict[str, Any], bar: Candle, t: int, equity: float,
-                 params: Params) -> Tuple[_Position, float, float]:
+                 params: Params, leverage: Optional[float] = None) -> Tuple[_Position, float, float]:
     """Open at the mid as a taker, size-aware slippage: (position, size, equity after the fee)."""
     sign = 1.0 if setup["side"] == "long" else -1.0
-    notional = _full_size_notional(equity, params)
+    notional = _full_size_notional(equity, params, leverage)
     fill = setup["entry_px"] * (1.0 + sign * _market_exit_slip(params, notional))
     rest = _Resting(side=setup["side"], limit_px=fill, stop_px=setup["stop_px"],
                     target_px=setup["target_px"], placed_at=t, orig_target_px=setup["orig_target_px"])
     pos = _open_position(rest, fill, t, params)
+    pos.leverage = leverage
     pos.size = notional / fill if fill > 0 else 0.0
     fee = params.taker_fee * fill * pos.size
     pos.entry_fees_usd = fee
     return pos, pos.size, equity - fee
+
+
+def _flip_setup(side: str, back_to: float, mid: float, lv: Dict[str, Any],
+                params: Params) -> Dict[str, Any]:
+    """The flip after a target: `side` at the mid, target `back_to` (the
+    closed trade's entry), stop `flip_stop_buffer` beyond the furthest of the
+    entry range, the target range and the mid on the stop side. Returns the
+    setup or {"refused": reason}."""
+    short = side == "short"
+    buf = params.flip_stop_buffer if params.flip_stop_buffer is not None else params.stop_buffer
+    if short:
+        struct = max(lv["entry_high"], lv["target_high"] or mid, mid)
+        stop_px, ok_side = struct + buf, back_to < mid
+    else:
+        struct = min(lv["entry_low"], lv["target_low"] or mid, mid)
+        stop_px, ok_side = struct - buf, back_to > mid
+    if not ok_side:
+        return {"refused": "flip_no_room"}
+    lev = params.flip_leverage or params.leverage
+    if not check_leverage(mid, stop_px, lev, params.max_leverage)["ok"]:
+        return {"refused": "flip_leverage"}
+    min_r = params.flip_min_r if params.flip_min_r is not None else params.min_r
+    if not check_levels(mid, stop_px, back_to, min_r)["ok"]:
+        return {"refused": "flip_min_r"}
+    return {"side": side, "entry_px": mid, "stop_px": stop_px, "target_px": back_to,
+            "orig_target_px": back_to, "leverage": lev}
 
 
 def _scale_out(pos: _Position, bar: Candle, initial_size: float, equity: float, run: Run,
@@ -540,6 +583,7 @@ def simulate(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], direct
     position: Optional[_Position] = None
     initial_size = 0.0          # the size the position opened with, for R-multiple risk
     blocked_regime: Optional[Tuple[str, Any]] = None   # no re-entry under this call (reentry_after_target=False)
+    pending_flip: Optional[Tuple[str, float]] = None   # (side to open, target) after a target filled
     seen_1h_close: set = set()
 
     # The tick series: one decision per 15m bar, or per 1h bar for the hourly
@@ -580,7 +624,7 @@ def simulate(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], direct
                     position.funding_usd += pay
                     run.funding_total_usd += pay
             d = direction_at(close_time)
-            if position is not None and d is not None and d.invalidation_px is not None:
+            if position is not None and not position.is_flip and d is not None and d.invalidation_px is not None:
                 breached = (c1.c <= d.invalidation_px) if position.side == "long" else (c1.c >= d.invalidation_px)
                 if breached:
                     inv_px = c1.c
@@ -596,7 +640,7 @@ def simulate(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], direct
                     resting_add = None
 
         # 2. a flipped direction closes an open position (one slot, reversed call)
-        if position is not None:
+        if position is not None and not position.is_flip:
             d = direction_at(t)
             if d is not None and d.side != position.side:
                 flip_px = mid
@@ -681,6 +725,8 @@ def simulate(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], direct
                 trade.offset_capture = (params.target_offset_frac > 0 and not position.reached_orig_target)
                 if not params.reentry_after_target:
                     blocked_regime = regime_key(direction_at(t), t)
+                if params.flip_after_target and not position.is_flip:
+                    pending_flip = ("short" if is_long else "long", position.avg_entry)
                 equity += trade.gross_pnl_usd - trade.exit_fee_usd
                 run.trades.append(trade)
                 run.gross_pnl_usd += trade.gross_pnl_usd
@@ -689,7 +735,8 @@ def simulate(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], direct
                 resting_add = None
             else:
                 # liquidation check (every bar, before top-up logic)
-                liq_px = liq_estimate(position.avg_entry, params.leverage, params.max_leverage, is_long)
+                liq_px = liq_estimate(position.avg_entry, position.leverage or params.leverage,
+                                      params.max_leverage, is_long)
                 liquidated_now = bar.l <= liq_px if is_long else bar.h >= liq_px
                 if liquidated_now:
                     run.liquidated = True
@@ -701,7 +748,8 @@ def simulate(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], direct
                     equity = 0.0
                     position = None
                     resting_add = None
-                elif params.time_stop_hours and t - position.opened_at >= params.time_stop_hours * HOUR_MS:
+                elif (lambda h: bool(h) and t - position.opened_at >= h * HOUR_MS)(
+                        params.flip_time_stop_hours if position.is_flip else params.time_stop_hours):
                     side_sign = 1.0 if is_long else -1.0
                     time_px = mid * (1.0 - side_sign * _market_exit_slip(params, position.size * mid))
                     trade = _close_trade(position, time_px, t, "time", params.taker_fee, initial_size)
@@ -715,7 +763,8 @@ def simulate(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], direct
                     # top-up: one resting add at the original entry, while under
                     # full size; never after a scale-out (that would undo it)
                     full = _full_size_notional(equity, params) / position.avg_entry
-                    if resting_add is None and position.size < full - 1e-9 and not position.partial_done:
+                    if (resting_add is None and position.size < full - 1e-9 and not position.partial_done
+                            and not position.is_flip):
                         resting_add = _Resting(side=position.side, limit_px=position.avg_entry,
                                                stop_px=position.stop_px, target_px=position.target_px,
                                                placed_at=t, is_add=True)
@@ -736,8 +785,32 @@ def simulate(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], direct
                             resting_add = None
                     _manage_stop(position, bar, lv["atr14"] if lv else None, params)
 
-        # 5. new entry evaluation when flat
-        if position is None and resting is None:
+        # 5a. the flip after a target: one market attempt on the next tick
+        if pending_flip is not None and position is None and resting is None \
+                and len(run.trades) == trades_before_bar and lv is not None and lv["atr14"]:
+            side, back_to = pending_flip
+            pending_flip = None
+            fs = _flip_setup(side, back_to, mid, lv, params)
+            if fs.get("refused"):
+                run.refused[fs["refused"]] += 1
+            else:
+                run.filled += 1
+                position, initial_size, equity = _market_open(fs, bar, t, equity, params, fs["leverage"])
+                position.is_flip = True
+                is_long = position.side == "long"
+                if (bar.l <= position.stop_px) if is_long else (bar.h >= position.stop_px):
+                    side_sign = 1.0 if is_long else -1.0
+                    exit_px = position.stop_px * (1.0 - side_sign * _market_exit_slip(
+                        params, position.size * position.stop_px))
+                    trade = _close_trade(position, exit_px, t, "stop", params.taker_fee, initial_size)
+                    equity += trade.gross_pnl_usd - trade.exit_fee_usd
+                    run.trades.append(trade)
+                    run.gross_pnl_usd += trade.gross_pnl_usd
+                    run.fees_total_usd += trade.fees_usd
+                    position = None
+
+        # 5. new entry evaluation when flat (a pending flip goes first, next tick)
+        if position is None and resting is None and pending_flip is None:
             d = direction_at(t)
             if blocked_regime is not None and regime_key(d, t) == blocked_regime:
                 d = None            # a target filled under this call: wait for the next one
