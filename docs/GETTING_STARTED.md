@@ -114,9 +114,9 @@ Both are plain reads. Neither touches the account.
 
 Of pathiel's 60 MCP tools, 6 are LIVE MONEY: `place_bracket`,
 `bracket_sweep`, `set_target`, `close_position`, `set_leverage`,
-`cancel_order`. The MCP server marks every one of them `destructiveHint`,
-so an MCP client asks before each call, and the server's own instructions
-say the same thing in words: call them only when you asked for that exact
+`cancel_order`. The MCP server marks every one of them `destructiveHint`
+(a client that honors the hint asks before each call), and the server's own
+instructions say the same thing in words: call them only when you asked for that exact
 action in this conversation. `config` with arguments is a seventh case,
 rewriting the live trading config, and asks the same way. Everything else
 only reads the venue, your account or the desk journal; `desk_refresh`,
