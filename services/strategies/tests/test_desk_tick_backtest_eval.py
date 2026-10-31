@@ -192,3 +192,24 @@ def test_stop_variant_row_adds_total_r_moved_and_cut_short():
     assert row["series"] == "journaled" and row["variant"] == "be_1r"
     assert row["total_r"] == pytest.approx(2.0) and row["n_stop_moved"] == 1 and row["cut_short"] == 1
     assert [v for v, _ in E.STOP_VARIANTS] == ["fixed", "be_1r", "be_2r", "trail_1atr", "trail_2atr"]
+
+
+def test_a_flat_thesis_withdraws_the_previous_call():
+    """2026-10-31: the loader dropped flat theses, so a short stayed in force
+    through the flat day after it (silver replay day 5). Flat = no call."""
+    short = D.ThesisDirection(created_at_ms=1_000, side="short", entry_px=54.6, stop_px=55.77,
+                              invalidation_px=None, targets=[52.69], thesis_id="s")
+    flat = D.ThesisDirection(created_at_ms=5_000, side="flat", entry_px=None, stop_px=None,
+                             invalidation_px=None, targets=[], thesis_id="f")
+    d_at = E.journaled_direction([short, flat])
+    assert d_at(4_999).side == "short"
+    assert d_at(5_000) is None and d_at(999_999) is None
+
+
+def test_the_loader_keeps_flat_theses_and_still_skips_pair(tmp_path):
+    import json
+    for name, side in (("a.json", "flat"), ("b.json", "pair"), ("c.json", "short")):
+        (tmp_path / name).write_text(json.dumps({"id": name, "created_at": "2026-10-30T16:00:00Z",
+                                                 "call": {"side": side, "targets": []}}))
+    sides = sorted(t.side for t in D.load_journaled_theses(str(tmp_path)))
+    assert sides == ["flat", "short"]

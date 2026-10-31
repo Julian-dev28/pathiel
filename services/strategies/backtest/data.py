@@ -90,7 +90,7 @@ class ThesisDirection:
     """One journaled thesis, reduced to what the simulator's direction
     series needs."""
     created_at_ms: int
-    side: str                       # "long" | "short"
+    side: str                       # "long" | "short" | "flat"
     entry_px: Optional[float]
     stop_px: Optional[float]
     invalidation_px: Optional[float]
@@ -126,7 +126,10 @@ def load_thesis_file(path: str) -> Optional[ThesisDirection]:
         return None
     call = raw.get("call") or {}
     side = call.get("side")
-    if side not in ("long", "short"):
+    # "flat" is kept (2026-10-31): dropping it left the previous long/short in
+    # force through every flat day, so the sim traded calls the desk had
+    # already withdrawn. journaled_direction turns a flat call into "no call".
+    if side not in ("long", "short", "flat"):
         return None
     try:
         created_at = datetime.fromisoformat(str(raw["created_at"]).replace("Z", "+00:00"))

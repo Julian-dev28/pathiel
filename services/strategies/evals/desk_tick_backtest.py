@@ -85,7 +85,10 @@ def always_direction(side: str):
 def journaled_direction(theses: Sequence[D.ThesisDirection]):
     """The call in force at `t`: the latest thesis whose `created_at` is
     `<= t`, applied until the next one starts (plan section 2.1). None
-    before the first thesis exists."""
+    before the first thesis exists, and None while a FLAT thesis is in
+    force: the live tick takes no new entry under a flat call and holds an
+    open position (it closes only on its own stop/target), which is exactly
+    what the sim does with no direction."""
     ordered = sorted(theses, key=lambda th: th.created_at_ms)
 
     def direction_at(t: int) -> Optional[Direction]:
@@ -95,7 +98,7 @@ def journaled_direction(theses: Sequence[D.ThesisDirection]):
                 active = th
             else:
                 break
-        if active is None:
+        if active is None or active.side == "flat":
             return None
         return Direction(side=active.side, invalidation_px=active.invalidation_px,
                          entry_ceiling=active.entry_px, regime_id=str(active.created_at_ms),
