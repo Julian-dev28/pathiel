@@ -27,6 +27,7 @@ Live smoke over the real transport: python scripts/mcp_smoke.py
 """
 
 import json
+import math
 import queue
 import sys
 import os
@@ -119,12 +120,12 @@ def _make_stub_handler(tool_name: str):
 
 # What a client model reads at connect time (MCP initialize "instructions").
 # Short on purpose: it rides in every session's context.
-SERVER_INSTRUCTIONS = """pathiel: a headless trading desk on live Hyperliquid. Real money. Claude is the trader; there is no autonomous bot. Active desks: config active_desks (oil only since 2026-10-25; coin_allowlist holds orders to oil coins). Other desks exist but are off.
+SERVER_INSTRUCTIONS = """pathiel: a headless trading desk on live Hyperliquid. Real money. Claude is the trader; there is no autonomous bot. Active desks: config active_desks (oil; silver = metals desk). Each trades its own slice of equity (desk_equity_share), one position per desk. Other desks are off.
 
 Start here
 - desk_list, then desk_brief {desk} for that desk's call. Quick mode is short markdown, call first, with "Your size" for the active account. The Desk page (http://localhost:8000/) shows the same call as a card plus the open position with margin in use.
 - desk_refresh {desk} writes a NEW thesis (news + one local model call, about a minute). Use it when asked, when the brief says the thesis is stale, or when its target has already been hit.
-- place_bracket {coin, entry_px, stop_px, tp_px}: one entry with an exact stop and target, sized to the whole equity less the opening fee (20x cap, ONE position per account), stop inside half the distance to liquidation. Refuses under 2R and a second position, except add=true: one same-side top-up to full size, stop no wider. bracket_sweep {coin}: cancel a stranded sibling, confirm the stop covers the position, fold per-fill stops/targets into one pair. Run it after every close.
+- place_bracket {coin, entry_px, stop_px, tp_px}: one entry with an exact stop and target, sized to the coin's desk slice of equity less the opening fee, capped by free margin (20x cap, ONE position per desk), stop inside half the distance to liquidation. Refuses under 2R and a second position, except add=true: one same-side top-up to full size, stop no wider. bracket_sweep {coin}: cancel a stranded sibling, confirm the stop covers the position, fold per-fill stops/targets into one pair. Run it after every close.
 - set_leverage {coin, leverage}: keeps an open position's own margin type; a venue refusal is an error. Confirm with get_asset_positions.
 - account_overview: equity and where it sits. HIP-3 money (xyz:BRENTOIL, xyz:CL, xyz:NVDA, ...) lives on its own dex (xyz), not main; main-dex-only reads look empty for it.
 - risk_limits / risk_size_trade: what this account may trade and how big, from the saved risk profile. Size every suggested trade with risk_size_trade, never by hand.
@@ -3060,6 +3061,8 @@ def _thesis_sizing(brief: Any) -> "Dict[str, Any] | None":
         profile, books, venue = _risk_inputs()
         acct = getattr(brief.analytics, "account", None) if brief.analytics else None
         equity = acct.equity_usd if acct is not None and acct.source == "venue" else _live_equity()
+        dslice = _desk_slice(call.instrument, equity)   # the desk's share of it, as place_bracket sizes
+        equity = dslice["slice_usd"]
         coin_max, sz_dec = _coin_specs(call.instrument)
         # FIXED 2026-10-27: this sized at the thesis's own leverage (5x) while
         # place_bracket sizes at the profile's (20x), so "Your size" read 2.93
@@ -3069,7 +3072,10 @@ def _thesis_sizing(brief: Any) -> "Dict[str, Any] | None":
         sized = size_trade(equity, profile, books, entry_px=call.entry_px, stop_px=call.stop_px,
                            leverage=_bracket_leverage(profile), coin_max_leverage=coin_max,
                            targets=call.targets or [], venue=venue, sz_decimals=sz_dec)
-        out = {"coin": call.instrument, "equity_usd": equity, **sized.model_dump(mode="json")}
+        out = {"coin": call.instrument, "equity_usd": equity, "desk": dslice["desk"],
+               "equity_share": dslice["equity_share"], **sized.model_dump(mode="json")}
+        if dslice["equity_share"] < 1:
+            out["reason"] = f"{dslice['equity_share']:.0%} of equity: " + out["reason"]
         if sized.warnings:
             out["reason"] = " ".join([out["reason"], *sized.warnings])
         return out
@@ -3139,6 +3145,21 @@ def _live_equity() -> float:
         raise RuntimeError("could not read the active account's equity"
                            + (": " + "; ".join(summary.blockers) if summary.blockers else ""))
     return float(summary.equity_usd)
+
+
+def _desk_slice(coin: str, equity: float) -> Dict[str, Any]:
+    """The equity a trade on `coin` sizes with: equity x its desk's share
+    (services/strategies/desk_share.py; operator 2026-10-31, "oil 95% silver
+    5%"). Share 1.0 when no shares are saved. Raises DeskShareError when the
+    saved shares are bad or the coin is on no active desk: never size blind."""
+    from pathiel.agents.config_store import read_agent_config
+    from services.strategies import desk_share
+    cfg = read_agent_config()
+    desk, share = desk_share.share_for_coin(coin, cfg)
+    return {"desk": desk, "equity_share": share, "equity_usd": equity,
+            "slice_usd": round(equity * share, 6), "shares_on": bool(desk_share.desk_shares(cfg)),
+            "desk_coins": desk_share.desk_coins(desk) if desk else [],
+            "slots": desk_share.slots(cfg, 1)}
 
 
 def _coin_specs(coin: str) -> "Tuple[float | None, int | None]":
@@ -3274,16 +3295,32 @@ def handle_place_bracket(params: Dict[str, Any]) -> str:
         # wallet since 2026-10-23; without this, two desks could both rest an
         # entry and the second fill would be refused by the venue for margin,
         # or worse, half-fill.
+        # Since 2026-10-31 each desk with an equity share owns one slot and
+        # sizes off its own slice (services/strategies/desk_share.py), so oil
+        # and silver can both be open; no shares saved = the old rule (the
+        # profile's slots, the whole equity).
         from pathiel.client.exchange import resolve_user_address
-        slots = int(getattr(profile, "max_open_positions", None) or 1)
+        from services.strategies.desk_share import DeskShareError
+        try:
+            dslice = _desk_slice(coin, _live_equity())
+        except DeskShareError as e:
+            return json.dumps({"ok": False, "coin": coin, "placed": False, "error": f"desk share: {e}"})
+        slots = dslice["slots"] if dslice["shares_on"] else int(getattr(profile, "max_open_positions", None) or 1)
         user = resolve_user_address()
+        if dslice["shares_on"]:
+            # one position per desk: another coin of THIS desk holding a
+            # position or an entry blocks it (oil cannot hold Brent and WTI)
+            own = bracket.desk_coin_held(user, coin, dslice["desk_coins"])
+            if own:
+                return json.dumps({"ok": False, "coin": coin, "placed": False,
+                                   "error": f"desk {dslice['desk']} already holds {own}: one position per desk"})
         taken = bracket.slot_taken_by(user, coin, slots)
         if taken:
             return json.dumps({"ok": False, "coin": coin, "placed": False,
                                "error": f"slot taken by {taken}: the account allows {slots} open position(s)"})
         ref = entry if entry is not None else float(get_hl_price(coin))
         leverage = _bracket_leverage(profile, lev_raw)
-        sized = size_trade(_live_equity(), profile, books, entry_px=ref, stop_px=stop,
+        sized = size_trade(dslice["slice_usd"], profile, books, entry_px=ref, stop_px=stop,
                            leverage=leverage, coin_max_leverage=coin_max, targets=[tp],
                            venue=venue, sz_decimals=sz_dec)
         add = _as_bool(params.get("add"))
@@ -3327,6 +3364,25 @@ def handle_place_bracket(params: Dict[str, Any]) -> str:
                               f"buys under one size step at {lev_used:g}x after the opening fee")
                 return json.dumps({"ok": True, "coin": coin, "placed": False, "add": True, **topup,
                                    "reason": reason}, default=str)
+        if not add and dslice["shares_on"] and size > 0:
+            # A desk's slice of equity is not all free margin: the other
+            # desk's isolated position holds its own, and unrealized profit
+            # is not margin. Never send more than the dex's free margin can
+            # open at this leverage after the fee (the venue would refuse,
+            # or half-fill).
+            from pathiel.client.account_snapshot import account_state
+            from services.risk.derive import VenueRules, margin_after_open_fee
+            st = account_state(user, include_hip3=True)
+            dex = coin.split(":", 1)[0] if ":" in coin else ""
+            free = float((st.get("dex_available") or {}).get(dex, st.get("available") or 0) or 0)
+            lev_used = float(sized.leverage or leverage or 1)
+            step = 10 ** -int(sz_dec if sz_dec is not None else 2)
+            cap = round(math.floor(margin_after_open_fee(free, lev_used, venue or VenueRules())
+                                   * lev_used / ref / step + 1e-9) * step, 8)   # down, never over free margin
+            dslice["free_margin_usd"] = round(free, 2)
+            if cap < size:
+                dslice["capped_by_free_margin"] = {"wanted": size, "cap": cap}
+                size = cap
     except Exception as e:
         return json.dumps({"ok": False, "coin": coin, "error": f"sizing failed: {e}"})
     if not sized.can_trade or not sized.size:
@@ -3336,7 +3392,10 @@ def handle_place_bracket(params: Dict[str, Any]) -> str:
                                 leverage=int(sized.leverage or 1), min_r=min_r,
                                 coin_max_leverage=coin_max, dry_run=bool(params.get("dry_run")), add=add)
     out["sizing"] = {"notional_usd": sized.notional_usd, "margin_usd": sized.margin_usd,
-                     "risk_usd": sized.risk_usd, "risk_pct": sized.risk_pct}
+                     "risk_usd": sized.risk_usd, "risk_pct": sized.risk_pct,
+                     "desk": dslice["desk"], "equity_share": dslice["equity_share"],
+                     "equity_usd": round(dslice["equity_usd"], 2), "slice_usd": round(dslice["slice_usd"], 2),
+                     **({k: dslice[k] for k in ("free_margin_usd", "capped_by_free_margin") if k in dslice})}
     if topup:
         out["topup"] = topup
     return json.dumps(out, default=str)
@@ -3406,14 +3465,21 @@ def handle_risk_size_trade(params: Dict[str, Any]) -> str:
         from services.risk.size import size_trade
         profile, books, venue = _risk_inputs()
         eq_raw = params.get("equity_usd")
-        equity = _fnum(eq_raw) if eq_raw is not None else _live_equity()
+        share_note: Dict[str, Any] = {}
+        if eq_raw is not None:
+            equity = _fnum(eq_raw)          # a what-if equity is taken as given
+        else:
+            dslice = _desk_slice(coin, _live_equity())
+            equity = dslice["slice_usd"]    # live: the desk's share, as place_bracket sizes
+            share_note = {"desk": dslice["desk"], "equity_share": dslice["equity_share"],
+                          "account_equity_usd": round(dslice["equity_usd"], 2)}
         coin_max, sz_dec = _coin_specs(coin)
         sized = size_trade(equity, profile, books, entry_px=entry, stop_px=stop,
                            leverage=leverage or None, coin_max_leverage=coin_max,
                            targets=targets, venue=venue, sz_decimals=sz_dec)
     except Exception as e:
         return json.dumps({"error": str(e), "coin": coin})
-    out = {"coin": coin, "equity_usd": equity, "coin_max_leverage": coin_max,
+    out = {"coin": coin, "equity_usd": equity, "coin_max_leverage": coin_max, **share_note,
            **sized.model_dump(mode="json")}
     if sized.can_trade and sized.leverage and coin_max:
         liq = _liq_estimate(entry, sized.leverage, coin_max, sized.side == "long")

@@ -539,6 +539,31 @@ def close_position(coin: str) -> Dict[str, Any]:
     return out
 
 
+def desk_coin_held(user: str, coin: str, desk_coins: Any, fetch_raw: Any = None,
+                   dexes: Any = None) -> Optional[str]:
+    """One position per desk (2026-10-31, desk equity shares): another coin of
+    the SAME desk with an open position or a resting entry, or None. `coin`
+    itself is place_bracket's own same-coin refusal. Fetchers injectable."""
+    from services.accounts import positions as acc_pos
+    fetch_raw = fetch_raw or acc_pos._fetch_raw
+    dexes = acc_pos._dexes_with_margin(user) if dexes is None else dexes
+    others = set(desk_coins or []) - {coin}
+    held: list = []
+    for dex in dexes:
+        raw = fetch_raw(user, dex)
+        for row in (raw.get("state") or {}).get("assetPositions") or []:
+            pos = (row or {}).get("position") or {}
+            try:
+                if pos.get("coin") in others and float(pos.get("szi") or 0) != 0:
+                    held.append(pos["coin"])
+            except (TypeError, ValueError):
+                continue
+        for o in raw.get("orders") or []:
+            if o.get("coin") in others and not o.get("reduceOnly"):
+                held.append(o["coin"])
+    return ", ".join(sorted(set(held))) or None
+
+
 def slot_taken_by(user: str, coin: str, max_open_positions: int, fetch_raw: Any = None,
                   dexes: Any = None) -> Optional[str]:
     """Account-wide check behind place_bracket: with max_open_positions slots,

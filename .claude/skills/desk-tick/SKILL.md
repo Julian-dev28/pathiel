@@ -13,12 +13,15 @@ eating my usage"; an hourly clock was tried that evening and reverted the
 same night, see docs/overhaul/BACKTEST_RESULTS_2026-10-25.md).
 
 1. **Slot first.** `python3 scripts/desk_slot.py --desk $ARGUMENTS`.
-   If `slot` is `held` and `mine` is false, another desk's coin holds the
-   account's one slot: append
-   `DESK-TICK $ARGUMENTS <utc> action=SKIP slot held by <holder>` to
-   `/tmp/oil-loop/progress.log`, print it, and STOP. No agent, no MCP calls.
-   The desk that holds the slot is the only desk that ticks (operator rule,
-   2026-10-23).
+   If `slot` is `inactive`, append
+   `DESK-TICK $ARGUMENTS <utc> action=SKIP desk not active` to
+   `/tmp/oil-loop/progress.log`, print it, and STOP. If `slot` is `held` and
+   `mine` is false, another desk's coin holds the account's one slot: append
+   `DESK-TICK $ARGUMENTS <utc> action=SKIP slot held by <holder>`, print it,
+   and STOP. No agent, no MCP calls. With desk equity shares saved (since
+   2026-10-31: oil 95%, metals/silver 5%) every desk owns its own slot, so
+   the second case only happens without shares (the 2026-10-23 rule: the
+   desk holding the one slot is the only one that ticks).
 2. **Otherwise launch the agent.** Agent tool, `subagent_type` `desk-tick`,
    prompt `DESK: $ARGUMENTS`. Do not run the tick steps yourself and do not
    launch more than one agent per tick. The agent file

@@ -7,9 +7,11 @@ effort: medium
 
 <!-- GENERATED from .claude/agents/desk-tick.md by scripts/build_plugin_skill.py. Edit the source, then rerun it. -->
 You run ONE tick for the desk named in your prompt (DESK: oil, metals, ai or
-gas). Live money on the connected Hyperliquid account. One position per
-account until the wallet is funded for more (the risk profile's
-`max_open_positions`). Leverage up to the risk profile's `max_leverage`
+gas). Live money on the connected Hyperliquid account. Since 2026-10-31 oil
+and silver (the metals desk) are both live, each on its own slice of equity
+(config `desk_equity_share`: oil 95%, metals 5%) and its own ONE position:
+`place_bracket` sizes off the desk's slice by itself, and an oil position
+never blocks the silver tick or the other way round. Leverage up to the risk profile's `max_leverage`
 (20x since 2026-10-24; `place_bracket` caps it and runs the 20x rule: the
 stop must use under half the distance to liquidation). Never chase. Never
 add at market above the thesis entry. Every number comes from a tool or a
@@ -30,14 +32,19 @@ ToolSearch call: `select:mcp__pathiel__desk_brief,mcp__pathiel__bracket_sweep,mc
 
 ## Steps, in order
 
-0. **Slot.** `"${CLAUDE_PLUGIN_ROOT}/scripts/pathiel-py" scripts/desk_slot.py --desk DESK`. If `slot` is `held`
-   and `mine` is false, another desk's coin holds the account's one slot:
-   write the log line `DESK-TICK DESK <utc> action=SKIP slot held by <holder>`
-   and STOP. No brief, no levels, no MCP calls.
+0. **Slot.** `"${CLAUDE_PLUGIN_ROOT}/scripts/pathiel-py" scripts/desk_slot.py --desk DESK`. If `slot` is
+   `inactive` (shares are saved and this desk has none): log
+   `DESK-TICK DESK <utc> action=SKIP desk not active` and STOP. If `slot` is
+   `held` and `mine` is false (only possible with no shares saved), another
+   desk's coin holds the account's one slot: log
+   `DESK-TICK DESK <utc> action=SKIP slot held by <holder>` and STOP. No
+   brief, no levels, no MCP calls. An `error` output: log
+   `action=NONE <the error>` and STOP.
 1. **Thesis first.** `desk_brief {desk: "DESK"}` (quick). The call's
    instrument is COIN for the rest of the tick (oil: xyz:BRENTOIL, metals:
-   xyz:GOLD or xyz:SILVER, ai: whichever equity the call names, gas:
-   xyz:NATGAS). The card shows "Pays X.XR"; a call under 1.5R never trades.
+   xyz:SILVER since 2026-10-31, ai: whichever equity the call names, gas:
+   xyz:NATGAS). A thesis whose instrument is not the desk's primary (an old
+   metals thesis on xyz:GOLD) never trades: rewrite it first. The card shows "Pays X.XR"; a call under 1.5R never trades.
    **Rewrite check:** `"${CLAUDE_PLUGIN_ROOT}/scripts/pathiel-py" scripts/thesis_due.py --desk DESK`. Call
    `desk_refresh {desk: DESK}` only when it says `"due": true`, and put its
    first reason in your report. It is due once a day, after an API, EIA or
@@ -53,8 +60,10 @@ ToolSearch call: `select:mcp__pathiel__desk_brief,mcp__pathiel__bracket_sweep,mc
 3. **Levels.** `"${CLAUDE_PLUGIN_ROOT}/scripts/pathiel-py" scripts/oil_levels.py --coin COIN`: mid, last closed
    1h candle, 8h/24h/48h range, ATR14, 15m micro range.
    `"${CLAUDE_PLUGIN_ROOT}/scripts/pathiel-py" scripts/oil_levels.py --check ENTRY STOP TP --lev 20` judges a
-   level: the R gate and the 20x line.
-4. **Account slot.** Step 0 already answered it: a free slot or ours.
+   level: the R gate and the 20x line. Silver: add `--max-lev 25` (its
+   venue max; Brent and WTI are 20, the default).
+4. **Account slot.** Step 0 already answered it: a free slot or ours (with
+   shares saved, the desk's own slot).
    (`place_bracket` refuses a taken slot on its own as well.) The only
    wallet this loop tracks is the active account's own (the one
    `account_overview` reports).
@@ -92,7 +101,10 @@ ToolSearch call: `select:mcp__pathiel__desk_brief,mcp__pathiel__bracket_sweep,mc
        - **Stop:** 0.75 beyond the 24h low for a long (24h high for a
          short), or 0.75 beyond the mid if price already trades through
          that edge. On another desk's instrument the same distance in ATR
-         terms (0.75 / Brent's 1h ATR14, about 1.3 ATR).
+         terms (0.75 / Brent's 1h ATR14, about 1.3 ATR): silver's stop is
+         1.3 x the levels script's `atr14_1h` beyond the 24h edge (the
+         buffer the 30-day silver test ran,
+         docs/strategy/SILVER_THESIS_TEST_2026-10-31.md).
        - **Target:** the far 24h edge (24h high for a long) as `tp_px`;
          `place_bracket` puts the take-profit 0.5% of price inside it
          (bracket.TARGET_OFFSET_FRAC) and judges 2R on that offset target,
@@ -112,7 +124,8 @@ ToolSearch call: `select:mcp__pathiel__desk_brief,mcp__pathiel__bracket_sweep,mc
 ## Hard rules
 
 - A market entry only when `--check` with the live mid as ENTRY passes.
-- Never widen a stop. One position per account until funded.
+- Never widen a stop. One position per desk (per account when no desk
+  shares are saved).
 - If `place_bracket` or `bracket_sweep` is missing from the tool list, do
   nothing on the exchange and log `action=NONE reconnect pathiel MCP (/mcp)`.
 - Any tool error on a live-money call: stop the tick and report it verbatim.

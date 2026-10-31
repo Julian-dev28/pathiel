@@ -209,8 +209,15 @@ def post_size(body: TradeSizeIn, request: Request) -> TradeSize:
     _gate(request)
     config = read_agent_config()
     coin_max, sz_dec = _coin_specs(body.coin)
+    # the desk's slice of equity, as place_bracket sizes (desk_equity_share,
+    # 2026-10-31: oil 95%, silver 5%); 1.0 with no shares saved
+    from services.strategies.desk_share import DeskShareError, share_for_coin
+    try:
+        _, share = share_for_coin(body.coin, config)
+    except DeskShareError as e:
+        raise HTTPException(status_code=409, detail=f"desk share: {e}") from None
     return size_trade(
-        active_equity_usd(), read_risk_profile(config), risk_books.all_book_specs(config),
+        active_equity_usd() * share, read_risk_profile(config), risk_books.all_book_specs(config),
         entry_px=body.entry_px, stop_px=body.stop_px, leverage=body.leverage,
         coin_max_leverage=coin_max, targets=body.targets, venue=_VENUE, sz_decimals=sz_dec)
 

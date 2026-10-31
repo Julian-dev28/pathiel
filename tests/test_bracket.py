@@ -797,3 +797,105 @@ def test_set_target_refuses_the_wrong_side_and_a_flat_coin_and_keeps_the_old_one
     out = bracket.set_target(COIN, 113.18, ex=refused)
     assert not out["ok"] and "old kept" in out["reason"]
     assert [o["oid"] for o in refused.orders] == [2]
+
+
+# ------------------------------------------------- desk equity shares (2026-10-31)
+def _share_cfg(monkeypatch, shares):
+    import pathiel.agents.config_store as cs
+    cfg = {"active_desks": ["oil", "metals"], "desk_equity_share": shares}
+    monkeypatch.setattr(cs, "read_agent_config", lambda: cfg)
+
+
+def _stub_handler(monkeypatch, mcp, *, equity=121.29, free=121.0, held_by_desk=None, size=2.43):
+    from pathiel.agents import bracket as br
+    import pathiel.client.exchange as ex
+    import pathiel.client.account_snapshot as snap
+    import services.risk.size as size_mod
+    monkeypatch.setattr(ex, "resolve_user_address", lambda: "0xu")
+    monkeypatch.setattr(ex, "get_hl_price", lambda coin: 49.4)
+    monkeypatch.setattr(mcp, "_risk_inputs", lambda: (SimpleNamespace(max_leverage=20.0, max_open_positions=1), [], None))
+    monkeypatch.setattr(mcp, "_coin_specs", lambda c: (25.0, 2))
+    monkeypatch.setattr(mcp, "_live_equity", lambda: equity)
+    monkeypatch.setattr(snap, "account_state", lambda user, include_hip3=True, **kw: {
+        "equity": equity, "dex_available": {"": 0.0, "xyz": free}})
+    seen = {"slots": None, "sized_equity": None}
+    monkeypatch.setattr(br, "desk_coin_held", lambda user, coin, coins: held_by_desk)
+    monkeypatch.setattr(br, "slot_taken_by", lambda user, coin, n: seen.update(slots=n) or None)
+
+    def fake_size(eq, *a, **k):
+        seen["sized_equity"] = eq
+        return SimpleNamespace(can_trade=True, size=size, leverage=20.0, reason="", notional_usd=size * 49.4,
+                               margin_usd=size * 49.4 / 20, risk_usd=1.94, risk_pct=32.0)
+    monkeypatch.setattr(size_mod, "size_trade", fake_size)
+    monkeypatch.setattr(br, "place_bracket", lambda coin, **k: seen.update(coin=coin, **k) or {"ok": True})
+    return seen
+
+
+def test_silver_sizes_off_its_5pct_slice_and_gets_its_own_slot(monkeypatch):
+    mcp = _mcp()
+    _share_cfg(monkeypatch, {"oil": 0.95, "metals": 0.05})
+    seen = _stub_handler(monkeypatch, mcp)
+    out = json.loads(mcp.handle_place_bracket({"coin": "xyz:SILVER", "stop_px": 50.2, "tp_px": 47.8}))
+    assert out["ok"] and seen["sized_equity"] == pytest.approx(121.29 * 0.05)
+    assert seen["slots"] == 2 and seen["size"] == 2.43
+    assert out["sizing"]["desk"] == "metals" and out["sizing"]["equity_share"] == 0.05
+
+
+def test_oil_sizes_off_95pct(monkeypatch):
+    mcp = _mcp()
+    _share_cfg(monkeypatch, {"oil": 0.95, "metals": 0.05})
+    seen = _stub_handler(monkeypatch, mcp, size=1.0)
+    mcp.handle_place_bracket({"coin": "xyz:BRENTOIL", "stop_px": 48.0, "tp_px": 52.0})
+    assert seen["sized_equity"] == pytest.approx(121.29 * 0.95)
+
+
+def test_free_margin_caps_the_size_rounding_down(monkeypatch):
+    """Oil's isolated margin holds $115: silver may only open what the $6.01
+    left on xyz carries at 20x after the fee, rounded DOWN."""
+    mcp = _mcp()
+    _share_cfg(monkeypatch, {"oil": 0.95, "metals": 0.05})
+    seen = _stub_handler(monkeypatch, mcp, free=5.0)
+    out = json.loads(mcp.handle_place_bracket({"coin": "xyz:SILVER", "stop_px": 50.2, "tp_px": 47.8}))
+    assert seen["size"] < 2.43 and seen["size"] * 49.4 / 20 <= 5.0
+    assert out["sizing"]["capped_by_free_margin"]["wanted"] == 2.43
+
+
+def test_one_position_per_desk(monkeypatch):
+    mcp = _mcp()
+    _share_cfg(monkeypatch, {"oil": 0.95, "metals": 0.05})
+    _stub_handler(monkeypatch, mcp, held_by_desk="xyz:BRENTOIL")
+    out = json.loads(mcp.handle_place_bracket({"coin": "xyz:CL", "stop_px": 48.0, "tp_px": 52.0}))
+    assert not out["ok"] and "desk oil already holds xyz:BRENTOIL" in out["error"]
+
+
+def test_bad_shares_refuse_instead_of_sizing(monkeypatch):
+    mcp = _mcp()
+    _share_cfg(monkeypatch, {"oil": 0.95, "metals": 0.10})
+    seen = _stub_handler(monkeypatch, mcp)
+    out = json.loads(mcp.handle_place_bracket({"coin": "xyz:SILVER", "stop_px": 50.2, "tp_px": 47.8}))
+    assert not out["ok"] and "adds up to 1.05" in out["error"] and "coin" not in seen
+
+
+def test_no_shares_saved_keeps_whole_equity_and_profile_slots(monkeypatch):
+    mcp = _mcp()
+    import pathiel.agents.config_store as cs
+    monkeypatch.setattr(cs, "read_agent_config", lambda: {"active_desks": ["oil"]})
+    seen = _stub_handler(monkeypatch, mcp, size=1.0)
+    mcp.handle_place_bracket({"coin": "xyz:BRENTOIL", "stop_px": 48.0, "tp_px": 52.0})
+    assert seen["sized_equity"] == 121.29 and seen["slots"] == 1
+
+
+def test_desk_coin_held_sees_only_the_desks_other_coins():
+    raw = {"state": {"assetPositions": [{"position": {"coin": "xyz:BRENTOIL", "szi": "1.0"}},
+                                        {"position": {"coin": "xyz:SILVER", "szi": "-2.0"}}]},
+           "orders": [{"coin": "xyz:CL", "reduceOnly": False}, {"coin": "xyz:SILVER", "reduceOnly": True}]}
+    held = br_mod().desk_coin_held("0xu", "xyz:CL", ["xyz:BRENTOIL", "xyz:CL", "xyz:NATGAS"],
+                                   fetch_raw=lambda u, d: raw, dexes=["xyz"])
+    assert held == "xyz:BRENTOIL"
+    assert br_mod().desk_coin_held("0xu", "xyz:SILVER", ["xyz:SILVER", "xyz:GOLD"],
+                                   fetch_raw=lambda u, d: raw, dexes=["xyz"]) is None
+
+
+def br_mod():
+    from pathiel.agents import bracket
+    return bracket

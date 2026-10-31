@@ -241,3 +241,18 @@ def test_prewarm_reads_each_coins_size_metadata_once(monkeypatch):
     monkeypatch.setattr(exchange, "get_coin_index", lambda coin: (0, 3, 2))
     assert risk_api.prewarm_coin_specs(["BTC", "xyz:BRENTOIL", "xyz:GONE"]) == 2
     assert seen == ["BTC", "xyz:BRENTOIL", "xyz:GONE"]
+
+
+def test_size_uses_the_desks_equity_share(_sized, monkeypatch):
+    """2026-10-31, oil 95% / silver 5%: "Your size" sizes off the desk's slice."""
+    monkeypatch.setattr(risk_api, "active_equity_usd", lambda: 121.29)
+    seen = {}
+    real = risk_api.size_trade
+    monkeypatch.setattr(risk_api, "size_trade", lambda eq, *a, **k: seen.setdefault("eq", eq) and real(eq, *a, **k))
+    shares = {"active_desks": ["oil", "metals"], "desk_equity_share": {"oil": 0.95, "metals": 0.05}}
+    monkeypatch.setattr(risk_api, "read_agent_config", lambda: shares)
+    r = _sized.post("/api/risk/size", json={"coin": "xyz:SILVER", "entry_px": 49.4, "stop_px": 50.2, "leverage": 20})
+    assert r.status_code == 200 and seen["eq"] == pytest.approx(121.29 * 0.05)
+    shares["desk_equity_share"] = {"oil": 0.95, "metals": 0.5}
+    r = _sized.post("/api/risk/size", json={"coin": "xyz:SILVER", "entry_px": 49.4, "stop_px": 50.2})
+    assert r.status_code == 409 and "adds up to" in r.json()["detail"]
