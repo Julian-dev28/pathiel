@@ -763,6 +763,13 @@ def build_repair_prompt(errors: List[str], *, full_context: Optional[str] = None
 # A comma group must be exactly three digits, so "5,10,20" stays three numbers.
 _NUM_RE = re.compile(r"(?<![A-Za-z0-9_])(-?(?:\d{1,3}(?:,\d{3})+(?!\d)|\d+)(?:\.\d+)?)(%)?")
 
+# A number glued to a time unit is a lookback window ("24h range", "48h
+# high", "7-day", "20 days"), not a market claim to ground. 2026-10-31: 85%
+# of thesis drafts paid a repair round for "24h"/"8h"/"48h" (89 of the
+# rejections in the silver and scorecard replays were "mentions 24").
+_DURATION_AFTER = re.compile(
+    r"\s?-?(?:h|hr|hrs|hours?|d|days?|w|wk|wks|weeks?|mins?|minutes?|mo|months?)\b", re.IGNORECASE)
+
 
 def extract_numbers_with_flags(text: str) -> List[Tuple[float, bool]]:
     """Every standalone number in ``text`` (not glued to a letter/digit, so
@@ -774,6 +781,8 @@ def extract_numbers_with_flags(text: str) -> List[Tuple[float, bool]]:
     a wildly out-of-range price."""
     out: List[Tuple[float, bool]] = []
     for m in _NUM_RE.finditer(text or ""):
+        if m.group(2) is None and _DURATION_AFTER.match(text, m.end()):
+            continue          # a window label like "24h", not a number to check
         try:
             value = float(m.group(1).replace(",", ""))
         except ValueError:

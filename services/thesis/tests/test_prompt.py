@@ -30,6 +30,18 @@ def test_extract_numbers_ignores_digits_glued_to_a_source_id():
     assert prompt_mod.extract_numbers("cites h1 and c2 and o10") == []
 
 
+def test_extract_numbers_skips_window_labels_but_keeps_the_prices():
+    """2026-10-31: 85% of drafts paid a repair round for "24h"/"8h"/"48h"."""
+    text = "Long the dip to 112.20 above the 24h low 112.00; the 48h high 114.23, 8h range, 7-day trend, 20 days"
+    assert prompt_mod.extract_numbers(text) == [112.20, 112.00, 114.23]
+    assert prompt_mod.extract_numbers("a 24-hour range, 3 hrs, 15 min") == []
+
+
+def test_extract_numbers_still_checks_numbers_that_only_look_like_windows():
+    # a price followed by a word starting with h/d is still a price
+    assert prompt_mod.extract_numbers("112 high, 49 dip, 20x, 2.9R, 24%") == [112, 49, 20, 2.9, 24]
+
+
 def test_extract_numbers_finds_standalone_numbers_including_negatives_and_decimals():
     assert prompt_mod.extract_numbers("liq 81.51, P(liq) 3.2%, down -17.95%") == [81.51, 3.2, -17.95]
 
