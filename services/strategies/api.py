@@ -111,16 +111,46 @@ def get_active_desks() -> Dict[str, object]:
     `active_desks` (default `["oil"]`). Filters out any id that isn't a
     real registered desk (a stale/typo'd config entry must not 404 the
     page); falls back to `["oil"]` if that leaves nothing. One entry -> no
-    switcher; more than one -> the page shows a small tab row."""
+    switcher; more than one -> the page shows a small tab row.
+
+    `active_desks` and `default_desk` are kept exactly as before (an older
+    cached page reads only those two). `desks` is the richer per-desk list
+    a 2026-10-31+ page reads for the switcher label and the "sizes off X%
+    of equity" note: id, display name, primary coin, and this desk's slice
+    of equity (services/strategies/desk_share.desk_shares) -- null when no
+    `desk_equity_share` is saved (the legacy whole-equity rule). A bad
+    `desk_equity_share` config (DeskShareError) is reported as a top-level
+    `share_error` string rather than 500ing the page; every desk's
+    `equity_share` is null in that case."""
     from pathiel.agents.config_store import read_agent_config
     try:
-        configured = list(read_agent_config().get("active_desks") or [])
+        config = read_agent_config()
     except Exception as e:  # noqa: BLE001 - a config read miss must not 500 the page
         logger.warning(f"[strategies.api] read_agent_config() failed: {e}")
-        configured = []
+        config = {}
+    configured = list(config.get("active_desks") or [])
     known = set(desks.list_desk_ids())
     active = [d for d in configured if d in known] or ["oil"]
-    return {"active_desks": active, "default_desk": active[0]}
+
+    from services.strategies import desk_share
+    share_error: Optional[str] = None
+    try:
+        shares = desk_share.desk_shares(config)
+    except desk_share.DeskShareError as e:
+        shares = {}
+        share_error = str(e)
+
+    desk_entries: List[Dict[str, object]] = []
+    for d in active:
+        spec = desks.require_spec(d)
+        primary = next((i for i in spec.instruments if i.role == "primary"), spec.instruments[0])
+        desk_entries.append({"id": d, "name": spec.name, "primary_coin": primary.coin,
+                             "equity_share": shares.get(d)})
+
+    out: Dict[str, object] = {"active_desks": active, "default_desk": active[0], "desks": desk_entries}
+    if share_error:
+        out["share_error"] = share_error
+    return out
 
 
 def _quick_markdown(brief: DeskBrief) -> Optional[str]:

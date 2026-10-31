@@ -166,6 +166,10 @@
 
     <div id="line-card" class="card lev-card" hidden>
       <div class="sec-label" id="line-title">Next trade, by the tick's rules</div>
+      <!-- Hidden when no desk_equity_share is saved (oil_desk.js's
+           loadEquitySlice): the legacy whole-equity rule has nothing to
+           show here. -->
+      <div class="note" id="line-equity-share" hidden></div>
       <div class="lev-seg" id="line-seg" role="radiogroup" aria-label="Leverage"></div>
       <div class="lev-stats">
         <div><div class="sec-label" id="line-liq-label">Liquidation at this leverage</div><div class="kv" id="line-liq-px">&mdash;</div></div>
