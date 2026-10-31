@@ -1,14 +1,12 @@
 """A desk's loop progress log (.claude/skills/oil-tick/SKILL.md step 5, for
 the oil desk specifically: one line per tick, `OIL-TICK <utc> mid=... pos=...
-action=... <reason>`). Generalized per-desk: `PATHIEL_<DESK>_LOG` (default
-`/tmp/<desk>-loop/progress.log`) for any desk id, so `PATHIEL_OIL_LOG`
+action=... <reason>`). Generalized per-desk: `PATHIEL_<DESK>_LOG` (default the shared
+`/tmp/oil-loop/progress.log`) for any desk id, so `PATHIEL_OIL_LOG`
 (default `/tmp/oil-loop/progress.log`) keeps working unchanged for the one
 desk with a loop today.
 
 Operator, 2026-10-31: silver's loop ticks into the SAME file as oil's
-(`/tmp/oil-loop/progress.log` -- metals' own default,
-`/tmp/metals-loop/progress.log`, is only used if nothing points it at the
-shared file), lines prefixed `DESK-TICK <desk_id> ...`
+(`/tmp/oil-loop/progress.log`, every desk's default), lines prefixed `DESK-TICK <desk_id> ...`
 (.claude/agents/desk-tick.md). Two desks sharing one file must not leak
 into each other's log card, so `read_desk_log` filters to the lines that
 belong to `desk_id` BEFORE tailing to `n` -- otherwise metals ticking every
@@ -37,13 +35,14 @@ _TICK_PREFIX_RE = re.compile(r"^DESK-TICK\s+(\S+)\b")
 
 
 def log_path(desk_id: str = "oil") -> str:
-    """`PATHIEL_<DESK>_LOG` if set, else `/tmp/<desk>-loop/progress.log` -
-    except for `desk_id == "oil"`, whose default stays the original
-    `/tmp/oil-loop/progress.log` (the only loop live before this was
-    generalized to other desks)."""
+    """`PATHIEL_<DESK>_LOG` if set, else the shared
+    `/tmp/oil-loop/progress.log` every desk's tick appends to."""
     env_name = f"PATHIEL_{desk_id.upper()}_LOG"
-    default = DEFAULT_LOG_PATH if desk_id == "oil" else f"/tmp/{desk_id}-loop/progress.log"
-    return os.environ.get(env_name, default)
+    # Every desk's tick writes the SAME file (.claude/agents/desk-tick.md
+    # step 6), so that file is every desk's default; read_desk_log filters it
+    # to this desk's lines. (2026-10-31: a per-desk /tmp/<desk>-loop default
+    # left the silver card on "no ticks yet" while its ticks were logged.)
+    return os.environ.get(env_name, DEFAULT_LOG_PATH)
 
 
 # ----------------------------------------------------------------- pure part

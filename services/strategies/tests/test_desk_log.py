@@ -32,8 +32,13 @@ def test_log_path_honors_the_env_var(monkeypatch):
 
 
 def test_log_path_generalizes_to_any_desk_id(monkeypatch):
+    """Every desk's tick appends to the one shared file (desk-tick.md step 6),
+    so it is every desk's default; 2026-10-31 the silver card read an empty
+    /tmp/metals-loop file while its ticks were logged in the shared one."""
     monkeypatch.delenv("PATHIEL_BTC_LOG", raising=False)
-    assert DL.log_path("btc") == "/tmp/btc-loop/progress.log"
+    monkeypatch.delenv("PATHIEL_METALS_LOG", raising=False)
+    assert DL.log_path("btc") == DL.DEFAULT_LOG_PATH
+    assert DL.log_path("metals") == "/tmp/oil-loop/progress.log"
     monkeypatch.setenv("PATHIEL_BTC_LOG", "/tmp/custom-btc.log")
     assert DL.log_path("btc") == "/tmp/custom-btc.log"
 
