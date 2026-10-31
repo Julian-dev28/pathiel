@@ -110,7 +110,7 @@ def write_thesis(
                 usage = _combine_usage(calls, skipped_reason=reason)
                 _print_token_report(spec, usage, incremental=incremental, n_calls=len(calls))
                 _record_rejection(spec, now, [(result1.text, errors), (result2.text, errors2)])
-                return _degrade(spec, analytics, intel, prev, reason, now)
+                return _degrade(spec, analytics, intel, prev, reason, now, usage=usage)
             draft = draft2
 
         assert draft is not None  # either the first or the repaired parse succeeded
@@ -226,10 +226,14 @@ def _record_rejection(spec: DeskSpec, now, rounds: List[Tuple[str, List[str]]]) 
         return None
 
 
-def _degrade(spec, analytics, intel, prev, reason, now) -> Thesis:
+def _degrade(spec, analytics, intel, prev, reason, now, *, usage: Optional[Usage] = None) -> Thesis:
+    """`usage` is what the rejected calls spent. A flat fallback carries it
+    (2026-10-31: a silver replay day lost its 16.8k/5.7k tokens because the
+    fallback started from an empty Usage). Prev keeps its own usage: those
+    numbers describe prev, and only the reason is new."""
     if prev is not None:
         return fallback.reject_with_prev(prev, reason)
-    return fallback.build_fallback_thesis(spec, analytics, intel, reason, now)
+    return fallback.build_fallback_thesis(spec, analytics, intel, reason, now, usage=usage)
 
 
 # A 7-day bucket bound beyond +/-100% is not a forecast any desk here makes;

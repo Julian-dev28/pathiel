@@ -219,6 +219,9 @@ def test_repair_failing_twice_with_no_prev_returns_a_flat_fallback(oil, monkeypa
     assert thesis.call.side == "flat"
     assert thesis.call.confidence == 0.0
     assert thesis.usage.skipped_reason is not None
+    # the two rejected calls' spend is kept, not zeroed (silver replay, 2026-10-31)
+    assert (thesis.usage.input_tokens, thesis.usage.output_tokens) == (1400, 800)
+    assert thesis.usage.cost_usd == pytest.approx(0.18)
 
 
 def test_malformed_json_on_first_call_triggers_repair_too(oil, monkeypatch):

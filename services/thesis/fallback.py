@@ -40,6 +40,8 @@ def build_fallback_thesis(
     intel: IntelPacket | None,
     reason: str,
     now: datetime,
+    *,
+    usage: Usage | None = None,
 ) -> Thesis:
     primary = desk_lookup.primary_instrument(spec, analytics)
     instrument = primary.coin if primary is not None else desk_lookup.primary_coin(spec)
@@ -78,7 +80,8 @@ def build_fallback_thesis(
         sources=[],
         analytics_ref=PayloadRef(as_of=analytics.as_of, sha256=hash_payload(analytics)),
         intel_ref=PayloadRef(as_of=intel.as_of, sha256=hash_payload(intel)) if intel is not None else None,
-        usage=Usage(skipped_reason=reason),
+        usage=(usage.model_copy(update={"skipped_reason": reason}) if usage is not None
+               else Usage(skipped_reason=reason)),
         grade=None,
     )
 
