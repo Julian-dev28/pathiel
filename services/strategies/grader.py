@@ -67,25 +67,37 @@ def _price_series(call: Call, spec: Optional[DeskSpec], hourly_fetcher: HourlyFe
     return sorted(series, key=lambda r: r[0])
 
 
+def find_scenario_bucket(scenarios: Sequence[Scenario], raw_final_ret: float) -> Optional[Scenario]:
+    """The scenario bucket the realized RAW return actually fell in (raw,
+    not direction-adjusted — Scenario.move_lo_pct/move_hi_pct are price-move
+    buckets per the model's own doc, matching how the thesis author wrote
+    them even for a short call). If the realized return falls outside every
+    bucket (an authoring gap), the nearest bucket by distance to its closest
+    edge. None for an empty scenario list. Public: also used by
+    services.thesis.scorecard to report which bucket actually happened,
+    alongside this same grading."""
+    if not scenarios:
+        return None
+    bucket = next((s for s in scenarios if s.move_lo_pct <= raw_final_ret < s.move_hi_pct), None)
+    if bucket is not None:
+        return bucket
+
+    def edge_dist(s: Scenario) -> float:
+        if raw_final_ret < s.move_lo_pct:
+            return s.move_lo_pct - raw_final_ret
+        return raw_final_ret - s.move_hi_pct
+    return min(scenarios, key=edge_dist)
+
+
 def _brier(scenarios: Sequence[Scenario], raw_final_ret: Optional[float]) -> Optional[float]:
     """Multiclass Brier score: sum((p_i - y_i)^2) over scenario buckets,
-    y_i=1 for the bucket the realized raw return actually fell in (raw, not
-    direction-adjusted — Scenario.move_lo_pct/move_hi_pct are price-move
-    buckets per the model's own doc, matching how the thesis author wrote
-    them even for a short call). Range [0, 2] for a single observation: 0 is
-    a perfect call, 2 is maximally wrong (confident in the wrong bucket).
-    If the realized return falls outside every bucket (an authoring gap),
-    scored against the nearest bucket by distance to its closest edge.
+    y_i=1 for the bucket the realized raw return actually fell in (see
+    find_scenario_bucket). Range [0, 2] for a single observation: 0 is a
+    perfect call, 2 is maximally wrong (confident in the wrong bucket).
     """
     if not scenarios or raw_final_ret is None:
         return None
-    bucket = next((s for s in scenarios if s.move_lo_pct <= raw_final_ret < s.move_hi_pct), None)
-    if bucket is None:
-        def edge_dist(s: Scenario) -> float:
-            if raw_final_ret < s.move_lo_pct:
-                return s.move_lo_pct - raw_final_ret
-            return raw_final_ret - s.move_hi_pct
-        bucket = min(scenarios, key=edge_dist)
+    bucket = find_scenario_bucket(scenarios, raw_final_ret)
     return sum((s.probability - (1.0 if s is bucket else 0.0)) ** 2 for s in scenarios)
 
 

@@ -197,6 +197,92 @@ def test_refresh_writes_thesis_when_gate_passes_and_providers_available(
     assert pipeline.load_cached_intel("oil") is not None
 
 
+def test_load_thesis_omits_scorecard_kwarg_by_default(monkeypatch):
+    """A provider stub that only takes 4 positional args (every caller
+    before 2026-10-31) must keep working when the flag is off."""
+    calls = {}
+
+    def fake_resolve(path):
+        def fake_write_thesis(spec, a, i, p):
+            calls["kwargs"] = {}
+            return make_thesis(desk_id="t1", instrument="XYZ", scenarios=[])
+        return fake_write_thesis
+
+    monkeypatch.setattr(pipeline, "_resolve_provider", fake_resolve)
+    thesis, note = pipeline._load_thesis(_spec(), minimal_analytics("t1", coin="XYZ"), None, None)
+    assert note is None and thesis is not None
+
+
+def test_load_thesis_passes_scorecard_kwarg_when_set(monkeypatch):
+    captured = {}
+
+    def fake_resolve(path):
+        def fake_write_thesis(spec, a, i, p, **kwargs):
+            captured.update(kwargs)
+            return make_thesis(desk_id="t1", instrument="XYZ", scenarios=[])
+        return fake_write_thesis
+
+    monkeypatch.setattr(pipeline, "_resolve_provider", fake_resolve)
+    pipeline._load_thesis(_spec(), minimal_analytics("t1", coin="XYZ"), None, None,
+                          scorecard="SCORECARD n=3")
+    assert captured == {"scorecard": "SCORECARD n=3"}
+
+
+def test_build_scorecard_text_is_none_when_flag_is_off(monkeypatch):
+    monkeypatch.delenv("PATHIEL_THESIS_SCORECARD", raising=False)
+    assert pipeline._build_scorecard_text("t1") is None
+
+
+def test_build_scorecard_text_builds_from_the_journal_when_flag_is_on(monkeypatch):
+    monkeypatch.setenv("PATHIEL_THESIS_SCORECARD", "1")
+    from contracts.strategies.models import Grade
+    graded = make_thesis(desk_id="t1", instrument="XYZ", created_at=NOW - timedelta(days=10),
+                         horizon_days=1, scenarios=[],
+                         grade=Grade(graded_at=NOW, outcome_px=105.0, ret_pct=0.05,
+                                    direction_hit=True, mae_pct=0.0, mfe_pct=0.05))
+    journal.save_thesis(graded)
+    text = pipeline._build_scorecard_text("t1", now=NOW)
+    assert text is not None and "n=1" in text and "SCORECARD" in text
+
+
+def test_refresh_passes_scorecard_to_the_thesis_provider_when_flag_is_on(monkeypatch, stub_live_analytics):
+    monkeypatch.setenv("PATHIEL_THESIS_SCORECARD", "1")
+    stub_live_analytics(minimal_analytics("oil", mid=99.0))
+    captured = {}
+
+    def fake_resolve(path):
+        if path == pipeline.INTEL_PROVIDER_PATH:
+            raise ImportError("no intel")
+        if path == pipeline.THESIS_PROVIDER_PATH:
+            def fake_write_thesis(spec, a, i, p, **kwargs):
+                captured.update(kwargs)
+                return make_thesis(desk_id="oil", instrument="xyz:BRENTOIL", scenarios=[])
+            return fake_write_thesis
+        raise ImportError(path)
+
+    monkeypatch.setattr(pipeline, "_resolve_provider", fake_resolve)
+    job = pipeline.refresh("oil", force=True)
+    assert job.state == "done"
+    assert "scorecard" in captured   # text, even if "no graded theses yet" for a fresh journal
+    assert "SCORECARD" in captured["scorecard"]
+
+
+def test_refresh_does_not_pass_scorecard_kwarg_when_flag_is_off(monkeypatch, stub_live_analytics):
+    monkeypatch.delenv("PATHIEL_THESIS_SCORECARD", raising=False)
+    stub_live_analytics(minimal_analytics("oil", mid=99.0))
+
+    def fake_resolve(path):
+        if path == pipeline.INTEL_PROVIDER_PATH:
+            raise ImportError("no intel")
+        if path == pipeline.THESIS_PROVIDER_PATH:
+            return lambda spec, a, i, p: make_thesis(desk_id="oil", instrument="xyz:BRENTOIL", scenarios=[])
+        raise ImportError(path)
+
+    monkeypatch.setattr(pipeline, "_resolve_provider", fake_resolve)
+    job = pipeline.refresh("oil", force=True)
+    assert job.state == "done"   # the 4-positional-arg stub was not called with an extra kwarg
+
+
 def test_refresh_skips_when_gate_blocks(monkeypatch, stub_live_analytics):
     result = minimal_analytics("oil", mid=99.0, coin="xyz:BRENTOIL")
     stub_live_analytics(result)

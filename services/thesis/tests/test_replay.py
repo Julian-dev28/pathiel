@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import os
+from datetime import timedelta
 
 import pytest
 
@@ -199,6 +200,123 @@ def test_replay_day_flags_a_degraded_validator_outcome(tmp_path):
     assert row["validator_outcome"] == "degraded" and row["degraded_reason"] == "LLM call failed: boom"
 
 
+# ── load_written_theses / build_day_scorecard: no-lookahead scorecard ─────
+
+def _thesis_for_day(spec_id: str, day, *, horizon_days: int = 7, side: str = "long",
+                    entry_px: float = 100.0) -> Thesis:
+    from services.thesis.assemble import make_thesis_id
+    call = Call(side=side, instrument="TEST", one_liner="x", entry_px=entry_px, stop_px=90.0,
+               targets=[110.0], confidence=0.6, invalidation="below 90")
+    return Thesis(id=make_thesis_id(spec_id, day), desk_id=spec_id, created_at=day,
+                 expires_at=day + timedelta(days=horizon_days),
+                 horizon_days=horizon_days, call=call)
+
+
+def test_load_written_theses_reads_back_what_replay_day_wrote(tmp_path):
+    from datetime import datetime, timezone
+    spec = _tiny_spec()
+    out_dir = str(tmp_path / "theses")
+    day1 = datetime(2026, 10, 1, 16, tzinfo=timezone.utc)
+    day2 = datetime(2026, 10, 2, 16, tzinfo=timezone.utc)
+    all_candles = {"TEST": {"1d": _hourly(20), "1h": _hourly(20)}}
+
+    def stub(spec_, analytics, intel, prev, model=None, now=None, **kw):
+        return _stub_thesis(spec_.id, now)
+
+    R.replay_day(spec, all_candles, lambda: {}, day1, "opus", out_dir, write_thesis_fn=stub)
+    R.replay_day(spec, all_candles, lambda: {}, day2, "opus", out_dir, write_thesis_fn=stub)
+
+    loaded = R.load_written_theses(out_dir)
+    assert [t.created_at for t in loaded] == [day1, day2]   # oldest first
+
+
+def test_load_written_theses_empty_for_a_missing_directory(tmp_path):
+    assert R.load_written_theses(str(tmp_path / "nope")) == []
+
+
+def test_build_day_scorecard_excludes_a_thesis_whose_window_has_not_closed():
+    from datetime import datetime, timezone
+    spec = _tiny_spec()
+    written = [_thesis_for_day(spec.id, datetime(2026, 10, 1, 16, tzinfo=timezone.utc), horizon_days=7)]
+    day = datetime(2026, 10, 3, 16, tzinfo=timezone.utc)   # only 2 days later; window needs 7
+    text = R.build_day_scorecard(spec, {"TEST": {"1h": _hourly(200)}}, written, day)
+    assert "n=0" in text
+
+
+def test_build_day_scorecard_grades_a_thesis_once_its_window_has_closed():
+    from datetime import datetime, timezone
+    spec = _tiny_spec()
+    created = datetime(2026, 10, 1, 16, tzinfo=timezone.utc)
+    written = [_thesis_for_day(spec.id, created, horizon_days=1, side="long", entry_px=100.0)]
+    day = datetime(2026, 10, 2, 16, tzinfo=timezone.utc)   # exactly the window's close
+    # hourly candles: flat at 100 until the window closes, then up to 110 -
+    # but a bar closing AFTER `day` must never be read (no lookahead check below).
+    bars = _hourly(40, base_close=100.0)
+    all_candles = {"TEST": {"1h": bars}}
+    text = R.build_day_scorecard(spec, all_candles, written, day)
+    assert "n=1" in text
+
+
+def test_build_day_scorecard_never_grades_with_an_unclosed_candle():
+    """The defining no-lookahead property: mutating a bar that closes AFTER
+    `day` must not change the grade a scorecard as of `day` reports --
+    same property test_truncating_fetcher_no_lookahead_* proves for the
+    underlying fetcher, checked here through the scorecard's own grading."""
+    from datetime import datetime, timezone
+    spec = _tiny_spec()
+    created = datetime(2026, 10, 1, 16, tzinfo=timezone.utc)
+    written = [_thesis_for_day(spec.id, created, horizon_days=1, side="long", entry_px=100.0)]
+    day = datetime(2026, 10, 2, 16, tzinfo=timezone.utc)
+    bars = _hourly(40, base_close=100.0)
+    all_candles = {"TEST": {"1h": list(bars)}}
+    before = R.build_day_scorecard(spec, all_candles, written, day)
+
+    # mutate a bar that closes strictly after `day` (hour 30, well past the
+    # 1d=24h window close) to a wild price; the grade must not move.
+    all_candles["TEST"]["1h"][30] = Candle(t=30 * HOUR_MS, o=99999.0, h=99999.0, l=1.0, c=50000.0, v=1.0)
+    after = R.build_day_scorecard(spec, all_candles, written, day)
+    assert before == after
+
+
+def test_build_day_scorecard_excludes_a_thesis_written_on_the_same_day():
+    """`created_at < day`, strictly -- a thesis written for `day` itself is
+    today's own call, never its own prior evidence."""
+    from datetime import datetime, timezone
+    spec = _tiny_spec()
+    day = datetime(2026, 10, 1, 16, tzinfo=timezone.utc)
+    written = [_thesis_for_day(spec.id, day, horizon_days=0)]
+    text = R.build_day_scorecard(spec, {"TEST": {"1h": _hourly(10)}}, written, day)
+    assert "n=0" in text
+
+
+# ── replay_day: scorecard passthrough ───────────────────────────────────────
+
+def test_replay_day_passes_scorecard_only_when_set(tmp_path):
+    from datetime import datetime, timezone
+    spec = _tiny_spec()
+    day = datetime(2026, 10, 1, 16, tzinfo=timezone.utc)
+    all_candles = {"TEST": {"1d": _hourly(20), "1h": _hourly(20)}}
+    captured = {}
+
+    def stub_no_kwargs(spec_, analytics, intel, prev, model=None, now=None):
+        captured["kwargs"] = "none"
+        return _stub_thesis(spec_.id, now)
+
+    # default (no scorecard_text): a 4-positional-plus-model/now stub, same
+    # as every caller before this feature, must not receive an extra kwarg.
+    R.replay_day(spec, all_candles, lambda: {}, day, "opus", str(tmp_path / "a"),
+                write_thesis_fn=stub_no_kwargs)
+    assert captured["kwargs"] == "none"
+
+    def stub_with_kwargs(spec_, analytics, intel, prev, model=None, now=None, scorecard=None):
+        captured["scorecard"] = scorecard
+        return _stub_thesis(spec_.id, now)
+
+    R.replay_day(spec, all_candles, lambda: {}, day, "opus", str(tmp_path / "b"),
+                write_thesis_fn=stub_with_kwargs, scorecard_text="SCORECARD n=2")
+    assert captured["scorecard"] == "SCORECARD n=2"
+
+
 # ── fetch_all_candles ────────────────────────────────────────────────────────
 
 def test_fetch_all_candles_fetches_daily_for_every_coin_and_hourly_only_for_primaries():
@@ -223,6 +341,11 @@ def test_fetch_all_candles_fetches_daily_for_every_coin_and_hourly_only_for_prim
 
 def test_main_refuses_the_fable_model_without_touching_the_network():
     assert R.main(["--model", "fable"]) == 2
+
+
+def test_main_refuses_a_malformed_end_day(tmp_path):
+    assert R.main(["--days", "1", "--out-dir", str(tmp_path / "theses"),
+                  "--cache-dir", str(tmp_path / "cache"), "--end-day", "not-a-date"]) == 2
 
 
 def test_main_refuses_to_write_under_the_live_state_dir():

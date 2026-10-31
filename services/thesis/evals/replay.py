@@ -47,6 +47,26 @@ the live desk needs Fable for its own rewrites). Not wired into pytest.
 
     .venv/bin/python -m services.thesis.evals.replay --days 2     # smoke: 2 LLM calls
     .venv/bin/python -m services.thesis.evals.replay --days 30    # the full replay
+
+SCORECARD (2026-10-31, `--scorecard`): when set, every day D's thesis is
+written with a SCORECARD section (services.thesis.scorecard) built from the
+REPLAY'S OWN earlier days -- `load_written_theses(out_dir)` re-reads every
+thesis this run has already written, `build_day_scorecard` grades the ones
+whose window has closed by D using the SAME no-lookahead
+`truncating_fetcher(all_candles, D)` the rest of this harness uses, and
+hands the rendered text to `write_thesis` the same way
+services.strategies.pipeline does for the live desk behind
+PATHIEL_THESIS_SCORECARD. No lookahead: a thesis only counts once
+`created_at < D` and `expires_at <= D`, and it is graded against candles
+closed at or before D, never a bar the replay has not "reached" yet at D
+(proved directly by test_replay.py::test_build_day_scorecard_never_grades_
+with_an_unclosed_candle). Off by default, so a plain `--days 30` run is
+byte-for-byte the control this harness has always produced.
+
+`--end-day YYYY-MM-DD` pins the window's exclusive upper bound ("today") to
+a fixed date instead of wall-clock now, so a treatment run's window lines up
+exactly with an earlier control run's (same `--days`/`--as-of-hour`, same
+`--end-day` reproduces the identical set of as-of timestamps).
 """
 from __future__ import annotations
 
@@ -61,7 +81,7 @@ from typing import Any, Callable, Dict, List, Optional, Sequence
 from pathiel.agents.atomic_io import write_json_atomic
 from pathiel.models.types import Candle
 
-from contracts.strategies.models import AccountSnapshot, DeskSpec
+from contracts.strategies.models import AccountSnapshot, DeskSpec, Thesis
 
 logger = logging.getLogger(__name__)
 
@@ -188,6 +208,63 @@ def replay_window(days: int, as_of_hour: int, end: Optional[datetime] = None) ->
            - timedelta(days=i) for i in range(days, 0, -1)]
 
 
+# ── scorecard: the replay's own earlier days, no lookahead ─────────────────
+
+def load_written_theses(out_dir: str) -> List[Thesis]:
+    """Every thesis this run has already written to `out_dir`, oldest
+    first -- the pool `build_day_scorecard` grades against. Missing
+    directory or an unparseable file is treated as "none yet" / "skip it",
+    same discipline as services.strategies.journal.list_theses -- a replay
+    resumed after a crash must never fail just because of a half-written
+    file."""
+    if not os.path.isdir(out_dir):
+        return []
+    out: List[Thesis] = []
+    for name in sorted(os.listdir(out_dir)):
+        if not name.endswith(".json"):
+            continue
+        try:
+            with open(os.path.join(out_dir, name)) as fh:
+                out.append(Thesis.model_validate(json.load(fh)))
+        except Exception:  # noqa: BLE001 - one corrupt row shouldn't sink the whole replay
+            continue
+    out.sort(key=lambda t: t.created_at)
+    return out
+
+
+def build_day_scorecard(spec: DeskSpec, all_candles: Dict[str, Dict[str, Sequence[Candle]]],
+                        written_theses: Sequence[Thesis], day: datetime,
+                        *, n: Optional[int] = None) -> str:
+    """The SCORECARD text day `day`'s thesis call should see, built ONLY
+    from `written_theses` whose window has already closed by `day` --
+    `created_at < day` (it was written on an earlier day of this same
+    replay) AND `expires_at <= day` (its horizon has actually elapsed).
+    Each qualifying thesis is graded with grader.grade_thesis using the
+    SAME truncating_fetcher(all_candles, day) this harness uses for every
+    other read at `day` -- a bar that closes after `day` can never reach
+    this grade, the identical no-lookahead property
+    test_replay.py::test_truncating_fetcher_no_lookahead_* already proves
+    for the market data itself. A thesis that already carries a Grade
+    (shouldn't happen in a fresh replay, but a resumed run could have one
+    from a prior scorecard-enabled pass) is re-graded anyway, deterministically
+    -- same thesis + same candles + same `day` always produce the same Grade,
+    so recomputing it is free and never drifts from what a from-scratch run
+    would see."""
+    from services.strategies import grader as grader_mod
+    from services.thesis import scorecard as scorecard_mod
+
+    fetcher = truncating_fetcher(all_candles, day)
+    graded: List[Thesis] = []
+    for t in written_theses:
+        if t.created_at >= day or t.expires_at > day:
+            continue
+        grade = grader_mod.grade_thesis(t, hourly_fetcher=fetcher, spec=spec, now=day)
+        graded.append(t.model_copy(update={"grade": grade}))
+
+    card = scorecard_mod.build_scorecard(graded, as_of=day, n=n or scorecard_mod.DEFAULT_N)
+    return scorecard_mod.render_scorecard(card)
+
+
 # ── one day ──────────────────────────────────────────────────────────────────
 
 def existing_thesis_path(desk_id: str, out_dir: str, day: datetime) -> Optional[str]:
@@ -216,12 +293,17 @@ def with_primary(spec: DeskSpec, coin: str) -> DeskSpec:
 
 def replay_day(spec: DeskSpec, all_candles: Dict[str, Dict[str, Sequence[Candle]]],
               meta_fetcher: Callable[[], Dict[str, Any]], day: datetime, model: str, out_dir: str,
-              *, write_thesis_fn: Optional[Callable] = None) -> Dict[str, Any]:
+              *, write_thesis_fn: Optional[Callable] = None,
+              scorecard_text: Optional[str] = None) -> Dict[str, Any]:
     """Build analytics as of `day`, write one thesis through the real
     generation path, save it to `out_dir`, and return its summary row.
     Skips (no LLM call) if that day's thesis already exists. `write_thesis_fn`
     defaults to services.thesis.api.write_thesis; injectable so the gate
-    test can run this whole function with a stub and no network/LLM."""
+    test can run this whole function with a stub and no network/LLM.
+    `scorecard_text` (default None) is passed through as a `scorecard=`
+    kwarg ONLY when set, never as an explicit `scorecard=None` -- a stub
+    that still takes exactly 6 positional/keyword args (every test before
+    2026-10-31) keeps working unchanged while `--scorecard` is not passed."""
     existing = existing_thesis_path(spec.id, out_dir, day)
     if existing is not None:
         return {"day": day.isoformat(), "path": existing, "skipped": True, "reason": "already_written"}
@@ -235,7 +317,8 @@ def replay_day(spec: DeskSpec, all_candles: Dict[str, Dict[str, Sequence[Candle]
     analytics = analytics_mod.build_analytics(
         spec, candle_fetcher=fetcher, meta_fetcher=meta_fetcher,
         account_fetcher=stub_account_fetcher, now=day)
-    thesis = write_thesis_fn(spec, analytics, None, None, model=model, now=day)
+    extra_kwargs = {"scorecard": scorecard_text} if scorecard_text is not None else {}
+    thesis = write_thesis_fn(spec, analytics, None, None, model=model, now=day, **extra_kwargs)
 
     os.makedirs(out_dir, exist_ok=True)
     path = os.path.join(out_dir, f"{thesis.id}.json")
@@ -272,6 +355,13 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--summary", default=None, help="default <out-dir>/../summary.json")
     ap.add_argument("--primary", default=None,
                     help="make this coin the desk's only primary for the run (e.g. xyz:SILVER on metals)")
+    ap.add_argument("--scorecard", action="store_true",
+                    help="inject a SCORECARD section (services.thesis.scorecard) built from this "
+                        "run's own earlier, now-closed days into every day's thesis call")
+    ap.add_argument("--end-day", default=None,
+                    help="YYYY-MM-DD: pin the window's exclusive upper bound (\"today\") instead of "
+                        "wall-clock now, so this run's window matches another run's exactly "
+                        "(same --days/--as-of-hour/--end-day -> the identical set of as-of timestamps)")
     args = ap.parse_args(argv)
 
     if args.model == "fable":
@@ -309,21 +399,35 @@ def main(argv: Optional[List[str]] = None) -> int:
             print(f"FATAL: {e}")
             return 2
 
+    end_day: Optional[datetime] = None
+    if args.end_day:
+        try:
+            end_day = datetime.strptime(args.end_day, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+        except ValueError:
+            print(f"FATAL: --end-day must be YYYY-MM-DD, got {args.end_day!r}")
+            return 2
+
     os.makedirs(out_dir, exist_ok=True)
     os.makedirs(cache_dir, exist_ok=True)
     print(f"[replay] desk={args.desk} primary={[i.coin for i in spec.instruments if i.role == 'primary']} days={args.days} model={args.model} "
-         f"out_dir={out_dir} cache_dir={cache_dir} state_dir={state_dir}")
+         f"out_dir={out_dir} cache_dir={cache_dir} state_dir={state_dir} scorecard={args.scorecard} "
+         f"end_day={args.end_day or 'now'}")
     print("[replay] price data only: no intel packet is built or passed to any day's thesis")
 
     all_candles = fetch_all_candles(spec, cache_dir, args.days)
     meta_once = analytics_mod.default_meta_fetcher()
     meta_fetcher = lambda: meta_once  # noqa: E731 - fetched once, reused every day on purpose
 
-    days = replay_window(args.days, args.as_of_hour)
+    days = replay_window(args.days, args.as_of_hour, end=end_day)
     summary: List[Dict[str, Any]] = []
     total_cost = 0.0
     for i, day in enumerate(days, 1):
-        row = replay_day(spec, all_candles, meta_fetcher, day, args.model, out_dir)
+        scorecard_text = None
+        if args.scorecard:
+            written = load_written_theses(out_dir)
+            scorecard_text = build_day_scorecard(spec, all_candles, written, day)
+        row = replay_day(spec, all_candles, meta_fetcher, day, args.model, out_dir,
+                         scorecard_text=scorecard_text)
         summary.append(row)
         total_cost += row.get("cost_usd") or 0.0
         if row.get("skipped"):
