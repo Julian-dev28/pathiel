@@ -2,7 +2,8 @@
 
 Operator, 2026-10-31, after the 30-day test (`SILVER_THESIS_TEST_2026-10-31.md`):
 "add it to the desks, backend frontend and ai, keep the use only 10% of our
-equity on it, add silver ticks", then "oil 95% silver 5%".
+equity on it, add silver ticks", then "oil 95% silver 5%", then the same
+morning "increase size to 10% silver": oil 90%, silver 10%.
 
 ## The setup
 
@@ -10,7 +11,7 @@ equity on it, add silver ticks", then "oil 95% silver 5%".
 |---|---|---|
 | Desk id | `oil` | `metals` (silver primary, gold for the ratio) |
 | Coin | xyz:BRENTOIL | xyz:SILVER (venue max 25x) |
-| Equity share | 95% | 5% |
+| Equity share | 90% | 10% |
 | Leverage | 20x | 20x |
 | Stop | 0.75 beyond the 24h edge | 1.3 x 1h ATR14 beyond the 24h edge |
 | Entry, target, gate | market off the 24h range, far 24h edge minus 0.5%, 2R | same |
@@ -19,13 +20,13 @@ equity on it, add silver ticks", then "oil 95% silver 5%".
 Config (`.agent-config.json`, through the `config` tool):
 
     "active_desks": ["oil", "metals"],
-    "desk_equity_share": {"oil": 0.95, "metals": 0.05},
+    "desk_equity_share": {"oil": 0.9, "metals": 0.1},
     "coin_allowlist": ["xyz:BRENTOIL", "xyz:CL", "xyz:SILVER"]
 
 ## How the split works
 
 - `services/strategies/desk_share.py` maps a coin to its active desk and that
-  desk's share. Every sizing path uses it: `place_bracket`, `risk_size_trade`,
+  desk's share (e.g. oil 0.9, metals 0.1). Every sizing path uses it: `place_bracket`, `risk_size_trade`,
   `desk_brief`'s "Your size", and the page's `POST /api/risk/size`.
 - One slot per desk with a share: an oil position never blocks the silver
   tick (`scripts/desk_slot.py` per-desk mode, `bracket.slot_taken_by` with
@@ -47,12 +48,13 @@ silver day: short 51.97, stop 53.60, target 49.11 (was flat).
 
 ## Size at today's equity
 
-$121.29 x 5% = $6.06 of margin, about $120 of silver at 20x, risking about
-$2 per stop-out. Oil: $115 of margin, about $2,300 of Brent at 20x.
+$121.29 x 10% = $12.13 of margin, about $240 of silver at 20x, risking about
+$3 per stop-out (risk_size_trade, short 50.52 stop 51.20: $3.23). Oil: $109 of
+margin, about $2,180 of Brent at 20x.
 
 ## Risks
 
 - One regime tested: silver fell 19% in the test month. A wrong side at 20x
-  loses the silver slice fast; at 5% that is about $6.
+  loses the silver slice fast; at 10% that is about $12.
 - Two tick loops and two thesis writers: silver's rewrites run on the live
   thesis model (Fable), the same weekly meter oil uses.

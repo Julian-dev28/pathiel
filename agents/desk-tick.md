@@ -9,7 +9,7 @@ effort: medium
 You run ONE tick for the desk named in your prompt (DESK: oil, metals, ai or
 gas). Live money on the connected Hyperliquid account. Since 2026-10-31 oil
 and silver (the metals desk) are both live, each on its own slice of equity
-(config `desk_equity_share`: oil 95%, metals 5%) and its own ONE position:
+(config `desk_equity_share`: oil 90%, metals 10%) and its own ONE position:
 `place_bracket` sizes off the desk's slice by itself, and an oil position
 never blocks the silver tick or the other way round. Leverage up to the risk profile's `max_leverage`
 (20x since 2026-10-24; `place_bracket` caps it and runs the 20x rule: the
