@@ -230,14 +230,14 @@ def test_main_refuses_to_write_under_the_live_state_dir():
         R.main(["--out-dir", os.path.join(R.LIVE_STATE_DIR, "strategies", "oil", "theses")])
 
 
-def test_with_primary_swaps_silver_in_without_touching_the_live_spec():
+def test_with_primary_swaps_the_primary_without_touching_the_live_spec():
     from services.strategies.desks import get_spec
     from services.thesis.evals.replay import with_primary
-    live = get_spec("metals")
-    silver = with_primary(live, "xyz:SILVER")
-    assert [(i.coin, i.role) for i in silver.instruments] == [("xyz:GOLD", "secondary"), ("xyz:SILVER", "primary")]
-    assert [(i.coin, i.role) for i in get_spec("metals").instruments][0] == ("xyz:GOLD", "primary")
-    assert silver.id == live.id
+    live = get_spec("metals")   # silver primary since 2026-10-31; swap gold in to prove the copy
+    gold = with_primary(live, "xyz:GOLD")
+    assert [(i.coin, i.role) for i in gold.instruments] == [("xyz:SILVER", "secondary"), ("xyz:GOLD", "primary")]
+    assert [(i.coin, i.role) for i in get_spec("metals").instruments][0] == ("xyz:SILVER", "primary")
+    assert gold.id == live.id
 
 
 def test_with_primary_refuses_a_coin_the_desk_does_not_list():

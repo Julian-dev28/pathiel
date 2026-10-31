@@ -131,6 +131,12 @@ def test_metals_desk_is_gold_and_silver_only():
     assert {i.coin for i in spec.instruments} == {"xyz:GOLD", "xyz:SILVER"}
 
 
+def test_metals_desk_trades_silver_since_2026_10_31():
+    spec = desks.require_spec("metals")
+    assert [i.coin for i in spec.instruments if i.role == "primary"] == ["xyz:SILVER"]
+    assert spec.name == "Silver"
+
+
 def test_indices_desk_includes_xyz100():
     spec = desks.require_spec("indices")
     assert "xyz:XYZ100" in {i.coin for i in spec.instruments}
