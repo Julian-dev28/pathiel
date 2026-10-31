@@ -115,6 +115,43 @@ def test_complete_passes_json_schema_through_verbatim(monkeypatch):
     assert json.loads(schema_arg) == schema
 
 
+def test_complete_json_schema_call_has_no_tools_and_extra_max_turns(monkeypatch):
+    """2026-10-31 regression (root cause of the 2026-10-23 thesis replay
+    failure: "CLI exited 1 ... num_turns: 2, stop_reason: tool_use, subtype:
+    error_max_turns" on a pure JSON-out call). A json_schema call (every
+    services/thesis call, which never sets web_search) must pin --tools to
+    "" - the CLI's own documented "disable every built-in tool" flag,
+    `claude --help` - AND get config.JSON_SCHEMA_MAX_TURNS instead of
+    config.DEFAULT_MAX_TURNS, so the schema mechanism's own internal
+    stop_reason "tool_use" round trip has room to finish instead of hitting
+    error_max_turns at 1."""
+    schema = {"type": "object", "properties": {"call": {"type": "object"}}, "required": ["call"]}
+    captured = {}
+
+    def _fake_run_cli(args, user_text, timeout_s, env=None):
+        captured["args"] = args
+        return _envelope()
+
+    monkeypatch.setattr(api, "run_cli", _fake_run_cli)
+    api.complete("S", "U", max_output_tokens=500, model="opus", json_schema=schema)
+
+    args = captured["args"]
+    assert args[args.index("--tools") + 1] == ""
+    assert args[args.index("--max-turns") + 1] == str(config.JSON_SCHEMA_MAX_TURNS)
+    assert config.JSON_SCHEMA_MAX_TURNS > config.DEFAULT_MAX_TURNS
+
+
+def test_complete_without_json_schema_or_web_search_keeps_default_max_turns(monkeypatch):
+    """No schema, no web search (a plain text completion, e.g. a verdict
+    brain) keeps the original tight turn budget - JSON_SCHEMA_MAX_TURNS is
+    only for the schema mechanism's own round trip, not a blanket loosening."""
+    captured = {}
+    monkeypatch.setattr(api, "run_cli", lambda args, *a, **k: (captured.setdefault("args", args), _envelope())[1])
+    api.complete("S", "U", max_output_tokens=500, model="opus")
+    args = captured["args"]
+    assert args[args.index("--max-turns") + 1] == str(config.DEFAULT_MAX_TURNS)
+
+
 def test_complete_persist_session_and_resume_reach_build_args(monkeypatch):
     captured = {}
 

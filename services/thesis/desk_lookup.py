@@ -6,11 +6,41 @@ import between any pair of them.
 """
 from __future__ import annotations
 
+from datetime import datetime, timedelta
 from typing import Optional
 
 from contracts.strategies.models import (
     DeskAnalytics, DeskSpec, ForwardStats, InstrumentSnapshot, InstrumentStructure, PairSnapshot,
+    PriceExtreme,
 )
+
+# An all-time extreme set within this many days of DeskAnalytics.as_of is
+# PRICE DISCOVERY, not a real ceiling/floor (2026-10-31, root cause: the
+# live 30-day silver test, docs/strategy/SILVER_THESIS_TEST_2026-10-31.md).
+# Hyperliquid's xyz:SILVER history only starts 2025-12-26, so during
+# October's sell-off silver kept printing a new venue low every few days
+# (54.817, then 53.053, then 52.694, then 51.856) - each one was briefly
+# "the all-time low" by definition, not a level that had ever held. The
+# stale-extreme hard cap (correct for Brent, whose all-time high is 8
+# months old and the operator explicitly wants capped) turned 10 of 30
+# thesis days flat against a market that kept falling, and on 2026-10-30 it
+# forced the call flat at 51.97 right before silver fell to 49.3.
+#
+# A STALE extreme (older than this window) keeps today's exact hard-cap
+# behaviour - see check_targets_reachable in services/thesis/validator.py
+# and _render_structure in services/thesis/prompt.py.
+PRICE_DISCOVERY_WINDOW_DAYS = 14
+
+
+def is_fresh_extreme(extreme: Optional[PriceExtreme], as_of: datetime) -> bool:
+    """True if ``extreme`` was set within PRICE_DISCOVERY_WINDOW_DAYS of
+    ``as_of`` - the venue is still in price discovery on that side, so the
+    extreme is not a hard ceiling/floor yet. False (the STALE, today's
+    existing-behaviour case) for a None extreme or one older than the
+    window."""
+    if extreme is None:
+        return False
+    return (as_of - extreme.at) < timedelta(days=PRICE_DISCOVERY_WINDOW_DAYS)
 
 
 def primary_coin(spec: DeskSpec) -> str:

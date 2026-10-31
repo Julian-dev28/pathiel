@@ -131,9 +131,29 @@ def complete(
     cheaper follow-up can resume it with ``resume_session=<LlmResult.session_id>``
     instead of re-sending everything - see services/thesis's repair round for
     the motivating use.
+
+    Tools are OFF unless ``web_search=True`` (``--tools ""`` - the CLI's own
+    documented "disable every built-in tool" flag, ``claude --help``), so a
+    caller that only wants latent-field JSON (every services/thesis call)
+    never gives the model anything to invoke. ``max_turns`` is
+    config.WEB_SEARCH_MAX_TURNS with web_search, else
+    config.JSON_SCHEMA_MAX_TURNS when ``json_schema`` is given (its own
+    docstring has the 2026-10-23 incident this fixes - a --json-schema call's
+    structured output reports back as stop_reason "tool_use" even with no
+    tool registered, and needs room for one internal retry), else
+    config.DEFAULT_MAX_TURNS.
     """
     resolved_model = model or model_probe.probe_default_model()
-    max_turns = config.WEB_SEARCH_MAX_TURNS if web_search else config.DEFAULT_MAX_TURNS
+    if web_search:
+        max_turns = config.WEB_SEARCH_MAX_TURNS
+    elif json_schema is not None:
+        # 2026-10-31: a --json-schema call's structured output comes back as
+        # stop_reason "tool_use" even with no agentic tool registered - see
+        # config.JSON_SCHEMA_MAX_TURNS's docstring for the 2026-10-23 thesis
+        # replay incident this fixes (error_max_turns on a pure JSON-out call).
+        max_turns = config.JSON_SCHEMA_MAX_TURNS
+    else:
+        max_turns = config.DEFAULT_MAX_TURNS
     tools = "WebSearch" if web_search else ""
     budget = _budget_for(resolved_model, max_output_tokens)
     fallback_models = _fallback_chain(resolved_model)

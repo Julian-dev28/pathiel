@@ -45,6 +45,24 @@ DEFAULT_MAX_TURNS = 1
 WEB_SEARCH_MAX_TURNS = 8  # matches ai_brain.ClaudeCliBrain: search+verdict lands in 2-4 turns live
 WEB_SEARCH_EXEC_MODEL = "haiku"  # mirrors ai_brain's opus-cannot-run-xhigh-websearch workaround
 
+# 2026-10-31: a --json-schema call's structured output is reported back by
+# the CLI's own envelope as stop_reason "tool_use" even though --tools "" is
+# passed and no agentic tool is actually available - --tools governs the
+# AGENTIC built-in tool set (Bash, Edit, WebSearch, ...), the schema's own
+# structured-output mechanism is separate and unaffected by it. That
+# mechanism can legitimately need a second internal round trip (the model's
+# first attempt needs a schema-correction turn), and DEFAULT_MAX_TURNS=1
+# leaves zero room for it: the 2026-10-23 thesis replay day hit exactly this
+# on a desk refresh with no tools registered - "CLI exited 1 ... num_turns:
+# 2, stop_reason: tool_use, subtype: error_max_turns". JSON_SCHEMA_MAX_TURNS
+# gives that one retry room without opening any agentic capability: --tools
+# is driven independently by ``web_search`` (services/llm/api.py), and every
+# services/thesis call - the only json_schema caller in this codebase - passes
+# web_search=False, so --tools "" still applies; the model still cannot
+# invoke Bash/Edit/WebFetch/etc, and this constant only bounds how many
+# internal structured-output round trips the CLI itself may take.
+JSON_SCHEMA_MAX_TURNS = 3
+
 # Resolved via PATH by default (same as ai_brain.py's own claude_cli
 # default), not a hardcoded absolute path into a developer's home
 # directory - this repo's own gate (scripts/check_no_absolute_paths.py)
