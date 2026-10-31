@@ -180,3 +180,22 @@ def test_mcp_config_accepts_list_fields_sent_as_json_strings():
         assert config_store.read_agent_config()["active_desks"] == ["oil"]
     finally:
         config_store.write_agent_config({"mode": "OFF"})
+
+
+def test_mcp_config_saves_desk_shares_and_refuses_bad_ones():
+    """2026-10-31: "oil 95% silver 5%". Shares that cannot size a trade are
+    refused before they are written."""
+    from pathiel.agents import config_store
+
+    mcp = _load_mcp_named("pathiel_mcp_server_config_shares_test")
+    try:
+        config_store.write_agent_config({"mode": "OFF", "active_desks": ["oil"]})
+        out = json.loads(mcp.handle_config({"active_desks": ["oil", "metals"],
+                                            "desk_equity_share": '{"oil": 0.95, "metals": 0.05}'}))
+        assert out["desk_equity_share"] == {"oil": 0.95, "metals": 0.05}
+        assert out["active_desks"] == ["oil", "metals"]
+        out = json.loads(mcp.handle_config({"desk_equity_share": {"metals": 0.5}}))
+        assert out["status"] == "error" and "adds up to 1.45" in out["error"]
+        assert config_store.read_agent_config()["desk_equity_share"]["metals"] == 0.05
+    finally:
+        config_store.write_agent_config({"mode": "OFF"})

@@ -1147,7 +1147,9 @@ def handle_config(params: Dict[str, Any]) -> str:
     ]
     # 2026-10-25: `ai_brain` left this list with pathiel/agents/ai_brain.py.
     # Nested blocks still deep-merge through the generic path below.
-    _NESTED_KEYS: List[str] = []
+    # 2026-10-31: desk_equity_share ({desk: fraction}, e.g. oil 0.95, metals
+    # 0.05) is validated by update_agent_config (services/strategies/desk_share.py).
+    _NESTED_KEYS: List[str] = ["desk_equity_share"]
 
     updates: Dict[str, Any] = {}
     for key in _DIRECT_KEYS:

@@ -132,7 +132,14 @@ def update_agent_config(updates: Dict[str, Any]) -> Dict[str, Any]:
     effective config (defaults merged) after the write. Serialized by a lock so
     two concurrent updates cannot drop each other's change."""
     with _UPDATE_LOCK:
-        write_agent_config(merge_agent_config(read_agent_config_file(), updates))
+        merged = merge_agent_config(read_agent_config_file(), updates)
+        if "desk_equity_share" in merged:
+            # Refuse shares that cannot size a trade (over 100% of equity, an
+            # active desk without one, ...) before they are saved: place_bracket
+            # would refuse every trade on them. DeskShareError is a ValueError.
+            from services.strategies.desk_share import desk_shares
+            desk_shares(merged)
+        write_agent_config(merged)
     return read_agent_config()
 
 
