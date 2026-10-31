@@ -95,7 +95,7 @@ def next_trade(side: str, mid: float, low_24h: float, high_24h: float, *,
         + ("" if trig_lev.get("ok") else f", but no {leverage:g}x there (max {trig_lev.get('max_leverage_ok')}x)"))
     return {
         "ok": ok, "source": "desk_rules", "side": side, "leverage": leverage, "min_r": min_r,
-        "mid": mid, "range_24h": {"low": low_24h, "high": high_24h},
+        "mid": mid, "range_24h": {"low": low_24h, "high": high_24h}, "stop_buffer": stop_buffer,
         "stop_px": round(at_stop, 6), "tp_px": tp, "structure_tp_px": structure_tp, "targets": [tp],
         "entry_px": round(at_px, 6), "trigger_px": round(trigger, 6), "trigger_leverage_ok": bool(trig_lev.get("ok")),
         "r_now": now_r.get("r_multiple"), "blockers": blockers, "verdict": verdict,

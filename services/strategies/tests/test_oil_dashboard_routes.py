@@ -191,21 +191,30 @@ def test_active_desks_defaults_to_oil_with_no_config(client, monkeypatch):
     monkeypatch.setattr(config_store, "read_agent_config", lambda: {})
     r = client.get("/api/desks/active")
     assert r.status_code == 200
-    assert r.json() == {"active_desks": ["oil"], "default_desk": "oil"}
+    body = r.json()
+    assert body["active_desks"] == ["oil"] and body["default_desk"] == "oil"
+    assert body["desks"] == [{"id": "oil", "name": "Oil", "primary_coin": "xyz:BRENTOIL", "equity_share": None}]
+    assert "share_error" not in body
 
 
 def test_active_desks_reads_the_configured_list(client, monkeypatch):
     from pathiel.agents import config_store
     monkeypatch.setattr(config_store, "read_agent_config", lambda: {"active_desks": ["btc", "oil"]})
     r = client.get("/api/desks/active")
-    assert r.json() == {"active_desks": ["btc", "oil"], "default_desk": "btc"}
+    body = r.json()
+    assert body["active_desks"] == ["btc", "oil"] and body["default_desk"] == "btc"
+    assert body["desks"] == [
+        {"id": "btc", "name": "BTC", "primary_coin": "BTC", "equity_share": None},
+        {"id": "oil", "name": "Oil", "primary_coin": "xyz:BRENTOIL", "equity_share": None},
+    ]
 
 
 def test_active_desks_drops_unknown_ids_and_falls_back_to_oil(client, monkeypatch):
     from pathiel.agents import config_store
     monkeypatch.setattr(config_store, "read_agent_config", lambda: {"active_desks": ["not-a-real-desk"]})
     r = client.get("/api/desks/active")
-    assert r.json() == {"active_desks": ["oil"], "default_desk": "oil"}
+    body = r.json()
+    assert body["active_desks"] == ["oil"] and body["default_desk"] == "oil"
 
 
 def test_active_desks_degrades_plainly_on_a_config_read_failure(client, monkeypatch):
@@ -217,4 +226,36 @@ def test_active_desks_degrades_plainly_on_a_config_read_failure(client, monkeypa
     monkeypatch.setattr(config_store, "read_agent_config", boom)
     r = client.get("/api/desks/active")
     assert r.status_code == 200
-    assert r.json() == {"active_desks": ["oil"], "default_desk": "oil"}
+    body = r.json()
+    assert body["active_desks"] == ["oil"] and body["default_desk"] == "oil"
+
+
+def test_active_desks_carries_each_desks_equity_share(client, monkeypatch):
+    from pathiel.agents import config_store
+    monkeypatch.setattr(config_store, "read_agent_config", lambda: {
+        "active_desks": ["oil", "metals"],
+        "desk_equity_share": {"oil": 0.95, "metals": 0.05},
+    })
+    r = client.get("/api/desks/active")
+    body = r.json()
+    assert body["desks"] == [
+        {"id": "oil", "name": "Oil", "primary_coin": "xyz:BRENTOIL", "equity_share": 0.95},
+        {"id": "metals", "name": "Silver", "primary_coin": "xyz:SILVER", "equity_share": 0.05},
+    ]
+    assert "share_error" not in body
+
+
+def test_active_desks_reports_a_bad_desk_equity_share_without_500ing(client, monkeypatch):
+    from pathiel.agents import config_store
+    monkeypatch.setattr(config_store, "read_agent_config", lambda: {
+        "active_desks": ["oil", "metals"],
+        "desk_equity_share": {"oil": 0.95},   # metals has no entry -> DeskShareError
+    })
+    r = client.get("/api/desks/active")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["desks"] == [
+        {"id": "oil", "name": "Oil", "primary_coin": "xyz:BRENTOIL", "equity_share": None},
+        {"id": "metals", "name": "Silver", "primary_coin": "xyz:SILVER", "equity_share": None},
+    ]
+    assert "metals" in body["share_error"] and "desk_equity_share" in body["share_error"]

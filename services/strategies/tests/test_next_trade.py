@@ -77,8 +77,19 @@ def test_the_page_and_the_backtest_agree_on_every_mid(mid):
 def test_the_stop_buffer_is_the_live_rule():
     assert BRENT_STOP_BUFFER == live_params().stop_buffer == 0.75
     assert stop_buffer_for("xyz:BRENTOIL", 0.83) == 0.75
-    assert stop_buffer_for("xyz:GOLD", 10.0) == pytest.approx(13.0)
-    assert stop_buffer_for("xyz:GOLD", None) is None
+    assert stop_buffer_for("xyz:SILVER", 10.0) == pytest.approx(13.0)
+    assert stop_buffer_for("xyz:SILVER", None) is None
+
+
+def test_the_response_carries_the_actual_stop_buffer_used():
+    """The page must show the real buffer (0.75 on Brent, ~1.3xATR on any
+    other coin), never a hardcoded "0.75" literal (2026-10-31: silver joins
+    oil, and silver's buffer is nowhere near 0.75)."""
+    n = _nt(113.135)
+    assert n["stop_buffer"] == 0.75
+    n2 = next_trade("long", 56.9, 55.0, 59.0, thesis_entry=None, leverage=20,
+                    coin_max_leverage=25, stop_buffer=1.3)
+    assert n2["stop_buffer"] == 1.3
 
 
 # ── GET /api/desks/{id}/next ────────────────────────────────────────────────

@@ -31,6 +31,10 @@ const INTEL_CAP = 6;   // small tables, per the ADHD-first brief
 
 let activeDesk = 'oil';
 let activeDesks = ['oil'];
+// id -> {id, name, primary_coin, equity_share} from GET /api/desks/active's
+// `desks` list (2026-10-31, silver joins oil): the switcher's label and the
+// "sizes off X% of equity" note both read this, never a hardcoded share.
+let activeDeskMeta = {};
 
 function show(id, on) {
   const el = document.getElementById(id);
@@ -285,9 +289,13 @@ function paintNextTrade(n) {
   document.getElementById('line-verdict-badge').innerHTML = `<span class="badge ${badge[0]}">${esc(badge[1])}</span>`;
   const long = n.side !== 'short';
   const r24 = n.range_24h || {};
+  // The stop buffer is Brent's fixed 0.75 or (any other coin) ~1.3x its 1h
+  // ATR (services/strategies/next_trade.py::stop_buffer_for) -- read the
+  // server's own number, never hardcode "0.75" for every desk's coin.
+  const bufText = n.stop_buffer != null ? fmtPrice(n.stop_buffer) : '—';
   const parts = [
     `Mid ${fmtPrice(n.mid)}: the tick ${n.verdict}.`,
-    `Stop ${fmtPrice(n.stop_px)} (0.75 ${long ? 'under the 24h low' : 'over the 24h high'} ${fmtPrice(long ? r24.low : r24.high)}),`
+    `Stop ${fmtPrice(n.stop_px)} (${bufText} ${long ? 'under the 24h low' : 'over the 24h high'} ${fmtPrice(long ? r24.low : r24.high)}),`
       + ` target ${fmtPrice(n.tp_px)} (0.5% inside the 24h ${long ? 'high' : 'low'} ${fmtPrice(n.structure_tp_px)}), ${Number(n.min_r)}R or better.`,
     n.blockers && n.blockers.length ? `Now: ${n.blockers.join('; ')}.` : '',
   ];
@@ -318,6 +326,28 @@ function paintLine(line, isPosition) {
   const source = isPosition ? 'Live from the venue, not the call.' : '';
   document.getElementById('line-reason').textContent =
     [explain, gate && !gate.ok ? (gate.reason || '') : '', source].filter(Boolean).join(' ');
+}
+
+/** The desk's own slice of equity (desk_equity_share, 2026-10-31: oil 95% /
+ *  silver 5%), in dollars at the live equity figure — "Sizes off 5% of
+ *  equity ($6.06)" next to the leverage/next-trade box. Hidden entirely
+ *  when no share is saved (the legacy whole-equity rule has nothing to
+ *  show here) or the live equity can't be read right now. */
+async function loadEquitySlice() {
+  const el = document.getElementById('line-equity-share');
+  if (!el) return;
+  const meta = activeDeskMeta[activeDesk];
+  if (!meta || meta.equity_share == null) { el.hidden = true; el.textContent = ''; return; }
+  try {
+    const s = await fetchJson('/api/accounts/active/summary');
+    const equity = s.equity_usd;
+    if (equity == null || !isFinite(Number(equity))) { el.hidden = true; el.textContent = ''; return; }
+    const pct = Math.round(meta.equity_share * 100);
+    el.textContent = `Sizes off ${pct}% of equity (${fmtMoney(Number(equity) * meta.equity_share)})`;
+    el.hidden = false;
+  } catch (e) {
+    el.hidden = true; el.textContent = '';
+  }
 }
 
 // ── 2. WALLETS ───────────────────────────────────────────────────────────────
@@ -677,14 +707,26 @@ async function loadActiveDesks() {
   try {
     const d = await fetchJson('/api/desks/active');
     activeDesks = (d.active_desks && d.active_desks.length) ? d.active_desks : ['oil'];
+    activeDeskMeta = {};
+    (d.desks || []).forEach(entry => { if (entry && entry.id) activeDeskMeta[entry.id] = entry; });
   } catch (e) {
     activeDesks = ['oil'];
+    activeDeskMeta = {};
   }
   const stored = PathielDesk.get();
   activeDesk = (stored && activeDesks.includes(stored)) ? stored : activeDesks[0];
   PathielDesk.set(activeDesk);
   renderDeskSwitcher();
   repointDeskLinks();
+}
+
+/** "Oil 95%" when this desk's equity_share is saved, else just its name
+ *  ("Oil" with no config, "oil" itself if even that is missing — an older
+ *  cached /api/desks/active response with no `desks` list). */
+function deskSwitcherLabel(id) {
+  const meta = activeDeskMeta[id];
+  const name = (meta && meta.name) || id;
+  return (meta && meta.equity_share != null) ? `${name} ${Math.round(meta.equity_share * 100)}%` : name;
 }
 
 function repointDeskLinks() {
@@ -703,7 +745,7 @@ function renderDeskSwitcher() {
     <span class="lev-radio-wrap">
       <input type="radio" name="active-desk-choice" class="lev-radio" id="desk-opt-${esc(id)}"
              value="${esc(id)}" ${id === activeDesk ? 'checked' : ''}>
-      <label for="desk-opt-${esc(id)}" class="lev-radio-label">${esc(id)}</label>
+      <label for="desk-opt-${esc(id)}" class="lev-radio-label">${esc(deskSwitcherLabel(id))}</label>
     </span>`).join('');
   seg.querySelectorAll('.lev-radio').forEach(radio => {
     radio.addEventListener('change', () => {
@@ -723,7 +765,7 @@ function renderDeskSwitcher() {
 // tests/test_page_polling.py.
 async function loadAll() {
     if (document.hidden) return;   // a hidden tab must not spend the venue budget
-  await Promise.all([loadCall(), loadLine(), loadWallets(), loadLevels(), loadLog()]);
+  await Promise.all([loadCall(), loadLine(), loadWallets(), loadLevels(), loadLog(), loadEquitySlice()]);
 }
 
 async function startOilDesk() {
