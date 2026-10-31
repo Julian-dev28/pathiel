@@ -74,3 +74,46 @@ def test_a_real_answer_is_not_retried():
 def test_a_client_without_a_session_is_returned_untouched():
     obj = SimpleNamespace()
     assert _set_session_timeout(obj) is obj
+
+
+# ── hl_client._get_session: the raw session candle_store / universe /
+# account_snapshot post through directly (not an SDK client) ───────────────
+#
+# 2026-10-31: _set_session_timeout above was wired into every SDK client
+# (Info/Exchange) but NOT into hl_client._get_session()'s plain
+# requests.Session, the one fetch_hl_candles/_http_post_strict actually use.
+# Every call there already passes its own explicit timeout, so it never hung
+# forever, but a dead pooled connection cost that full timeout on EVERY
+# retry attempt of fetch_hl_candles's 6-retry backoff loop instead of
+# healing after the first one -- one of the things that turned a Hyperliquid
+# 502 storm into a 900+s desk_brief call. _get_session() now calls
+# wrap_session_retry too.
+def test_get_session_recovers_from_a_dead_pooled_connection(monkeypatch):
+    import pathiel.client.hl_client as hl_client
+
+    monkeypatch.setattr(hl_client, "_session", None)
+    calls = []
+    fails = [requests.exceptions.ConnectionError("dead pooled connection")]
+
+    def fake_request(self, method, url, **kw):
+        calls.append(kw.get("timeout"))
+        if fails:
+            raise fails.pop(0)
+        return "ok"
+
+    monkeypatch.setattr(requests.Session, "request", fake_request)
+    sess = hl_client._get_session()
+    assert sess.post("https://x.example/info", json={}, timeout=5) == "ok"
+    # One failed attempt, one retry on a fresh socket, the caller's own
+    # explicit timeout preserved both times (default_timeout=False: this
+    # wrapper adds retry-on-fresh-socket, it does not change what timeout a
+    # caller already asked for).
+    assert calls == [5, 5]
+
+
+def test_get_session_is_a_singleton_wrapped_once(monkeypatch):
+    import pathiel.client.hl_client as hl_client
+
+    monkeypatch.setattr(hl_client, "_session", None)
+    first = hl_client._get_session()
+    assert hl_client._get_session() is first

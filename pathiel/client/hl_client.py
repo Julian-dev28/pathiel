@@ -26,7 +26,7 @@ from typing import TYPE_CHECKING, Any, Dict, Iterable, List, Optional, Set, Tupl
 
 import requests
 
-from pathiel.client.http_session import SDK_TIMEOUT_S, _set_session_timeout
+from pathiel.client.http_session import SDK_TIMEOUT_S, _set_session_timeout, wrap_session_retry
 from pathiel.client.rate_limit import (HL_LIMITER as _HL_LIMITER, carry_priority as _carry_priority,
                                        endpoint_weight as _endpoint_weight, in_background as _in_background)
 from pathiel.models.types import Candle
@@ -123,6 +123,15 @@ def _get_session() -> "requests.Session":
                     ),
                 )
                 s.mount("https://", adapter)
+                # Every caller here (_http_post/_http_post_strict) already
+                # passes its own explicit timeout, but a dead pooled
+                # keep-alive connection from an outage used to cost that
+                # full timeout on EVERY retry attempt instead of healing
+                # after the first one (see wrap_session_retry's docstring,
+                # 2026-10-31). default_timeout=False: do not override a
+                # caller's explicit timeout, only add the retry-on-fresh-
+                # socket behavior.
+                wrap_session_retry(s, default_timeout=False)
                 _session = s
     return _session
 

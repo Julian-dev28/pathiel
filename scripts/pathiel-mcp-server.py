@@ -35,7 +35,7 @@ import threading
 import time
 import traceback
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 # Auto-load the operator's env file: $PATHIEL_ENV_FILE, else <root>/.env.local,
 # else ~/.pathiel/.env.local (a Claude Code plugin install, where the plugin
@@ -1493,10 +1493,61 @@ def dispatch_message(msg: Any) -> "Dict[str, Any] | None":
 # Where it breaks: Python cannot kill a thread, so a call that times out keeps
 # its worker until the handler returns. MAX_CONCURRENT_CALLS bounds the damage;
 # every network call underneath has its own (seconds-scale) timeout.
+#
+# 2026-10-31: that last sentence was wrong in practice. During a Hyperliquid
+# 502 storm, build_and_cache_analytics (desk_brief's inline rebuild) chains
+# several sequential, retrying network phases (daily candles x N instruments,
+# an account read, hourly candles for the primary); each phase is individually
+# timeout-bounded, but nothing bounded their SUM, and fetch_hl_candles's own
+# 6-retry backoff loop multiplied a dead connection into minutes per phase.
+# Measured: handle_desk_brief("oil") took 936-972s end to end. The per-tool
+# timer below still fired at DEFAULT_TOOL_TIMEOUT_S and freed the CLIENT, but
+# the worker thread kept running underneath for the full 900+s (the comment
+# above already says so), so MAX_CONCURRENT_CALLS workers filled with these
+# zombies during a sustained outage and every later tick queued behind them
+# with no free worker -- "the server processes calls one at a time."
+#
+# Fix: handle_desk_brief and handle_bracket_sweep run their slow work on
+# _BUILD_EXECUTOR (below) and give up waiting after HANDLER_DEADLINE_S,
+# falling back to cached data (desk_brief) or a clear "still running"
+# error (bracket_sweep). The dispatch-pool worker is freed within
+# HANDLER_DEADLINE_S either way, so MAX_CONCURRENT_CALLS always has room for
+# the next tick even when the orphaned rebuild is still stuck in a retry loop.
 
 MAX_CONCURRENT_CALLS = int(os.environ.get("PATHIEL_MCP_MAX_CONCURRENT", "6"))
 DEFAULT_TOOL_TIMEOUT_S = 120.0
 TOOL_TIMEOUT_S: Dict[str, float] = {"desk_refresh": 300.0}
+
+# No single desk_brief/bracket_sweep call may hold a tool-dispatch worker
+# longer than this. Comfortably above the pre-outage normal (~30s was the
+# slowest *healthy* tick observed 2026-10-31), far below the observed
+# incident duration (900+s).
+HANDLER_DEADLINE_S = float(os.environ.get("PATHIEL_MCP_HANDLER_DEADLINE_S", "30"))
+
+# Separate from the tool-dispatch `pool` in run(): a handler that gives up
+# waiting leaves its real work running here instead of on a dispatch worker,
+# so a stuck rebuild never consumes one of the MAX_CONCURRENT_CALLS slots that
+# the next tick's tools/call needs. Bounded size so a sustained outage can
+# still only accumulate a handful of zombie builds, not an unbounded pile.
+_BUILD_EXECUTOR = ThreadPoolExecutor(
+    max_workers=int(os.environ.get("PATHIEL_MCP_BUILD_WORKERS", "4")),
+    thread_name_prefix="pathiel-build")
+
+
+def _bounded(fn: Callable[..., Any], *args: Any,
+            deadline: "float | None" = None, **kwargs: Any) -> Any:
+    """Run fn(*args, **kwargs) on _BUILD_EXECUTOR; wait at most `deadline`
+    seconds for it (module-global HANDLER_DEADLINE_S, read fresh on every
+    call -- NOT a default-argument value -- so tests and
+    PATHIEL_MCP_HANDLER_DEADLINE_S both take effect). Raises
+    concurrent.futures.TimeoutError (== TimeoutError since Python 3.11) if
+    it doesn't finish in time -- fn keeps running in the background
+    regardless, this only bounds how long the CALLING thread (an MCP
+    tool-dispatch worker) waits on it."""
+    if deadline is None:
+        deadline = HANDLER_DEADLINE_S
+    return _BUILD_EXECUTOR.submit(fn, *args, **kwargs).result(timeout=deadline)
+
 
 _ROUTER_ACTIVE = False                     # True only inside run()
 _ROUTE_LOCK = threading.Lock()
@@ -2991,8 +3042,19 @@ def handle_desk_brief(params: Dict[str, Any]) -> str:
         facade = _strategies_facade()
         # wait=True: an MCP caller has no page to update later, so analytics
         # older than DESK_BRIEF_MAX_AGE_S are rebuilt inline (fast: candles
-        # come from the shared on-disk store).
-        brief = facade.get_brief(desk_id, wait=True, max_age_s=DESK_BRIEF_MAX_AGE_S)
+        # come from the shared on-disk store). Bounded to HANDLER_DEADLINE_S
+        # (see the "concurrent transport" comment above): a venue outage can
+        # make that inline rebuild take minutes, and this MCP worker must not
+        # wait on it past the bound. On timeout the rebuild keeps running on
+        # _BUILD_EXECUTOR (it will update the on-disk cache whenever it
+        # finishes); this call falls back to the best cached brief instead.
+        try:
+            brief = _bounded(facade.get_brief, desk_id, wait=True, max_age_s=DESK_BRIEF_MAX_AGE_S)
+        except TimeoutError:
+            brief = facade.get_brief(desk_id, wait=False, max_age_s=DESK_BRIEF_MAX_AGE_S)
+            brief.stale = list(brief.stale or []) + [
+                f"analytics: rebuild still running after {HANDLER_DEADLINE_S:.0f}s "
+                "(serving the last cached copy; it will update in the background)"]
     except Exception as e:
         return json.dumps({"error": str(e), "desk": desk_id})
     sizing = _thesis_sizing(brief)
@@ -3444,8 +3506,20 @@ def handle_bracket_sweep(params: Dict[str, Any]) -> str:
     coin = _norm_coin(str(params.get("coin") or ""))
     if not coin:
         return json.dumps({"ok": False, "error": "coin is required"})
+    # Bounded the same way as handle_desk_brief (see HANDLER_DEADLINE_S /
+    # _bounded above): sweep()'s reads (position, resting orders, price) go
+    # through the same venue HTTP path that stacked to 900+s in the
+    # 2026-10-31 outage. On timeout, sweep() keeps running on _BUILD_EXECUTOR
+    # and still completes (cancel/fold is idempotent, safe to let finish
+    # unseen) -- this only frees the MCP worker thread so the next tick's
+    # call gets a dispatch-pool slot instead of queueing behind this one.
     try:
-        return json.dumps(bracket.sweep(coin), default=str)
+        return json.dumps(_bounded(bracket.sweep, coin), default=str)
+    except TimeoutError:
+        return json.dumps({"ok": False, "coin": coin, "timed_out": True,
+                           "error": f"bracket_sweep did not finish within {HANDLER_DEADLINE_S:.0f}s "
+                                    "(the venue may be degraded); it is still running in the "
+                                    "background and does not need to be resent immediately"})
     except Exception as e:
         return json.dumps({"ok": False, "coin": coin, "error": str(e)})
 
