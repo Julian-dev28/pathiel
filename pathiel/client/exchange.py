@@ -37,7 +37,7 @@ from pathiel.client.hl_client import (
     fetch_hl_candles,
     resolve_user_address,
 )
-from pathiel.client.http_session import _set_session_timeout
+from pathiel.client.http_session import SDK_TIMEOUT_S, _set_session_timeout
 
 logger = logging.getLogger(__name__)
 
@@ -224,6 +224,7 @@ def _make_exchange() -> Exchange:
         base_url=HL_API,
         account_address=account_address,
         perp_dexs=_resolve_perp_dexs(),
+        timeout=SDK_TIMEOUT_S,
     ))
     _exchange_identity_key = identity_key
     return _exchange_instance
@@ -240,7 +241,8 @@ def _get_info() -> Info:
     """
     global _info_instance
     if _info_instance is None:
-        _info_instance = _set_session_timeout(Info(skip_ws=True, perp_dexs=_resolve_perp_dexs()))
+        _info_instance = _set_session_timeout(Info(skip_ws=True, perp_dexs=_resolve_perp_dexs(),
+                                                    timeout=SDK_TIMEOUT_S))
     return _info_instance
 
 

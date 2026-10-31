@@ -176,7 +176,8 @@ def test_resolve_identity_raises_with_nothing_usable(monkeypatch, tmp_path):
 # layer deeper: the Exchange class it calls).
 
 class _FakeExchange:
-    def __init__(self, wallet, base_url=None, account_address=None, perp_dexs=None):
+    def __init__(self, wallet, base_url=None, account_address=None, perp_dexs=None, timeout=None):
+        self.timeout = timeout          # 2026-10-31: always passed, see tests/test_sdk_constructor_timeout.py
         self.wallet = wallet
         self.base_url = base_url
         self.account_address = account_address

@@ -3,7 +3,8 @@
   "enable_hip3": true,
   "coin_allowlist": [
     "xyz:BRENTOIL",
-    "xyz:CL"
+    "xyz:CL",
+    "xyz:SILVER"
   ],
   "coin_blocklist": [],
   "hip3_dex_allowlist": [
@@ -20,6 +21,11 @@
     "max_bumped_risk_pct": 100
   },
   "active_desks": [
-    "oil"
-  ]
+    "oil",
+    "metals"
+  ],
+  "desk_equity_share": {
+    "oil": 0.9,
+    "metals": 0.1
+  }
 }

@@ -20,6 +20,13 @@ logger = logging.getLogger(__name__)
 # SDK raises, a JSON error) is a real answer and must not be retried blind.
 _RETRY_ON = (requests.exceptions.Timeout, requests.exceptions.ConnectionError)
 
+# Passed to the SDK constructors themselves (Info/Exchange(timeout=...)):
+# their __init__ already makes HTTP calls (meta, spot meta, every perp dex)
+# BEFORE _set_session_timeout can wrap the session, and with the SDK default
+# timeout=None one of those can hang forever. 2026-10-31: during a
+# Hyperliquid 502 storm scripts/thesis_due.py hung 23 minutes in Info().
+SDK_TIMEOUT_S = 10.0
+
 
 def _set_session_timeout(client, timeout_s: float = 10.0, connect_s: float = 5.0):
     """Give an SDK client's requests.Session a DEFAULT (connect, read) timeout,

@@ -26,7 +26,7 @@ from typing import TYPE_CHECKING, Any, Dict, Iterable, List, Optional, Set, Tupl
 
 import requests
 
-from pathiel.client.http_session import _set_session_timeout
+from pathiel.client.http_session import SDK_TIMEOUT_S, _set_session_timeout
 from pathiel.client.rate_limit import (HL_LIMITER as _HL_LIMITER, carry_priority as _carry_priority,
                                        endpoint_weight as _endpoint_weight, in_background as _in_background)
 from pathiel.models.types import Candle
@@ -88,7 +88,7 @@ def init_info() -> None:
             from hyperliquid.info import Info
             # skip_ws=True prevents blocking WS connect + meta fetch
             # We already have meta from HTTP above
-            _info_instance = Info(skip_ws=True, meta=perp_meta, spot_meta=spot_meta)
+            _info_instance = Info(skip_ws=True, meta=perp_meta, spot_meta=spot_meta, timeout=SDK_TIMEOUT_S)
             _set_session_timeout(_info_instance)
             logger.info("[hl] Info client initialized (HTTP-only, 10s timeout)")
         except Exception as e:
