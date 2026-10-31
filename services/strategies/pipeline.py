@@ -27,6 +27,8 @@ import logging
 import os
 import time
 import uuid
+
+from pydantic import ValidationError
 from datetime import datetime, timezone
 from typing import Any, Callable, List, Optional, Tuple
 
@@ -113,7 +115,16 @@ def load_cached_analytics(desk_id: str) -> Optional[DeskAnalytics]:
     raw = read_json(_analytics_cache_path(desk_id))
     if not raw:
         return None
-    result = DeskAnalytics.model_validate(raw)
+    try:
+        result = DeskAnalytics.model_validate(raw)
+    except ValidationError as e:
+        # A cache written by a newer (or older) contract than this process
+        # runs: 2026-10-31 the MCP server, on contract 1.3.0, wrote fields the
+        # dashboard's 1.2.0 models forbade and every Desk panel returned 500.
+        # An unreadable cache is a missing cache: rebuild, never 500.
+        logger.warning(f"[strategies.pipeline] {desk_id}: cached analytics do not match this "
+                       f"contract ({e.error_count()} errors); treating them as missing")
+        return None
     spec = get_spec(desk_id)
     if spec is not None and not analytics_matches_spec(spec, result):
         logger.info(f"[strategies.pipeline] {desk_id}: cached analytics were built for other "
@@ -139,7 +150,14 @@ def save_intel(desk_id: str, packet: IntelPacket) -> None:
 
 def load_cached_intel(desk_id: str) -> Optional[IntelPacket]:
     raw = read_json(_intel_cache_path(desk_id))
-    return IntelPacket.model_validate(raw) if raw else None
+    if not raw:
+        return None
+    try:
+        return IntelPacket.model_validate(raw)
+    except ValidationError as e:
+        logger.warning(f"[strategies.pipeline] {desk_id}: cached intel does not match this "
+                       f"contract ({e.error_count()} errors); treating it as missing")
+        return None
 
 
 def cached_intel_age_s(desk_id: str, *, now: Optional[float] = None) -> Optional[float]:
