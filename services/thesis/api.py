@@ -49,6 +49,8 @@ def write_thesis(
     prev: Optional[Thesis],
     model: Optional[str] = None,
     now: Optional[datetime] = None,
+    *,
+    scorecard: Optional[str] = None,
 ) -> Thesis:
     """``model`` (default None) pins every services.llm.complete call this
     thesis makes to one model alias ("opus", "fable", ...) instead of
@@ -68,14 +70,23 @@ def write_thesis(
     the harness happened to run -- otherwise every day's thesis would
     collide at nearly the same real timestamp and lose the chronological
     order services.strategies.backtest.desk_tick_backtest.journaled_
-    direction depends on."""
+    direction depends on.
+    ``scorecard`` (default None) is the desk's graded track record,
+    pre-rendered text from services.thesis.scorecard.render_scorecard --
+    None means no SCORECARD section at all (the prompt is byte-identical to
+    before this existed). The CALLER builds it (services.strategies.pipeline
+    for the live desk, services.thesis.evals.replay for a replay), gated
+    behind services.thesis.scorecard.scorecard_enabled() upstream so this
+    function has no opinion of its own on the flag; it only threads
+    whatever it is handed into the prompt. Added 2026-10-31."""
     now = now or prompt_mod.utc_now()
     tag = f"thesis:{spec.id}"
 
     try:
         incremental = prev is not None and prompt_mod.is_small_change(spec, analytics, intel, prev)
         system_prompt = prompt_mod.build_system_prompt(spec)
-        user_prompt, _ = prompt_mod.build_user_prompt(spec, analytics, intel, prev, incremental=incremental)
+        user_prompt, _ = prompt_mod.build_user_prompt(spec, analytics, intel, prev, incremental=incremental,
+                                                       scorecard_text=scorecard)
         schema = thesis_draft_json_schema(len(desk_lookup.ladder_leverages(analytics)))
 
         result1 = _complete_with_one_retry(

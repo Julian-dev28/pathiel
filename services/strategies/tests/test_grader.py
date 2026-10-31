@@ -160,6 +160,32 @@ def test_brier_none_without_scenarios_or_return():
     assert G._brier(_scenarios(), None) is None
 
 
+# ── find_scenario_bucket (public, also used by services.thesis.scorecard) ──
+
+def test_find_scenario_bucket_contained_case():
+    bucket = G.find_scenario_bucket(_scenarios(), 0.10)
+    assert bucket.name == "B"
+
+
+def test_find_scenario_bucket_nearest_edge_fallback():
+    bucket = G.find_scenario_bucket(_scenarios(), -0.9)
+    assert bucket.name == "C"
+
+
+def test_find_scenario_bucket_empty_scenarios_is_none():
+    assert G.find_scenario_bucket([], 0.1) is None
+
+
+def test_find_scenario_bucket_matches_brier_s_own_choice():
+    """_brier must keep scoring the exact bucket this function returns --
+    a refactor divergence here would silently change every Grade.brier."""
+    scenarios = _scenarios()
+    for raw_ret in (0.10, -0.9, 0.5, -1.0, 0.0):
+        bucket = G.find_scenario_bucket(scenarios, raw_ret)
+        expected = sum((s.probability - (1.0 if s is bucket else 0.0)) ** 2 for s in scenarios)
+        assert G._brier(scenarios, raw_ret) == pytest.approx(expected)
+
+
 # ── grade_all_due: idempotent, respects expiry ─────────────────────────────
 
 def test_grade_all_due_idempotent():

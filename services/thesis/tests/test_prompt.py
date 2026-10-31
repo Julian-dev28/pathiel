@@ -84,6 +84,17 @@ def test_system_prompt_states_the_realistic_targets_and_calibration_rules(oil):
     assert "Do not go flat only" in text and "pullback level" in text
 
 
+def test_system_prompt_states_the_scorecard_calibration_rule(oil):
+    """2026-10-31: operator asked whether the thesis considers wins/losses --
+    it did not. The writer must be told, every time, to use its own graded
+    track record to calibrate confidence/scenarios, never to flip side on
+    one loss."""
+    text = prompt_mod.build_system_prompt(oil.spec)
+    assert "SCORECARD" in text
+    assert "Never flip side because of one loss" in text
+    assert "small sample" in text.lower()
+
+
 # -- render_analytics_dense ---------------------------------------------------
 
 
@@ -321,6 +332,46 @@ def test_build_user_prompt_handles_missing_intel(oil):
     text, _ = prompt_mod.build_user_prompt(oil.spec, oil.analytics, None, None, incremental=False)
     assert "No live intel packet" in text
     assert "do not invent" in text
+
+
+# -- build_user_prompt: SCORECARD section (2026-10-31) ------------------------
+
+
+def test_build_user_prompt_omits_scorecard_section_by_default(oil):
+    """No scorecard_text passed -> the prompt is exactly what it was before
+    this feature existed (the live-wiring flag's OFF state)."""
+    text, _ = prompt_mod.build_user_prompt(oil.spec, oil.analytics, oil.intel, None, incremental=False)
+    assert "SCORECARD" not in text
+
+
+def test_build_user_prompt_includes_scorecard_text_when_given_full_mode(oil):
+    text, _ = prompt_mod.build_user_prompt(
+        oil.spec, oil.analytics, oil.intel, None, incremental=False,
+        scorecard_text="SCORECARD (track record): n=3, direction hit rate 67%",
+    )
+    assert "SCORECARD (track record): n=3, direction hit rate 67%" in text
+    assert "MARKET SNAPSHOT" in text   # analytics still rendered in full
+
+
+def test_build_user_prompt_includes_scorecard_text_in_incremental_mode(oil):
+    text, _ = prompt_mod.build_user_prompt(
+        oil.spec, oil.analytics, oil.intel, oil.thesis, incremental=True,
+        scorecard_text="SCORECARD (track record): n=2, direction hit rate 50%",
+    )
+    assert "SCORECARD (track record): n=2, direction hit rate 50%" in text
+    assert "PREVIOUS CALL" in text
+
+
+def test_build_user_prompt_scorecard_tokens_count_against_the_intel_budget(oil):
+    """A long scorecard must shrink how much intel room is left, same as a
+    bigger analytics block would -- never silently blow max_input_tokens."""
+    no_sc, _ = prompt_mod.build_user_prompt(oil.spec, oil.analytics, oil.intel, None, incremental=False)
+    big_scorecard = "SCORECARD (track record)\n" + "\n".join(f"- row {i}" for i in range(80))
+    with_sc, _ = prompt_mod.build_user_prompt(
+        oil.spec, oil.analytics, oil.intel, None, incremental=False, scorecard_text=big_scorecard,
+    )
+    assert big_scorecard in with_sc
+    assert prompt_mod.estimate_tokens(with_sc) <= oil.spec.token_budget.max_input_tokens
 
 
 def test_build_user_prompt_incremental_is_smaller_than_full(oil):

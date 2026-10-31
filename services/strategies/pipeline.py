@@ -19,6 +19,14 @@ the old primary, so neither is served or built on (`analytics_matches_spec`,
 `primary_changed`).
 Every refresh — written, skipped, or errored — appends one row to
 `$PATHIEL_STATE_DIR/strategies/usage.jsonl`, so cost per thesis is visible.
+
+`_build_scorecard_text()` (2026-10-31) builds the desk's SCORECARD section
+(services.thesis.scorecard) from the journal's own graded theses and passes
+it to the thesis provider — but only when
+services.thesis.scorecard.scorecard_enabled() reads PATHIEL_THESIS_SCORECARD
+as truthy. Off by default: until the operator flips that flag (see
+docs/strategy/SCORECARD_TEST_2026-10-31.md), every refresh behaves exactly
+as before this feature existed.
 """
 from __future__ import annotations
 
@@ -210,16 +218,40 @@ def _load_intel(spec: DeskSpec) -> Tuple[Optional[IntelPacket], Optional[str]]:
 
 
 def _load_thesis(spec: DeskSpec, result: DeskAnalytics, intel: Optional[IntelPacket],
-                 prev: Optional[Thesis]) -> Tuple[Optional[Thesis], Optional[str]]:
+                 prev: Optional[Thesis], *, scorecard: Optional[str] = None,
+                 ) -> Tuple[Optional[Thesis], Optional[str]]:
+    """``scorecard`` (default None) is passed through to the thesis
+    provider as a kwarg ONLY when set, never as an explicit ``scorecard=None``
+    -- a provider stub that still takes exactly 4 positional args (every
+    caller before 2026-10-31, and this module's own tests) must keep
+    working unchanged while the feature flag is off."""
     try:
         write_thesis = _resolve_provider(THESIS_PROVIDER_PATH)
     except (ImportError, ModuleNotFoundError, AttributeError) as exc:
         return None, f"thesis provider unavailable ({THESIS_PROVIDER_PATH}): {exc}"
     try:
-        return write_thesis(spec, result, intel, prev), None
+        kwargs = {"scorecard": scorecard} if scorecard is not None else {}
+        return write_thesis(spec, result, intel, prev, **kwargs), None
     except Exception as exc:  # noqa: BLE001 - same degrade-not-crash rule as intel
         logger.warning(f"[strategies.pipeline] thesis provider raised for {spec.id}: {exc}")
         return None, f"thesis provider raised: {exc}"
+
+
+def _build_scorecard_text(desk_id: str, *, now: Optional[datetime] = None) -> Optional[str]:
+    """The desk's SCORECARD text, or None when the feature flag
+    (services.thesis.scorecard.scorecard_enabled, env PATHIEL_THESIS_SCORECARD)
+    is off -- the default, so nothing live changes until the operator flips
+    it after the eval (docs/strategy/SCORECARD_TEST_2026-10-31.md). Built
+    from every thesis this desk's journal has, including ungraded/open
+    ones -- services.thesis.scorecard.eligible_theses does the no-lookahead
+    filtering (grade is not None AND expires_at <= now)."""
+    from services.thesis import scorecard as scorecard_mod
+
+    if not scorecard_mod.scorecard_enabled():
+        return None
+    now = now or datetime.now(timezone.utc)
+    card = scorecard_mod.build_scorecard(journal.list_theses(desk_id), as_of=now)
+    return scorecard_mod.render_scorecard(card)
 
 
 # ── token gate ─────────────────────────────────────────────────────────────
@@ -344,7 +376,8 @@ def refresh(desk_id: str, force: bool = False,
     # old call's entry (Brent at 107 vs a WTI entry at 98.87), and a failed
     # call would fall back to re-serving the old call. Write from scratch.
     base = None if prev is not None and primary_changed(spec, prev) else prev
-    thesis, thesis_note = _load_thesis(spec, result, intel, base)
+    scorecard_text = _build_scorecard_text(desk_id, now=started)
+    thesis, thesis_note = _load_thesis(spec, result, intel, base, scorecard=scorecard_text)
     if thesis_note:
         notes.append(thesis_note)
 

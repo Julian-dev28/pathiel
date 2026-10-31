@@ -128,6 +128,45 @@ def test_prints_a_token_report_line(oil, monkeypatch, capsys):
     assert "input=700" in out and "output=400" in out
 
 
+# -- SCORECARD threading (2026-10-31) --------------------------------------
+
+
+def test_scorecard_kwarg_defaults_to_no_section_in_the_prompt(oil, monkeypatch):
+    fake = _install(monkeypatch, [_result(_draft_json(oil))])
+    api.write_thesis(oil.spec, oil.analytics, oil.intel, None)
+    assert "SCORECARD" not in fake.calls[0]["user"]
+
+
+def test_scorecard_text_reaches_the_user_prompt_full_mode(oil, monkeypatch):
+    fake = _install(monkeypatch, [_result(_draft_json(oil))])
+    api.write_thesis(oil.spec, oil.analytics, oil.intel, None,
+                     scorecard="SCORECARD (track record): n=4, direction hit rate 75%")
+    assert "SCORECARD (track record): n=4, direction hit rate 75%" in fake.calls[0]["user"]
+
+
+def test_scorecard_text_reaches_the_user_prompt_incremental_mode(oil, monkeypatch):
+    fake = _install(monkeypatch, [_result(_draft_json(oil))])
+    api.write_thesis(oil.spec, oil.analytics, oil.intel, oil.thesis,
+                     scorecard="SCORECARD (track record): n=1, direction hit rate 100%")
+    assert "SMALL update" in fake.calls[0]["user"]
+    assert "SCORECARD (track record): n=1, direction hit rate 100%" in fake.calls[0]["user"]
+
+
+def test_scorecard_text_also_reaches_a_resumed_repair_round(oil, monkeypatch):
+    """The repair call resumes the first call's session (short message
+    only) -- the scorecard the model saw is whatever the first call's own
+    prompt carried, not resent. Proven here by checking the FIRST call,
+    the same way test_validator_failure_triggers_one_resumed_repair_call
+    checks the repair message is short."""
+    fake = _install(monkeypatch, [
+        _result(_bad_probabilities_json(oil), session_id="sess-sc"),
+        _result(_draft_json(oil)),
+    ])
+    api.write_thesis(oil.spec, oil.analytics, oil.intel, None, scorecard="SCORECARD n=2")
+    assert "SCORECARD n=2" in fake.calls[0]["user"]
+    assert "SCORECARD" not in fake.calls[1]["user"]  # short resumed repair, not a resend
+
+
 # -- incremental mode -----------------------------------------------------------
 
 

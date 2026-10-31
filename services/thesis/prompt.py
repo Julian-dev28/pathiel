@@ -171,7 +171,14 @@ def build_system_prompt(spec: DeskSpec) -> str:
         "preamble.\n"
         "- Write every price in full digits (120000 or $120,000), never an "
         "abbreviation without a k/M suffix (not bare \"120\" for "
-        "$120,000).\n\n"
+        "$120,000).\n"
+        "- If a SCORECARD section is given below, it is this desk's own "
+        "graded track record: calibrate your confidence and scenario "
+        "probabilities against it. A scenario bucket that keeps winning the "
+        "most probability but rarely happening is overconfident; spread "
+        "probability more evenly next time. Never flip side because of one "
+        "loss, and treat a small sample (single digits) as weak evidence, "
+        "not a verdict.\n\n"
         "Return only the JSON described by the schema. No prose outside the "
         "JSON, no markdown fences."
     )
@@ -558,14 +565,27 @@ def build_user_prompt(
     prev: Optional[Thesis],
     *,
     incremental: bool,
+    scorecard_text: Optional[str] = None,
 ) -> Tuple[str, int]:
     """Build the full user message. Returns (prompt_text, estimated_tokens).
+
+    ``scorecard_text`` (default None -- no section at all, byte-identical to
+    the prompt before this existed) is the desk's graded track record,
+    pre-rendered by services.thesis.scorecard.render_scorecard. Added
+    2026-10-31 so the writer can calibrate confidence and scenario odds
+    against wins/losses it has actually had; the caller (services.thesis.
+    api.write_thesis) decides whether to pass one at all, gated behind
+    services.thesis.scorecard.scorecard_enabled() upstream in the live
+    pipeline. Bounded by construction (scorecard.DEFAULT_N caps the row
+    count before this module ever sees it), so it is never trimmed here the
+    way the unbounded intel render is -- its token cost is still subtracted
+    from the intel budget below so the two together never blow max_input_tokens.
 
     Full mode budget split: analytics is small and required for every
     structural validator rule (stop side, entry-near-mid, leverage verdict),
     so it is rendered in full and never trimmed; whatever max_input_tokens
-    leaves over after analytics and a fixed instructions reserve goes to the
-    intel render, which does its own internal trimming
+    leaves over after analytics, the scorecard, and a fixed instructions
+    reserve goes to the intel render, which does its own internal trimming
     (render_intel_compact's max_tokens).
 
     Incremental mode renders a DELIBERATELY smaller analytics block (primary
@@ -574,14 +594,17 @@ def build_user_prompt(
     was shown) and skips the general intel render entirely in favor of just
     the new-headlines list already folded into the incremental header - the
     model already produced ``prev`` from the full picture; this call is
-    "what changed", not "start over". Measured on the oil fixture
-    (2026-10-17): full mode ~685 est. tokens, incremental ~290 - see
-    services/thesis/README.md.
+    "what changed", not "start over". The scorecard still rides along here
+    (it is cheap and the track record does not change within one small
+    update). Measured on the oil fixture (2026-10-17): full mode ~685 est.
+    tokens, incremental ~290 - see services/thesis/README.md.
     """
     if incremental and prev is not None:
         header = _incremental_header(spec, analytics, intel, prev)
         analytics_text = _render_analytics_compact(spec, analytics)
         parts = [header, "", analytics_text]
+        if scorecard_text:
+            parts += ["", scorecard_text]
     else:
         header = (
             f"Build today's thesis for the {spec.name} desk. Horizon: {spec.horizon_days} days. "
@@ -590,12 +613,16 @@ def build_user_prompt(
         analytics_text = render_analytics_dense(spec, analytics)
         budget = spec.token_budget.max_input_tokens
         used = estimate_tokens(header) + estimate_tokens(analytics_text) + INSTRUCTIONS_RESERVE_TOKENS
+        if scorecard_text:
+            used += estimate_tokens(scorecard_text) + 1
         remaining = max(200, min(INTEL_MAX_TOKENS, budget - used))
         intel_text = render_intel_compact(intel, remaining) if intel is not None else (
             "No live intel packet is available. Reason from the market data above only; "
             "do not invent news, policy, catalysts, or positioning."
         )
         parts = [header, "", analytics_text]
+        if scorecard_text:
+            parts += ["", scorecard_text]
         if intel_text.strip():
             parts += ["", intel_text]
 
