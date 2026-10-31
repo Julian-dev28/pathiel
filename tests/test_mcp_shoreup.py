@@ -429,6 +429,106 @@ class TestDeskTools:
         assert msgs == ["reading market data", "writing the thesis (about a minute)"]
 
 
+# ── 2026-10-31 outage: desk_brief/bracket_sweep must not block > ~30s ───────
+#
+# Live, 2026-10-31: during a Hyperliquid 502 storm, build_and_cache_analytics
+# (desk_brief's inline rebuild) chained several retry-heavy network phases
+# with no overall deadline; a single desk_brief call took 900+s, and because
+# Python cannot kill the stuck worker thread, repeated ticks filled the MCP
+# dispatch pool (MAX_CONCURRENT_CALLS) with zombies, so later ticks queued
+# behind them with no free worker. Fix: handle_desk_brief and
+# handle_bracket_sweep run their slow call through `_bounded` on a separate
+# executor and give up waiting after HANDLER_DEADLINE_S, freeing the
+# dispatch worker either way.
+class _HangingFacade:
+    """get_brief(wait=True) blocks on `gate` (simulating the stuck inline
+    rebuild); get_brief(wait=False) returns the cached brief at once, same
+    as the real facade's stale-while-revalidate path."""
+
+    def __init__(self, gate: threading.Event):
+        from contracts.strategies.models import DeskAnalytics, DeskSpec, Thesis
+        fx = ROOT / "contracts" / "strategies" / "fixtures"
+        self.spec = DeskSpec.model_validate_json((fx / "oil_spec.json").read_text())
+        self.analytics = DeskAnalytics.model_validate_json((fx / "oil_analytics.json").read_text())
+        self.thesis = Thesis.model_validate_json((fx / "oil_thesis.json").read_text())
+        self.gate = gate
+        self.waited_calls = 0
+
+    def get_brief(self, desk_id, *, max_age_s=None, wait=False):
+        from contracts.strategies.models import DeskBrief
+        if wait:
+            self.waited_calls += 1
+            self.gate.wait(5)   # the "stuck in a retry loop" inline rebuild
+        return DeskBrief(spec=self.spec, analytics=self.analytics, thesis=self.thesis,
+                         history=[self.thesis])
+
+
+class TestHandlerDeadline:
+    def test_desk_brief_falls_back_to_cache_instead_of_blocking_on_a_hung_rebuild(
+            self, monkeypatch, risk):
+        monkeypatch.setattr(M, "HANDLER_DEADLINE_S", 0.2)
+        gate = threading.Event()
+        facade = _HangingFacade(gate)
+        monkeypatch.setattr(M, "_strategies_facade", lambda: facade)
+        t0 = time.monotonic()
+        result, body = _call("desk_brief", {"desk": "oil"})
+        elapsed = time.monotonic() - t0
+        assert elapsed < 1.0, f"handle_desk_brief blocked {elapsed:.2f}s past its 0.2s deadline"
+        assert result["isError"] is False
+        assert "Your size" in body["markdown"] or body["markdown"]   # served the cached brief
+        assert any("still running" in s for s in body["stale"])
+        gate.set()                       # let the orphaned rebuild finish...
+        time.sleep(0.2)
+        assert facade.waited_calls == 1  # ...it really ran, just not on this thread's clock
+
+    def test_bracket_sweep_returns_within_the_bound_when_the_venue_hangs(self, monkeypatch):
+        import pathiel.agents.bracket as bracket_mod
+        monkeypatch.setattr(M, "HANDLER_DEADLINE_S", 0.2)
+        gate = threading.Event()
+        calls = []
+
+        def stuck(coin):
+            calls.append(coin)
+            gate.wait(5)
+            return {"ok": True, "coin": coin}
+
+        monkeypatch.setattr(bracket_mod, "sweep", stuck)
+        t0 = time.monotonic()
+        result, body = _call("bracket_sweep", {"coin": "xyz:BRENTOIL"})
+        elapsed = time.monotonic() - t0
+        assert elapsed < 1.0, f"handle_bracket_sweep blocked {elapsed:.2f}s past its 0.2s deadline"
+        assert body["ok"] is False and body["timed_out"] is True
+        assert body["coin"] == "xyz:BRENTOIL"
+        gate.set()
+        time.sleep(0.2)
+        assert calls == ["xyz:BRENTOIL"]  # the sweep itself still ran, just not blocking the reply
+
+    def test_a_dispatch_worker_is_never_held_past_the_deadline_by_either_tool(self, monkeypatch):
+        """The structural fix: desk_brief and bracket_sweep run on
+        _BUILD_EXECUTOR, not the tools/call dispatch pool, so a hung rebuild
+        never occupies one of MAX_CONCURRENT_CALLS workers -- the next
+        tick's call always finds a free slot instead of queueing behind a
+        zombie (the 2026-10-31 "server processes calls one at a time")."""
+        import pathiel.agents.bracket as bracket_mod
+        monkeypatch.setattr(M, "HANDLER_DEADLINE_S", 0.2)
+        monkeypatch.setattr(M, "DEFAULT_TOOL_TIMEOUT_S", 5.0)   # the outer per-tool timer: not the fix under test
+        gate = threading.Event()
+        monkeypatch.setattr(bracket_mod, "sweep", lambda coin: (gate.wait(5), {"ok": True})[1])
+        monkeypatch.setitem(M._tool_handlers(), "get_server_time",
+                            lambda p: json.dumps({"who": "fast"}))
+        out = _run(monkeypatch, [
+            _tool(1, "bracket_sweep", {"coin": "xyz:BRENTOIL"}),
+            _tool(2, "get_server_time"),
+        ])
+        # Both calls answer promptly -- the fast one is never stuck behind
+        # the dispatch pool slot the slow one holds, because that slot is
+        # freed by _bounded()'s own HANDLER_DEADLINE_S, well before
+        # DEFAULT_TOOL_TIMEOUT_S would have kicked in.
+        assert {m["id"] for m in out} == {1, 2}
+        gate.set()
+        time.sleep(0.2)
+
+
 # ── account + risk tools ─────────────────────────────────────────────────────
 
 def _account(**kw):
