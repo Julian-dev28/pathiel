@@ -201,6 +201,19 @@ def existing_thesis_path(desk_id: str, out_dir: str, day: datetime) -> Optional[
     return path if os.path.exists(path) else None
 
 
+def with_primary(spec: DeskSpec, coin: str) -> DeskSpec:
+    """A copy of `spec` with `coin` as its only primary instrument (every other
+    instrument becomes secondary). The replay can then write theses for a
+    desk's non-primary coin, e.g. silver on the metals desk (operator,
+    2026-10-31, market scout follow-up), without changing the live desk spec.
+    Raises ValueError for a coin the desk does not list."""
+    if coin not in {i.coin for i in spec.instruments}:
+        raise ValueError(f"{coin!r} is not an instrument of desk {spec.id!r}")
+    instruments = [i.model_copy(update={"role": "primary" if i.coin == coin else "secondary"})
+                   for i in spec.instruments]
+    return spec.model_copy(update={"instruments": instruments})
+
+
 def replay_day(spec: DeskSpec, all_candles: Dict[str, Dict[str, Sequence[Candle]]],
               meta_fetcher: Callable[[], Dict[str, Any]], day: datetime, model: str, out_dir: str,
               *, write_thesis_fn: Optional[Callable] = None) -> Dict[str, Any]:
@@ -257,6 +270,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--out-dir", default=None, help="default /tmp/thesis-replay/<desk>/theses")
     ap.add_argument("--cache-dir", default=None, help="default /tmp/thesis-replay/<desk>/candle-cache")
     ap.add_argument("--summary", default=None, help="default <out-dir>/../summary.json")
+    ap.add_argument("--primary", default=None,
+                    help="make this coin the desk's only primary for the run (e.g. xyz:SILVER on metals)")
     args = ap.parse_args(argv)
 
     if args.model == "fable":
@@ -287,10 +302,16 @@ def main(argv: Optional[List[str]] = None) -> int:
     if spec is None:
         print(f"FATAL: unknown desk {args.desk!r}")
         return 2
+    if args.primary:
+        try:
+            spec = with_primary(spec, args.primary)
+        except ValueError as e:
+            print(f"FATAL: {e}")
+            return 2
 
     os.makedirs(out_dir, exist_ok=True)
     os.makedirs(cache_dir, exist_ok=True)
-    print(f"[replay] desk={args.desk} days={args.days} model={args.model} "
+    print(f"[replay] desk={args.desk} primary={[i.coin for i in spec.instruments if i.role == 'primary']} days={args.days} model={args.model} "
          f"out_dir={out_dir} cache_dir={cache_dir} state_dir={state_dir}")
     print("[replay] price data only: no intel packet is built or passed to any day's thesis")
 

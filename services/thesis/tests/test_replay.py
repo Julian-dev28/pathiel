@@ -228,3 +228,21 @@ def test_main_refuses_the_fable_model_without_touching_the_network():
 def test_main_refuses_to_write_under_the_live_state_dir():
     with pytest.raises(ValueError):
         R.main(["--out-dir", os.path.join(R.LIVE_STATE_DIR, "strategies", "oil", "theses")])
+
+
+def test_with_primary_swaps_silver_in_without_touching_the_live_spec():
+    from services.strategies.desks import get_spec
+    from services.thesis.evals.replay import with_primary
+    live = get_spec("metals")
+    silver = with_primary(live, "xyz:SILVER")
+    assert [(i.coin, i.role) for i in silver.instruments] == [("xyz:GOLD", "secondary"), ("xyz:SILVER", "primary")]
+    assert [(i.coin, i.role) for i in get_spec("metals").instruments][0] == ("xyz:GOLD", "primary")
+    assert silver.id == live.id
+
+
+def test_with_primary_refuses_a_coin_the_desk_does_not_list():
+    import pytest
+    from services.strategies.desks import get_spec
+    from services.thesis.evals.replay import with_primary
+    with pytest.raises(ValueError, match="not an instrument"):
+        with_primary(get_spec("metals"), "xyz:BRENTOIL")
