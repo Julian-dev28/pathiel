@@ -137,7 +137,10 @@ def build_system_prompt(spec: DeskSpec) -> str:
         "history, not a round number. A second target may extend to the p90 "
         "REACH quantile, still never past the all-time high/low. If the "
         "venue has only ever traded up to a given price, that price is the "
-        "ceiling, full stop.\n"
+        "ceiling, full stop - UNLESS STRUCTURE marks that extreme PRICE "
+        "DISCOVERY: a level only just set (this venue's listed history is "
+        "short) is not a real ceiling/floor yet, and a target may sit past "
+        "it, still bounded by the REACH quantiles above.\n"
         "- side is the direction the evidence supports. Do not go flat only "
         "because no bracket at the CURRENT price clears 1.5R: keep the side "
         "and set entry_px at the pullback level (a dip for a long, a rally "
@@ -292,7 +295,9 @@ def render_analytics_dense(spec: DeskSpec, analytics: DeskAnalytics) -> str:
         lines.append("STRUCTURE (deterministic, from closed 1h candles - use this to place the "
                      "stop and targets, never the ladder's liquidation-derived stop)")
         for st in analytics.structure:
-            lines.append(_render_structure(st))
+            fwd = next((f for f in analytics.forward if f.coin == st.coin), None)
+            lines.append(_render_structure(st, analytics.as_of,
+                                           history_start=fwd.sample_start if fwd else None))
 
     if analytics.ladder:
         lines.append("")
@@ -335,7 +340,25 @@ def _render_pair(pair: PairSnapshot) -> str:
     return "\n".join(out)
 
 
-def _render_structure(st: InstrumentStructure) -> str:
+def _age_days_text(as_of: datetime, at: datetime) -> str:
+    days = max(0, (as_of - at).days)
+    return "today" if days == 0 else f"{days} day{'s' if days != 1 else ''} ago"
+
+
+def _render_structure(st: InstrumentStructure, as_of: Optional[datetime] = None,
+                      history_start: Optional[datetime] = None) -> str:
+    """``as_of`` (analytics.as_of) decides whether an all-time high/low is
+    FRESH (set within desk_lookup.PRICE_DISCOVERY_WINDOW_DAYS - the venue is
+    still in price discovery on that side, so the extreme is not a real
+    ceiling/floor) or STALE (today's existing hard-cap wording, unchanged -
+    Brent's all-time high is 8 months old and stays a hard cap). Callers
+    that omit ``as_of`` (none left in this codebase, kept Optional only so
+    an old test fixture building this directly does not need updating) get
+    the STALE wording for every extreme, same as before this field existed.
+    ``history_start`` (ForwardStats.sample_start for the same coin, the
+    earliest daily bar's date) is only ever rendered in the FRESH branch -
+    the STALE branch's text must stay byte-identical to prove Brent is
+    unaffected."""
     bits = [f"- {st.coin}: mid {_num(st.mid, 3)}"]
     if st.last_closed_1h is not None:
         c = st.last_closed_1h
@@ -353,15 +376,37 @@ def _render_structure(st: InstrumentStructure) -> str:
     if st.range_90d is not None:
         bits.append(f"  90d range: {_num(st.range_90d.low, 3)} to {_num(st.range_90d.high, 3)}")
     if st.all_time_high is not None:
-        bits.append(
-            f"  ALL-TIME HIGH {_num(st.all_time_high.price, 3)} on {st.all_time_high.at.date()} - "
-            "no long target may sit above this"
-        )
+        ath = st.all_time_high
+        if as_of is not None and desk_lookup.is_fresh_extreme(ath, as_of):
+            history_txt = f" This venue's price history starts {history_start.date()}." if history_start else ""
+            bits.append(
+                f"  {st.coin} is in PRICE DISCOVERY on the high side: its venue high "
+                f"{_num(ath.price, 3)} was set {_age_days_text(as_of, ath.at)} - not a ceiling; "
+                "a long target may sit past it, within the 7d REACH quantiles in FORWARD."
+                f"{history_txt} \"all-time\" here means since listing on Hyperliquid, not a "
+                "long-run ceiling."
+            )
+        else:
+            bits.append(
+                f"  ALL-TIME HIGH {_num(ath.price, 3)} on {ath.at.date()} - "
+                "no long target may sit above this"
+            )
     if st.all_time_low is not None:
-        bits.append(
-            f"  ALL-TIME LOW {_num(st.all_time_low.price, 3)} on {st.all_time_low.at.date()} - "
-            "no short target may sit below this"
-        )
+        atl = st.all_time_low
+        if as_of is not None and desk_lookup.is_fresh_extreme(atl, as_of):
+            history_txt = f" This venue's price history starts {history_start.date()}." if history_start else ""
+            bits.append(
+                f"  {st.coin} is in PRICE DISCOVERY on the low side: its venue low "
+                f"{_num(atl.price, 3)} was set {_age_days_text(as_of, atl.at)} - not a floor; "
+                "a short target may sit past it, within the 7d REACH quantiles in FORWARD."
+                f"{history_txt} \"all-time\" here means since listing on Hyperliquid, not a "
+                "long-run floor."
+            )
+        else:
+            bits.append(
+                f"  ALL-TIME LOW {_num(atl.price, 3)} on {atl.at.date()} - "
+                "no short target may sit below this"
+            )
     if st.median_daily_range_30d_pct is not None:
         bits.append(
             f"  median daily range (30d) {_pct_abs(st.median_daily_range_30d_pct)} - "
@@ -576,8 +621,10 @@ def _render_analytics_compact(spec: DeskSpec, analytics: DeskAnalytics) -> str:
         )
         primary_structure = next((st for st in analytics.structure if st.coin == primary.coin), None)
         if primary_structure is not None:
+            fwd = next((f for f in analytics.forward if f.coin == primary.coin), None)
             lines.append("STRUCTURE (current numbers, use this for the stop and targets):")
-            lines.append(_render_structure(primary_structure))
+            lines.append(_render_structure(primary_structure, analytics.as_of,
+                                           history_start=fwd.sample_start if fwd else None))
     if analytics.ladder:
         lines.append("LEVERAGE LADDER (current numbers, each rung's stop_px is a limit):")
         for rung in analytics.ladder:

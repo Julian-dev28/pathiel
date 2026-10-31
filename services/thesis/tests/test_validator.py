@@ -655,6 +655,128 @@ def test_a_realistic_version_of_the_same_call_passes():
     assert validator.check_r_multiple(call) == []
 
 
+# -- price discovery: a FRESH all-time extreme is not a hard cap (2026-10-31) -
+#
+# Root cause: docs/strategy/SILVER_THESIS_TEST_2026-10-31.md. Hyperliquid's
+# xyz:SILVER history only starts 2025-12-26, so during October's sell-off
+# silver kept printing a new venue low every few days (54.817, then 53.053,
+# then 52.694, then 51.856) - each one was briefly "the all-time low" by
+# definition, not a level that had ever held. 10 of 30 thesis days targeted
+# it and price broke every one; on 2026-10-30 the stale-extreme cap (correct
+# for Brent, whose all-time high is 8 months old) turned the call flat at
+# 51.97 right before silver fell to 49.3. Brent's own tests above (dates
+# 2026-03-09/03-04, as_of 2026-10-30 - 8 months old) prove that STALE case
+# is unchanged by this fix.
+
+
+def _silver_structure_with_fresh_low(as_of, *, atl=51.856, age_days=1):
+    from datetime import timedelta
+
+    from contracts.strategies.models import InstrumentStructure, PriceExtreme
+
+    return InstrumentStructure(
+        coin="xyz:SILVER", mid=51.97,
+        all_time_low=PriceExtreme(price=atl, at=as_of - timedelta(days=age_days)),
+    )
+
+
+def _silver_forward_with_reach(as_of, *, short_reach):
+    from contracts.strategies.models import ForwardStats, Quantiles
+
+    from datetime import timedelta
+
+    return ForwardStats(
+        coin="xyz:SILVER", horizon_days=7, n_windows=50,
+        sample_start=as_of - timedelta(days=300), sample_end=as_of,
+        final_ret=Quantiles(p10=-0.1, p25=-0.05, p50=0.0, p75=0.05, p90=0.1), final_ret_mean=0.0,
+        long_mae=Quantiles(p10=-0.1, p25=-0.05, p50=-0.02, p75=-0.01, p90=0.0),
+        short_mae=Quantiles(p10=0.0, p25=0.01, p50=0.02, p75=0.05, p90=0.1),
+        short_reach=short_reach,
+    )
+
+
+def test_short_target_past_a_fresh_all_time_low_passes_price_discovery():
+    """A target below a FRESH venue low (set 1 day before as_of) is no
+    longer rejected for being "beyond the all-time low" - the market is in
+    price discovery on that side. The empirical reach bound still applies
+    and this target clears it easily."""
+    from datetime import datetime, timezone
+
+    from contracts.strategies.models import DeskAnalytics, Quantiles
+
+    as_of = datetime(2026, 10, 30, 16, 0, tzinfo=timezone.utc)
+    structure = _silver_structure_with_fresh_low(as_of)
+    forward = _silver_forward_with_reach(
+        as_of, short_reach=Quantiles(p10=0.01, p25=0.02, p50=0.03, p75=0.045, p90=0.09))
+    call = Call(side="short", instrument="xyz:SILVER", one_liner="x", entry_px=51.97,
+                targets=[50.5], confidence=0.5, invalidation="i")   # below the fresh ATL (51.856)
+    analytics = DeskAnalytics(desk_id="metals", as_of=as_of, instruments=[],
+                              structure=[structure], forward=[forward])
+    assert validator.check_targets_reachable(call, analytics) == []
+
+
+def test_short_target_past_a_fresh_all_time_low_still_bounded_by_reach_p90():
+    """Price discovery removes the hard ceiling/floor, not the reach-
+    quantile sanity check: a target far beyond the empirical p90 reach is
+    still rejected, on the reach ground, not the (now-skipped) all-time-low
+    ground."""
+    from datetime import datetime, timezone
+
+    from contracts.strategies.models import DeskAnalytics, Quantiles
+
+    as_of = datetime(2026, 10, 30, 16, 0, tzinfo=timezone.utc)
+    structure = _silver_structure_with_fresh_low(as_of)
+    forward = _silver_forward_with_reach(
+        as_of, short_reach=Quantiles(p10=0.01, p25=0.02, p50=0.03, p75=0.045, p90=0.09))
+    call = Call(side="short", instrument="xyz:SILVER", one_liner="x", entry_px=51.97,
+                targets=[40.0], confidence=0.5, invalidation="i")   # implied ~23%, way past p90
+    analytics = DeskAnalytics(desk_id="metals", as_of=as_of, instruments=[],
+                              structure=[structure], forward=[forward])
+    errors = validator.check_targets_reachable(call, analytics)
+    assert len(errors) == 1
+    assert "p90" in errors[0]
+    assert "all-time low" not in errors[0]
+
+
+def test_long_target_past_a_fresh_all_time_high_passes_price_discovery():
+    from datetime import datetime, timedelta, timezone
+
+    from contracts.strategies.models import DeskAnalytics, InstrumentStructure, PriceExtreme
+
+    as_of = datetime(2026, 10, 30, 16, 0, tzinfo=timezone.utc)
+    structure = InstrumentStructure(
+        coin="xyz:SILVER", mid=51.97,
+        all_time_high=PriceExtreme(price=52.5, at=as_of - timedelta(days=2)))
+    call = Call(side="long", instrument="xyz:SILVER", one_liner="x", entry_px=51.97,
+                targets=[53.0], confidence=0.5, invalidation="i")   # above the fresh ATH (52.5)
+    analytics = DeskAnalytics(desk_id="metals", as_of=as_of, instruments=[], structure=[structure])
+    assert validator.check_targets_reachable(call, analytics) == []
+
+
+def test_live_2026_10_30_silver_call_would_no_longer_go_flat():
+    """The exact incident: 2026-10-30, entry 51.97, the venue's all-time low
+    51.856 set the day before (fresh). Under the old stale-cap rule this
+    target was rejected outright, forcing the call flat right before
+    silver fell to 49.3. It must now pass."""
+    from datetime import datetime, timezone
+
+    from contracts.strategies.models import DeskAnalytics, Quantiles
+
+    as_of = datetime(2026, 10, 30, 16, 0, tzinfo=timezone.utc)
+    structure = _silver_structure_with_fresh_low(as_of, atl=51.856, age_days=1)
+    forward = _silver_forward_with_reach(
+        as_of, short_reach=Quantiles(p10=0.01, p25=0.02, p50=0.03, p75=0.045, p90=0.09))
+    call = Call(
+        side="short", instrument="xyz:SILVER",
+        one_liner="Short silver at 51.97, target 50.4.",
+        entry_px=51.97, stop_px=52.4, targets=[50.4], leverage=10, confidence=0.5,
+        invalidation="Daily close above 52.4.",
+    )
+    analytics = DeskAnalytics(desk_id="metals", as_of=as_of, instruments=[],
+                              structure=[structure], forward=[forward])
+    assert validator.check_targets_reachable(call, analytics) == []
+
+
 # -- lessons / leverage_reasons count ------------------------------------------
 
 

@@ -45,7 +45,12 @@ Rule inventory, and why each one is the shape it is:
   move is beyond the empirical ForwardStats.long_reach/short_reach p90 (the
   first target gets a slightly tighter p75 check - the prompt itself asks
   for p50, this is deliberately a looser backstop so a normal draft is not
-  rejected over rounding). check_scenarios_calibrated catches the milder
+  rejected over rounding). 2026-10-31: the all-time-high/low ceiling is
+  skipped for an extreme set within desk_lookup.PRICE_DISCOVERY_WINDOW_DAYS
+  of analytics.as_of - a FRESH extreme (e.g. silver's venue low, printed
+  every few days off a listing that only starts 2025-12-26) is price
+  discovery, not a real ceiling; the reach-quantile bound still applies
+  either way. check_scenarios_calibrated catches the milder
   version of the same failure mode: a scenario SET whose own implied median
   return drifts outside the empirical p10-p90 (the prompt asks for p25-p75;
   again a looser backstop). Both skip silently when the packet lacks the
@@ -461,12 +466,22 @@ def check_targets_reachable(call: Call, analytics: DeskAnalytics) -> List[str]:
     violation):
 
     - a long target above InstrumentStructure.all_time_high (short: below
-      all_time_low) - a hard venue ceiling/floor, not a probability;
+      all_time_low) - a hard venue ceiling/floor, not a probability, UNLESS
+      that extreme was set within desk_lookup.PRICE_DISCOVERY_WINDOW_DAYS of
+      analytics.as_of (2026-10-31): a FRESH extreme means the venue is
+      still in price discovery on that side (see
+      docs/strategy/SILVER_THESIS_TEST_2026-10-31.md - silver kept printing
+      a new venue low every few days off a history that only starts
+      2025-12-26), so it is not yet a real ceiling/floor and a target may
+      sit past it. A STALE extreme (Brent's all-time high, 8 months old)
+      keeps the exact existing hard-cap behaviour;
     - a target whose implied horizon-day move is beyond ForwardStats'
       empirical reach quantiles for the call's side: the FIRST target gets
       a p75 bound (the prompt itself asks for p50 - this is a deliberately
       looser backstop so a normal draft is not rejected over rounding), any
-      target (first or later) gets a hard p90 bound.
+      target (first or later) gets a hard p90 bound. This bound applies
+      regardless of whether the extreme is fresh or stale - price discovery
+      removes the hard ceiling/floor, not the reach-quantile sanity check.
 
     Skipped entirely for a flat/pair call or one missing entry/targets -
     check_stop_side / check_targets_consistent cover their own shape."""
@@ -483,9 +498,11 @@ def check_targets_reachable(call: Call, analytics: DeskAnalytics) -> List[str]:
     if extreme is None and reach is None:
         return []   # old packet or test fixture: nothing new to check against
 
+    extreme_is_stale = extreme is not None and not desk_lookup.is_fresh_extreme(extreme, analytics.as_of)
+
     errors: List[str] = []
     for i, t in enumerate(call.targets):
-        if extreme is not None:
+        if extreme is not None and extreme_is_stale:
             beyond = t > extreme.price if call.side == "long" else t < extreme.price
             if beyond:
                 kind = "all-time high" if call.side == "long" else "all-time low"

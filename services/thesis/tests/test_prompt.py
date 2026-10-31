@@ -4,7 +4,7 @@ incremental diff, is_small_change, and the repair prompt.
 """
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -146,6 +146,88 @@ def test_render_structure_includes_all_time_high_low_90d_and_median_range(oil):
     assert "90d range: 88.000 to 112.000" in text
     assert "median daily range (30d) 2.8%" in text
     assert "one normal day's swing" in text and "beyond this from entry" not in text
+
+
+# -- price discovery: a FRESH all-time extreme is not a hard cap (2026-10-31) -
+#
+# Root cause: docs/strategy/SILVER_THESIS_TEST_2026-10-31.md. Hyperliquid's
+# xyz:SILVER history only starts 2025-12-26, so during October's sell-off
+# silver kept printing a new venue low every few days - each one was briefly
+# "the all-time low" by definition, not a level that had ever held. 10 of 30
+# thesis days targeted it and price broke every one; on 2026-10-30 the cap
+# turned the call flat at 51.97 right before silver fell to 49.3.
+
+
+def test_render_structure_marks_a_fresh_low_side_extreme_as_price_discovery(oil):
+    from contracts.strategies.models import ForwardStats, PriceExtreme, Quantiles
+
+    as_of = oil.analytics.as_of
+    atl = PriceExtreme(price=51.856, at=as_of - timedelta(days=1))
+    st = oil.analytics.structure[0].model_copy(update={"coin": "xyz:SILVER", "all_time_low": atl})
+    fwd = ForwardStats(
+        coin="xyz:SILVER", horizon_days=7, n_windows=50,
+        sample_start=as_of - timedelta(days=300), sample_end=as_of,
+        final_ret=Quantiles(p10=-0.1, p25=-0.05, p50=0.0, p75=0.05, p90=0.1), final_ret_mean=0.0,
+        long_mae=Quantiles(p10=-0.1, p25=-0.05, p50=-0.02, p75=-0.01, p90=0.0),
+        short_mae=Quantiles(p10=0.0, p25=0.01, p50=0.02, p75=0.05, p90=0.1),
+    )
+    analytics2 = oil.analytics.model_copy(update={"structure": [st], "forward": [fwd]})
+    text = prompt_mod.render_analytics_dense(oil.spec, analytics2)
+    assert "xyz:SILVER is in PRICE DISCOVERY on the low side" in text
+    assert "venue low 51.856 was set 1 day ago" in text
+    assert "not a floor" in text
+    assert "within the 7d REACH quantiles in FORWARD" in text
+    assert f"This venue's price history starts {fwd.sample_start.date()}" in text
+    assert '"all-time" here means since listing on Hyperliquid' in text
+    # the hard-cap wording for this side must not also appear
+    assert "ALL-TIME LOW" not in text
+    assert "no short target may sit below this" not in text
+
+
+def test_render_structure_marks_a_fresh_high_side_extreme_as_price_discovery(oil):
+    from contracts.strategies.models import PriceExtreme
+
+    as_of = oil.analytics.as_of
+    ath = PriceExtreme(price=63.4, at=as_of - timedelta(days=3))
+    st = oil.analytics.structure[0].model_copy(update={"coin": "xyz:SILVER", "all_time_high": ath})
+    analytics2 = oil.analytics.model_copy(update={"structure": [st]})
+    text = prompt_mod.render_analytics_dense(oil.spec, analytics2)
+    assert "xyz:SILVER is in PRICE DISCOVERY on the high side" in text
+    assert "venue high 63.400 was set 3 days ago" in text
+    assert "not a ceiling" in text
+    assert "ALL-TIME HIGH" not in text
+    assert "no long target may sit above this" not in text
+
+
+def test_render_structure_brent_like_stale_extreme_is_unchanged(oil):
+    """Brent must NOT change: its venue all-time high is 8 months old
+    relative to as_of and the operator explicitly wants that as a hard cap
+    (he asked "when was the last time it reached 118"). Proves the exact
+    pre-price-discovery wording still prints, with no PRICE DISCOVERY text
+    anywhere, for Brent-shaped data (ATH set 2026-03-09, as_of 2026-10-30)."""
+    from contracts.strategies.models import PriceExtreme
+
+    as_of = datetime(2026, 10, 30, tzinfo=timezone.utc)
+    ath = PriceExtreme(price=117.58, at=datetime(2026, 3, 9, tzinfo=timezone.utc))
+    st = oil.analytics.structure[0].model_copy(update={"coin": "xyz:BRENTOIL", "all_time_high": ath})
+    analytics2 = oil.analytics.model_copy(update={"as_of": as_of, "structure": [st]})
+    text = prompt_mod.render_analytics_dense(oil.spec, analytics2)
+    assert "ALL-TIME HIGH 117.580 on 2026-03-09 - no long target may sit above this" in text
+    assert "PRICE DISCOVERY" not in text
+
+
+def test_render_structure_without_as_of_keeps_the_stale_wording():
+    """as_of is Optional only so a caller that never passes it (none left in
+    this codebase) keeps today's pre-price-discovery behaviour rather than
+    crashing or silently treating every extreme as fresh."""
+    from contracts.strategies.models import InstrumentStructure, PriceExtreme
+
+    st = InstrumentStructure(
+        coin="xyz:SILVER", mid=51.97,
+        all_time_low=PriceExtreme(price=51.856, at=datetime(2026, 10, 29, tzinfo=timezone.utc)))
+    text = prompt_mod._render_structure(st)
+    assert "ALL-TIME LOW 51.856" in text
+    assert "PRICE DISCOVERY" not in text
 
 
 def test_render_forward_omits_reach_lines_when_absent(oil):
