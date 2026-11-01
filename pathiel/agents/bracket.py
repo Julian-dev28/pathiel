@@ -15,7 +15,7 @@ default, so tests pass a fake.
 """
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 # ── minimum tradable equity ──────────────────────────────────────────────────
 # Hyperliquid rejects orders under roughly $10 notional, so this is the absolute
@@ -313,6 +313,22 @@ def place_bracket(coin: str, *, entry_px: Optional[float], stop_px: float, tp_px
     return out
 
 
+def _position_protection(ex: Any, orders: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """The resting orders minus the stop/target children of a resting entry.
+
+    A top-up placed with add=true rests as a limit entry carrying its own
+    stop and target (normalTpsl children) for the size it will add. Those
+    children are reduce-only rows at the same prices as the live position's
+    pair, so counting them as the position's protection made the sweep
+    "fold" them into one pair sized to the CURRENT position and cancel them.
+    2026-11-01: a 2.77 top-up at 111.80 lost its stop that way at 13:48Z,
+    filled at 18:05Z with nothing covering it, and the 18:20Z tick had to
+    close the whole 43.5 Brent long. Children belong to their entry until it
+    fills; only then are they the position's."""
+    attached = ex.attached_child_oids(orders)
+    return [o for o in orders if int(o.get("oid") or 0) not in attached]
+
+
 def consolidate_protection(coin: str, ex: Any = None) -> Dict[str, Any]:
     """One stop and one target for the whole open position.
 
@@ -334,7 +350,7 @@ def consolidate_protection(coin: str, ex: Any = None) -> Dict[str, Any]:
     if not pos:
         return {"coin": coin, "ok": pos is not None, "merged": [],
                 **({"reason": "position read failed"} if pos is None else {})}
-    orders = ex._resting_orders_for_coin(user, coin)
+    orders = _position_protection(ex, ex._resting_orders_for_coin(user, coin))
     is_long, size = pos > 0, abs(pos)
     out: Dict[str, Any] = {"coin": coin, "ok": True, "position": pos, "merged": [], "left": []}
     for kind, label in (("sl", "Stop"), ("tp", "Take Profit")):
@@ -417,6 +433,7 @@ def sweep(coin: str, ex: Any = None) -> Dict[str, Any]:
                                     for o in entries],
                 **({"attached_to_entry": [{"type": o.get("orderType"), "px": o.get("triggerPx"), "sz": o.get("sz")}
                                           for o in attached]} if attached else {})}
+    orders = _position_protection(ex, orders)
     stops = [o for o in orders if o.get("reduceOnly") and "Stop" in str(o.get("orderType", ""))]
     tps = [o for o in orders if o.get("reduceOnly") and "Take Profit" in str(o.get("orderType", ""))]
     covered = sum(float(o.get("sz") or 0) for o in stops)
@@ -426,7 +443,7 @@ def sweep(coin: str, ex: Any = None) -> Dict[str, Any]:
         # several stops/targets at one price (one per fill): fold into one pair
         consolidated = consolidate_protection(coin, ex=ex)
         if consolidated.get("merged"):
-            orders = ex._resting_orders_for_coin(user, coin)
+            orders = _position_protection(ex, ex._resting_orders_for_coin(user, coin))
             stops = [o for o in orders if o.get("reduceOnly") and "Stop" in str(o.get("orderType", ""))]
             tps = [o for o in orders if o.get("reduceOnly") and "Take Profit" in str(o.get("orderType", ""))]
             covered = sum(float(o.get("sz") or 0) for o in stops)

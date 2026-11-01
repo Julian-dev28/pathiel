@@ -899,3 +899,73 @@ def test_desk_coin_held_sees_only_the_desks_other_coins():
 def br_mod():
     from pathiel.agents import bracket
     return bracket
+
+
+# ── a resting top-up's own stop and target are not the position's (2026-11-01) ──
+def _topup_book():
+    """The live book at 13:48Z on 2026-11-01: a 40.73 Brent long with its pair,
+    plus a 2.77 top-up resting at 111.80 carrying its own stop and target."""
+    child_sl = _leg(31, "sl", 2.77, 111.02)
+    child_tp = {**_leg(32, "tp", 2.77, 113.66), "orderType": "Take Profit Limit"}
+    entry = {"oid": 30, "coin": COIN, "reduceOnly": False, "limitPx": "111.8", "sz": "2.77",
+             "children": [dict(child_sl), dict(child_tp)]}
+    return [_leg(10, "sl", 40.73, 111.02), {**_leg(11, "tp", 40.73, 113.66), "orderType": "Take Profit Limit"},
+            entry, child_sl, child_tp]
+
+
+def test_sweep_leaves_a_resting_top_ups_stop_and_target_alone():
+    """Regression: the sweep counted the top-up's children as the position's,
+    'folded' them into a 40.73 pair and cancelled them; the top-up later filled
+    with no stop and the 43.5 long had to be closed."""
+    ex = BookEx(pos=40.73, orders=_topup_book())
+    out = bracket.sweep(COIN, ex=ex)
+    assert out["ok"] and out["stop_covers"] == pytest.approx(40.73)
+    assert "consolidated" not in out and not ex.calls, "nothing to fold: one pair per owner"
+    assert {31, 32} <= {int(o["oid"]) for o in ex.orders}
+
+
+def test_consolidate_never_cancels_a_resting_entrys_children():
+    ex = BookEx(pos=40.73, orders=_topup_book())
+    out = bracket.consolidate_protection(COIN, ex=ex)
+    assert out["merged"] == [] and not any(c[0] == "cancel" for c in ex.calls)
+
+
+def test_after_the_top_up_fills_its_pair_folds_into_the_position():
+    """Once the entry has filled, its children are plain reduce-only rows and
+    the sweep folds them: one stop and one target for the full 43.5."""
+    book = [o for o in _topup_book() if int(o["oid"]) != 30]
+    ex = BookEx(pos=43.5, orders=book)
+    out = bracket.sweep(COIN, ex=ex)
+    assert out["ok"] and out["stop_covers"] == pytest.approx(43.5)
+    assert [(o["sz"], o["triggerPx"]) for o in ex.orders if "Stop" in o["orderType"]] == [("43.5", "111.02")]
+
+
+def test_no_sweep_ever_cancels_an_entry_child_on_random_books():
+    """Generalizes the 2026-11-01 fix: 500 seeded books (long/short, 1-3 fills
+    of protection at one price, 0-2 resting entries each with children at the
+    same or other prices). The sweep may fold fills, but it never cancels a
+    child of a resting entry, and its coverage never counts one."""
+    import random
+    rng = random.Random(20261101)
+    for _ in range(500):
+        long_ = rng.random() < 0.5
+        sl_px, tp_px = (111.0, 114.0) if long_ else (114.0, 111.0)
+        oid, book, children = 100, [], set()
+        fills = [round(rng.uniform(0.5, 20), 2) for _ in range(rng.randint(1, 3))]
+        for sz in fills:
+            book += [_leg(oid, "sl", sz, sl_px), _leg(oid + 1, "tp", sz, tp_px)]
+            oid += 2
+        for _ in range(rng.randint(0, 2)):
+            sz = round(rng.uniform(0.5, 5), 2)
+            px_sl = sl_px if rng.random() < 0.7 else sl_px - 0.3
+            kids = [_leg(oid + 1, "sl", sz, px_sl), _leg(oid + 2, "tp", sz, tp_px)]
+            book += [{"oid": oid, "coin": COIN, "reduceOnly": False, "limitPx": "112", "sz": str(sz),
+                      "children": [dict(k) for k in kids]}, *kids]
+            children |= {oid + 1, oid + 2}
+            oid += 3
+        pos = sum(fills) * (1 if long_ else -1)
+        ex = BookEx(pos=pos, orders=book)
+        out = bracket.sweep(COIN, ex=ex)
+        cancelled = {c[1] for c in ex.calls if c[0] == "cancel"}
+        assert not cancelled & children, (book, ex.calls)
+        assert out["stop_covers"] == pytest.approx(sum(fills))
