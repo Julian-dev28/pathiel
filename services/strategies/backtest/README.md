@@ -94,6 +94,24 @@ that module's docstring (replays the real thesis-writing path, one
 thesis per day, over a window of history, price data only, writing into
 the same journal shape `data.load_journaled_theses` reads).
 
+## Profit lock (2026-11-01)
+
+Four `Params` fields, off by default (`lock_trigger_r=None`; off keeps every
+result byte-identical, see `tests/test_profit_lock.py`):
+
+- `lock_trigger_r`, `lock_r`: once the best price since the fill is
+  `lock_trigger_r` R in favour, the stop moves to entry + `lock_r` R (a
+  short mirrors). Only tightens; the target stays. Exits as `"lock"`.
+- `lock_trail`: after arming, the stop trails `lock_trigger_r - lock_r` R
+  behind the best price, never under the lock level.
+- `lock_confirm_close` (True): the lock may fill in the bar that set it only
+  when that bar closes through it; otherwise from the next bar.
+
+`services/strategies/evals/profit_lock_test.py` runs the grid against the
+fixed stop on the Brent theses, the Brent no-thesis controls and the silver
+replay. Result and verdict (not adopted):
+`docs/strategy/PROFIT_LOCK_TEST_2026-11-01.md`.
+
 ## What's deliberately simplified
 
 - By default, the entry/stop/target are always structural (8h range

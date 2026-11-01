@@ -80,6 +80,24 @@ lookahead). A moved stop that the next bar opens through fills at that
 open, not at the stop price: a stop above the market triggers at once.
 Fixed stops keep the sim's original fill at the stop price.
 
+Profit lock (2026-11-01)
+------------------------
+`Params.lock_trigger_r` (None = off, the live rule). Once a bar's best
+price (a long's high, a short's low) since the fill reaches `lock_trigger_r`
+R in the position's favour (R = the per-unit risk at the fill), the stop
+moves to the entry plus `lock_r` R (a long; the entry minus `lock_r` R for a
+short). `lock_trail` instead keeps the stop `lock_trigger_r - lock_r` R
+behind the best price from then on, never below the lock level. The stop
+only ever tightens; the target does not move. A stop the lock set exits as
+"lock". Intrabar order is unknown, so: the bar's stop and target are judged
+first, against the stop as it stood when the bar opened; the lock is set
+from that bar's high (low) after; and it fills in the SAME bar only when
+`lock_confirm_close` is on and the bar's close is through the new stop
+(price touched the trigger and then finished below the lock, so it crossed
+the lock after the trigger). Otherwise it applies from the next bar, where
+a bar that opens through it fills at the open. A market entry's own bar
+counts (the fill is the open, so the bar's high came after it).
+
 Liquidation
 -----------
 Checked every bar a position is open against Hyperliquid's isolated-margin
@@ -197,6 +215,14 @@ class Params:
     # byte-identical (see test_ai_variants.py's golden check).
     ai_levels: bool = False               # try the thesis's own entry/stop/first target before the structural rule
     conviction_leverage: Optional[Tuple[float, float, float]] = None   # (threshold, high_lev, low_lev); floored at 15x
+    # ── profit lock (2026-11-01, operator after a Brent long reached +1.9R and
+    # closed +0.4R: "we were up like 35$ and we round tripped" ... "yeah
+    # backtest it"). See "Profit lock" above. Off (None) keeps every
+    # existing result byte-identical (test_profit_lock.py's golden check).
+    lock_trigger_r: Optional[float] = None  # arm once the best price is this many R in favour
+    lock_r: float = 0.0                     # then stop to entry + lock_r R (0 = break-even, no fees)
+    lock_trail: bool = False                # after arming, trail (lock_trigger_r - lock_r) R behind the best price
+    lock_confirm_close: bool = True         # same-bar fill at a new lock only when the bar closes through it
 
 
 # Per-side market-sell slippage (bps) by notional (USD), walked on the live
@@ -239,7 +265,7 @@ class Trade:
     target_px: float
     exit_time: Optional[int] = None
     exit_px: Optional[float] = None
-    exit_reason: Optional[str] = None            # stop|target|invalidation|direction_flip|liquidation
+    exit_reason: Optional[str] = None            # stop|lock|target|invalidation|direction_flip|time|liquidation
     gross_pnl_usd: float = 0.0
     fees_usd: float = 0.0                         # entry + exit fee, for reporting
     exit_fee_usd: float = 0.0                     # just the exit leg — the only fee not yet applied to equity
@@ -316,6 +342,8 @@ class _Position:
     partial_gross_usd: float = 0.0                # realized P&L of the scale-out, already in equity
     is_flip: bool = False                         # opened by flip_after_target
     leverage: Optional[float] = None              # this position's leverage when it differs from Params.leverage
+    lock_best: Optional[float] = None             # best high (long) / low (short) since the fill, profit lock
+    locked: bool = False                          # the profit lock has tightened the stop
 
 
 def _levels(closed_1h: Sequence[Candle], entry_h: int = 8, target_h: int = 24) -> Optional[Dict[str, Any]]:
@@ -478,6 +506,57 @@ def _manage_stop(pos: _Position, bar: Candle, atr14: Optional[float], params: Pa
     if tighter:
         pos.stop_px = new_stop
         pos.stop_moved = True
+
+
+def profit_lock_stop(side: str, entry: float, risk: float, best: float,
+                     params: Params) -> Optional[float]:
+    """The stop the profit lock asks for, or None when it is not armed:
+    `best` (the best price since the fill) has not yet reached
+    `lock_trigger_r` x `risk` in favour of `entry`. Pure."""
+    if params.lock_trigger_r is None or risk <= 0:
+        return None
+    sign = 1.0 if side == "long" else -1.0
+    if sign * (best - entry) + 1e-12 < params.lock_trigger_r * risk:
+        return None
+    stop = entry + sign * params.lock_r * risk
+    if params.lock_trail:
+        trail = best - sign * (params.lock_trigger_r - params.lock_r) * risk
+        stop = max(stop, trail) if sign > 0 else min(stop, trail)
+    return stop
+
+
+def _profit_lock(pos: _Position, bar: Candle, params: Params) -> bool:
+    """Fold `bar`'s best price into the position and tighten the stop to
+    the profit lock's level. Never widens. True when this bar moved it."""
+    if params.lock_trigger_r is None or pos.risk_usd <= 0:
+        return False
+    is_long = pos.side == "long"
+    best = bar.h if is_long else bar.l
+    pos.lock_best = best if pos.lock_best is None else (
+        max(pos.lock_best, best) if is_long else min(pos.lock_best, best))
+    new_stop = profit_lock_stop(pos.side, pos.avg_entry, pos.risk_usd, pos.lock_best, params)
+    if new_stop is None:
+        return False
+    tighter = new_stop > pos.stop_px + 1e-12 if is_long else new_stop < pos.stop_px - 1e-12
+    if not tighter:
+        return False
+    pos.stop_px = new_stop
+    pos.stop_moved = True
+    pos.locked = True
+    return True
+
+
+def _lock_same_bar_exit(pos: _Position, bar: Candle, params: Params) -> Optional[float]:
+    """After `_profit_lock` moved the stop inside `bar`: the exit price
+    when the bar's close confirms price went back through the new stop
+    (taker, slippage), else None (the stop applies from the next bar)."""
+    if not params.lock_confirm_close:
+        return None
+    is_long = pos.side == "long"
+    if not (bar.c <= pos.stop_px if is_long else bar.c >= pos.stop_px):
+        return None
+    sign = 1.0 if is_long else -1.0
+    return pos.stop_px * (1.0 - sign * _market_exit_slip(params, pos.size * pos.stop_px))
 
 
 def _close_trade(pos: _Position, exit_px: float, t: int, reason: str, fee_rate: float,
@@ -650,6 +729,8 @@ def simulate(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], direct
         raise ValueError(f"unknown target_mode {params.target_mode!r}")
     if params.entry_mode not in ("edge", "market"):
         raise ValueError(f"unknown entry_mode {params.entry_mode!r}")
+    if params.lock_trigger_r is not None and not (params.lock_r < params.lock_trigger_r):
+        raise ValueError(f"lock_r {params.lock_r} must sit below lock_trigger_r {params.lock_trigger_r}")
     c15 = sorted(candles_15m, key=lambda c: c.t)
     c1h = sorted(candles_1h, key=lambda c: c.t)
     funding_sorted: List[Tuple[int, float]] = sorted(
@@ -788,7 +869,8 @@ def simulate(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], direct
                     # a moved stop the bar opened through fills at the open
                     trigger_px = min(trigger_px, bar.o) if is_long else max(trigger_px, bar.o)
                 exit_px = trigger_px * (1.0 - side_sign * _market_exit_slip(params, position.size * trigger_px))
-                trade = _close_trade(position, exit_px, t, "stop", params.taker_fee, initial_size)
+                trade = _close_trade(position, exit_px, t, "lock" if position.locked else "stop",
+                                     params.taker_fee, initial_size)
                 equity += trade.gross_pnl_usd - trade.exit_fee_usd
                 run.trades.append(trade)
                 run.gross_pnl_usd += trade.gross_pnl_usd
@@ -867,6 +949,16 @@ def simulate(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], direct
                                 position.added = True
                             resting_add = None
                     _manage_stop(position, bar, lv["atr14"] if lv else None, params)
+                    if _profit_lock(position, bar, params):
+                        lock_px = _lock_same_bar_exit(position, bar, params)
+                        if lock_px is not None:
+                            trade = _close_trade(position, lock_px, t, "lock", params.taker_fee, initial_size)
+                            equity += trade.gross_pnl_usd - trade.exit_fee_usd
+                            run.trades.append(trade)
+                            run.gross_pnl_usd += trade.gross_pnl_usd
+                            run.fees_total_usd += trade.fees_usd
+                            position = None
+                            resting_add = None
 
         # 5a. the flip after a target: one market attempt on the next tick
         if pending_flip is not None and position is None and resting is None \
@@ -934,6 +1026,16 @@ def simulate(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], direct
                         run.gross_pnl_usd += trade.gross_pnl_usd
                         run.fees_total_usd += trade.fees_usd
                         position = None
+                    elif _profit_lock(position, bar, params):
+                        # the open was the fill, so this bar's high came after it
+                        lock_px = _lock_same_bar_exit(position, bar, params)
+                        if lock_px is not None:
+                            trade = _close_trade(position, lock_px, t, "lock", params.taker_fee, initial_size)
+                            equity += trade.gross_pnl_usd - trade.exit_fee_usd
+                            run.trades.append(trade)
+                            run.gross_pnl_usd += trade.gross_pnl_usd
+                            run.fees_total_usd += trade.fees_usd
+                            position = None
                 else:
                     resting = _Resting(side=d.side, limit_px=setup["entry_px"], stop_px=setup["stop_px"],
                                        target_px=setup["target_px"], placed_at=t,
@@ -983,4 +1085,4 @@ def simulate(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], direct
 
 
 __all__ = ["Direction", "DirectionAt", "Params", "Trade", "Run", "simulate", "offset_target", "regime_key",
-          "trade_leverage", "CONVICTION_LEVERAGE_FLOOR", "live_params"]
+          "trade_leverage", "CONVICTION_LEVERAGE_FLOOR", "live_params", "profit_lock_stop"]
