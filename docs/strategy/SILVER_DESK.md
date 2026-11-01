@@ -16,6 +16,7 @@ morning "increase size to 10% silver": oil 90%, silver 10%.
 | Stop | 0.75 beyond the 24h edge | 1.3 x 1h ATR14 beyond the 24h edge |
 | Entry, target, gate | market off the 24h range, far 24h edge minus 0.5%, 2R | same |
 | Ticks | `/desk-tick oil` every 15 min | `/desk-tick metals` every 15 min |
+| Price watcher | `scripts/trigger_watch.py` every 1 min (no LLM), wakes the tick when the entry rule passes | same |
 
 Config (`.agent-config.json`, through the `config` tool):
 
