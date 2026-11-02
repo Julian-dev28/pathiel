@@ -1,0 +1,24 @@
+{
+ "id": "oil-20261022T1501-m",
+ "desk_id": "oil",
+ "created_at": "2026-10-22T15:01:57.000830Z",
+ "expires_at": "2026-10-29T15:01:57.000830Z",
+ "horizon_days": 7,
+ "call": {
+  "side": "long",
+  "instrument": "xyz:BRENTOIL",
+  "entry_px": 107.0,
+  "stop_px": 95.87,
+  "targets": [
+   110.31,
+   112.19
+  ],
+  "confidence": 0.45,
+  "invalidation": "Brent closes below 102.48 (10x ladder stop) or Hormuz reopen odds jump from 12% toward 50% on Polymarket."
+ },
+ "grade": {
+  "direction_hit": true,
+  "ret_pct": 0.025046728971962695,
+  "graded_at": "2026-10-29T15:49:07.393085Z"
+ }
+}

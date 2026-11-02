@@ -1,0 +1,20 @@
+{
+ "id": "oil-20261031T0153-m",
+ "desk_id": "oil",
+ "created_at": "2026-10-31T01:53:32.311762Z",
+ "expires_at": "2026-11-07T01:53:32.311762Z",
+ "horizon_days": 7,
+ "call": {
+  "side": "long",
+  "instrument": "xyz:BRENTOIL",
+  "entry_px": 112.2,
+  "stop_px": 111.5,
+  "targets": [
+   114.23,
+   117.58
+  ],
+  "confidence": 0.52,
+  "invalidation": "1h close below 111.50 (8h low 112.000 less 0.50) or a 24h close under 111.030. Hormuz de-escalation headline that lifts Polymarket 'traffic normal by December' above 10%."
+ },
+ "grade": null
+}

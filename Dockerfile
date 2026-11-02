@@ -76,6 +76,10 @@ COPY services/accounts/ services/accounts/
 # server.py mounts services.risk.api (risk_limits/risk_size_trade and the
 # place_bracket feasibility check both derive through it).
 COPY services/risk/ services/risk/
+# The trade review (python3 -m services.review run): read-only ledger, stats
+# and backtest proposals. Not on the request path; shipped so the image can
+# run the daily review against its own state volume.
+COPY services/review/ services/review/
 COPY conftest.py ./
 
 # ── Runtime state ────────────────────────────────────────────────────────────

@@ -1,0 +1,20 @@
+{
+ "id": "oil-20261030T0150-m",
+ "desk_id": "oil",
+ "created_at": "2026-10-30T01:50:46.262041Z",
+ "expires_at": "2026-11-06T01:50:46.262041Z",
+ "horizon_days": 7,
+ "call": {
+  "side": "long",
+  "instrument": "xyz:BRENTOIL",
+  "entry_px": 113.87,
+  "stop_px": 111.29,
+  "targets": [
+   118.87,
+   122.2
+  ],
+  "confidence": 0.5,
+  "invalidation": "1h close below 111.79 (24h high) kills the breakout; stop 111.29 is 0.50 under it. Risk 2.58, first target pays 1.94R."
+ },
+ "grade": null
+}

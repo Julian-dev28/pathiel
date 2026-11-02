@@ -1,0 +1,24 @@
+{
+ "id": "oil-20261023T2226-m",
+ "desk_id": "oil",
+ "created_at": "2026-10-23T22:26:34.821031Z",
+ "expires_at": "2026-10-30T22:26:34.821031Z",
+ "horizon_days": 7,
+ "call": {
+  "side": "long",
+  "instrument": "xyz:BRENTOIL",
+  "entry_px": 111.4,
+  "stop_px": 110.8,
+  "targets": [
+   112.34,
+   116.0
+  ],
+  "confidence": 0.56,
+  "invalidation": "1h close below 110.80 (under the 8h low 110.97). Or Polymarket Hormuz-normal-by-December lifts off 0.12 while Brent fails to clear 112.34."
+ },
+ "grade": {
+  "direction_hit": true,
+  "ret_pct": 0.010951526032315861,
+  "graded_at": "2026-10-30T22:45:37.745327Z"
+ }
+}

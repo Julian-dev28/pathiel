@@ -17,6 +17,8 @@ window"). Start it from the repo root:
    the same desk):
    - `CronCreate` cron `3,18,33,48 * * * *`, prompt `/desk-tick oil`, recurring.
    - `CronCreate` cron `10,25,40,55 * * * *`, prompt `/desk-tick metals`, recurring.
+   - `CronCreate` cron `7 0 * * *`, prompt `/review-trades`, recurring
+     (the daily trade review: read only, see `.claude/skills/review-trades`).
    They are session-only and expire after 7 days; re-run `/desk-loops`
    then.
 2. **Price watcher.** `pgrep -f scripts/trigger_watch.py`. If one is
@@ -33,6 +35,13 @@ window"). Start it from the repo root:
 - It exited without a fire line (error, crash): print the last lines of
   `/tmp/trigger-watch/stderr.log` in one line, then start it again. If it
   crashes 3 times within 10 minutes, stop restarting and say so.
+
+## After a close
+
+When a tick's line says a position closed (`action=CLOSED`, `STOPPED` or
+`TARGET`, or any stop or target fill line), run `/review-trades` once after
+that tick finishes. One run per close; the daily cron covers the rest. The
+review only reads: it never changes a stop, a size or the config.
 
 ## Overlap rule
 

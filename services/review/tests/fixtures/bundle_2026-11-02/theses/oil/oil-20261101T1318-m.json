@@ -1,0 +1,20 @@
+{
+ "id": "oil-20261101T1318-m",
+ "desk_id": "oil",
+ "created_at": "2026-11-01T13:18:44.536030Z",
+ "expires_at": "2026-11-08T13:18:44.536030Z",
+ "horizon_days": 7,
+ "call": {
+  "side": "long",
+  "instrument": "xyz:BRENTOIL",
+  "entry_px": 111.8,
+  "stop_px": 110.83,
+  "targets": [
+   114.23,
+   117.58
+  ],
+  "confidence": 0.55,
+  "invalidation": "1h close below 110.83 (24h low 111.33 minus 0.50), or Hormuz traffic normalising (Polymarket now only 12% by December thirty-first)."
+ },
+ "grade": null
+}

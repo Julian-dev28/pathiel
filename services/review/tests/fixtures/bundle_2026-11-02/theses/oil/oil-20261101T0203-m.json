@@ -1,0 +1,20 @@
+{
+ "id": "oil-20261101T0203-m",
+ "desk_id": "oil",
+ "created_at": "2026-11-01T02:03:42.480075Z",
+ "expires_at": "2026-11-08T02:03:42.480075Z",
+ "horizon_days": 7,
+ "call": {
+  "side": "long",
+  "instrument": "xyz:BRENTOIL",
+  "entry_px": 112.0,
+  "stop_px": 110.83,
+  "targets": [
+   114.23,
+   117.58
+  ],
+  "confidence": 0.56,
+  "invalidation": "1h close below 110.83 (two 0.50 ATR under the 24h low 111.33), or OPEC+ raising December quotas at today's meeting."
+ },
+ "grade": null
+}
