@@ -132,6 +132,24 @@ non-Brent rule (`next_trade.stop_buffer_for`).
 side) against no cap and prices every blocked entry. Result and verdict
 (not adopted): `docs/strategy/STOP_CAP_TEST_2026-11-02.md`.
 
+## Stop buffer floor (2026-11-02)
+
+Two `Params` fields, off by default (None; off keeps every result
+byte-identical, see `tests/test_silver_stop_floor.py`). Read only when
+`stop_buffer_atr` is on, so Brent's fixed buffer never sees them:
+
+- `stop_buffer_floor`: dollars. The buffer is max(stop_buffer_atr x ATR14, floor).
+- `stop_buffer_floor_frac`: a fraction of the entry price (0.008 = 0.8%).
+
+A floor only widens. The widened stop goes through the same 20x and min-R
+gates; a tick it fails that the bare ATR stop passed is counted in
+`Run.floor_blocked` (by gate) and listed in `Run.floor_blocked_rows`.
+`Run.floor_widened` counts entries opened with a widened stop.
+
+`services/strategies/evals/silver_stop_floor_test.py` runs the floor grid on
+the silver theses, the live metals journal and the silver controls, and
+proves Brent unchanged. Result: `docs/strategy/SILVER_STOP_FLOOR_TEST_2026-11-02.md`.
+
 ## What's deliberately simplified
 
 - By default, the entry/stop/target are always structural (8h range

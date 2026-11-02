@@ -117,6 +117,20 @@ tick to that many x the tick's ATR14, the live non-Brent rule (1.3 x
 ATR14), instead of the fixed `stop_buffer`. Added with the cap so the
 2026-11-02 silver desk's tighter stops can be replayed.
 
+Stop buffer floor (2026-11-02)
+------------------------------
+`Params.stop_buffer_floor` (dollars) and `stop_buffer_floor_frac` (a
+fraction of the entry price), both None = off. They apply only with
+`stop_buffer_atr` on (the live non-Brent rule; Brent's fixed 0.75 never
+reads them, the same way `next_trade.stop_buffer_for` returns 0.75 before
+any ATR math): the buffer becomes max(stop_buffer_atr x ATR14, floor,
+floor_frac x entry). A floor only ever widens a stop, never narrows one.
+The widened stop goes through the same 20x and min-R gates; a tick where
+the floored stop fails a gate that the bare ATR stop would have passed is
+counted in `Run.floor_blocked` (by gate) and kept in
+`Run.floor_blocked_rows`, so an eval can say how often the floor cost an
+entry. `Run.floor_widened` counts entries opened with a widened stop.
+
 Liquidation
 -----------
 Checked every bar a position is open against Hyperliquid's isolated-margin
@@ -254,6 +268,14 @@ class Params:
     # `stop_buffer` dollars. None (the default) keeps `stop_buffer`, and every
     # existing result byte-identical. A flip's stop is unchanged by it.
     stop_buffer_atr: Optional[float] = None
+    # Stop buffer floor (2026-11-02, operator "yes" after the stop-cap test
+    # found the live per-tick ATR stop half the width the silver 30-day test
+    # ran): with stop_buffer_atr on, the buffer is max(stop_buffer_atr x
+    # ATR14, stop_buffer_floor, stop_buffer_floor_frac x entry). Both None
+    # (the default) keep every existing result byte-identical. Ignored when
+    # stop_buffer_atr is None (Brent's fixed buffer). A flip is unchanged.
+    stop_buffer_floor: Optional[float] = None       # dollars
+    stop_buffer_floor_frac: Optional[float] = None  # fraction of the entry price (0.006 = 0.6%)
 
 
 # Per-side market-sell slippage (bps) by notional (USD), walked on the live
@@ -334,6 +356,15 @@ class Run:
     # {"time", "kind" ("entry"|"flip"), "side", "entry_px", "stop_px",
     #  "target_px", "is_market", "stops_today"}. Empty when the cap is off.
     cap_blocked: List[Dict[str, Any]] = field(default_factory=list)
+    # Stop buffer floor (Params.stop_buffer_floor / _frac). floor_blocked:
+    # gate ("leverage"|"min_r") -> ticks the floored stop failed that gate
+    # while the bare ATR stop passed both. floor_blocked_rows: those ticks,
+    # oldest first ({"time", "side", "gate", "entry_px", "stop_px",
+    # "raw_stop_px", "target_px"}). floor_widened: entries opened with a stop
+    # the floor widened. All empty / 0 when the floor is off.
+    floor_blocked: Counter = field(default_factory=Counter)
+    floor_blocked_rows: List[Dict[str, Any]] = field(default_factory=list)
+    floor_widened: int = 0
 
 
 # ── internal state ───────────────────────────────────────────────────────
@@ -675,6 +706,19 @@ def _in_session(t: int, session: Tuple[int, int]) -> bool:
     return start <= hr < end if start <= end else (hr >= start or hr < end)
 
 
+def floored_buffer(raw_buffer: float, price: float, floor: Optional[float],
+                   floor_frac: Optional[float]) -> float:
+    """The stop buffer with a floor under it: max(raw_buffer, floor,
+    floor_frac x price). A None floor is no floor. Never below raw_buffer,
+    so a floor can only widen a stop. Pure."""
+    buf = raw_buffer
+    if floor is not None:
+        buf = max(buf, floor)
+    if floor_frac is not None:
+        buf = max(buf, floor_frac * price)
+    return buf
+
+
 def _setup(d: Direction, mid: float, lv: Dict[str, Any], params: Params,
           leverage: Optional[float] = None) -> Optional[Dict[str, Any]]:
     """The one setup a flat tick may take, or None (price not at the edge),
@@ -702,6 +746,10 @@ def _setup(d: Direction, mid: float, lv: Dict[str, Any], params: Params,
             return None
         entry = struct = edge
     buf = params.stop_buffer if params.stop_buffer_atr is None else params.stop_buffer_atr * lv["atr14"]
+    raw_buf = buf
+    if params.stop_buffer_atr is not None and (params.stop_buffer_floor is not None
+                                               or params.stop_buffer_floor_frac is not None):
+        buf = floored_buffer(raw_buf, entry, params.stop_buffer_floor, params.stop_buffer_floor_frac)
     stop_px = struct - buf if is_long else struct + buf
     structural_target = lv["target_high"] if is_long else lv["target_low"]
     if params.target_r is not None:
@@ -710,12 +758,30 @@ def _setup(d: Direction, mid: float, lv: Dict[str, Any], params: Params,
         structural_target = target_px
     else:
         target_px = offset_target(structural_target, d.side, params.target_offset_frac)
+    gate = None
     if not check_leverage(entry, stop_px, lev, params.max_leverage)["ok"]:
-        return {"refused": "leverage"}
-    if not check_levels(entry, stop_px, target_px, params.min_r)["ok"]:
-        return {"refused": "min_r"}
-    return {"side": d.side, "entry_px": entry, "stop_px": stop_px, "target_px": target_px,
-            "orig_target_px": structural_target}
+        gate = "leverage"
+    elif not check_levels(entry, stop_px, target_px, params.min_r)["ok"]:
+        gate = "min_r"
+    if gate is not None:
+        out: Dict[str, Any] = {"refused": gate}
+        if buf > raw_buf:
+            # would the bare ATR stop have passed? then the floor cost this entry
+            raw_stop = struct - raw_buf if is_long else struct + raw_buf
+            raw_target = target_px
+            if params.target_r is not None:
+                raw_risk = abs(entry - raw_stop)
+                raw_target = entry + params.target_r * raw_risk if is_long else entry - params.target_r * raw_risk
+            if (check_leverage(entry, raw_stop, lev, params.max_leverage)["ok"]
+                    and check_levels(entry, raw_stop, raw_target, params.min_r)["ok"]):
+                out["floor_blocked"] = {"side": d.side, "gate": gate, "entry_px": entry, "stop_px": stop_px,
+                                        "raw_stop_px": raw_stop, "target_px": raw_target}
+        return out
+    out = {"side": d.side, "entry_px": entry, "stop_px": stop_px, "target_px": target_px,
+           "orig_target_px": structural_target}
+    if buf > raw_buf:
+        out["floored"] = True
+    return out
 
 
 def _market_open(setup: Dict[str, Any], bar: Candle, t: int, equity: float,
@@ -802,6 +868,10 @@ def simulate(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], direct
         raise ValueError(f"lock_r {params.lock_r} must sit below lock_trigger_r {params.lock_trigger_r}")
     if params.daily_stop_cap is not None and params.daily_stop_cap < 1:
         raise ValueError(f"daily_stop_cap {params.daily_stop_cap} must be 1 or more (None turns it off)")
+    if params.stop_buffer_floor is not None and params.stop_buffer_floor < 0:
+        raise ValueError(f"stop_buffer_floor {params.stop_buffer_floor} must be 0 or more (None turns it off)")
+    if params.stop_buffer_floor_frac is not None and not (0 <= params.stop_buffer_floor_frac < 1):
+        raise ValueError(f"stop_buffer_floor_frac {params.stop_buffer_floor_frac} must be in [0, 1)")
     c15 = sorted(candles_15m, key=lambda c: c.t)
     c1h = sorted(candles_1h, key=lambda c: c.t)
     funding_sorted: List[Tuple[int, float]] = sorted(
@@ -1090,6 +1160,10 @@ def simulate(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], direct
                     pass
                 elif setup.get("refused"):
                     run.refused[setup["refused"]] += 1
+                    fb = setup.get("floor_blocked")
+                    if fb is not None:
+                        run.floor_blocked[fb["gate"]] += 1
+                        run.floor_blocked_rows.append({"time": t, **fb})
                 elif open_now and len(run.trades) > trades_before_bar:
                     pass            # a trade closed inside this bar: its open is in the past now
                 elif cap_on and stop_cap_blocks(stops_by_day, t, setup["side"], params):
@@ -1098,6 +1172,7 @@ def simulate(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], direct
                     run.cap_blocked.append(_cap_row("entry", setup, t, open_now, stops_by_day, params))
                 elif open_now:
                     run.filled += 1
+                    run.floor_widened += 1 if setup.get("floored") else 0
                     position, initial_size, equity = _market_open(setup, bar, t, equity, params, lev)
                     # conservative: the entry bar's own range can stop it out
                     is_long = position.side == "long"
@@ -1171,4 +1246,4 @@ def simulate(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], direct
 
 __all__ = ["Direction", "DirectionAt", "Params", "Trade", "Run", "simulate", "offset_target", "regime_key",
           "trade_leverage", "CONVICTION_LEVERAGE_FLOOR", "live_params", "profit_lock_stop", "stop_cap_blocks",
-          "tally_stops"]
+          "tally_stops", "floored_buffer"]
