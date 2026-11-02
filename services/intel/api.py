@@ -68,6 +68,30 @@ def _fn_key(fn: Callable) -> str:
     return f"{mod}.{fn.__name__}"
 
 
+# Sources whose result depends on the desk's query lists. Their cache file
+# name carries a fingerprint of those lists (2026-11-02): with only the
+# function name as the key, a desk whose queries changed kept reading the
+# old queries' result until the TTL ran out, and a process still holding
+# the old spec (the MCP server until /mcp) kept rewriting it, so the new
+# "Iran ceasefire" odds never reached the oil thesis.
+_QUERY_KEYED = ("news", "policy", "predictions")
+
+
+def _spec_fingerprint(spec: DeskSpec) -> str:
+    import hashlib
+    import json
+    lists = [list(spec.news_queries), list(spec.policy_topics),
+             list(spec.prediction_market_queries),
+             [i.coin for i in spec.instruments]]
+    return hashlib.sha1(json.dumps(lists).encode()).hexdigest()[:10]
+
+
+def _cache_key(category: str, key: str, args: tuple) -> str:
+    if category in _QUERY_KEYED and args and isinstance(args[0], DeskSpec):
+        return f"{key}@{_spec_fingerprint(args[0])}"
+    return key
+
+
 def _pyd_to_jsonable(items: Sequence) -> _JsonList:
     return [item.model_dump(mode="json") for item in items]
 
@@ -130,13 +154,14 @@ def _submit(executor: ThreadPoolExecutor, desk_dir: str, category: str, fn: Call
     exact function caught during testing, not a hypothetical one."""
     ttl_key, to_jsonable, from_jsonable = _CODECS[category]
     key = _fn_key(fn)
+    file_key = _cache_key(category, key, args)
     ttl_s = _TTL_S[ttl_key]
 
     def job() -> Tuple[List, Optional[str]]:
         def fetch_jsonable() -> Tuple[Optional[_JsonList], Optional[str]]:
             items, err = fn(*args)
             return (to_jsonable(items) if items is not None else None), err
-        raw, err = cache.get_or_fetch(desk_dir, key, ttl_s, fetch_jsonable)
+        raw, err = cache.get_or_fetch(desk_dir, file_key, ttl_s, fetch_jsonable)
         items = from_jsonable(raw) if raw is not None else []
         return items, err
 

@@ -43,7 +43,7 @@ def build_spec() -> DeskSpec:
         pairs=[PairSpec(label="Brent-WTI spread", long="xyz:BRENTOIL", short="xyz:CL")],
         news_queries=[
             "crude oil price", "Strait of Hormuz", "OPEC+", "EIA crude inventories",
-            "natural gas price", "Iran oil exports", "Russia oil exports",
+            "US strike Iran", "Iran oil exports", "Russia oil exports",
             # Eight phrases: services/intel/sources/news.py sends one Google
             # News request per phrase (GNEWS_MAX_QUERIES = 8) plus one broad
             # OR query over the first eight, so every phrase here is searched.
@@ -53,7 +53,11 @@ def build_spec() -> DeskSpec:
             "Strategic Petroleum Reserve", "Iran sanctions", "Russia oil price cap",
             "Venezuela sanctions", "US shale permitting",
         ],
-        prediction_market_queries=["Iran deal", "Strait of Hormuz", "oil price", "OPEC+ cut"],
+        # "Iran ceasefire" added 2026-11-02: the war-or-peace odds (US x Iran
+        # ceasefire through Nov 30 at 0.37 on $1.1M) never matched "Iran deal",
+        # so a short thesis was written blind to a 63% chance of renewed war.
+        prediction_market_queries=["Iran deal", "Iran ceasefire", "Strait of Hormuz",
+                                   "oil price", "OPEC+ cut"],
         catalyst_kinds=[
             "eia_weekly", "api_weekly", "opec_meeting", "cftc_cot", "baker_hughes", "fomc",
         ],

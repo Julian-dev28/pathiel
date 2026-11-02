@@ -38,9 +38,17 @@ def build_spec() -> DeskSpec:
         ],
         pairs=[],
         news_queries=["silver price", "gold price", "silver industrial demand", "solar silver demand",
-                      "safe haven demand", "central bank gold buying"],
+                      "safe haven demand", "central bank gold buying",
+                      # 2026-11-02: the supply side. China restricts silver
+                      # exports and COMEX vault stocks are the shortage gauge;
+                      # CME's own stocks report answers 403 to scripts.
+                      "China silver export", "COMEX silver inventories"],
         policy_topics=["Fed rate decision", "real yields", "dollar index policy"],
-        prediction_market_queries=["gold price target", "Fed rate cut"],
+        # "Fed December" (2026-11-02): "Fed rate cut" only finds the 2026 cut
+        # count markets (no cuts at 0.97); the December meeting market carries
+        # the live hike-or-hold odds, the rate risk silver actually trades on.
+        prediction_market_queries=["gold price target", "Fed rate cut", "Fed December",
+                                   "Iran ceasefire"],
         catalyst_kinds=["fomc", "cpi_release", "nfp_release", "cftc_cot"],
         leverage_ladder=[5, 10, 20],
         horizon_days=7,
