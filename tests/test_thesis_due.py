@@ -95,3 +95,78 @@ def test_never_more_than_one_rewrite_an_hour():
 def test_an_expired_thesis_is_due():
     out = M.refresh_due(_thesis(), T0 + timedelta(days=7, minutes=1), mid=110.4)
     assert "expired" in out["reasons"]
+
+
+# ── a closed 1h candle through the thesis stop invalidates it (2026-11-02) ──
+def _bar(open_utc, close):
+    return {"t": int(open_utc.timestamp() * 1000), "c": close}
+
+
+def _oil_long_0119():
+    """The live oil thesis of 2026-11-02 ~01:19Z: long 111.70, stop 110.83."""
+    w = datetime(2026, 11, 2, 1, 19, tzinfo=timezone.utc)
+    return _thesis(created_at=w.isoformat(), expires_at=(w + timedelta(days=1)).isoformat(),
+                   catalysts=[], call={"side": "long", "entry_px": 111.70, "stop_px": 110.83})
+
+
+def test_the_0300_close_below_the_stop_makes_the_live_thesis_due():
+    """Regression: the 02:00-03:00Z bar closed 110.17 under the 110.83 stop and
+    no reason fired (the move was 1.43%), so the watcher kept waking the tick
+    to buy a dead long at 2.3R."""
+    t = _oil_long_0119()
+    bars = [_bar(datetime(2026, 11, 2, 1, tzinfo=timezone.utc), 111.41),   # opened before the thesis
+            _bar(datetime(2026, 11, 2, 2, tzinfo=timezone.utc), 110.17),
+            _bar(datetime(2026, 11, 2, 3, tzinfo=timezone.utc), 110.02)]   # still forming at 03:03
+    out = M.refresh_due(t, datetime(2026, 11, 2, 3, 3, tzinfo=timezone.utc), mid=110.105,
+                        px_at_writing=111.70, hour_closes=bars)
+    assert out["due"] and out["reasons"] == ["invalidated: 1h close 110.17 at 03:00Z below the thesis stop 110.83"]
+
+
+def test_a_forming_bar_or_a_close_above_the_stop_does_not_invalidate():
+    t = _oil_long_0119()
+    at = datetime(2026, 11, 2, 2, 40, tzinfo=timezone.utc)
+    forming = [_bar(datetime(2026, 11, 2, 2, tzinfo=timezone.utc), 110.20)]    # bar closes at 03:00
+    assert M.refresh_due(t, at, mid=110.4, px_at_writing=111.70, hour_closes=forming)["due"] is False
+    held = [_bar(datetime(2026, 11, 2, 2, tzinfo=timezone.utc), 111.14)]
+    later = datetime(2026, 11, 2, 3, 5, tzinfo=timezone.utc)
+    assert M.refresh_due(t, later, mid=110.4, px_at_writing=111.70, hour_closes=held)["due"] is False
+
+
+def test_a_short_is_invalidated_by_a_close_above_its_stop():
+    w = datetime(2026, 11, 2, 2, 19, tzinfo=timezone.utc)
+    t = _thesis(created_at=w.isoformat(), catalysts=[],
+                call={"side": "short", "entry_px": 50.15, "stop_px": 50.65})
+    bars = [_bar(datetime(2026, 11, 2, 3, tzinfo=timezone.utc), 50.70)]
+    out = M.refresh_due(t, datetime(2026, 11, 2, 4, 2, tzinfo=timezone.utc), mid=50.6,
+                        px_at_writing=50.1, hour_closes=bars)
+    assert any(r.startswith("invalidated: 1h close 50.7 at 04:00Z above the thesis stop 50.65") for r in out["reasons"])
+
+
+def test_a_flat_thesis_or_one_without_a_stop_is_never_invalidated():
+    w = datetime(2026, 11, 2, 1, tzinfo=timezone.utc)
+    bars = [_bar(datetime(2026, 11, 2, 2, tzinfo=timezone.utc), 1.0)]
+    for call in ({"side": "flat"}, {"side": "long", "entry_px": 111.7, "stop_px": None}):
+        t = _thesis(created_at=w.isoformat(), catalysts=[], call=call)
+        assert M.invalidating_close(t, bars, datetime(2026, 11, 2, 4, tzinfo=timezone.utc)) is None
+
+
+def test_the_one_rewrite_an_hour_gap_still_holds_an_invalidation_back():
+    t = _oil_long_0119()
+    bars = [_bar(datetime(2026, 11, 2, 1, 20, tzinfo=timezone.utc), 110.0)]
+    out = M.refresh_due(t, datetime(2026, 11, 2, 2, 0, tzinfo=timezone.utc), mid=110.0,
+                        px_at_writing=111.70, hour_closes=bars)
+    assert out["due"] is False and "at most one rewrite an hour" in out["held_back"]
+
+
+def test_the_eval_counts_hours_a_broken_thesis_stayed_live():
+    from services.strategies.evals.invalidated_thesis_hours import dead_hours
+    t1 = _oil_long_0119()
+    t2 = _thesis(id="next", created_at=datetime(2026, 11, 2, 3, 48, tzinfo=timezone.utc).isoformat(),
+                 catalysts=[], call={"side": "long", "entry_px": 110.0, "stop_px": 109.55})
+    bars = [_bar(datetime(2026, 11, 2, 2, tzinfo=timezone.utc), 110.17),
+            _bar(datetime(2026, 11, 2, 3, tzinfo=timezone.utc), 110.02),
+            _bar(datetime(2026, 11, 2, 4, tzinfo=timezone.utc), 109.92)]
+    res = dead_hours([t1, t2], bars)
+    assert res[0]["invalidated"].startswith("invalidated: 1h close 110.17 at 03:00Z")
+    assert res[0]["live_hours_after_break"] == 0.8      # 03:00Z break to the 03:48Z rewrite
+    assert res[1]["invalidated"] is None

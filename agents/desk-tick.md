@@ -53,7 +53,8 @@ ToolSearch call: `select:mcp__pathiel__desk_brief,mcp__pathiel__bracket_sweep,mc
    headline) and skips the daily and after-catalyst rewrites with
    `no_trigger` (2026-11-01: silver ran on a 40h-old thesis that way). It is due once a day, after an API, EIA or
    OPEC release the thesis listed, after a position on the desk closed, and
-   when the mid has moved 1.5% or more since the thesis was written; never inside an hour
+   when the mid has moved 1.5% or more since the thesis was written, and when a closed 1h
+   candle broke the thesis's own stop (2026-11-02); never inside an hour
    of the last thesis (operator, 2026-10-28; about one dollar a rewrite on
    Fable 5.1). After a rewrite, read the brief again.
 2. **Housekeeping.** `bracket_sweep {coin: COIN}`. Cancels the sibling left

@@ -10,7 +10,8 @@ from price on purpose and would trigger a rewrite every hour.)
 The desk-tick agent runs this after the brief and calls `desk_refresh` only
 when `due` is true (operator, 2026-10-28: "Rewrite once a day, plus after
 each scheduled catalyst (API on Tuesday, EIA on Wednesday, OPEC), after a
-position closes, and when price moves 1.5% or more from the thesis entry").
+position closes, and when price moves 1.5% or more from the thesis entry"). Since 2026-11-02 also
+when a closed 1h candle breaks the thesis's own stop (operator: "go").
 A rewrite costs about a dollar of local model time, so no reason fires
 inside an hour of the last thesis.
 
@@ -39,10 +40,14 @@ CATALYST_SETTLE_MINUTES = 15.0   # let the number print and the market react fir
 
 def refresh_due(thesis: Dict[str, Any], now: datetime, mid: Optional[float],
                 closes_since: Iterable[Dict[str, Any]] = (),
-                px_at_writing: Optional[float] = None) -> Dict[str, Any]:
+                px_at_writing: Optional[float] = None,
+                hour_closes: Iterable[Dict[str, Any]] = ()) -> Dict[str, Any]:
     """Pure. `thesis` = the journal's thesis as a dict (created_at, expires_at,
     call, catalysts); `closes_since` = closing fills on this desk's coins after
-    the thesis was written; `px_at_writing` = the price when it was written.
+    the thesis was written; `px_at_writing` = the price when it was written;
+    `hour_closes` = 1h candles ({"t": open ms, "c": close}) that opened after
+    the thesis was written. A CLOSED one beyond the call's stop_px (below for
+    a long, above for a short) invalidates the thesis and makes it due.
 
     The 1.5% move is measured from `px_at_writing`, not from the call's entry:
     a WAIT thesis puts its entry away from price on purpose (2026-10-28: a
@@ -66,6 +71,9 @@ def refresh_due(thesis: Dict[str, Any], now: datetime, mid: Optional[float],
             at = _ts(c["at"])
             if created < at and at + settle <= now:
                 reasons.append(f"catalyst passed: {c.get('title') or c['kind']} at {at:%Y-%m-%d %H:%MZ}")
+    broke = invalidating_close(thesis, hour_closes, now)
+    if broke:
+        reasons.append(broke)
     closes = list(closes_since)
     if closes:
         reasons.append(f"position closed since the thesis ({len(closes)} closing fill(s))")
@@ -77,6 +85,42 @@ def refresh_due(thesis: Dict[str, Any], now: datetime, mid: Optional[float],
             reasons.append(f"price moved {move:.1%} since the thesis was written ({ref:g} -> {mid:g})")
     out.update(due=bool(reasons), reasons=reasons)
     return out
+
+
+def invalidating_close(thesis: Dict[str, Any], hour_closes: Iterable[Dict[str, Any]],
+                       now: datetime) -> Optional[str]:
+    """Pure. The first CLOSED 1h candle since the thesis was written whose
+    close is beyond the call's stop_px, as a reason string; None otherwise.
+
+    2026-11-02 03:00Z: the oil long (entry 111.70, stop 110.83) was
+    invalidated by a 110.17 hourly close, but no rewrite reason fired (the
+    move was 1.43%, under the 1.5% trigger), so the watcher kept waking the
+    tick to buy a dead thesis at 2.3R and only a hand-written instruction
+    held it back. The tick's rule already reads invalidation off closed 1h
+    candles; this makes it a rewrite trigger too."""
+    call = thesis.get("call") or {}
+    side, stop = call.get("side"), call.get("stop_px")
+    if side not in ("long", "short") or stop is None:
+        return None
+    stop = float(stop)
+    created = _ts(thesis["created_at"])
+    for bar in sorted(hour_closes, key=lambda b: int(b.get("t") or 0)):
+        opened = datetime.fromtimestamp(int(bar["t"]) / 1000, tz=timezone.utc)
+        if opened < created or opened + timedelta(hours=1) > now:
+            continue          # opened before the thesis, or still forming
+        c = float(bar["c"])
+        if (side == "long" and c < stop) or (side == "short" and c > stop):
+            return (f"invalidated: 1h close {c:g} at {opened + timedelta(hours=1):%H:%MZ} "
+                    f"{'below' if side == 'long' else 'above'} the thesis stop {stop:g}")
+    return None
+
+
+def _hour_closes(coin: str, since: datetime) -> List[Dict[str, Any]]:
+    from pathiel.client.exchange import _http_post
+    rows = _http_post("/info", {"type": "candleSnapshot", "req": {
+        "coin": coin, "interval": "1h", "startTime": int(since.timestamp() * 1000),
+        "endTime": int(datetime.now(timezone.utc).timestamp() * 1000)}}) or []
+    return [{"t": int(r["t"]), "c": float(r["c"])} for r in rows if r.get("t") is not None]
 
 
 def _ts(v: Any) -> datetime:
@@ -138,7 +182,13 @@ def main(argv: Optional[List[str]] = None) -> int:
         px0 = _px_at(coin, _ts(thesis["created_at"]))
     except Exception as e:  # noqa: BLE001 - a missing candle only drops the price reason
         print(f"[thesis_due] price at writing unavailable: {e}", file=sys.stderr)
-    out = refresh_due(thesis, datetime.now(timezone.utc), mid, closes, px_at_writing=px0)
+    bars: List[Dict[str, Any]] = []
+    try:
+        bars = _hour_closes(coin, _ts(thesis["created_at"]))
+    except Exception as e:  # noqa: BLE001 - a missing candle read only drops the invalidation reason
+        print(f"[thesis_due] 1h candles unavailable: {e}", file=sys.stderr)
+    out = refresh_due(thesis, datetime.now(timezone.utc), mid, closes, px_at_writing=px0,
+                      hour_closes=bars)
     out.update(desk=a.desk, coin=coin, mid=mid, px_at_writing=px0)
     print(json.dumps(out, default=str))
     return 0
