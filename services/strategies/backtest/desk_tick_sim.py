@@ -181,6 +181,18 @@ low, a short over the 24h high: the 2026-11-02 Brent long bought 110.00
 under a 110.14 low). Refusals are counted in `Run.refused` ("delay",
 "side_age", "confirm_1h", "break"). (LOSS_AUDIT_2026-11-02.md.)
 
+Portfolio hook (2026-11-02)
+---------------------------
+`simulate_steps` is `simulate` one tick at a time (it yields the tick
+time, the marked equity and the Run after each tick), and both take
+`size_equity(t, own_equity) -> equity to size off`, called at every
+sizing point: a market entry or flip, a resting entry's fill and the
+top-up's full-size check. None (the default) sizes off the desk's own
+equity, so every existing result is byte-identical.
+`services.strategies.backtest.portfolio` runs several desks on one clock
+with it, each sized off its share of the whole account, as live
+(DESK_SPLIT_TEST_2026-11-02.md).
+
 Liquidation
 -----------
 Checked every bar a position is open against Hyperliquid's isolated-margin
@@ -193,7 +205,7 @@ from __future__ import annotations
 from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, Generator, List, Optional, Sequence, Tuple
 from zoneinfo import ZoneInfo
 
 from pathiel.agents.bracket import check_leverage, check_levels, liq_estimate
@@ -953,10 +965,14 @@ def _setup(d: Direction, mid: float, lv: Dict[str, Any], params: Params,
 
 
 def _market_open(setup: Dict[str, Any], bar: Candle, t: int, equity: float,
-                 params: Params, leverage: Optional[float] = None) -> Tuple[_Position, float, float]:
-    """Open at the mid as a taker, size-aware slippage: (position, size, equity after the fee)."""
+                 params: Params, leverage: Optional[float] = None,
+                 size_eq: Optional[float] = None) -> Tuple[_Position, float, float]:
+    """Open at the mid as a taker, size-aware slippage: (position, size, equity after the fee).
+    `size_eq` is the equity the size is taken off (the portfolio hook, see
+    `simulate_steps`); None sizes off `equity`, as before the hook existed."""
     sign = 1.0 if setup["side"] == "long" else -1.0
-    notional = risk_capped_notional(equity, params, leverage, setup["entry_px"], setup["stop_px"])
+    notional = risk_capped_notional(equity if size_eq is None else size_eq, params, leverage,
+                                    setup["entry_px"], setup["stop_px"])
     fill = setup["entry_px"] * (1.0 + sign * _market_exit_slip(params, notional))
     rest = _Resting(side=setup["side"], limit_px=fill, stop_px=setup["stop_px"],
                     target_px=setup["target_px"], placed_at=t, orig_target_px=setup["orig_target_px"])
@@ -1025,8 +1041,42 @@ def _scale_out(pos: _Position, bar: Candle, initial_size: float, equity: float, 
     return equity + gross - fee
 
 
+def tick_bars(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], params: Params) -> List[Candle]:
+    """The bars the sim takes one decision on, oldest first: 1h bars for the
+    hourly loop (`tick_minutes` >= 60), else 15m bars."""
+    return sorted(candles_1h if params.tick_minutes >= 60 else candles_15m, key=lambda c: c.t)
+
+
+# The portfolio hook (2026-11-02, DESK_SPLIT_TEST_2026-11-02.md): called at
+# every sizing point (a market entry or flip, a resting entry's fill, the
+# top-up's full-size check) with (tick time, this desk's own realized
+# equity) and returns the equity to size off. Live sizes each desk off
+# desk_share x the whole account's equity, so the portfolio combiner
+# (`services.strategies.backtest.portfolio`) passes share x (own + the other
+# desks' P&L). None sizes off the desk's own equity, exactly as before.
+SizeEquity = Callable[[int, float], float]
+
+
 def simulate(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], direction_at: DirectionAt,
-            params: Optional[Params] = None, funding_history: Optional[Sequence[Dict[str, Any]]] = None) -> Run:
+            params: Optional[Params] = None, funding_history: Optional[Sequence[Dict[str, Any]]] = None,
+            size_equity: Optional[SizeEquity] = None) -> Run:
+    """Run the whole window and return the Run (drains `simulate_steps`)."""
+    steps = simulate_steps(candles_15m, candles_1h, direction_at, params, funding_history, size_equity)
+    while True:
+        try:
+            next(steps)
+        except StopIteration as done:
+            return done.value
+
+
+def simulate_steps(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], direction_at: DirectionAt,
+                   params: Optional[Params] = None, funding_history: Optional[Sequence[Dict[str, Any]]] = None,
+                   size_equity: Optional[SizeEquity] = None) -> Generator[Tuple[int, float, Run], None, Run]:
+    """`simulate`, one tick at a time: yields (tick time, marked equity,
+    the Run so far) after each tick and returns the Run when the window
+    ends (or the account is liquidated). Lets a caller run several desks
+    on one clock and feed each desk's sizing the others' equity through
+    `size_equity`."""
     params = params or Params()
     if params.target_mode not in ("touch", "market", "limit"):
         raise ValueError(f"unknown target_mode {params.target_mode!r}")
@@ -1077,7 +1127,10 @@ def simulate(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], direct
     # loop (2026-10-25). With 1h ticks every tick lands on a 1h close, so the
     # invalidation check and funding settle on every tick; stop and target
     # fills read the 1h bar's high/low, the same conservative intrabar rule.
-    ticks = c1h if params.tick_minutes >= 60 else c15
+    ticks = tick_bars(c15, c1h, params)
+
+    def size_eq(t: int, eq: float) -> float:
+        return eq if size_equity is None else size_equity(t, eq)
     # 1h bars by close time, and a pointer past the bars already closed: the
     # same "closed strictly before t" set as a full scan, without the O(n)
     # rescan every tick.
@@ -1172,7 +1225,7 @@ def simulate(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], direct
                 run.filled += 1
                 position = _open_position(resting, resting.limit_px, t, params)
                 position.leverage = resting.leverage
-                notional = risk_capped_notional(equity, params, resting.leverage, resting.limit_px,
+                notional = risk_capped_notional(size_eq(t, equity), params, resting.leverage, resting.limit_px,
                                                 resting.stop_px)
                 size = notional / resting.limit_px if resting.limit_px > 0 else 0.0
                 position.size = size
@@ -1274,7 +1327,7 @@ def simulate(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], direct
                 else:
                     # top-up: one resting add at the original entry, while under
                     # full size; never after a scale-out (that would undo it)
-                    full = risk_capped_notional(equity, params, position.leverage, position.avg_entry,
+                    full = risk_capped_notional(size_eq(t, equity), params, position.leverage, position.avg_entry,
                                                 position.stop_px) / position.avg_entry
                     if (resting_add is None and position.size < full - 1e-9 and not position.partial_done
                             and not position.is_flip):
@@ -1325,7 +1378,8 @@ def simulate(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], direct
                 run.cap_blocked.append(_cap_row("flip", fs, t, True, stops_by_day, params))
             else:
                 run.filled += 1
-                position, initial_size, equity = _market_open(fs, bar, t, equity, params, fs["leverage"])
+                position, initial_size, equity = _market_open(fs, bar, t, equity, params, fs["leverage"],
+                                                              size_eq(t, equity))
                 position.is_flip = True
                 is_long = position.side == "long"
                 if (bar.l <= position.stop_px) if is_long else (bar.h >= position.stop_px):
@@ -1387,7 +1441,8 @@ def simulate(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], direct
                 elif open_now:
                     run.filled += 1
                     run.floor_widened += 1 if setup.get("floored") else 0
-                    position, initial_size, equity = _market_open(setup, bar, t, equity, params, lev)
+                    position, initial_size, equity = _market_open(setup, bar, t, equity, params, lev,
+                                                                  size_eq(t, equity))
                     # conservative: the entry bar's own range can stop it out
                     is_long = position.side == "long"
                     if (bar.l <= position.stop_px) if is_long else (bar.h >= position.stop_px):
@@ -1440,6 +1495,7 @@ def simulate(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], direct
         if peak_equity > 0:
             run.max_drawdown_pct = max(run.max_drawdown_pct, (peak_equity - mark) / peak_equity)
         run.equity_curve.append((t, mark))
+        yield t, mark, run
 
     # A position still open when the window ends is NOT force-closed into a
     # trade row (that would fabricate a fill the live loop never took) — it
@@ -1458,7 +1514,8 @@ def simulate(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], direct
     return run
 
 
-__all__ = ["Direction", "DirectionAt", "Params", "Trade", "Run", "simulate", "offset_target", "regime_key",
+__all__ = ["Direction", "DirectionAt", "Params", "Trade", "Run", "simulate", "simulate_steps", "tick_bars",
+          "SizeEquity", "offset_target", "regime_key",
           "trade_leverage", "CONVICTION_LEVERAGE_FLOOR", "live_params", "profit_lock_stop", "stop_cap_blocks",
           "tally_stops", "floored_buffer", "weekend_closed", "lock_on", "risk_capped_notional", "filters_on",
           "call_start", "entry_filter"]

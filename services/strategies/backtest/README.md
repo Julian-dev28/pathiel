@@ -13,6 +13,10 @@ Hyperliquid candles. Built from
 - `desk_tick_sim.py` — `simulate(candles_15m, candles_1h, direction_at, params) -> Run`.
   Pure, no I/O. Imports `pathiel.agents.bracket.check_leverage`/`check_levels`
   so the backtest and the live tool share the exact same gates.
+- `portfolio.py` — `simulate_portfolio(desks, starting_equity)`: several desks on one
+  clock on top of `desk_tick_sim.simulate_steps`, each sized off its share of the whole
+  account's marked equity (live `desk_equity_share`). 100/0 equals the single-desk sim
+  byte for byte. See DESK_SPLIT_TEST_2026-11-02.md.
 - `data.py` — fetch + disk cache for candles and funding
   (`fetch_candles_cached`, `fetch_funding_cached`), and the journaled-thesis
   reader (`load_journaled_theses`, READ ONLY against
@@ -211,3 +215,11 @@ Off by default; with them off every earlier eval output is byte-identical
 The audit itself (`evals/loss_audit.py`) rebuilds every closed trade from
 the wallet's public fills and tags its cause; `evals/loss_fix_test.py`
 backtests a fix per cause.
+
+## Desk split (2026-11-02)
+
+`portfolio.py` plus `simulate_steps` and the `size_equity` hook in the
+sim (None keeps every result byte-identical). `evals/desk_split_test.py`
+runs oil/silver 100/0 to 0/100 with the 15% cap on and off, writes
+/tmp/desk-split/. Gate tests: `tests/test_portfolio.py`,
+`tests/test_desk_split_eval.py`. Result: docs/strategy/DESK_SPLIT_TEST_2026-11-02.md.
