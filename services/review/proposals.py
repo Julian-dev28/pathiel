@@ -104,9 +104,15 @@ PRIOR = {
     "side_age_h": "LOSS_AUDIT_2026-11-02: none of 2/4/8/12h cleared",
     "confirm_1h": "LOSS_AUDIT_2026-11-02: 0/8 Brent sets, cut the winners",
     "entry_delay_min": "LOSS_AUDIT_2026-11-02: the sim cannot see it; on the real fills it refused 2 losers",
-    "no_break_entry": "LOSS_AUDIT_2026-11-02: 1/8 Brent sets; on the real fills it saved $38 and missed $57",
+    "no_break_entry": "LOSS_AUDIT_2026-11-02: 1/8 Brent sets; on the real fills it saved $38 and missed $57. "
+                      "OIL_REGIME_TEST_2026-11-02: 4/8 over 208 days, loses in trend up and chop, both thesis sets",
+    "regime_filter": "OIL_REGIME_TEST_2026-11-02: no chop/with-trend/veto filter beat sitting out or held "
+                     "across +-25% thresholds; all lost or tied on the thesis sets",
+    "range_buffer_k": "OIL_REGIME_TEST_2026-11-02: max(0.75, 0.15 x 24h range) 6/8, no plateau; never binds "
+                      "under a 4.5% range",
     "entry_mode": "LOSS_AUDIT_2026-11-02: resting limit at the 24h edge, 2/8 Brent sets",
-    "lock_trigger_r": "PROFIT_LOCK_TEST_2026-11-01 and LOSS_AUDIT_2026-11-02: do not adopt; weekend lock has no plateau",
+    "lock_trigger_r": "PROFIT_LOCK_TEST_2026-11-01 and LOSS_AUDIT_2026-11-02: do not adopt; weekend lock has no plateau. "
+                      "OIL_REGIME_TEST_2026-11-02: weekend lock 5/8 Brent, 0/6 WTI, no thesis trade touched",
     "stop_buffer": "BRENT_STOP_BUFFER_TEST_2026-11-02: keep 0.75",
     "stop_buffer_floor_frac": "SILVER_STOP_FLOOR_TEST_2026-11-02: the 0.8% floor is live (9224cbf)",
     "weekend_off": "BRENT_STOP_BUFFER_TEST_2026-11-02: cleared on Brent with the journal, silver lost; not adopted",

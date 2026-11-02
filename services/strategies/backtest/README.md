@@ -223,3 +223,24 @@ sim (None keeps every result byte-identical). `evals/desk_split_test.py`
 runs oil/silver 100/0 to 0/100 with the 15% cap on and off, writes
 /tmp/desk-split/. Gate tests: `tests/test_portfolio.py`,
 `tests/test_desk_split_eval.py`. Result: docs/strategy/DESK_SPLIT_TEST_2026-11-02.md.
+
+## Regime label and regime-aware rules (2026-11-02)
+
+`regime.py`: a causal trend_up / trend_down / chop label from 1h bars
+closed by a given time (20-day return, 48h efficiency ratio, 24h range over
+ATR14), `label_series` for every 1h close in one pass, `regime_blocks` for
+the entry filters. Sim `Params`, all off by default (off keeps every result
+byte-identical, see `tests/test_oil_regime_sim.py`):
+
+- `regime_filter` ("no_chop", "with_trend", "trend_only", "veto_20d"),
+  `regime_cfg` (thresholds), `regime_refresh` ("day": the label at 00:00Z,
+  "hour": at the last 1h close). Only skips new entries.
+- `range_buffer_k`, `range_buffer_floor`: the fixed stop buffer from the
+  24h range, max(stop_buffer, k x range) or k x range alone.
+- `target_offset_range_frac`: the target that share of the 24h range inside
+  the far edge.
+
+`evals/oil_regime_test.py` runs them on 208 days of Brent 1h (hourly ticks),
+52 days of 15m, the replayed and journal theses, and WTI as a proxy. Gate
+tests: `tests/test_regime.py`, `tests/test_oil_regime_eval.py`. Result
+(keep live): docs/strategy/OIL_REGIME_TEST_2026-11-02.md.

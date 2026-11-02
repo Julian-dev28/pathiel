@@ -47,6 +47,7 @@ Every change was backtested before it went live (operator rule since
 
 | Date | Change | Why |
 |---|---|---|
+| 2026-11-02 | No regime filter, side override or range-scaled stop/target | The live rule fades the 24h range; lately it earned in chop (+41.0R) and lost in straight-line down days (-17.0R on 16 trades). No chop filter, with-trend filter, 20-day veto or override beat live on more datasets than sitting out does, or held across +-25% thresholds; every one lost or tied on the thesis sets. Closest: stop max(0.75, 0.15 x 24h range), 6 of 8 but no plateau, and it never binds at today's 2.3% range (`OIL_REGIME_TEST_2026-11-02.md`) |
 | 2026-11-02 | Stop stays 0.75; weekends stay on; no weekend-only profit lock | A wider stop never survived the 11-02 dip (0.80 to 0.90 lose more, 0.95 and up fail 2R); 0.90 wins October only by refusing entries. Weekend-off: no thesis trade changes. Weekend lock at 1R: never lost but never touched a thesis trade (`BRENT_STOP_BUFFER_TEST_2026-11-02.md`; live journal still to run) |
 | 2026-11-02 | No daily stop-out cap | Blocking new entries after 1 to 3 stops in a UTC day lost to no cap on the thesis sets; on Brent theses 2 stops in a day never happened (`STOP_CAP_TEST_2026-11-02.md`) |
 | 2026-11-01 | Stops stay fixed; no profit lock | Moving the stop to entry + 0 to 1R after +1 to 2R beat the fixed stop in 1 of 48 thesis runs (`PROFIT_LOCK_TEST_2026-11-01.md`) |

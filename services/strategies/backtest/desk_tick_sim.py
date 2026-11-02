@@ -181,6 +181,23 @@ low, a short over the 24h high: the 2026-11-02 Brent long bought 110.00
 under a 110.14 low). Refusals are counted in `Run.refused` ("delay",
 "side_age", "confirm_1h", "break"). (LOSS_AUDIT_2026-11-02.md.)
 
+Regime filter and range-scaled levels (2026-11-02)
+--------------------------------------------------
+`Params.regime_filter` (None = off, the live rule) skips a NEW entry by
+the causal regime label (`services.strategies.backtest.regime`): "no_chop"
+none on a chop label, "with_trend" none against a trend label, "trend_only"
+both, "veto_20d" none against the 20-day trend unless the 48h run is a
+straight line the entry's way. The labels are built once per run from the
+1h candles passed in (`label_series`, thresholds `regime_cfg`) and read at
+the UTC day's open (`regime_refresh` "day") or at the last 1h close
+("hour"); both use only bars closed by then. An open position is never
+touched. Refusals: "regime_chop", "regime_against", "regime_veto".
+`Params.range_buffer_k` (None = off) sets the fixed stop buffer from the
+24h range at the tick: max(stop_buffer, k x range), or k x range alone with
+`range_buffer_floor` False. `Params.target_offset_range_frac` (None = off)
+puts the target that share of the 24h range inside the far edge, in place
+of `target_offset_frac` x price. (OIL_REGIME_TEST_2026-11-02.md.)
+
 Portfolio hook (2026-11-02)
 ---------------------------
 `simulate_steps` is `simulate` one tick at a time (it yields the tick
@@ -210,6 +227,8 @@ from zoneinfo import ZoneInfo
 
 from pathiel.agents.bracket import check_leverage, check_levels, liq_estimate
 from pathiel.models.types import Candle
+from services.strategies.backtest.regime import FILTERS as REGIME_FILTERS
+from services.strategies.backtest.regime import RegimeConfig, RegimeSeries, label_series, regime_blocks
 
 HOUR_MS = 3_600_000
 FIFTEEN_MIN_MS = 900_000
@@ -357,6 +376,15 @@ class Params:
     side_age_h: Optional[float] = None       # no new entry until the call's side has held N hours
     confirm_1h: bool = False                 # the last closed 1h candle must agree with the side
     no_break_entry: bool = False             # no market entry once the mid is past the entry range's own edge
+    # ── 2026-11-02 oil regime test (OIL_REGIME_TEST_2026-11-02.md; see
+    # "Regime filter and range-scaled levels" above). Every default keeps
+    # every existing result byte-identical (test_oil_regime_sim.py).
+    regime_filter: Optional[str] = None      # None | no_chop | with_trend | trend_only | veto_20d (regime.FILTERS)
+    regime_cfg: Optional[RegimeConfig] = None  # the labeller's thresholds (None: RegimeConfig())
+    regime_refresh: str = "day"              # "day": the label at 00:00Z | "hour": at the last 1h close
+    range_buffer_k: Optional[float] = None   # stop buffer from the 24h range: max(stop_buffer, k x range) ...
+    range_buffer_floor: bool = True          # ... or k x range alone when False
+    target_offset_range_frac: Optional[float] = None  # target this share of the 24h range inside the far edge
 
 
 # Per-side market-sell slippage (bps) by notional (USD), walked on the live
@@ -924,6 +952,9 @@ def _setup(d: Direction, mid: float, lv: Dict[str, Any], params: Params,
             return None
         entry = struct = edge
     buf = params.stop_buffer if params.stop_buffer_atr is None else params.stop_buffer_atr * lv["atr14"]
+    if params.range_buffer_k is not None and params.stop_buffer_atr is None and lv["target_low"] is not None:
+        rng_buf = params.range_buffer_k * (lv["target_high"] - lv["target_low"])
+        buf = max(buf, rng_buf) if params.range_buffer_floor else rng_buf
     raw_buf = buf
     if params.stop_buffer_atr is not None and (params.stop_buffer_floor is not None
                                                or params.stop_buffer_floor_frac is not None):
@@ -936,6 +967,9 @@ def _setup(d: Direction, mid: float, lv: Dict[str, Any], params: Params,
         risk = abs(entry - stop_px)
         target_px = entry + params.target_r * risk if is_long else entry - params.target_r * risk
         structural_target = target_px
+    elif params.target_offset_range_frac is not None:
+        off = params.target_offset_range_frac * (lv["target_high"] - lv["target_low"])
+        target_px = structural_target - off if is_long else structural_target + off
     else:
         target_px = offset_target(structural_target, d.side, params.target_offset_frac)
     gate = None
@@ -1099,8 +1133,16 @@ def simulate_steps(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], 
             raise ValueError("set lock_trigger_r or lock_trigger_target_frac, not both")
         if not (0 < params.lock_trigger_target_frac < 1):
             raise ValueError(f"lock_trigger_target_frac {params.lock_trigger_target_frac} must be in (0, 1)")
+    if params.regime_filter is not None and params.regime_filter not in REGIME_FILTERS:
+        raise ValueError(f"unknown regime_filter {params.regime_filter!r}")
+    if params.regime_refresh not in ("day", "hour"):
+        raise ValueError(f"unknown regime_refresh {params.regime_refresh!r}")
     c15 = sorted(candles_15m, key=lambda c: c.t)
     c1h = sorted(candles_1h, key=lambda c: c.t)
+    regime: Optional[RegimeSeries] = None
+    regime_cfg = params.regime_cfg or RegimeConfig()
+    if params.regime_filter is not None:
+        regime = label_series(c1h, regime_cfg)
     funding_sorted: List[Tuple[int, float]] = sorted(
         (int(r["time"]), float(r["fundingRate"])) for r in (funding_history or [])
         if r.get("time") is not None and r.get("fundingRate") is not None
@@ -1405,6 +1447,12 @@ def simulate_steps(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], 
                 d = None
             if d is not None and filt_on:
                 why = entry_filter(d, t, side_since, c1h[n_closed - 1] if n_closed else None, params)
+                if why is not None:
+                    run.refused[why] += 1
+                    d = None
+            if d is not None and regime is not None:
+                asof = t - t % DAY_MS if params.regime_refresh == "day" else t
+                why = regime_blocks(d.side, regime.at(asof), params.regime_filter, regime_cfg)
                 if why is not None:
                     run.refused[why] += 1
                     d = None
