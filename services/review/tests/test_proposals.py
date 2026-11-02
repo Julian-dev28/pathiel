@@ -15,12 +15,15 @@ def row(dim, value, label, n=12, mean_r=-0.8):
 
 def test_every_lever_variant_is_a_real_sim_param():
     """A proposal names Params fields that exist (the sim is not edited here)."""
-    fields = {f.name for f in dataclasses.fields(Params)}
+    from services.strategies.backtest.portfolio import CorrGuard
+    targets = {"Params": Params, "CorrGuard": CorrGuard}
     for levers in P.LEVERS.values():
         for lv in levers:
+            cls = targets[lv.get("target", "Params")]   # a cross-desk lever lives on the portfolio
+            fields = {f.name for f in dataclasses.fields(cls)}
             for ov in lv["variants"]:
                 assert set(ov) <= fields, ov
-                Params(**ov)                       # and they construct
+                cls(**ov)                          # and they construct
             assert lv["eval"] in P.EVALS
 
 

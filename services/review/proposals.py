@@ -27,6 +27,8 @@ EVALS = {
     "loss_fix_test": f"python3 -m services.strategies.evals.loss_fix_test {THESES}",
     "brent_stop_buffer_test": f"python3 -m services.strategies.evals.brent_stop_buffer_test {THESES}",
     "silver_stop_floor_test": f"python3 -m services.strategies.evals.silver_stop_floor_test {THESES}",
+    "oil_regime_test": f"python3 -m services.strategies.evals.oil_regime_test {THESES}",
+    "pullback_correlation_test": f"python3 -m services.strategies.evals.pullback_correlation_test {THESES}",
     "strategy_sweep": ("python3 -m services.strategies.evals.strategy_sweep "
                        "--theses-dir $PATHIEL_STATE_DIR/strategies/oil/theses"),
 }
@@ -61,6 +63,12 @@ SILVER_STOP = {"lever": "stop_buffer_floor_frac", "eval": "silver_stop_floor_tes
 WEEKEND = {"lever": "weekend_off", "eval": "brent_stop_buffer_test",
            "variants": [{"weekend_off": "hold"}, {"weekend_off": "flatten"}],
            "why": "no new entries (or flat) while the futures are shut, Fri 16:00 to Sun 18:00 New York"}
+WITH_TREND = {"lever": "regime_filter", "eval": "oil_regime_test",
+              "variants": [{"regime_filter": "with_trend"}, {"regime_filter": "veto_20d"}],
+              "why": "no new entry against the 20-day trend"}
+PAIR_GUARD = {"lever": "corr_guard", "eval": "pullback_correlation_test", "target": "CorrGuard",
+              "variants": [{"pair": "opposite", "mult": 0.0}, {"pair": "opposite", "mult": 0.5}],
+              "why": "no oil and silver positions on opposite sides at once (one bet doubled)"}
 MIN_R = {"lever": "min_r", "eval": "strategy_sweep", "variants": [{"min_r": 2.5}, {"min_r": 3.0}],
          "why": "a higher reward-to-risk gate than the live 2R"}
 
@@ -86,6 +94,8 @@ LEVERS: Dict[tuple, List[Dict[str, Any]]] = {
     ("range", "past far edge"): [EDGE_LIMIT, NO_BREAK],
     ("risk", "10%+"): [SIZE],
     ("risk", "5-10%"): [SIZE],
+    ("vs_20d_trend", "against 20d trend"): [WITH_TREND],
+    ("pair", "opposite sides (doubled)"): [PAIR_GUARD],
 }
 
 
@@ -117,6 +127,7 @@ PRIOR = {
     "stop_buffer_floor_frac": "SILVER_STOP_FLOOR_TEST_2026-11-02: the 0.8% floor is live (9224cbf)",
     "weekend_off": "BRENT_STOP_BUFFER_TEST_2026-11-02: cleared on Brent with the journal, silver lost; not adopted",
     "min_r": "strategy_sweep 2026-10-30; the live gate is 2R",
+    "corr_guard": "PULLBACK_AND_CORRELATION_TEST_2026-11-02: opposite-side block 2/8, geo 1.08; half size failed at every multiplier",
 }
 
 
@@ -150,7 +161,7 @@ def build(rows: Sequence[Dict[str, Any]], desks_by_key: Optional[Dict[str, List[
             proposals[pid] = {
                 "id": pid, "slice": row["key"], "label": lab, "n": row["n"], "mean_r": row["mean_r"],
                 "lever": lv["lever"], "eval": lv["eval"], "variants": lv["variants"],
-                "params": [params_text(v) for v in lv["variants"]], "command": EVALS[lv["eval"]],
+                "params": [params_text(v).replace("Params(", lv.get("target", "Params") + "(", 1) for v in lv["variants"]], "command": EVALS[lv["eval"]],
                 "why": lv["why"], "prior": PRIOR.get(lv["lever"], ""), "conflicts": []}
         if not levers:
             watch.append({"slice": row["key"], "label": lab, "n": row["n"], "mean_r": row["mean_r"],

@@ -84,6 +84,25 @@ def _with_thesis(r: Dict[str, Any]) -> Optional[str]:
     return None if v is None else "with thesis" if v else "against thesis"
 
 
+def _vs_trend(r: Dict[str, Any]) -> Optional[str]:
+    t = r.get("trend_20d_pct")
+    if t is None or r.get("side") not in ("long", "short"):
+        return None
+    if abs(t) < 2.0:
+        return "20d flat"
+    up = t > 0
+    return "with 20d trend" if (r["side"] == "long") == up else "against 20d trend"
+
+
+def _pair(r: Dict[str, Any]) -> Optional[str]:
+    o = r.get("other_desk_side")
+    if o is None:
+        return None
+    if o == "flat":
+        return "other desk flat"
+    return "same side (hedged)" if o == r.get("side") else "opposite sides (doubled)"
+
+
 # (dimension, bucket function); a function may return a list (a trade with
 # two cause tags sits in both) or None (not known: left out of that dimension)
 DIMENSIONS: List[tuple] = [
@@ -100,6 +119,8 @@ DIMENSIONS: List[tuple] = [
     ("hour", _hour),
     ("range", _range),
     ("risk", _risk),
+    ("vs_20d_trend", _vs_trend),
+    ("pair", _pair),
 ]
 DIM_FUNCS = dict(DIMENSIONS)
 

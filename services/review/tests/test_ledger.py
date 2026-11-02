@@ -116,3 +116,38 @@ def test_range_position_is_side_adjusted_and_sees_only_closed_bars():
 def test_planned_r():
     assert LG.planned_r(110.01, 109.25, 111.83) == 2.39
     assert LG.planned_r(110.0, None, 111.0) is None
+
+
+def test_trend_20d_uses_only_closed_bars_before_entry():
+    """2026-11-02: tracked because shorts in a 20-day uptrend lost in the
+    regime test. Causal: a bar still open at entry never counts."""
+    from types import SimpleNamespace as NS
+    from services.review.ledger import HOUR_MS, TREND_BARS, trend_20d
+    bars = [NS(t=i * HOUR_MS, c=100.0 + i * 0.01) for i in range(TREND_BARS + 5)]
+    entry = (TREND_BARS + 3) * HOUR_MS          # bars 0..TREND_BARS+2 are closed
+    out = trend_20d(entry, bars)["trend_20d_pct"]
+    want = round(((100.0 + (TREND_BARS + 2) * 0.01) / (100.0 + 2 * 0.01) - 1) * 100, 2)
+    assert out == want
+    assert trend_20d(TREND_BARS * HOUR_MS, bars)["trend_20d_pct"] is None   # not enough history
+
+
+def test_pairs_mark_what_the_other_desk_held_at_entry():
+    """Oil long while silver goes short is one bet doubled (the two move
+    opposite); the 11-02 silver short opened at 05:34Z while oil was long."""
+    from services.review.analysis import buckets
+    from services.review.ledger import annotate_pairs
+    oil = {"desk": "oil", "side": "long", "entry_ms": 100, "exit_ms": 500}
+    silver = {"desk": "metals", "side": "short", "entry_ms": 200, "exit_ms": 300}
+    later = {"desk": "metals", "side": "long", "entry_ms": 600, "exit_ms": 700}
+    annotate_pairs([oil, silver, later])
+    assert silver["other_desk_side"] == "long" and buckets(silver, "pair") == ["opposite sides (doubled)"]
+    assert oil["other_desk_side"] == "flat" and buckets(oil, "pair") == ["other desk flat"]
+    assert later["other_desk_side"] == "flat"
+
+
+def test_vs_20d_trend_buckets():
+    from services.review.analysis import buckets
+    assert buckets({"side": "short", "trend_20d_pct": 7.9}, "vs_20d_trend") == ["against 20d trend"]
+    assert buckets({"side": "long", "trend_20d_pct": 7.9}, "vs_20d_trend") == ["with 20d trend"]
+    assert buckets({"side": "short", "trend_20d_pct": 1.0}, "vs_20d_trend") == ["20d flat"]
+    assert buckets({"side": "short", "trend_20d_pct": None}, "vs_20d_trend") == []

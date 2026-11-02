@@ -43,7 +43,7 @@ from services.strategies.backtest.desk_tick_sim import weekend_closed
 from services.strategies.evals import loss_audit as LA
 from services.strategies.evals.stop_cap_test import same_market
 
-SCHEMA = 1
+SCHEMA = 2   # 2: trend_20d_pct and other_desk_side (2026-11-02)
 HOUR_MS = LA.HOUR_MS
 SETTLE_MS = int(max(LA.BACK_HOURS, LA.FLIP_HOURS) * HOUR_MS)
 RANGE_BARS = 24                     # closed 1h bars behind the entry: the 24h range
@@ -109,6 +109,39 @@ def planned_r(entry: Optional[float], stop: Optional[float], target: Optional[fl
     return round(abs(target - entry) / abs(entry - stop), 2)
 
 
+TREND_BARS = 480   # 20 days of 1h bars
+
+
+def trend_20d(entry_ms: int, bars1h: Sequence[Candle]) -> Dict[str, Any]:
+    """The coin's 20-day return at entry, from closed 1h bars only (causal).
+    OIL_REGIME_TEST_2026-11-02: shorts in a 20-day uptrend lost; tracked so
+    the review can say whether that is a pattern or a fluke."""
+    closed = [b for b in bars1h if b.t + HOUR_MS <= entry_ms]
+    if len(closed) <= TREND_BARS:
+        return {"trend_20d_pct": None}
+    base = closed[-1 - TREND_BARS].c
+    return {"trend_20d_pct": round((closed[-1].c / base - 1.0) * 100.0, 2) if base else None}
+
+
+def annotate_pairs(records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Mark what the OTHER desk held when each trade opened ("long", "short"
+    or "flat"), from the closed trades in the same list. Oil and silver move
+    opposite (1h correlation -0.36, -0.67 on 1% Brent hours,
+    PULLBACK_AND_CORRELATION_TEST_2026-11-02), so opposite sides across the
+    two desks are one bet doubled and the same side is a hedge."""
+    for rec in records:
+        side = "flat"
+        for o in records:
+            if o is rec or o.get("desk") == rec.get("desk"):
+                continue
+            if o.get("entry_ms") is not None and o.get("exit_ms") is not None \
+                    and o["entry_ms"] <= rec["entry_ms"] < o["exit_ms"]:
+                side = o["side"]
+                break
+        rec["other_desk_side"] = side
+    return records
+
+
 def to_record(tr: Dict[str, Any], theses: Sequence[Any], bars1h: Sequence[Candle], bars5: Sequence[Candle],
               as_of_ms: int) -> Dict[str, Any]:
     """One ledger record from one enriched, closed loss-audit trade."""
@@ -138,6 +171,7 @@ def to_record(tr: Dict[str, Any], theses: Sequence[Any], bars1h: Sequence[Candle
         "planned_r": planned_r(tr["entry_px"], tr.get("stop_px"), tr.get("target_px")),
     }
     rec.update(range_position(entry_ms, tr["entry_px"], tr["side"], bars1h))
+    rec.update(trend_20d(entry_ms, bars1h))
     rec.update(L.luck_check({**tr, "id": rec["id"]}, bars5))
     rec["settled"] = as_of_ms >= int(tr["exit_time"]) + SETTLE_MS
     rec["as_of"] = iso(as_of_ms)
@@ -166,7 +200,7 @@ def build_records(bundle: Dict[str, Any], since_ms: int = LA.SINCE_MS) -> List[D
             continue
         out.append(to_record(tr, theses.get(tr["desk"], []), bundle["bars1h"].get(tr["coin"], []),
                              bundle["bars5"].get(tr["coin"], []), bundle["as_of_ms"]))
-    return out
+    return annotate_pairs(out)
 
 
 # ── the file (append only) ─────────────────────────────────────────────────
@@ -290,4 +324,4 @@ def records_from_audit_csv(path: str) -> List[Dict[str, Any]]:
                 "weekend": weekend_closed(entry_ms), "hour_utc": int((entry_ms // HOUR_MS) % 24),
                 "planned_r": planned_r(entry, stop, _num(row["target_px"])), "settled": True,
             })
-    return out
+    return annotate_pairs(out)
