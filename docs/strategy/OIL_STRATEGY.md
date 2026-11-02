@@ -45,6 +45,7 @@ Every change was backtested before it went live (operator rule since
 
 | Date | Change | Why |
 |---|---|---|
+| 2026-11-02 | No daily stop-out cap | Blocking new entries after 1 to 3 stops in a UTC day lost to no cap on the thesis sets; on Brent theses 2 stops in a day never happened (`STOP_CAP_TEST_2026-11-02.md`) |
 | 2026-11-01 | Stops stay fixed; no profit lock | Moving the stop to entry + 0 to 1R after +1 to 2R beat the fixed stop in 1 of 48 thesis runs (`PROFIT_LOCK_TEST_2026-11-01.md`) |
 | 2026-10-30 | Market entry, 24h range, 2R minimum | Strategy sweep ranked by profit per day (below) |
 | 2026-10-30 | Target 0.5% inside the far edge, stop 0.75 beyond structure; live target moved 113.75 to 113.18 | Scenario sweep, 540 combos: $64 to $199.60 vs $123.91 for the rules before |
