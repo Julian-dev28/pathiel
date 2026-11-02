@@ -150,6 +150,28 @@ gates; a tick it fails that the bare ATR stop passed is counted in
 the silver theses, the live metals journal and the silver controls, and
 proves Brent unchanged. Result: `docs/strategy/SILVER_STOP_FLOOR_TEST_2026-11-02.md`.
 
+## Brent buffer floor, weekend window, weekend lock (2026-11-02)
+
+Five `Params` fields, off by default (off keeps every result byte-identical,
+see `tests/test_brent_stop_buffer.py`):
+
+- `fixed_buffer_floor_frac`: the floor for the fixed-dollar buffer (Brent):
+  max(stop_buffer, frac x entry), with the same floor bookkeeping.
+- `weekend_off`: "hold" takes no new entry inside `weekend_closed(t)`
+  (Friday 16:00 to Sunday 18:00 New York, zoneinfo, so Fri 21:00 to Sun
+  23:00 UTC in winter and an hour earlier in summer); "flatten" also closes
+  an open position at market on the first tick inside it (`"weekend"` exit).
+- `lock_weekend_only`: the profit lock folds in bars and moves the stop
+  only inside the window. A stop it moved stays after the reopen.
+- `lock_trigger_target_frac`: arm the lock at this share of the way to the
+  target instead of `lock_trigger_r`.
+- `lock_plus_fees`: the lock level plus the taker round trip, so a
+  "break-even" exit nets about zero.
+
+`services/strategies/evals/brent_stop_buffer_test.py` runs the Brent buffer
+grid, weekend-off and the weekend-only lock. Result and verdict (none
+adopted): `docs/strategy/BRENT_STOP_BUFFER_TEST_2026-11-02.md`.
+
 ## What's deliberately simplified
 
 - By default, the entry/stop/target are always structural (8h range

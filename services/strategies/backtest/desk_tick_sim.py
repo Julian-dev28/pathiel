@@ -97,6 +97,10 @@ from that bar's high (low) after; and it fills in the SAME bar only when
 the lock after the trigger). Otherwise it applies from the next bar, where
 a bar that opens through it fills at the open. A market entry's own bar
 counts (the fill is the open, so the bar's high came after it).
+`Params.lock_trigger_target_frac` (2026-11-02) arms on the share of the
+way to the target instead (0.5 = half way from entry to target), in place
+of `lock_trigger_r`; `lock_plus_fees` adds the round trip at the taker
+rate (in and out) to the lock level, so "break-even" nets about zero.
 
 Daily stop-out cap (2026-11-02)
 -------------------------------
@@ -130,6 +134,27 @@ the floored stop fails a gate that the bare ATR stop would have passed is
 counted in `Run.floor_blocked` (by gate) and kept in
 `Run.floor_blocked_rows`, so an eval can say how often the floor cost an
 entry. `Run.floor_widened` counts entries opened with a widened stop.
+`Params.fixed_buffer_floor_frac` (None = off) is the same floor for the
+fixed-dollar buffer (Brent's 0.75, `stop_buffer_atr` None): the buffer
+becomes max(stop_buffer, fixed_buffer_floor_frac x entry), with the same
+floor_blocked / floor_widened bookkeeping against the bare fixed stop.
+(2026-11-02, BRENT_STOP_BUFFER_TEST_2026-11-02.md.)
+
+Weekend window (2026-11-02)
+---------------------------
+`weekend_closed(t)`: True from Friday 16:00 to Sunday 18:00 New York time,
+the oil futures close-to-reopen. zoneinfo does the daylight saving, so it
+is Fri 21:00 to Sun 23:00 UTC in US winter time and Fri 20:00 to Sun 22:00
+UTC in US summer time. The xyz HIP-3 perps trade straight through it.
+`Params.weekend_off` (None = off, the live rule): "hold" takes no NEW entry
+(and no flip) on a tick inside the window, open positions keep their stop
+and target; "flatten" also closes an open position at market (taker fee,
+exit slippage, exit_reason "weekend") on the first tick inside the window
+and cancels any resting order. `Params.lock_weekend_only` (default False):
+the profit lock below only folds in bars and moves the stop on ticks inside
+the window; on weekdays the live fixed stop rules run unchanged. A stop the
+lock tightened over the weekend stays where it is after the reopen (a stop
+never widens).
 
 Liquidation
 -----------
@@ -142,7 +167,9 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
+from zoneinfo import ZoneInfo
 
 from pathiel.agents.bracket import check_leverage, check_levels, liq_estimate
 from pathiel.models.types import Candle
@@ -276,6 +303,15 @@ class Params:
     # stop_buffer_atr is None (Brent's fixed buffer). A flip is unchanged.
     stop_buffer_floor: Optional[float] = None       # dollars
     stop_buffer_floor_frac: Optional[float] = None  # fraction of the entry price (0.006 = 0.6%)
+    # ── 2026-11-02 Brent stop buffer / weekend test (BRENT_STOP_BUFFER_TEST_
+    # 2026-11-02.md). Every default keeps every existing result byte-identical.
+    # A floor under the FIXED buffer: max(stop_buffer, frac x entry), read only
+    # with stop_buffer_atr None (the ATR rule has its own floor fields above).
+    fixed_buffer_floor_frac: Optional[float] = None
+    weekend_off: Optional[str] = None        # None | "hold" (no new entries) | "flatten" (and close at the window open)
+    lock_weekend_only: bool = False          # the profit lock acts only inside weekend_closed()
+    lock_trigger_target_frac: Optional[float] = None  # arm at this share of the way to the target (not with lock_trigger_r)
+    lock_plus_fees: bool = False             # lock level + the taker round trip, so break-even nets about zero
 
 
 # Per-side market-sell slippage (bps) by notional (USD), walked on the live
@@ -574,33 +610,74 @@ def _manage_stop(pos: _Position, bar: Candle, atr14: Optional[float], params: Pa
         pos.stop_moved = True
 
 
+def lock_on(params: Params) -> bool:
+    """Is any profit lock configured (an R trigger or a target-share trigger)?"""
+    return params.lock_trigger_r is not None or params.lock_trigger_target_frac is not None
+
+
 def profit_lock_stop(side: str, entry: float, risk: float, best: float,
-                     params: Params) -> Optional[float]:
+                     params: Params, target: Optional[float] = None) -> Optional[float]:
     """The stop the profit lock asks for, or None when it is not armed:
     `best` (the best price since the fill) has not yet reached
-    `lock_trigger_r` x `risk` in favour of `entry`. Pure."""
-    if params.lock_trigger_r is None or risk <= 0:
+    `lock_trigger_r` x `risk` in favour of `entry` (or, with
+    `lock_trigger_target_frac`, that share of the way from `entry` to
+    `target`; None without a target). Pure."""
+    if not lock_on(params) or risk <= 0:
         return None
     sign = 1.0 if side == "long" else -1.0
-    if sign * (best - entry) + 1e-12 < params.lock_trigger_r * risk:
+    if params.lock_trigger_target_frac is not None:
+        if target is None:
+            return None
+        need = params.lock_trigger_target_frac * abs(target - entry)
+    else:
+        need = params.lock_trigger_r * risk
+    if sign * (best - entry) + 1e-12 < need:
         return None
     stop = entry + sign * params.lock_r * risk
+    if params.lock_plus_fees:
+        stop += sign * 2.0 * params.taker_fee * entry
     if params.lock_trail:
-        trail = best - sign * (params.lock_trigger_r - params.lock_r) * risk
+        gap = ((params.lock_trigger_r - params.lock_r) * risk if params.lock_trigger_target_frac is None
+               else need - params.lock_r * risk)
+        trail = best - sign * gap
         stop = max(stop, trail) if sign > 0 else min(stop, trail)
     return stop
 
 
-def _profit_lock(pos: _Position, bar: Candle, params: Params) -> bool:
+_NEW_YORK = ZoneInfo("America/New_York")
+WEEKEND_CLOSE_NY = (4, 16 * 60)     # Friday 16:00 New York (weekday, minute of day)
+WEEKEND_OPEN_NY = (6, 18 * 60)      # Sunday 18:00 New York
+
+
+def weekend_closed(t_ms: int) -> bool:
+    """True when `t_ms` falls in the oil futures weekend: Friday 16:00 to
+    Sunday 18:00 New York time (Fri 21:00 to Sun 23:00 UTC in winter, Fri
+    20:00 to Sun 22:00 UTC in summer; zoneinfo does the switch). Pure."""
+    lt = datetime.fromtimestamp(t_ms / 1000.0, tz=timezone.utc).astimezone(_NEW_YORK)
+    wd, minute = lt.weekday(), lt.hour * 60 + lt.minute
+    if wd == 5:
+        return True
+    if wd == WEEKEND_CLOSE_NY[0]:
+        return minute >= WEEKEND_CLOSE_NY[1]
+    if wd == WEEKEND_OPEN_NY[0]:
+        return minute < WEEKEND_OPEN_NY[1]
+    return False
+
+
+def _profit_lock(pos: _Position, bar: Candle, params: Params, t: Optional[int] = None) -> bool:
     """Fold `bar`'s best price into the position and tighten the stop to
-    the profit lock's level. Never widens. True when this bar moved it."""
-    if params.lock_trigger_r is None or pos.risk_usd <= 0:
+    the profit lock's level. Never widens. True when this bar moved it.
+    With `lock_weekend_only`, a bar outside the weekend window is skipped
+    whole (its best price is not folded in either)."""
+    if not lock_on(params) or pos.risk_usd <= 0:
+        return False
+    if params.lock_weekend_only and (t is None or not weekend_closed(t)):
         return False
     is_long = pos.side == "long"
     best = bar.h if is_long else bar.l
     pos.lock_best = best if pos.lock_best is None else (
         max(pos.lock_best, best) if is_long else min(pos.lock_best, best))
-    new_stop = profit_lock_stop(pos.side, pos.avg_entry, pos.risk_usd, pos.lock_best, params)
+    new_stop = profit_lock_stop(pos.side, pos.avg_entry, pos.risk_usd, pos.lock_best, params, pos.target_px)
     if new_stop is None:
         return False
     tighter = new_stop > pos.stop_px + 1e-12 if is_long else new_stop < pos.stop_px - 1e-12
@@ -750,6 +827,8 @@ def _setup(d: Direction, mid: float, lv: Dict[str, Any], params: Params,
     if params.stop_buffer_atr is not None and (params.stop_buffer_floor is not None
                                                or params.stop_buffer_floor_frac is not None):
         buf = floored_buffer(raw_buf, entry, params.stop_buffer_floor, params.stop_buffer_floor_frac)
+    elif params.stop_buffer_atr is None and params.fixed_buffer_floor_frac is not None:
+        buf = floored_buffer(raw_buf, entry, None, params.fixed_buffer_floor_frac)
     stop_px = struct - buf if is_long else struct + buf
     structural_target = lv["target_high"] if is_long else lv["target_low"]
     if params.target_r is not None:
@@ -872,6 +951,15 @@ def simulate(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], direct
         raise ValueError(f"stop_buffer_floor {params.stop_buffer_floor} must be 0 or more (None turns it off)")
     if params.stop_buffer_floor_frac is not None and not (0 <= params.stop_buffer_floor_frac < 1):
         raise ValueError(f"stop_buffer_floor_frac {params.stop_buffer_floor_frac} must be in [0, 1)")
+    if params.fixed_buffer_floor_frac is not None and not (0 <= params.fixed_buffer_floor_frac < 1):
+        raise ValueError(f"fixed_buffer_floor_frac {params.fixed_buffer_floor_frac} must be in [0, 1)")
+    if params.weekend_off not in (None, "hold", "flatten"):
+        raise ValueError(f"unknown weekend_off {params.weekend_off!r}")
+    if params.lock_trigger_target_frac is not None:
+        if params.lock_trigger_r is not None:
+            raise ValueError("set lock_trigger_r or lock_trigger_target_frac, not both")
+        if not (0 < params.lock_trigger_target_frac < 1):
+            raise ValueError(f"lock_trigger_target_frac {params.lock_trigger_target_frac} must be in (0, 1)")
     c15 = sorted(candles_15m, key=lambda c: c.t)
     c1h = sorted(candles_1h, key=lambda c: c.t)
     funding_sorted: List[Tuple[int, float]] = sorted(
@@ -961,6 +1049,22 @@ def simulate(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], direct
                 run.fees_total_usd += trade.fees_usd
                 position = None
                 resting_add = None
+
+        # 2b. weekend flatten (Params.weekend_off "flatten"): out at market on
+        # the first tick inside the window, resting orders cancelled
+        in_weekend = params.weekend_off is not None and weekend_closed(t)
+        if in_weekend and params.weekend_off == "flatten":
+            resting = None
+            resting_add = None
+            if position is not None and position.opened_at < t:
+                sgn = 1.0 if position.side == "long" else -1.0
+                wk_px = mid * (1.0 - sgn * _market_exit_slip(params, position.size * mid))
+                trade = _close_trade(position, wk_px, t, "weekend", params.taker_fee, initial_size)
+                equity += trade.gross_pnl_usd - trade.exit_fee_usd
+                run.trades.append(trade)
+                run.gross_pnl_usd += trade.gross_pnl_usd
+                run.fees_total_usd += trade.fees_usd
+                position = None
 
         # 3. resting entry: fill or hygiene-cancel (never on the bar it was placed)
         if resting is not None and resting.placed_at < t:
@@ -1093,7 +1197,7 @@ def simulate(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], direct
                                 position.added = True
                             resting_add = None
                     _manage_stop(position, bar, lv["atr14"] if lv else None, params)
-                    if _profit_lock(position, bar, params):
+                    if _profit_lock(position, bar, params, t):
                         lock_px = _lock_same_bar_exit(position, bar, params)
                         if lock_px is not None:
                             trade = _close_trade(position, lock_px, t, "lock", params.taker_fee, initial_size)
@@ -1112,7 +1216,9 @@ def simulate(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], direct
             fs = _flip_setup(side, back_to, mid, lv, params)
             if cap_on:
                 n_tallied = tally_stops(run.trades, n_tallied, stops_by_day)
-            if fs.get("refused"):
+            if in_weekend:
+                run.refused["weekend"] += 1
+            elif fs.get("refused"):
                 run.refused[fs["refused"]] += 1
             elif cap_on and stop_cap_blocks(stops_by_day, t, fs["side"], params):
                 run.refused["stop_cap"] += 1
@@ -1139,6 +1245,9 @@ def simulate(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], direct
             if blocked_regime is not None and regime_key(d, t) == blocked_regime:
                 d = None            # a target filled under this call: wait for the next one
             if d is not None and params.session_utc is not None and not _in_session(t, params.session_utc):
+                d = None
+            if d is not None and in_weekend:
+                run.refused["weekend"] += 1
                 d = None
             if d is not None and lv is not None and lv["atr14"] and lv["target_low"] is not None:
                 # Variant A (Params.ai_levels): try the thesis's own levels
@@ -1186,7 +1295,7 @@ def simulate(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], direct
                         run.gross_pnl_usd += trade.gross_pnl_usd
                         run.fees_total_usd += trade.fees_usd
                         position = None
-                    elif _profit_lock(position, bar, params):
+                    elif _profit_lock(position, bar, params, t):
                         # the open was the fill, so this bar's high came after it
                         lock_px = _lock_same_bar_exit(position, bar, params)
                         if lock_px is not None:
@@ -1246,4 +1355,4 @@ def simulate(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], direct
 
 __all__ = ["Direction", "DirectionAt", "Params", "Trade", "Run", "simulate", "offset_target", "regime_key",
           "trade_leverage", "CONVICTION_LEVERAGE_FLOOR", "live_params", "profit_lock_stop", "stop_cap_blocks",
-          "tally_stops", "floored_buffer"]
+          "tally_stops", "floored_buffer", "weekend_closed", "lock_on"]
