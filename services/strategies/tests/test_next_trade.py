@@ -160,3 +160,27 @@ def test_the_floor_refuses_the_two_shorts_stopped_on_2026_11_02():
     new = next_trade("short", 49.93, 49.194, 49.892, thesis_entry=49.70, leverage=20,
                      coin_max_leverage=25, stop_buffer=stop_buffer_for("xyz:SILVER", 0.161, 49.93))
     assert old["ok"] and not new["ok"]
+
+
+def test_live_rule_line_names_the_price_the_tick_trades_at_not_the_thesis():
+    """2026-11-02: thesis said short 109.30, the live rule only sells near
+    111.62, and the operator was told the wrong price."""
+    from services.strategies.next_trade import live_rule_line, next_trade
+    nt = next_trade("short", 108.985, 108.16, 112.33, thesis_entry=109.30, leverage=20,
+                    coin_max_leverage=20, stop_buffer=0.75)
+    line = live_rule_line(nt)
+    assert not nt["ok"]
+    assert line.startswith("Live rule: waits: sell at ")
+    assert "not at the thesis price 109.3" in line
+    assert f"stop {nt['stop_px']:g}" in line
+
+
+def test_live_rule_line_when_it_trades_now_or_has_no_side():
+    from services.strategies.next_trade import live_rule_line, next_trade
+    nt = next_trade("short", 111.9, 108.92, 112.33, thesis_entry=109.30, leverage=10,
+                    coin_max_leverage=20, stop_buffer=0.75)
+    assert nt["ok"] and live_rule_line(nt).startswith("Live rule: sells now")
+    assert "thesis price" not in live_rule_line(nt)
+    flat = next_trade("flat", 110.0, 108.0, 112.0, thesis_entry=None, leverage=20,
+                      coin_max_leverage=20, stop_buffer=0.75)
+    assert live_rule_line(flat).startswith("Live rule: no trade")

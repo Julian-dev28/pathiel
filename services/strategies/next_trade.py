@@ -121,4 +121,25 @@ def next_trade(side: str, mid: float, low_24h: float, high_24h: float, *,
     }
 
 
-__all__ = ["next_trade", "stop_buffer_for", "BRENT_STOP_BUFFER"]
+def live_rule_line(nt: Dict[str, Any]) -> str:
+    """One markdown line: where the tick actually trades, from a next_trade()
+    answer. Operator, 2026-11-02: the thesis said "short at 109.30" while the
+    live rule (stop past the 24h edge, 2R to the far edge) only sells near
+    111.62, and the operator was told the wrong price. This line sits under
+    the thesis in desk_brief so the two can never be confused again."""
+    if not nt.get("side"):
+        return f"Live rule: no trade ({nt.get('reason') or 'no side'})."
+    if nt.get("reason") and nt.get("trigger_px") is None:
+        return f"Live rule: no trade now ({nt['reason']})."
+    stop, tp = nt.get("stop_px"), nt.get("tp_px")
+    r = (nt.get("r_to_targets") or [{}])[0].get("r_multiple")
+    r_s = f", {r:g}R" if r is not None else ""
+    head = f"Live rule: {nt.get('verdict')} (stop {stop:g}, target {tp:g}{r_s})"
+    te = nt.get("thesis_entry")
+    if not nt.get("ok") and te is not None and nt.get("trigger_px") is not None \
+            and abs(float(nt["trigger_px"]) - float(te)) > 1e-9:
+        head += f". The tick trades there, not at the thesis price {te:g}"
+    return head + "."
+
+
+__all__ = ["next_trade", "stop_buffer_for", "live_rule_line", "BRENT_STOP_BUFFER"]

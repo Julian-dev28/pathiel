@@ -3073,8 +3073,26 @@ def handle_desk_brief(params: Dict[str, Any]) -> str:
         return json.dumps({"error": f"render failed: {type(e).__name__}: {e}", "desk": desk_id})
     if sizing and sizing.get("reason"):
         markdown += "\nYour size: " + sizing["reason"]
+    live_rule = _live_rule(desk_id, brief)
+    if live_rule.get("line"):
+        markdown += "\n" + live_rule["line"]
     return json.dumps({"desk": desk_id, "mode": "quick", "markdown": markdown,
-                       "stale": brief.stale, "your_size": sizing})
+                       "stale": brief.stale, "your_size": sizing,
+                       "live_rule": live_rule.get("next")})
+
+
+def _live_rule(desk_id: str, brief: Any) -> Dict[str, Any]:
+    """Where the tick would actually trade (GET /api/desks/{id}/next), at the
+    saved max leverage. Never fails the brief: a read error becomes a line."""
+    try:
+        from pathiel.agents.config_store import read_agent_config
+        from services.strategies.api import desk_next_trade
+        from services.strategies.next_trade import live_rule_line
+        lev = float(((read_agent_config() or {}).get("risk_profile") or {}).get("max_leverage") or 20)
+        nt = _bounded(desk_next_trade, desk_id, lev, brief=brief)
+        return {"next": nt, "line": live_rule_line(nt)}
+    except Exception as e:  # noqa: BLE001 - the brief still answers without it
+        return {"next": None, "line": f"Live rule: unavailable ({type(e).__name__}: {str(e)[:80]})."}
 
 
 DESK_BRIEF_MAX_AGE_S = 120.0

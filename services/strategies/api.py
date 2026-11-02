@@ -308,6 +308,16 @@ def get_next_trade(desk_id: str, leverage: float = Query(20, gt=0, le=100)) -> D
         brief = facade.get_brief(desk_id)
     except desks.UnknownDeskError:
         raise _unknown_desk(desk_id)
+    return desk_next_trade(desk_id, leverage, brief=brief)
+
+
+def desk_next_trade(desk_id: str, leverage: float, brief=None) -> Dict[str, object]:
+    """Body of GET /api/desks/{id}/next, callable without HTTP (the MCP
+    desk_brief shows it next to the thesis since 2026-11-02, so a thesis
+    price the tick will not trade at is never mistaken for the entry).
+    Raises desks.UnknownDeskError for an unknown desk."""
+    if brief is None:
+        brief = facade.get_brief(desk_id)
     if brief.thesis is None:
         return {"ok": False, "source": "desk_rules", "reason": "no thesis yet — call desk_refresh"}
     call = brief.thesis.call

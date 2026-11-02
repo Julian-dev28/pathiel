@@ -438,6 +438,11 @@ def fake_desk(monkeypatch):
         RiskProfile(preset="starter"), [], VenueRules(min_order_notional_usd=10.5)))
     monkeypatch.setattr(M, "_coin_specs", lambda coin: (20.0, 3))
     monkeypatch.setattr(M, "_live_equity", lambda: 15.21)
+    # desk_brief also prints where the tick trades (2026-11-02); that reads
+    # live candles, so the gate test gets a canned answer.
+    monkeypatch.setattr(M, "_live_rule", lambda desk_id, brief: {
+        "next": {"ok": False, "trigger_px": 111.62},
+        "line": "Live rule: waits: sell at 111.62 or higher (stop 113.08, target 108.701, 2R)."})
     return facade
 
 
@@ -453,6 +458,13 @@ class TestDeskTools:
         assert body["mode"] == "quick"
         assert fake_desk.thesis.call.instrument in body["markdown"]
         assert fake_desk.thesis.call.invalidation in body["markdown"]
+
+    def test_desk_brief_quick_shows_where_the_tick_actually_trades(self, fake_desk):
+        """2026-11-02: the thesis price and the live rule's price differ; the
+        brief carries both so neither is mistaken for the other."""
+        _, body = _call("desk_brief", {"desk": "oil"})
+        assert "Live rule: waits: sell at 111.62" in body["markdown"]
+        assert body["live_rule"]["trigger_px"] == 111.62
 
     def test_desk_brief_quick_uses_the_fallback_renderer(self, fake_desk, monkeypatch):
         """With services.thesis unimportable, desk_brief must still answer
