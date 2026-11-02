@@ -325,13 +325,16 @@ def test_handler_add_says_free_margin_not_full_size_when_margin_is_the_limit(mon
     seen = {}
     monkeypatch.setattr(br, "place_bracket", lambda coin, **k: seen.update(coin=coin, **k) or {"ok": True, "placed": True})
 
-    # the live numbers: $5.19 free -> 5.19 / 1.009 x 20 / 109.85 = 0.94
-    # (0.73 under the 2% reserve, 0.25 under the old 10%)
+    # the live numbers: $5.19 free -> 5.19 / 1.009 x 20 / 109.85 = 0.9366, rounded
+    # DOWN to 0.93 (0.94 needs $5.21 with the fee: the venue refuses it, as it
+    # did a silver top-up on 2026-11-02 06:17Z)
     monkeypatch.setattr(snap, "account_state", lambda user, include_hip3=True, **kw: {
         "equity": 58.01, "dex_available": {"xyz": 5.19}})
     out = json.loads(mcp.handle_place_bracket(
         {"coin": COIN, "entry_px": 109.85, "stop_px": 108.8, "tp_px": 111.49, "add": True}))
-    assert out["placed"] and out["topup"]["topup_size"] == 0.94 and seen["size"] == 0.94
+    assert out["placed"] and out["topup"]["topup_size"] == 0.93 and seen["size"] == 0.93
+    need = 0.93 * 109.85 / 20 * (1 + 20 * 0.00045)
+    assert need <= 5.19, "the top-up's margin plus opening fee fits the free margin"
 
     # two cents free buys under one size step: refused, and the reason names margin
     seen.clear()
@@ -969,3 +972,35 @@ def test_no_sweep_ever_cancels_an_entry_child_on_random_books():
         cancelled = {c[1] for c in ex.calls if c[0] == "cancel"}
         assert not cancelled & children, (book, ex.calls)
         assert out["stop_covers"] == pytest.approx(sum(fills))
+
+
+
+def test_a_capped_size_never_rounds_up_past_free_margin():
+    """Every free-margin cap rounds DOWN to the size step (2026-11-02: a top-up
+    rounded to nearest went over the free margin and was refused)."""
+    mcp = _mcp()
+    assert mcp._floor_size(0.9366, 2) == 0.93 and mcp._floor_size(0.2399, 2) == 0.23
+    assert mcp._floor_size(0.24, 2) == 0.24 and mcp._floor_size(-1, 2) == 0.0
+    assert mcp._floor_size(12.999, 1) == 12.9 and mcp._floor_size(3.0, 0) == 3.0
+
+
+def test_the_floored_cap_always_fits_free_margin_on_random_books():
+    """Generalizes the 2026-11-02 fix: 2,000 seeded (free, price, leverage,
+    decimals) draws; the capped size's margin plus opening fee never exceeds
+    the free margin, and rounding to nearest would have broken it on some."""
+    import random
+    from services.risk.derive import VenueRules, margin_after_open_fee
+    mcp = _mcp()
+    rng, v, broke_nearest = random.Random(20261102), VenueRules(), 0
+    for _ in range(2000):
+        free, px = rng.uniform(0.5, 300), rng.uniform(20, 120)
+        lev, d = rng.choice([5.0, 10.0, 20.0, 25.0]), rng.choice([0, 1, 2, 3])
+        budget = margin_after_open_fee(free, lev, v)
+        raw = budget * lev / px
+        for size, nearest in ((mcp._floor_size(raw, d), False), (mcp._round_size(raw, d), True)):
+            need = size * px / lev * (1 + lev * v.taker_fee_rate)
+            if nearest:
+                broke_nearest += need > free * (1 - v.free_margin_floor_frac) + 1e-9
+            else:
+                assert need <= free * (1 - v.free_margin_floor_frac) + 1e-9, (free, px, lev, d, size)
+    assert broke_nearest > 0, "the old nearest-rounding over-sized on some draws"

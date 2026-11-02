@@ -3412,7 +3412,10 @@ def handle_place_bracket(params: Dict[str, Any]) -> str:
             free = float((st.get("dex_available") or {}).get(dex, st.get("available") or 0) or 0)
             lev_used = float(sized.leverage or leverage or 1)
             budget = margin_after_open_fee(free, lev_used, venue or VenueRules())
-            cap = _round_size(budget * lev_used / ref, sz_dec)
+            # DOWN, never to the nearest step: 2026-11-02 06:17Z a silver
+            # top-up rounded up past the free margin and the venue refused it
+            # ("Insufficient margin to place order") after the dry run passed.
+            cap = _floor_size(budget * lev_used / ref, sz_dec)
             wanted = _round_size(size - abs(held), sz_dec)
             size = _round_size(min(wanted, cap), sz_dec)
             topup = {"held": held, "full_size": sized.size, "free_margin_usd": round(free, 2),
@@ -3440,9 +3443,8 @@ def handle_place_bracket(params: Dict[str, Any]) -> str:
             dex = coin.split(":", 1)[0] if ":" in coin else ""
             free = float((st.get("dex_available") or {}).get(dex, st.get("available") or 0) or 0)
             lev_used = float(sized.leverage or leverage or 1)
-            step = 10 ** -int(sz_dec if sz_dec is not None else 2)
-            cap = round(math.floor(margin_after_open_fee(free, lev_used, venue or VenueRules())
-                                   * lev_used / ref / step + 1e-9) * step, 8)   # down, never over free margin
+            cap = _floor_size(margin_after_open_fee(free, lev_used, venue or VenueRules())
+                              * lev_used / ref, sz_dec)   # down, never over free margin
             dslice["free_margin_usd"] = round(free, 2)
             if cap < size:
                 dslice["capped_by_free_margin"] = {"wanted": size, "cap": cap}
@@ -3476,6 +3478,17 @@ def _bracket_leverage(profile: Any, lev_raw: Any = None) -> "float | None":
 
 def _as_bool(v: Any) -> bool:
     return v is True or str(v).strip().lower() in ("1", "true", "yes", "y")
+
+
+def _floor_size(size: float, sz_decimals: Any) -> float:
+    """Round DOWN to the coin's size step: a size capped by free margin must
+    never round up past it (the venue refuses the order)."""
+    try:
+        d = int(sz_decimals) if sz_decimals is not None else 2
+    except (TypeError, ValueError):
+        d = 2
+    step = 10 ** -d
+    return round(math.floor(max(0.0, size) / step + 1e-9) * step, 8)
 
 
 def _round_size(size: float, sz_decimals: Any) -> float:
