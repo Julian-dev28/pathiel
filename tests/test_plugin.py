@@ -222,3 +222,16 @@ def test_claude_plugin_validate_passes():
                           capture_output=True, text=True, timeout=120)
     assert proc.returncode == 0, proc.stdout + proc.stderr
     assert "passed" in (proc.stdout + proc.stderr).lower()
+
+
+def test_a_due_rewrite_is_forced_through_desk_refresh():
+    """2026-11-01: thesis_due said "daily: thesis is 24h+ old" on every silver
+    tick for 16 hours, but desk_refresh (without force) only rewrites on
+    expiry, a big move or a headline, so it answered no_trigger each time and
+    silver traded a 40h-old call. thesis_due is the one gate for the
+    operator's rewrite rule; the tick must pass force: true when it says due."""
+    for path in (ROOT / ".claude" / "agents" / "desk-tick.md", ROOT / "agents" / "desk-tick.md"):
+        text = path.read_text()
+        assert "scripts/thesis_due.py --desk DESK" in text, path
+        assert "`desk_refresh {desk: DESK, force: true}` only when it says `\"due\": true`" in text, path
+        assert "desk_refresh {desk: DESK}`" not in text, f"{path}: an unforced refresh would skip the daily rewrite"

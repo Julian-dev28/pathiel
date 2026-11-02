@@ -45,8 +45,12 @@ ToolSearch call: `select:mcp__pathiel__desk_brief,mcp__pathiel__bracket_sweep,mc
    xyz:NATGAS). A thesis whose instrument is not the desk's primary (an old
    metals thesis on xyz:GOLD) never trades: rewrite it first. The card shows "Pays X.XR"; a call under 1.5R never trades.
    **Rewrite check:** `python3 scripts/thesis_due.py --desk DESK`. Call
-   `desk_refresh {desk: DESK}` only when it says `"due": true`, and put its
-   first reason in your report. It is due once a day, after an API, EIA or
+   `desk_refresh {desk: DESK, force: true}` only when it says `"due": true`,
+   and put its first reason in your report. `force: true` is required:
+   thesis_due is the one gate for the operator's rewrite rule, and without it
+   desk_refresh applies its own narrower trigger (expiry, a big move or a
+   headline) and skips the daily and after-catalyst rewrites with
+   `no_trigger` (2026-11-01: silver ran on a 40h-old thesis that way). It is due once a day, after an API, EIA or
    OPEC release the thesis listed, after a position on the desk closed, and
    when the mid has moved 1.5% or more since the thesis was written; never inside an hour
    of the last thesis (operator, 2026-10-28; about one dollar a rewrite on
