@@ -245,3 +245,14 @@ def test_routine_ticks_stay_quiet_in_the_chat():
         text = p.read_text()
         assert "Say NOTHING in the chat for a HOLD, a\n   SKIP, or a NONE" in text, p
         assert "A HOLD tick is\n   the log line only." not in text, p
+
+
+def test_desk_loops_window_keeps_the_live_cron_offsets_and_one_watcher():
+    """The ticks moved to their own window on 2026-11-02. The loop skill must
+    keep the offsets the session used (oil :03, metals :10, 15 min apart) and
+    never start a second price watcher."""
+    text = (ROOT / ".claude" / "skills" / "desk-loops" / "SKILL.md").read_text()
+    assert "`3,18,33,48 * * * *`, prompt `/desk-tick oil`" in text
+    assert "`10,25,40,55 * * * *`, prompt `/desk-tick metals`" in text
+    assert "pgrep -f scripts/trigger_watch.py" in text
+    assert "--model opus" in text  # protect the Fable meter
