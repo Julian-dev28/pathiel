@@ -156,6 +156,31 @@ the window; on weekdays the live fixed stop rules run unchanged. A stop the
 lock tightened over the weekend stays where it is after the reopen (a stop
 never widens).
 
+Risk-capped size (2026-11-02)
+-----------------------------
+`Params.risk_cap_frac` (None = off, the live full-port size). Every entry,
+top-up and flip sizes at `risk_capped_notional`: the smaller of the
+full-port notional and the notional whose stop-out (price to the stop,
+the taker fee in and out, the flat `slippage`) costs `risk_cap_frac` of
+equity. The position keeps its leverage setting, so the liquidation price
+and the 20x gate are unchanged; only the size shrinks. A wide stop sizes
+down, a tight one stays at full port. (LOSS_AUDIT_2026-11-02.md.)
+
+Entry filters (2026-11-02)
+--------------------------
+All off by default; each only ever skips a new entry (never a flip, never
+an open position). `Params.entry_delay_min`: none in the first N minutes
+of a call (a journaled thesis's created_at, `call_start`; a control series
+has no rewrites, so its side's start). `Params.side_age_h`: none until the
+side in force has held N hours (same-side rewrites do not reset it; a flat
+call between two same-side calls does not either). `Params.confirm_1h`:
+none unless the last closed 1h candle agrees (a long's closed above its
+open, a short's below). `Params.no_break_entry`: in market mode, none once
+the mid is already past the entry range's own edge (a long under the 24h
+low, a short over the 24h high: the 2026-11-02 Brent long bought 110.00
+under a 110.14 low). Refusals are counted in `Run.refused` ("delay",
+"side_age", "confirm_1h", "break"). (LOSS_AUDIT_2026-11-02.md.)
+
 Liquidation
 -----------
 Checked every bar a position is open against Hyperliquid's isolated-margin
@@ -312,6 +337,14 @@ class Params:
     lock_weekend_only: bool = False          # the profit lock acts only inside weekend_closed()
     lock_trigger_target_frac: Optional[float] = None  # arm at this share of the way to the target (not with lock_trigger_r)
     lock_plus_fees: bool = False             # lock level + the taker round trip, so break-even nets about zero
+    # ── 2026-11-02 loss audit (LOSS_AUDIT_2026-11-02.md; see "Risk-capped
+    # size" and "Entry filters" above). Every default keeps every existing
+    # result byte-identical (test_loss_fix.py's golden check).
+    risk_cap_frac: Optional[float] = None    # size so a stop at the fill loses at most this share of equity
+    entry_delay_min: Optional[float] = None  # no new entry in the first N minutes of a call
+    side_age_h: Optional[float] = None       # no new entry until the call's side has held N hours
+    confirm_1h: bool = False                 # the last closed 1h candle must agree with the side
+    no_break_entry: bool = False             # no market entry once the mid is past the entry range's own edge
 
 
 # Per-side market-sell slippage (bps) by notional (USD), walked on the live
@@ -485,6 +518,22 @@ def _full_size_notional(equity: float, params: Params, leverage: Optional[float]
     usable = equity * (1.0 - params.free_margin_floor)
     margin = usable / (1.0 + lev * params.taker_fee)
     return margin * lev
+
+
+def risk_capped_notional(equity: float, params: Params, leverage: Optional[float], entry: float,
+                         stop: float) -> float:
+    """The notional a new entry sizes at: the full-port size, or with
+    `risk_cap_frac` the smaller of that and the size whose stop-out (price
+    to the stop, the taker fee both ways, the flat stop slippage) costs
+    `risk_cap_frac` of equity. The leverage stays what the position is set
+    to, so the liquidation price does not move; only the size shrinks. Pure."""
+    full = _full_size_notional(equity, params, leverage)
+    if params.risk_cap_frac is None or entry <= 0:
+        return full
+    per_dollar = abs(entry - stop) / entry + 2.0 * params.taker_fee + params.slippage
+    if per_dollar <= 0:
+        return full
+    return min(full, params.risk_cap_frac * equity / per_dollar)
 
 
 def _open_position(resting: _Resting, fill_px: float, t: int, params: Params) -> _Position:
@@ -664,6 +713,44 @@ def weekend_closed(t_ms: int) -> bool:
     return False
 
 
+def filters_on(params: Params) -> bool:
+    """Is any tick-level entry filter of the 2026-11-02 loss audit configured?"""
+    return (params.entry_delay_min is not None or params.side_age_h is not None or params.confirm_1h)
+
+
+def call_start(d: Direction, side_since: Optional[int]) -> Optional[int]:
+    """When the call `d` began: its regime_id when that is a time in ms (a
+    journaled thesis's created_at), else when its side began."""
+    rid = d.regime_id
+    if rid is not None and rid.isdigit():
+        return int(rid)
+    return side_since
+
+
+def entry_filter(d: Direction, t: int, side_since: Optional[int], last_1h: Optional[Candle],
+                 params: Params) -> Optional[str]:
+    """The reason the loss-audit filters refuse a new `d.side` entry at
+    tick `t`, or None. `side_since`: when the side in force began (a run
+    of same-side calls counts as one side). `last_1h`: the last 1h candle
+    closed at or before `t`. Pure.
+      entry_delay_min  "delay"      under N minutes since the call began
+      side_age_h       "side_age"   the side has held under N hours
+      confirm_1h       "confirm_1h" that candle closed against the side (or flat)"""
+    if params.entry_delay_min is not None:
+        start = call_start(d, side_since)
+        if start is not None and t - start < params.entry_delay_min * 60_000:
+            return "delay"
+    if params.side_age_h is not None and side_since is not None and t - side_since < params.side_age_h * HOUR_MS:
+        return "side_age"
+    if params.confirm_1h:
+        if last_1h is None:
+            return "confirm_1h"
+        agree = last_1h.c > last_1h.o if d.side == "long" else last_1h.c < last_1h.o
+        if not agree:
+            return "confirm_1h"
+    return None
+
+
 def _profit_lock(pos: _Position, bar: Candle, params: Params, t: Optional[int] = None) -> bool:
     """Fold `bar`'s best price into the position and tighten the stop to
     the profit lock's level. Never widens. True when this bar moved it.
@@ -814,6 +901,8 @@ def _setup(d: Direction, mid: float, lv: Dict[str, Any], params: Params,
     if params.entry_mode == "market":
         if d.entry_ceiling is not None and (mid > d.entry_ceiling if is_long else mid < d.entry_ceiling):
             return {"refused": "chase"}
+        if params.no_break_entry and (mid < edge if is_long else mid > edge):
+            return {"refused": "break"}
         entry = mid
         struct = min(edge, mid) if is_long else max(edge, mid)
     else:
@@ -867,7 +956,7 @@ def _market_open(setup: Dict[str, Any], bar: Candle, t: int, equity: float,
                  params: Params, leverage: Optional[float] = None) -> Tuple[_Position, float, float]:
     """Open at the mid as a taker, size-aware slippage: (position, size, equity after the fee)."""
     sign = 1.0 if setup["side"] == "long" else -1.0
-    notional = _full_size_notional(equity, params, leverage)
+    notional = risk_capped_notional(equity, params, leverage, setup["entry_px"], setup["stop_px"])
     fill = setup["entry_px"] * (1.0 + sign * _market_exit_slip(params, notional))
     rest = _Resting(side=setup["side"], limit_px=fill, stop_px=setup["stop_px"],
                     target_px=setup["target_px"], placed_at=t, orig_target_px=setup["orig_target_px"])
@@ -980,6 +1069,9 @@ def simulate(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], direct
     cap_on = params.daily_stop_cap is not None
     stops_by_day: Counter = Counter()  # (UTC day, None|side) -> stop exits (Params.daily_stop_cap)
     n_tallied = 0
+    filt_on = filters_on(params)
+    side_seen: Optional[str] = None      # the side in force (entry filters), and since when
+    side_since: Optional[int] = None
 
     # The tick series: one decision per 15m bar, or per 1h bar for the hourly
     # loop (2026-10-25). With 1h ticks every tick lands on a 1h close, so the
@@ -1002,6 +1094,12 @@ def simulate(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], direct
         while n_closed < len(c1h) and c1h[n_closed].t + HOUR_MS <= t:
             n_closed += 1
         lv = _levels(c1h[max(0, n_closed - need):n_closed], params.entry_lookback_h, params.target_lookback_h)
+        if filt_on:
+            d_now = direction_at(t)
+            if d_now is not None and d_now.side != side_seen:
+                side_seen = d_now.side
+                start = call_start(d_now, None)
+                side_since = start if start is not None and start <= t else t
 
         # 1. hourly funding settlement + invalidation, exactly on a 1h close
         close_time = t
@@ -1074,7 +1172,8 @@ def simulate(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], direct
                 run.filled += 1
                 position = _open_position(resting, resting.limit_px, t, params)
                 position.leverage = resting.leverage
-                notional = _full_size_notional(equity, params, resting.leverage)
+                notional = risk_capped_notional(equity, params, resting.leverage, resting.limit_px,
+                                                resting.stop_px)
                 size = notional / resting.limit_px if resting.limit_px > 0 else 0.0
                 position.size = size
                 initial_size = size
@@ -1175,7 +1274,8 @@ def simulate(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], direct
                 else:
                     # top-up: one resting add at the original entry, while under
                     # full size; never after a scale-out (that would undo it)
-                    full = _full_size_notional(equity, params, position.leverage) / position.avg_entry
+                    full = risk_capped_notional(equity, params, position.leverage, position.avg_entry,
+                                                position.stop_px) / position.avg_entry
                     if (resting_add is None and position.size < full - 1e-9 and not position.partial_done
                             and not position.is_flip):
                         resting_add = _Resting(side=position.side, limit_px=position.avg_entry,
@@ -1249,6 +1349,11 @@ def simulate(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], direct
             if d is not None and in_weekend:
                 run.refused["weekend"] += 1
                 d = None
+            if d is not None and filt_on:
+                why = entry_filter(d, t, side_since, c1h[n_closed - 1] if n_closed else None, params)
+                if why is not None:
+                    run.refused[why] += 1
+                    d = None
             if d is not None and lv is not None and lv["atr14"] and lv["target_low"] is not None:
                 # Variant A (Params.ai_levels): try the thesis's own levels
                 # first, at the leverage variant B (conviction_leverage)
@@ -1355,4 +1460,5 @@ def simulate(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], direct
 
 __all__ = ["Direction", "DirectionAt", "Params", "Trade", "Run", "simulate", "offset_target", "regime_key",
           "trade_leverage", "CONVICTION_LEVERAGE_FLOOR", "live_params", "profit_lock_stop", "stop_cap_blocks",
-          "tally_stops", "floored_buffer", "weekend_closed", "lock_on"]
+          "tally_stops", "floored_buffer", "weekend_closed", "lock_on", "risk_capped_notional", "filters_on",
+          "call_start", "entry_filter"]

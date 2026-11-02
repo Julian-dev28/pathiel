@@ -192,3 +192,22 @@ adopted): `docs/strategy/BRENT_STOP_BUFFER_TEST_2026-11-02.md`.
 - A position still open when the 30-day window ends is marked-to-market in
   `final_equity`/`equity_curve`, not force-closed into a fabricated trade
   row.
+
+## Loss-audit options (2026-11-02)
+
+Off by default; with them off every earlier eval output is byte-identical
+(`tests/test_loss_fix.py`'s golden check). Results and verdicts:
+`docs/strategy/LOSS_AUDIT_2026-11-02.md`.
+
+- `risk_cap_frac` — size every entry, top-up and flip so a stop-out (price,
+  taker fee both ways, flat slip) costs at most this share of equity
+  (`risk_capped_notional`); leverage and the liquidation price unchanged.
+- `entry_delay_min`, `side_age_h`, `confirm_1h` — tick-level entry filters
+  (`entry_filter`): minutes since the call began (`call_start`), hours the
+  side has held across rewrites, the last closed 1h candle's colour.
+- `no_break_entry` — no market entry once the mid is past the entry range's
+  own edge (a long under the 24h low).
+
+The audit itself (`evals/loss_audit.py`) rebuilds every closed trade from
+the wallet's public fills and tags its cause; `evals/loss_fix_test.py`
+backtests a fix per cause.
