@@ -11,8 +11,10 @@ most profit "PER DAY, THEN PER WEEK".
 
 ## What stays the same
 
-Brent only (`xyz:BRENTOIL`), 20x isolated, the whole equity in each trade
-(margin plus the opening fee), one position at a time, stop 0.75 beyond the
+Brent only (`xyz:BRENTOIL`), up to 20x isolated, the whole equity in each trade
+(margin plus the opening fee) unless the stop would lose more than 15% of
+the desk's equity, then smaller (`risk_profile.risk_per_trade_pct: 15`,
+since 2026-11-02), one position at a time, stop 0.75 beyond the
 structure, target 0.5% of price inside the far edge as a resting limit order,
 the stop never moves, a new entry is allowed after a target fills, a tick
 every 15 minutes, theses written by Fable 5.1 on the rewrite schedule
@@ -53,6 +55,7 @@ Every change was backtested before it went live (operator rule since
 | 2026-10-28 | Thesis rewritten on a schedule by Fable 5.1: daily, after API/EIA/OPEC, after a close, after a 1.5% move, at most hourly | The 2026-10-25 thesis was still trading 2.7 days and one EIA report later |
 | 2026-10-28 | Oil only | Cross-market test: without a thesis the same mechanics lose on Brent, gold, BTC and the S&P 500. The edge is the thesis |
 | 2026-10-28 | Targets rest as limit orders, stops stay market | A limit target never missed in 26 test exits and pays the maker fee |
+| 2026-11-02 | A stop loses at most 15% of the desk (`risk_per_trade_pct` 15, was 100); leverage stays up to 20x | Loss audit: the 11-02 long at full size (-$33.87) was the whole drawdown. Cap 15% geo 1.10 Brent, 1.17 silver vs live, beats live 3 of 8; a risk call, not a tested edge. Flat 10x/15x lost on both thesis sets. See LOSS_AUDIT_2026-11-02.md |
 | 2026-10-28 | Stops stay fixed | Fixed +6.03R vs +1.97R for the best breakeven or trailing stop |
 | 2026-10-27 | Whole equity per trade, no idle reserve | Operator: fees come out at the trade. The reserve went 10% to 2% to 0 |
 | 2026-10-25 | 15-minute ticks kept; hourly tried and reverted the same night | Hourly made about half the return in the backtest |
