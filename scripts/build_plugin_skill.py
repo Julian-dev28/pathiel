@@ -33,7 +33,6 @@ SKILL_RULES = (
     ("`python3 scripts/desk_slot.py", f"`{PY} scripts/desk_slot.py", 1),
     ("`subagent_type` `desk-tick`", "`subagent_type` `pathiel:desk-tick`", 1),
     ("(`.claude/agents/desk-tick.md`)", "(the plugin's `agents/desk-tick.md`)", 1),
-    ("Report to Julien", "Report to the operator", 1),
 )
 
 AGENT_RULES = (

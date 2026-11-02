@@ -235,3 +235,13 @@ def test_a_due_rewrite_is_forced_through_desk_refresh():
         assert "scripts/thesis_due.py --desk DESK" in text, path
         assert "`desk_refresh {desk: DESK, force: true}` only when it says `\"due\": true`" in text, path
         assert "desk_refresh {desk: DESK}`" not in text, f"{path}: an unforced refresh would skip the daily rewrite"
+
+
+def test_routine_ticks_stay_quiet_in_the_chat():
+    """Operator, 2026-11-02: HOLD / SKIP / repeat-NONE ticks crowd the chat.
+    Both skill copies tell the session to say nothing for those."""
+    for p in (ROOT / ".claude" / "skills" / "desk-tick" / "SKILL.md",
+              ROOT / "skills" / "desk-tick" / "SKILL.md"):
+        text = p.read_text()
+        assert "Say NOTHING in the chat for a HOLD, a\n   SKIP, or a NONE" in text, p
+        assert "A HOLD tick is\n   the log line only." not in text, p

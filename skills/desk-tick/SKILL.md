@@ -28,10 +28,14 @@ same night, see docs/overhaul/BACKTEST_RESULTS_2026-10-25.md).
    launch more than one agent per tick. The agent file
    (the plugin's `agents/desk-tick.md`) carries the whole procedure and its hard
    rules.
-3. **Relay.** Print the agent's log line. Report to the operator only when
-   something changed (PLACED, CANCELLED, CLOSED, NONE, an uncovered
-   position, a tool error): one sentence with the numbers. A HOLD tick is
-   the log line only.
+3. **Relay, quietly.** The agent already wrote its line to
+   `/tmp/oil-loop/progress.log`. Say NOTHING in the chat for a HOLD, a
+   SKIP, or a NONE whose reason repeats that desk's previous log line
+   (operator, 2026-11-02: "can u hide these messages, it crowds up the
+   dialogue box"). Speak only when something changed: PLACED, CANCELLED,
+   CLOSED, a stop or target fill, a NONE with a new reason, an uncovered
+   position, or a tool error. Then one short message: what happened, with
+   the numbers, and the log line.
 
 If the agent fails to launch or returns no log line, append
 `DESK-TICK $ARGUMENTS <utc> action=NONE agent did not run` to the log and
