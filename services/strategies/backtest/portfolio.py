@@ -51,6 +51,21 @@ The eval reports `liquidated` per desk. In practice it does not happen:
 the 20x gate keeps every stop inside the liquidation price and a bar's
 stop is judged first, so this is a guard, not a path the data takes.
 
+Correlation guard (2026-11-02, PULLBACK_AND_CORRELATION_TEST_2026-11-02.md,
+operator: "YES" to testing a guard across desks). `simulate_portfolio(...,
+guard=CorrGuard(...))` hands each guarded desk the sim's `entry_guard`: at a
+new entry on `side`, if any OTHER desk held a position at the end of the
+previous clock tick whose side conflicts (`pair` "same": that desk holds
+`side` too; "opposite": it holds the other side), the entry's size is
+multiplied by `mult` (0 blocks it, 0.5 halves it); otherwise 1.0. `desks`
+names the desks it applies to (empty: every desk). Read off the previous
+tick's snapshot, like the marks, so desk order on a shared tick does not
+matter; an entry on the same tick as the other desk's entry does not see
+it. `drivers` (B3, optional): per desk, a callable t -> the set of driver
+tags of the call in force; the guard then acts only when the two desks'
+tags overlap. None (the default) builds no hook at all, so every existing
+result is byte-identical.
+
 Pure: no I/O, no clock read.
 """
 from __future__ import annotations
@@ -58,7 +73,7 @@ from __future__ import annotations
 import dataclasses
 import math
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, FrozenSet, List, Mapping, Optional, Sequence, Tuple
 
 from pathiel.models.types import Candle
 
@@ -89,6 +104,37 @@ class Desk:
     funding: Optional[Sequence[Dict[str, Any]]] = None
 
 
+GUARD_PAIRS = ("same", "opposite")
+
+
+@dataclass(frozen=True)
+class CorrGuard:
+    """The correlation guard across desks (module docstring)."""
+    pair: str                               # "same" | "opposite"
+    mult: float = 0.0                       # 0 blocks, 0.5 halves, 1 does nothing
+    desks: Tuple[str, ...] = ()             # desks it applies to; () = every desk
+    drivers: Optional[Mapping[str, Callable[[int], FrozenSet[str]]]] = None   # B3: only on a shared driver tag
+
+
+def guard_mult(guard: CorrGuard, name: str, side: str, t: int, held: Mapping[str, Optional[str]]) -> float:
+    """The size multiplier for desk `name`'s new `side` entry at `t`, given
+    every desk's held side (None: flat). Pure."""
+    if guard.desks and name not in guard.desks:
+        return 1.0
+    for other, h in held.items():
+        if other == name or h is None:
+            continue
+        clash = (h == side) if guard.pair == "same" else (h != side)
+        if not clash:
+            continue
+        if guard.drivers is not None:
+            mine, theirs = guard.drivers.get(name), guard.drivers.get(other)
+            if mine is None or theirs is None or not (mine(t) & theirs(t)):
+                continue
+        return guard.mult
+    return 1.0
+
+
 @dataclass
 class PortfolioRun:
     starting_equity: float
@@ -99,6 +145,7 @@ class PortfolioRun:
     final_equity: float = 0.0
     max_drawdown_pct: float = 0.0
     ruined: bool = False                     # the account's mark reached 0 (two or more desks)
+    guard_log: List[Dict[str, Any]] = field(default_factory=list)   # every entry the guard blocked or scaled
 
 
 def validate_shares(shares: Mapping[str, float]) -> None:
@@ -122,8 +169,14 @@ def account_equity(own: float, cushion: float, others: Mapping[str, float], base
     return (own - cushion) + sum(m - base for m in others.values())
 
 
-def simulate_portfolio(desks: Sequence[Desk], starting_equity: float) -> PortfolioRun:
+def simulate_portfolio(desks: Sequence[Desk], starting_equity: float,
+                       guard: Optional[CorrGuard] = None) -> PortfolioRun:
     validate_shares({d.name: d.share for d in desks})
+    if guard is not None:
+        if guard.pair not in GUARD_PAIRS:
+            raise ValueError(f"unknown guard pair {guard.pair!r}")
+        if not (0.0 <= guard.mult <= 1.0):
+            raise ValueError(f"guard mult {guard.mult} must be in [0, 1]")
     names = [d.name for d in desks]
     if len(set(names)) != len(names):
         raise ValueError(f"desk names must be unique: {names}")
@@ -136,6 +189,8 @@ def simulate_portfolio(desks: Sequence[Desk], starting_equity: float) -> Portfol
 
     snapshot: Dict[str, float] = {d.name: base for d in active}   # marks at the end of the last clock tick
     marks: Dict[str, float] = dict(snapshot)
+    held_snap: Dict[str, Optional[str]] = {d.name: None for d in active}   # held sides, same snapshot
+    held: Dict[str, Optional[str]] = dict(held_snap)
 
     def hook_for(name: str, share: float):
         def size_equity(t: int, own: float) -> float:
@@ -145,11 +200,23 @@ def simulate_portfolio(desks: Sequence[Desk], starting_equity: float) -> Portfol
             return share * max(account_equity(own, cushion, others, base), 0.0)
         return size_equity
 
+    def guard_for(name: str):
+        if guard is None:
+            return None
+
+        def entry_guard(t: int, side: str) -> float:
+            m = guard_mult(guard, name, side, t, held_snap)
+            if m != 1.0:
+                out.guard_log.append({"time": t, "desk": name, "side": side, "mult": m,
+                                      "held": {k: v for k, v in held_snap.items() if k != name and v}})
+            return m
+        return entry_guard
+
     gens, times, pos, done = {}, {}, {}, {}
     for d in active:
         p = dataclasses.replace(d.params, starting_equity=base)
         gens[d.name] = simulate_steps(d.candles_15m, d.candles_1h, d.direction_at, p, d.funding,
-                                      hook_for(d.name, d.share))
+                                      hook_for(d.name, d.share), guard_for(d.name))
         times[d.name] = [b.t for b in tick_bars(d.candles_15m, d.candles_1h, p)]
         pos[d.name] = 0
         done[d.name] = False
@@ -168,7 +235,9 @@ def simulate_portfolio(desks: Sequence[Desk], starting_equity: float) -> Portfol
             except StopIteration as stop:      # liquidated last tick: the sim ends early
                 out.runs[n] = stop.value
                 done[n] = True
+                held[n] = None
                 continue
+            held[n] = run.position_side
             if multi and run.liquidated:
                 # The sim zeroes a liquidated desk's equity (its whole
                 # account). Here the desk loses what its trades lost: the
@@ -176,6 +245,7 @@ def simulate_portfolio(desks: Sequence[Desk], starting_equity: float) -> Portfol
                 # price, i.e. that position's isolated margin.
                 marks[n] = base + sum(tr.net_pnl_usd for tr in run.trades)
         snapshot.update(marks)
+        held_snap.update(held)
         if not active:
             continue
         if multi:
@@ -278,5 +348,5 @@ def portfolio_stats(prun: PortfolioRun) -> Dict[str, Any]:
     }
 
 
-__all__ = ["Desk", "PortfolioRun", "validate_shares", "account_equity", "simulate_portfolio", "daily_last",
+__all__ = ["Desk", "PortfolioRun", "CorrGuard", "GUARD_PAIRS", "guard_mult", "validate_shares", "account_equity", "simulate_portfolio", "daily_last",
            "daily_changes", "pearson", "desk_correlation", "portfolio_stats"]

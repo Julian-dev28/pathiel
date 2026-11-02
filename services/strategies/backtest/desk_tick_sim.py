@@ -198,6 +198,51 @@ touched. Refusals: "regime_chop", "regime_against", "regime_veto".
 puts the target that share of the 24h range inside the far edge, in place
 of `target_offset_frac` x price. (OIL_REGIME_TEST_2026-11-02.md.)
 
+Pullback entry (2026-11-02)
+---------------------------
+`Params.pullback_entry` (None = off, the live rule). On a flat tick where
+the live setup is refused as a chase (a short's mid under the thesis entry,
+a long's over it) or under the R gate (the 24h-edge stop leaves no 2R), the
+sim tries one more setup built on structure closer to price
+(`pullback_setup`), with the same leverage gate (stop inside half the way
+to liquidation) and the same min-R gate. The live setup always goes first,
+so a tick where live trades is unchanged. Modes:
+  "a1": market at the mid, stop `buffer` beyond the last `pb_struct_h`
+        closed 1h bars' high (short) / low (long) or the mid if further.
+  "a2": market at the mid once the last closed 1h bar retested a broken
+        24h edge (`retest_level`: a close broke the prior 24h low within
+        the last `pb_retest_h` bars, and the last bar traded back up to it
+        and closed back under), stop `buffer` beyond that retest bar.
+  "a3": a resting limit `pb_bounce_atr` x ATR14 above the last closed 1h
+        bar's low (short; below its high, long) with the a1 stop, cancelled
+        after `pb_cancel_h` hours, on a side change or on a rewrite.
+  "a4": the thesis's own entry, stop and first target (`_ai_setup`: market
+        when the mid is at or better than the thesis entry, else a limit
+        there) while the thesis is under `pb_fresh_h` hours old; the limit
+        is cancelled when the thesis turns that old or is rewritten.
+`pb_fit_leverage`: a pullback stop too wide for the leverage gate trades
+at the highest whole leverage that keeps it inside half the way to
+liquidation (`max_leverage_for_stop`), never under `PB_FIT_MIN_LEV`; the
+size is then the smaller of full port at that leverage and the risk cap.
+`buffer` is the live entry buffer (`_stop_buffer`: Brent's 0.75, the ATR
+rule with its floor on silver). `pb_target` "far" targets the far 24h edge
+(the live offset), "thesis" the thesis's first target with the same offset
+(the far edge when the call has none). `pb_cap_thesis_stop` refuses an
+a1 to a3 stop wider than the thesis's own stop. Trades opened this way carry
+`Trade.entry_kind` (the mode); refusals count as "pb_*".
+(PULLBACK_AND_CORRELATION_TEST_2026-11-02.md.)
+
+Entry guard (2026-11-02)
+------------------------
+`simulate_steps(..., entry_guard=...)`: `entry_guard(t, side) -> float`,
+called at every NEW entry (a market entry or flip, and a resting entry at
+its fill), returns a size multiplier: 1.0 trades as usual, 0 refuses the
+entry ("guard"), anything between scales the size (and the top-up's full
+size for that position), counted in `Run.guard_scaled`. None (the default)
+never calls anything, so every existing result is byte-identical.
+`Run.position_side` is the open position's side at the end of the last
+tick (None when flat): the portfolio's correlation guard reads it.
+
 Portfolio hook (2026-11-02)
 ---------------------------
 `simulate_steps` is `simulate` one tick at a time (it yields the tick
@@ -225,7 +270,7 @@ from datetime import datetime, timezone
 from typing import Any, Callable, Dict, Generator, List, Optional, Sequence, Tuple
 from zoneinfo import ZoneInfo
 
-from pathiel.agents.bracket import check_leverage, check_levels, liq_estimate
+from pathiel.agents.bracket import check_leverage, check_levels, liq_estimate, max_leverage_for_stop
 from pathiel.models.types import Candle
 from services.strategies.backtest.regime import FILTERS as REGIME_FILTERS
 from services.strategies.backtest.regime import RegimeConfig, RegimeSeries, label_series, regime_blocks
@@ -385,6 +430,18 @@ class Params:
     range_buffer_k: Optional[float] = None   # stop buffer from the 24h range: max(stop_buffer, k x range) ...
     range_buffer_floor: bool = True          # ... or k x range alone when False
     target_offset_range_frac: Optional[float] = None  # target this share of the 24h range inside the far edge
+    # ── 2026-11-02 pullback / breakdown entry (PULLBACK_AND_CORRELATION_TEST_
+    # 2026-11-02.md; see "Pullback entry" above). Every default keeps every
+    # existing result byte-identical (test_pullback_sim.py).
+    pullback_entry: Optional[str] = None     # None | a1 | a2 | a3 | a4 (PULLBACK_MODES)
+    pb_struct_h: int = 8                     # a1/a3: stop beyond the last N closed 1h bars' extreme
+    pb_target: str = "far"                   # far: the far 24h edge | thesis: the thesis's first target
+    pb_cap_thesis_stop: bool = True          # a1-a3: never a stop wider than the thesis's own stop
+    pb_retest_h: int = 12                    # a2: the break is within the last N closed 1h bars
+    pb_bounce_atr: float = 1.0               # a3: rest k x ATR14 off the last 1h bar's low (short) / high (long)
+    pb_cancel_h: float = 4.0                 # a3: cancel the resting entry after N hours
+    pb_fresh_h: float = 2.0                  # a4: the thesis's own levels while it is under N hours old
+    pb_fit_leverage: bool = False            # a stop too wide for 20x trades at the highest leverage it passes (>= 5x)
 
 
 # Per-side market-sell slippage (bps) by notional (USD), walked on the live
@@ -442,6 +499,8 @@ class Trade:
     orig_target_px: Optional[float] = None        # the structural target before any offset
     offset_capture: bool = False                  # filled the offset target; never traded through the original
     is_flip: bool = False                         # opened by flip_after_target, against the call
+    entry_kind: Optional[str] = None              # Params.pullback_entry mode that opened it (None: the live rule)
+    leverage: Optional[float] = None              # the position's own leverage (None: Params.leverage)
 
 
 @dataclass
@@ -474,6 +533,13 @@ class Run:
     floor_blocked: Counter = field(default_factory=Counter)
     floor_blocked_rows: List[Dict[str, Any]] = field(default_factory=list)
     floor_widened: int = 0
+    # Entry guard (simulate_steps' entry_guard): entries opened at a scaled
+    # size, and the open position's side at the end of the last tick.
+    guard_scaled: int = 0
+    position_side: Optional[str] = None
+    # A position still open at the end: its levels and how it opened (the
+    # eval prices it at its stop and target). None when flat at the end.
+    open_position_levels: Optional[Dict[str, Any]] = None
 
 
 # ── internal state ───────────────────────────────────────────────────────
@@ -492,6 +558,11 @@ class _Resting:
     # before this variant existed) means params.leverage, via
     # _full_size_notional's own leverage-or-params.leverage fallback.
     leverage: Optional[float] = None
+    # A pullback entry (Params.pullback_entry): its mode, when it lapses and
+    # the call it belongs to (a rewrite cancels it). None on every other order.
+    pb: Optional[str] = None
+    expires_at: Optional[int] = None
+    call_id: Optional[str] = None
 
 
 @dataclass
@@ -519,6 +590,8 @@ class _Position:
     leverage: Optional[float] = None              # this position's leverage when it differs from Params.leverage
     lock_best: Optional[float] = None             # best high (long) / low (short) since the fill, profit lock
     locked: bool = False                          # the profit lock has tightened the stop
+    pb: Optional[str] = None                      # the pullback mode that opened it
+    size_mult: float = 1.0                        # the entry guard's size multiplier (top-ups keep it)
 
 
 def _levels(closed_1h: Sequence[Candle], entry_h: int = 8, target_h: int = 24) -> Optional[Dict[str, Any]]:
@@ -884,7 +957,8 @@ def _close_trade(pos: _Position, exit_px: float, t: int, reason: str, fee_rate: 
                 funding_usd=pos.funding_usd, net_pnl_usd=net, risk_usd=risk,
                 r_multiple=(net / risk) if risk > 1e-12 else None, added=pos.added,
                 orig_stop_px=pos.orig_stop_px, stop_moved=pos.stop_moved,
-                target_missed=pos.target_touched and reason != "target", is_flip=pos.is_flip)
+                target_missed=pos.target_touched and reason != "target", is_flip=pos.is_flip,
+                entry_kind=pos.pb, leverage=pos.leverage)
 
 
 def _funding_rate_at(funding_sorted: Sequence[Tuple[int, float]], t: int) -> Optional[float]:
@@ -923,6 +997,154 @@ def floored_buffer(raw_buffer: float, price: float, floor: Optional[float],
     return buf
 
 
+def _stop_buffer(params: Params, lv: Dict[str, Any], entry: float) -> Tuple[float, float]:
+    """The entry stop's buffer beyond the structure, and the same before any
+    floor: the fixed `stop_buffer` (Brent's 0.75) or `stop_buffer_atr` x
+    ATR14, the 24h-range scaling, then the floors. Pure."""
+    buf = params.stop_buffer if params.stop_buffer_atr is None else params.stop_buffer_atr * lv["atr14"]
+    if params.range_buffer_k is not None and params.stop_buffer_atr is None and lv["target_low"] is not None:
+        rng_buf = params.range_buffer_k * (lv["target_high"] - lv["target_low"])
+        buf = max(buf, rng_buf) if params.range_buffer_floor else rng_buf
+    raw_buf = buf
+    if params.stop_buffer_atr is not None and (params.stop_buffer_floor is not None
+                                               or params.stop_buffer_floor_frac is not None):
+        buf = floored_buffer(raw_buf, entry, params.stop_buffer_floor, params.stop_buffer_floor_frac)
+    elif params.stop_buffer_atr is None and params.fixed_buffer_floor_frac is not None:
+        buf = floored_buffer(raw_buf, entry, None, params.fixed_buffer_floor_frac)
+    return buf, raw_buf
+
+
+PULLBACK_MODES = ("a1", "a2", "a3", "a4")
+PB_TARGETS = ("far", "thesis")
+# The live refusals a pullback entry may answer: the mid is past the thesis
+# entry ("chase"), or the 24h-edge stop leaves under min_r ("min_r").
+PB_TRIGGERS = ("chase", "min_r")
+RANGE_H = 24
+PB_FIT_MIN_LEV = 5.0          # the thesis's own leverage view (5x); pb_fit_leverage never goes under it
+
+
+def _fit_leverage(entry: float, stop: float, params: Params) -> Optional[float]:
+    """The highest whole leverage whose half-way-to-liquidation line holds
+    this stop, or None under PB_FIT_MIN_LEV. Pure."""
+    lev = float(max_leverage_for_stop(entry, stop, params.max_leverage))
+    if lev < PB_FIT_MIN_LEV or not check_leverage(entry, stop, lev, params.max_leverage)["ok"]:
+        return None
+    return lev
+
+
+def retest_level(closed_1h: Sequence[Candle], side: str, within_h: int,
+                 range_h: int = RANGE_H) -> Optional[Tuple[float, Candle]]:
+    """Mode a2's trigger, from 1h bars already closed (oldest first). A short:
+    find the most recent bar k among the `within_h` bars before the last one
+    whose close broke under the low of the `range_h` bars before k (the 24h
+    low it broke: the level); the last bar is a retest when its high reached
+    that level and it closed back under it. A long mirrors it on the 24h
+    high. Returns (level, the retest bar) or None. Pure."""
+    n = len(closed_1h)
+    if n < range_h + 2 or within_h < 1:
+        return None
+    last = closed_1h[-1]
+    short = side == "short"
+    for k in range(n - 2, max(n - 2 - within_h, range_h - 1), -1):
+        prior = closed_1h[k - range_h:k]
+        if short:
+            level = min(c.l for c in prior)
+            if closed_1h[k].c < level:
+                return (level, last) if (last.h >= level and last.c < level) else None
+        else:
+            level = max(c.h for c in prior)
+            if closed_1h[k].c > level:
+                return (level, last) if (last.l <= level and last.c > level) else None
+    return None
+
+
+def pb_cancel(rest: "_Resting", d: Optional[Direction], t: int) -> bool:
+    """Does a resting pullback entry lapse at tick `t`? Past its expiry, no
+    call, a call on the other side, or a rewrite of the call it was placed
+    under. Pure."""
+    if rest.expires_at is not None and t >= rest.expires_at:
+        return True
+    if d is None or d.side != rest.side:
+        return True
+    return rest.call_id is not None and d.regime_id != rest.call_id
+
+
+def pullback_setup(d: Direction, t: int, mid: float, lv: Dict[str, Any], closed_1h: Sequence[Candle],
+                   params: Params, leverage: Optional[float] = None) -> Optional[Dict[str, Any]]:
+    """The pullback entry (`Params.pullback_entry`, see "Pullback entry") for
+    a flat tick whose live setup was refused: a setup dict with `is_market`,
+    `pb` (the mode), `expires_at` and `call_id`; {"refused": "pb_*"}; or
+    None (nothing to try: no retest, too little history). `closed_1h`: 1h
+    bars closed by `t`, oldest first. Pure."""
+    mode = params.pullback_entry
+    lev = params.leverage if leverage is None else leverage
+    is_long = d.side == "long"
+    if mode == "a4":
+        start = call_start(d, None)
+        if start is None or t - start >= params.pb_fresh_h * HOUR_MS:
+            return {"refused": "pb_stale"}
+        s = _ai_setup(d, mid, params, lev)
+        if s is not None and s.get("refused") == "ai_leverage" and params.pb_fit_leverage:
+            at = mid if ((mid <= d.entry_ceiling) if is_long else (mid >= d.entry_ceiling)) else d.entry_ceiling
+            fit = _fit_leverage(at, d.stop_px, params)
+            if fit is not None:
+                lev = fit
+                s = _ai_setup(d, mid, params, lev)
+        if s is None:
+            return {"refused": "pb_no_levels"}
+        if s.get("refused"):
+            return {"refused": "pb_" + s["refused"]}
+        return {**s, "pb": mode, "expires_at": start + int(params.pb_fresh_h * HOUR_MS), "call_id": d.regime_id,
+                "leverage": lev}
+    if len(closed_1h) < max(params.pb_struct_h, 1):
+        return None
+    expires_at = None
+    if mode == "a1":
+        entry, is_market = mid, True
+        recent = closed_1h[-params.pb_struct_h:]
+        struct = min(min(c.l for c in recent), mid) if is_long else max(max(c.h for c in recent), mid)
+    elif mode == "a2":
+        hit = retest_level(closed_1h, d.side, params.pb_retest_h)
+        if hit is None:
+            return None
+        bar = hit[1]
+        entry, is_market = mid, True
+        struct = min(bar.l, mid) if is_long else max(bar.h, mid)
+    elif mode == "a3":
+        last = closed_1h[-1]
+        k = params.pb_bounce_atr * lv["atr14"]
+        entry = last.h - k if is_long else last.l + k
+        if (entry >= mid) if is_long else (entry <= mid):
+            return {"refused": "pb_bounced"}       # price is already past the bounce: a1's job
+        is_market = False
+        recent = closed_1h[-params.pb_struct_h:]
+        struct = min(min(c.l for c in recent), entry) if is_long else max(max(c.h for c in recent), entry)
+        expires_at = t + int(params.pb_cancel_h * HOUR_MS)
+    else:
+        raise ValueError(f"unknown pullback_entry {mode!r}")
+    buf, _ = _stop_buffer(params, lv, entry)
+    stop_px = struct - buf if is_long else struct + buf
+    if params.pb_cap_thesis_stop and d.stop_px is not None and (
+            stop_px < d.stop_px if is_long else stop_px > d.stop_px):
+        return {"refused": "pb_wide"}
+    structural = lv["target_high"] if is_long else lv["target_low"]
+    if params.pb_target == "thesis" and d.target_px is not None:
+        structural = d.target_px
+    target_px = offset_target(structural, d.side, params.target_offset_frac)
+    if (target_px <= entry) if is_long else (target_px >= entry):
+        return {"refused": "pb_no_room"}
+    if not check_leverage(entry, stop_px, lev, params.max_leverage)["ok"]:
+        fit = _fit_leverage(entry, stop_px, params) if params.pb_fit_leverage else None
+        if fit is None:
+            return {"refused": "pb_leverage"}
+        lev = fit
+    if not check_levels(entry, stop_px, target_px, params.min_r)["ok"]:
+        return {"refused": "pb_min_r"}
+    return {"side": d.side, "entry_px": entry, "stop_px": stop_px, "target_px": target_px,
+            "orig_target_px": structural, "is_market": is_market, "pb": mode, "expires_at": expires_at,
+            "call_id": d.regime_id, "leverage": lev}
+
+
 def _setup(d: Direction, mid: float, lv: Dict[str, Any], params: Params,
           leverage: Optional[float] = None) -> Optional[Dict[str, Any]]:
     """The one setup a flat tick may take, or None (price not at the edge),
@@ -951,16 +1173,7 @@ def _setup(d: Direction, mid: float, lv: Dict[str, Any], params: Params,
         if abs(mid - edge) > params.atr_rest_frac * lv["atr14"]:
             return None
         entry = struct = edge
-    buf = params.stop_buffer if params.stop_buffer_atr is None else params.stop_buffer_atr * lv["atr14"]
-    if params.range_buffer_k is not None and params.stop_buffer_atr is None and lv["target_low"] is not None:
-        rng_buf = params.range_buffer_k * (lv["target_high"] - lv["target_low"])
-        buf = max(buf, rng_buf) if params.range_buffer_floor else rng_buf
-    raw_buf = buf
-    if params.stop_buffer_atr is not None and (params.stop_buffer_floor is not None
-                                               or params.stop_buffer_floor_frac is not None):
-        buf = floored_buffer(raw_buf, entry, params.stop_buffer_floor, params.stop_buffer_floor_frac)
-    elif params.stop_buffer_atr is None and params.fixed_buffer_floor_frac is not None:
-        buf = floored_buffer(raw_buf, entry, None, params.fixed_buffer_floor_frac)
+    buf, raw_buf = _stop_buffer(params, lv, entry)
     stop_px = struct - buf if is_long else struct + buf
     structural_target = lv["target_high"] if is_long else lv["target_low"]
     if params.target_r is not None:
@@ -1089,13 +1302,16 @@ def tick_bars(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], param
 # (`services.strategies.backtest.portfolio`) passes share x (own + the other
 # desks' P&L). None sizes off the desk's own equity, exactly as before.
 SizeEquity = Callable[[int, float], float]
+# The entry guard (2026-11-02, see "Entry guard"): (tick time, side of the
+# new entry) -> size multiplier; 0 refuses the entry.
+EntryGuard = Callable[[int, str], float]
 
 
 def simulate(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], direction_at: DirectionAt,
             params: Optional[Params] = None, funding_history: Optional[Sequence[Dict[str, Any]]] = None,
-            size_equity: Optional[SizeEquity] = None) -> Run:
+            size_equity: Optional[SizeEquity] = None, entry_guard: Optional[EntryGuard] = None) -> Run:
     """Run the whole window and return the Run (drains `simulate_steps`)."""
-    steps = simulate_steps(candles_15m, candles_1h, direction_at, params, funding_history, size_equity)
+    steps = simulate_steps(candles_15m, candles_1h, direction_at, params, funding_history, size_equity, entry_guard)
     while True:
         try:
             next(steps)
@@ -1105,12 +1321,14 @@ def simulate(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], direct
 
 def simulate_steps(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], direction_at: DirectionAt,
                    params: Optional[Params] = None, funding_history: Optional[Sequence[Dict[str, Any]]] = None,
-                   size_equity: Optional[SizeEquity] = None) -> Generator[Tuple[int, float, Run], None, Run]:
+                   size_equity: Optional[SizeEquity] = None, entry_guard: Optional[EntryGuard] = None
+                   ) -> Generator[Tuple[int, float, Run], None, Run]:
     """`simulate`, one tick at a time: yields (tick time, marked equity,
     the Run so far) after each tick and returns the Run when the window
     ends (or the account is liquidated). Lets a caller run several desks
     on one clock and feed each desk's sizing the others' equity through
-    `size_equity`."""
+    `size_equity`, and gate or scale each new entry through `entry_guard`
+    (see "Entry guard")."""
     params = params or Params()
     if params.target_mode not in ("touch", "market", "limit"):
         raise ValueError(f"unknown target_mode {params.target_mode!r}")
@@ -1137,6 +1355,15 @@ def simulate_steps(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], 
         raise ValueError(f"unknown regime_filter {params.regime_filter!r}")
     if params.regime_refresh not in ("day", "hour"):
         raise ValueError(f"unknown regime_refresh {params.regime_refresh!r}")
+    if params.pullback_entry is not None:
+        if params.pullback_entry not in PULLBACK_MODES:
+            raise ValueError(f"unknown pullback_entry {params.pullback_entry!r}")
+        if params.pb_target not in PB_TARGETS:
+            raise ValueError(f"unknown pb_target {params.pb_target!r}")
+        if params.pb_struct_h < 1 or params.pb_retest_h < 1:
+            raise ValueError("pb_struct_h and pb_retest_h must be 1 or more")
+        if params.pb_cancel_h <= 0 or params.pb_fresh_h <= 0 or params.pb_bounce_atr < 0:
+            raise ValueError("pb_cancel_h and pb_fresh_h must be over 0, pb_bounce_atr 0 or more")
     c15 = sorted(candles_15m, key=lambda c: c.t)
     c1h = sorted(candles_1h, key=lambda c: c.t)
     regime: Optional[RegimeSeries] = None
@@ -1178,6 +1405,7 @@ def simulate_steps(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], 
     # rescan every tick.
     by_close = {c.t + HOUR_MS: c for c in c1h}
     need = max(15, params.entry_lookback_h, params.target_lookback_h)
+    pb_need = max(params.pb_struct_h, params.pb_retest_h + RANGE_H + 1)
     n_closed = 0
 
     for bar in ticks:
@@ -1260,14 +1488,32 @@ def simulate_steps(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], 
                 position = None
 
         # 3. resting entry: fill or hygiene-cancel (never on the bar it was placed)
+        if resting is not None and resting.placed_at < t and resting.pb is not None \
+                and pb_cancel(resting, direction_at(t), t):
+            run.cancelled_resting += 1          # a pullback entry lapsed (expiry, side change, rewrite)
+            resting = None
         if resting is not None and resting.placed_at < t:
             is_long = resting.side == "long"
             filled = bar.l <= resting.limit_px if is_long else bar.h >= resting.limit_px
+            mult = 1.0
+            if filled and entry_guard is not None:
+                mult = entry_guard(t, resting.side)
+                if mult <= 0.0:
+                    run.refused["guard"] += 1
+                    run.cancelled_resting += 1
+                    resting = None
+                    filled = False
             if filled:
                 run.filled += 1
                 position = _open_position(resting, resting.limit_px, t, params)
                 position.leverage = resting.leverage
-                notional = risk_capped_notional(size_eq(t, equity), params, resting.leverage, resting.limit_px,
+                position.pb = resting.pb
+                sz_eq = size_eq(t, equity)
+                if entry_guard is not None:
+                    position.size_mult = mult
+                    sz_eq *= mult
+                    run.guard_scaled += 1 if mult < 1.0 else 0
+                notional = risk_capped_notional(sz_eq, params, resting.leverage, resting.limit_px,
                                                 resting.stop_px)
                 size = notional / resting.limit_px if resting.limit_px > 0 else 0.0
                 position.size = size
@@ -1276,7 +1522,7 @@ def simulate_steps(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], 
                 position.entry_fees_usd = entry_fee
                 equity -= entry_fee
                 resting = None
-            elif lv is not None and lv["atr14"]:
+            elif resting is not None and resting.pb is None and lv is not None and lv["atr14"]:
                 edge = lv["entry_low"] if is_long else lv["entry_high"]
                 near_edge = abs(mid - edge) <= params.atr_rest_frac * lv["atr14"]
                 too_far = abs(mid - resting.limit_px) > params.atr_cancel_frac * lv["atr14"]
@@ -1371,6 +1617,8 @@ def simulate_steps(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], 
                     # full size; never after a scale-out (that would undo it)
                     full = risk_capped_notional(size_eq(t, equity), params, position.leverage, position.avg_entry,
                                                 position.stop_px) / position.avg_entry
+                    if position.size_mult != 1.0:
+                        full *= position.size_mult      # a guard-scaled entry tops up to its scaled size
                     if (resting_add is None and position.size < full - 1e-9 and not position.partial_done
                             and not position.is_flip):
                         resting_add = _Resting(side=position.side, limit_px=position.avg_entry,
@@ -1418,10 +1666,18 @@ def simulate_steps(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], 
             elif cap_on and stop_cap_blocks(stops_by_day, t, fs["side"], params):
                 run.refused["stop_cap"] += 1
                 run.cap_blocked.append(_cap_row("flip", fs, t, True, stops_by_day, params))
+            elif entry_guard is not None and entry_guard(t, fs["side"]) <= 0.0:
+                run.refused["guard"] += 1
             else:
                 run.filled += 1
-                position, initial_size, equity = _market_open(fs, bar, t, equity, params, fs["leverage"],
-                                                              size_eq(t, equity))
+                sz_eq = size_eq(t, equity)
+                mult = 1.0
+                if entry_guard is not None:
+                    mult = entry_guard(t, fs["side"])
+                    sz_eq *= mult
+                    run.guard_scaled += 1 if mult < 1.0 else 0
+                position, initial_size, equity = _market_open(fs, bar, t, equity, params, fs["leverage"], sz_eq)
+                position.size_mult = mult
                 position.is_flip = True
                 is_long = position.side == "long"
                 if (bar.l <= position.stop_px) if is_long else (bar.h >= position.stop_px):
@@ -1470,6 +1726,15 @@ def simulate_steps(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], 
                 else:
                     setup = _setup(d, mid, lv, params, lev)
                     open_now = params.entry_mode == "market"
+                if (params.pullback_entry is not None and setup is not None
+                        and setup.get("refused") in PB_TRIGGERS):
+                    pb = pullback_setup(d, t, mid, lv, c1h[max(0, n_closed - pb_need):n_closed], params, lev)
+                    if pb is not None and not pb.get("refused"):
+                        setup = pb
+                        open_now = pb["is_market"]
+                        lev = pb["leverage"]        # the gate's leverage (pb_fit_leverage may lower it)
+                    elif pb is not None:
+                        run.refused[pb["refused"]] += 1
                 if cap_on:
                     n_tallied = tally_stops(run.trades, n_tallied, stops_by_day)
                 if setup is None:
@@ -1486,11 +1751,20 @@ def simulate_steps(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], 
                     # the daily stop cap: skip this entry, keep it for the eval
                     run.refused["stop_cap"] += 1
                     run.cap_blocked.append(_cap_row("entry", setup, t, open_now, stops_by_day, params))
+                elif open_now and entry_guard is not None and entry_guard(t, setup["side"]) <= 0.0:
+                    run.refused["guard"] += 1     # the portfolio's correlation guard
                 elif open_now:
                     run.filled += 1
                     run.floor_widened += 1 if setup.get("floored") else 0
-                    position, initial_size, equity = _market_open(setup, bar, t, equity, params, lev,
-                                                                  size_eq(t, equity))
+                    sz_eq = size_eq(t, equity)
+                    mult = 1.0
+                    if entry_guard is not None:
+                        mult = entry_guard(t, setup["side"])
+                        sz_eq *= mult
+                        run.guard_scaled += 1 if mult < 1.0 else 0
+                    position, initial_size, equity = _market_open(setup, bar, t, equity, params, lev, sz_eq)
+                    position.size_mult = mult
+                    position.pb = setup.get("pb")
                     # conservative: the entry bar's own range can stop it out
                     is_long = position.side == "long"
                     if (bar.l <= position.stop_px) if is_long else (bar.h >= position.stop_px):
@@ -1516,7 +1790,9 @@ def simulate_steps(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], 
                 else:
                     resting = _Resting(side=d.side, limit_px=setup["entry_px"], stop_px=setup["stop_px"],
                                        target_px=setup["target_px"], placed_at=t,
-                                       orig_target_px=setup["orig_target_px"], leverage=lev)
+                                       orig_target_px=setup["orig_target_px"], leverage=lev,
+                                       pb=setup.get("pb"), expires_at=setup.get("expires_at"),
+                                       call_id=setup.get("call_id"))
                     run.rested += 1
 
         # Safety net: the dedicated liq-price check (step 4) can only fire
@@ -1539,6 +1815,7 @@ def simulate_steps(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], 
             side_sign = 1.0 if position.side == "long" else -1.0
             unrealized = side_sign * (mid - position.avg_entry) * position.size
         mark = equity + unrealized
+        run.position_side = position.side if position is not None else None
         peak_equity = max(peak_equity, mark)
         if peak_equity > 0:
             run.max_drawdown_pct = max(run.max_drawdown_pct, (peak_equity - mark) / peak_equity)
@@ -1557,6 +1834,10 @@ def simulate_steps(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], 
             "side": position.side, "size": position.size, "entry_px": position.avg_entry,
             "mark_px": last_px, "unrealized_pnl_usd": side_sign * (last_px - position.avg_entry) * position.size,
         }
+        run.open_position_levels = {"opened_at": position.opened_at, "stop_px": position.stop_px,
+                                    "orig_stop_px": position.orig_stop_px, "target_px": position.target_px,
+                                    "entry_kind": position.pb, "entry_fees_usd": position.entry_fees_usd,
+                                    "funding_usd": position.funding_usd}
 
     run.final_equity = run.equity_curve[-1][1] if run.equity_curve else equity
     return run
@@ -1566,4 +1847,5 @@ __all__ = ["Direction", "DirectionAt", "Params", "Trade", "Run", "simulate", "si
           "SizeEquity", "offset_target", "regime_key",
           "trade_leverage", "CONVICTION_LEVERAGE_FLOOR", "live_params", "profit_lock_stop", "stop_cap_blocks",
           "tally_stops", "floored_buffer", "weekend_closed", "lock_on", "risk_capped_notional", "filters_on",
-          "call_start", "entry_filter"]
+          "call_start", "entry_filter", "EntryGuard", "PULLBACK_MODES", "PB_TARGETS", "PB_TRIGGERS",
+          "pullback_setup", "retest_level", "pb_cancel"]
