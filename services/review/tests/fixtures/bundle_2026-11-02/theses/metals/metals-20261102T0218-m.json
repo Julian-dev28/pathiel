@@ -1,0 +1,19 @@
+{
+ "id": "metals-20261102T0218-m",
+ "desk_id": "metals",
+ "created_at": "2026-11-02T02:18:20.853407Z",
+ "expires_at": "2026-11-09T02:18:20.853407Z",
+ "horizon_days": 7,
+ "call": {
+  "side": "short",
+  "instrument": "xyz:SILVER",
+  "entry_px": 50.15,
+  "stop_px": 50.65,
+  "targets": [
+   47.15
+  ],
+  "confidence": 0.55,
+  "invalidation": "1h close above 50.65 (24h high 50.253 plus two 1h ATR14 of 0.20). Or gold reclaims 3904 with Kalshi P(>3904) rising from 0.37."
+ },
+ "grade": null
+}

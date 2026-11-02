@@ -1,0 +1,20 @@
+{
+ "id": "oil-20261102T0925-m",
+ "desk_id": "oil",
+ "created_at": "2026-11-02T09:25:46.922647Z",
+ "expires_at": "2026-11-09T09:25:46.922647Z",
+ "horizon_days": 7,
+ "call": {
+  "side": "short",
+  "instrument": "xyz:BRENTOIL",
+  "entry_px": 109.3,
+  "stop_px": 110.9,
+  "targets": [
+   105.0,
+   101.09
+  ],
+  "confidence": 0.42,
+  "invalidation": "1h close above 110.90 (last candle high 110.360 plus 0.50 ATR) reclaims the 110 Ichimoku cloud and kills the breakdown."
+ },
+ "grade": null
+}
