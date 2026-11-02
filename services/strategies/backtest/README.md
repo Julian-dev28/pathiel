@@ -112,6 +112,26 @@ fixed stop on the Brent theses, the Brent no-thesis controls and the silver
 replay. Result and verdict (not adopted):
 `docs/strategy/PROFIT_LOCK_TEST_2026-11-01.md`.
 
+## Daily stop-out cap (2026-11-02)
+
+Two `Params` fields, off by default (`daily_stop_cap=None`; off keeps every
+result byte-identical, see `tests/test_stop_cap.py`):
+
+- `daily_stop_cap`: after this many `"stop"` exits in one UTC day, no new
+  entry or flip for the rest of that day. Resets at 00:00 UTC. Targets,
+  locks, invalidations, direction flips and time exits do not count. An
+  open position is never touched. Each skipped setup lands in
+  `Run.cap_blocked`.
+- `cap_per_side`: count and block per side (N short stops block shorts only).
+
+Plus `stop_buffer_atr` (None = off): the entry stop's buffer is that many x
+the tick's own ATR14 instead of the fixed `stop_buffer`. 1.3 is the live
+non-Brent rule (`next_trade.stop_buffer_for`).
+
+`services/strategies/evals/stop_cap_test.py` runs N = 1, 2, 3 (desk and per
+side) against no cap and prices every blocked entry. Result and verdict
+(not adopted): `docs/strategy/STOP_CAP_TEST_2026-11-02.md`.
+
 ## What's deliberately simplified
 
 - By default, the entry/stop/target are always structural (8h range

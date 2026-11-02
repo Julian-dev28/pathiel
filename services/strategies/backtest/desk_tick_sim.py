@@ -98,6 +98,25 @@ the lock after the trigger). Otherwise it applies from the next bar, where
 a bar that opens through it fills at the open. A market entry's own bar
 counts (the fill is the open, so the bar's high came after it).
 
+Daily stop-out cap (2026-11-02)
+-------------------------------
+`Params.daily_stop_cap` (None = off, the live rule). After that many
+"stop" exits whose exit time falls in one UTC day, the sim takes no NEW
+entry (and no flip) for the rest of that UTC day; the count starts over at
+00:00 UTC. Only exit_reason "stop" counts: a target, lock, invalidation,
+direction flip or time exit does not. `cap_per_side` counts and blocks per
+side (N short stops block only shorts that day). An open position is never
+touched: the cap only ever skips a setup that would otherwise have opened.
+Each skipped setup is kept in `Run.cap_blocked` (time, side, entry, stop,
+target) so an eval can walk it on and price what the cap cost or saved.
+A stop on an entry bar (a market fill whose own bar hits the stop) counts
+from the next tick.
+
+`Params.stop_buffer_atr` (None = off) sets the entry stop's buffer per
+tick to that many x the tick's ATR14, the live non-Brent rule (1.3 x
+ATR14), instead of the fixed `stop_buffer`. Added with the cap so the
+2026-11-02 silver desk's tighter stops can be replayed.
+
 Liquidation
 -----------
 Checked every bar a position is open against Hyperliquid's isolated-margin
@@ -223,6 +242,18 @@ class Params:
     lock_r: float = 0.0                     # then stop to entry + lock_r R (0 = break-even, no fees)
     lock_trail: bool = False                # after arming, trail (lock_trigger_r - lock_r) R behind the best price
     lock_confirm_close: bool = True         # same-bar fill at a new lock only when the bar closes through it
+    # ── daily stop-out cap (2026-11-02, operator after the silver desk shorted
+    # three times into a rising market: stopped at 01:05Z and 05:30Z, then a
+    # third short at 05:35Z). See "Daily stop-out cap" above. Off (None)
+    # keeps every existing result byte-identical (test_stop_cap.py).
+    daily_stop_cap: Optional[int] = None    # after this many stop exits in one UTC day, no new entries that day
+    cap_per_side: bool = False              # count and block per side instead of per desk
+    # The live non-Brent stop rule, per tick (2026-11-02): the stop sits this
+    # many x the tick's own 1h ATR14 beyond the entry structure
+    # (next_trade.stop_buffer_for: 1.3 x ATR14), instead of the fixed
+    # `stop_buffer` dollars. None (the default) keeps `stop_buffer`, and every
+    # existing result byte-identical. A flip's stop is unchanged by it.
+    stop_buffer_atr: Optional[float] = None
 
 
 # Per-side market-sell slippage (bps) by notional (USD), walked on the live
@@ -299,6 +330,10 @@ class Run:
     gross_pnl_usd: float = 0.0
     params: Optional[Params] = None
     open_position_at_end: Optional[Dict[str, Any]] = None
+    # Setups the daily stop cap skipped (Params.daily_stop_cap), oldest first:
+    # {"time", "kind" ("entry"|"flip"), "side", "entry_px", "stop_px",
+    #  "target_px", "is_market", "stops_today"}. Empty when the cap is off.
+    cap_blocked: List[Dict[str, Any]] = field(default_factory=list)
 
 
 # ── internal state ───────────────────────────────────────────────────────
@@ -559,6 +594,39 @@ def _lock_same_bar_exit(pos: _Position, bar: Candle, params: Params) -> Optional
     return pos.stop_px * (1.0 - sign * _market_exit_slip(params, pos.size * pos.stop_px))
 
 
+DAY_MS = 86_400_000
+
+
+def tally_stops(trades: Sequence[Trade], start: int, stops: Counter) -> int:
+    """Fold `trades[start:]`'s "stop" exits into `stops`, keyed by the exit's
+    UTC day: (day, None) for the desk and (day, side) per side. Returns the
+    new start (len(trades)), so each trade is counted once. Mutates `stops`."""
+    for tr in trades[start:]:
+        if tr.exit_reason == "stop" and tr.exit_time is not None:
+            day = tr.exit_time // DAY_MS
+            stops[(day, None)] += 1
+            stops[(day, tr.side)] += 1
+    return len(trades)
+
+
+def stop_cap_blocks(stops: Counter, t: int, side: str, params: Params) -> bool:
+    """Does the daily stop cap forbid a new `side` entry at tick `t`? True
+    once `daily_stop_cap` stops have filled on `t`'s UTC day (on that side,
+    with `cap_per_side`). Always False when the cap is off. Pure."""
+    if params.daily_stop_cap is None:
+        return False
+    key = (t // DAY_MS, side if params.cap_per_side else None)
+    return stops[key] >= params.daily_stop_cap
+
+
+def _cap_row(kind: str, setup: Dict[str, Any], t: int, is_market: bool, stops: Counter,
+             params: Params) -> Dict[str, Any]:
+    side = setup["side"]
+    return {"time": t, "kind": kind, "side": side, "entry_px": setup["entry_px"],
+            "stop_px": setup["stop_px"], "target_px": setup["target_px"], "is_market": is_market,
+            "stops_today": stops[(t // DAY_MS, side if params.cap_per_side else None)]}
+
+
 def _close_trade(pos: _Position, exit_px: float, t: int, reason: str, fee_rate: float,
                  initial_size: float) -> Trade:
     """Build the closed trade's report row. Does NOT touch equity — the
@@ -633,7 +701,8 @@ def _setup(d: Direction, mid: float, lv: Dict[str, Any], params: Params,
         if abs(mid - edge) > params.atr_rest_frac * lv["atr14"]:
             return None
         entry = struct = edge
-    stop_px = struct - params.stop_buffer if is_long else struct + params.stop_buffer
+    buf = params.stop_buffer if params.stop_buffer_atr is None else params.stop_buffer_atr * lv["atr14"]
+    stop_px = struct - buf if is_long else struct + buf
     structural_target = lv["target_high"] if is_long else lv["target_low"]
     if params.target_r is not None:
         risk = abs(entry - stop_px)
@@ -731,6 +800,8 @@ def simulate(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], direct
         raise ValueError(f"unknown entry_mode {params.entry_mode!r}")
     if params.lock_trigger_r is not None and not (params.lock_r < params.lock_trigger_r):
         raise ValueError(f"lock_r {params.lock_r} must sit below lock_trigger_r {params.lock_trigger_r}")
+    if params.daily_stop_cap is not None and params.daily_stop_cap < 1:
+        raise ValueError(f"daily_stop_cap {params.daily_stop_cap} must be 1 or more (None turns it off)")
     c15 = sorted(candles_15m, key=lambda c: c.t)
     c1h = sorted(candles_1h, key=lambda c: c.t)
     funding_sorted: List[Tuple[int, float]] = sorted(
@@ -748,6 +819,9 @@ def simulate(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], direct
     blocked_regime: Optional[Tuple[str, Any]] = None   # no re-entry under this call (reentry_after_target=False)
     pending_flip: Optional[Tuple[str, float]] = None   # (side to open, target) after a target filled
     seen_1h_close: set = set()
+    cap_on = params.daily_stop_cap is not None
+    stops_by_day: Counter = Counter()  # (UTC day, None|side) -> stop exits (Params.daily_stop_cap)
+    n_tallied = 0
 
     # The tick series: one decision per 15m bar, or per 1h bar for the hourly
     # loop (2026-10-25). With 1h ticks every tick lands on a 1h close, so the
@@ -966,8 +1040,13 @@ def simulate(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], direct
             side, back_to = pending_flip
             pending_flip = None
             fs = _flip_setup(side, back_to, mid, lv, params)
+            if cap_on:
+                n_tallied = tally_stops(run.trades, n_tallied, stops_by_day)
             if fs.get("refused"):
                 run.refused[fs["refused"]] += 1
+            elif cap_on and stop_cap_blocks(stops_by_day, t, fs["side"], params):
+                run.refused["stop_cap"] += 1
+                run.cap_blocked.append(_cap_row("flip", fs, t, True, stops_by_day, params))
             else:
                 run.filled += 1
                 position, initial_size, equity = _market_open(fs, bar, t, equity, params, fs["leverage"])
@@ -1005,12 +1084,18 @@ def simulate(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], direct
                 else:
                     setup = _setup(d, mid, lv, params, lev)
                     open_now = params.entry_mode == "market"
+                if cap_on:
+                    n_tallied = tally_stops(run.trades, n_tallied, stops_by_day)
                 if setup is None:
                     pass
                 elif setup.get("refused"):
                     run.refused[setup["refused"]] += 1
                 elif open_now and len(run.trades) > trades_before_bar:
                     pass            # a trade closed inside this bar: its open is in the past now
+                elif cap_on and stop_cap_blocks(stops_by_day, t, setup["side"], params):
+                    # the daily stop cap: skip this entry, keep it for the eval
+                    run.refused["stop_cap"] += 1
+                    run.cap_blocked.append(_cap_row("entry", setup, t, open_now, stops_by_day, params))
                 elif open_now:
                     run.filled += 1
                     position, initial_size, equity = _market_open(setup, bar, t, equity, params, lev)
@@ -1085,4 +1170,5 @@ def simulate(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], direct
 
 
 __all__ = ["Direction", "DirectionAt", "Params", "Trade", "Run", "simulate", "offset_target", "regime_key",
-          "trade_leverage", "CONVICTION_LEVERAGE_FLOOR", "live_params", "profit_lock_stop"]
+          "trade_leverage", "CONVICTION_LEVERAGE_FLOOR", "live_params", "profit_lock_stop", "stop_cap_blocks",
+          "tally_stops"]
