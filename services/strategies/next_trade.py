@@ -34,13 +34,28 @@ from pathiel.agents.bracket import (DEFAULT_MIN_R, TARGET_OFFSET_FRAC, check_lev
 BRENT_STOP_BUFFER = 0.75
 BRENT = "xyz:BRENTOIL"
 ATR_BUFFER_MULT = 1.3
+# Never under 0.8% of the mid on a non-Brent coin (operator, 2026-11-02:
+# "yeah"). The live per-tick 1.3 x ATR buffer ran a median 0.11 on silver
+# (10-31 to 11-02) where the 30-day test used about 0.41: mid-range entries
+# passed 2R and noise stopped them (two shorts that night). The floor beat the
+# live rule on 8 of 8 silver backtests ($253 vs $143 on 30 theses from $64)
+# and leaves Brent trade-for-trade unchanged
+# (docs/strategy/SILVER_STOP_FLOOR_TEST_2026-11-02.md).
+STOP_BUFFER_FLOOR_FRAC = 0.008
 
 
-def stop_buffer_for(coin: str, atr14: Optional[float]) -> Optional[float]:
-    """0.75 on Brent; about 1.3 x the 1h ATR14 on any other desk's coin."""
+def stop_buffer_for(coin: str, atr14: Optional[float],
+                    mid: Optional[float] = None) -> Optional[float]:
+    """0.75 on Brent; on any other desk's coin the larger of 1.3 x the 1h
+    ATR14 and 0.8% of `mid` (when a mid is given)."""
     if coin == BRENT:
         return BRENT_STOP_BUFFER
-    return round(ATR_BUFFER_MULT * atr14, 6) if atr14 else None
+    if not atr14:
+        return None
+    buf = ATR_BUFFER_MULT * atr14
+    if mid:
+        buf = max(buf, STOP_BUFFER_FLOOR_FRAC * float(mid))
+    return round(buf, 6)
 
 
 def next_trade(side: str, mid: float, low_24h: float, high_24h: float, *,

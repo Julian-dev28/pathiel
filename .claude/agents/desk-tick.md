@@ -106,10 +106,12 @@ ToolSearch call: `select:mcp__pathiel__desk_brief,mcp__pathiel__bracket_sweep,mc
        - **Stop:** 0.75 beyond the 24h low for a long (24h high for a
          short), or 0.75 beyond the mid if price already trades through
          that edge. On another desk's instrument the same distance in ATR
-         terms (0.75 / Brent's 1h ATR14, about 1.3 ATR): silver's stop is
-         1.3 x the levels script's `atr14_1h` beyond the 24h edge (the
-         buffer the 30-day silver test ran,
-         docs/strategy/SILVER_THESIS_TEST_2026-10-31.md).
+         terms (0.75 / Brent's 1h ATR14, about 1.3 ATR): silver's stop
+         buffer is the LARGER of 1.3 x the levels script's `atr14_1h` and
+         0.8% of the mid, beyond the 24h edge (or beyond the mid if price
+         already trades through it). The 0.8% floor is live since
+         2026-11-02 (docs/strategy/SILVER_STOP_FLOOR_TEST_2026-11-02.md);
+         `services/strategies/next_trade.stop_buffer_for` computes it.
        - **Target:** the far 24h edge (24h high for a long) as `tp_px`;
          `place_bracket` puts the take-profit 0.5% of price inside it
          (bracket.TARGET_OFFSET_FRAC) and judges 2R on that offset target,

@@ -289,7 +289,8 @@ function paintNextTrade(n) {
   document.getElementById('line-verdict-badge').innerHTML = `<span class="badge ${badge[0]}">${esc(badge[1])}</span>`;
   const long = n.side !== 'short';
   const r24 = n.range_24h || {};
-  // The stop buffer is Brent's fixed 0.75 or (any other coin) ~1.3x its 1h
+  // The stop buffer is Brent's fixed 0.75 or (any other coin) the larger of
+  // 0.8% of the mid and ~1.3x its 1h
   // ATR (services/strategies/next_trade.py::stop_buffer_for) -- read the
   // server's own number, never hardcode "0.75" for every desk's coin.
   const bufText = n.stop_buffer != null ? fmtPrice(n.stop_buffer) : '—';

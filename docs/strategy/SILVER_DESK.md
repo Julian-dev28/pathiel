@@ -13,7 +13,7 @@ morning "increase size to 10% silver": oil 90%, silver 10%.
 | Coin | xyz:BRENTOIL | xyz:SILVER (venue max 25x) |
 | Equity share | 90% | 10% |
 | Leverage | 20x | 20x |
-| Stop | 0.75 beyond the 24h edge | 1.3 x 1h ATR14 beyond the 24h edge |
+| Stop | 0.75 beyond the 24h edge | the larger of 1.3 x 1h ATR14 and 0.8% of the mid, beyond the 24h edge (floor since 2026-11-02) |
 | Entry, target, gate | market off the 24h range, far 24h edge minus 0.5%, 2R | same |
 | Ticks | `/desk-tick oil` every 15 min | `/desk-tick metals` every 15 min |
 | Price watcher | `scripts/trigger_watch.py` every 1 min (no LLM), wakes the tick when the entry rule passes | same |

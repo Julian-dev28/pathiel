@@ -136,3 +136,27 @@ def test_the_page_reads_the_next_trade_not_the_thesis_line():
     assert "the desk's rule" in js                            # leverage row when flat
     assert "Thesis plan pays" in html and 'id="call-last-tick"' in html
     assert "Next trade, by the tick's rules" in html
+
+
+
+def test_the_silver_stop_buffer_never_drops_under_0_8pct_of_the_mid():
+    """2026-11-02: the live per-tick 1.3 x ATR buffer was about 0.21 on silver
+    at 50 and two shorts were stopped by noise; the floor is 0.8% of the mid
+    (0.40 at 50). It never narrows a wider ATR buffer and never touches Brent."""
+    from services.strategies.next_trade import STOP_BUFFER_FLOOR_FRAC
+    assert STOP_BUFFER_FLOOR_FRAC == 0.008
+    assert stop_buffer_for("xyz:SILVER", 0.16, 50.0) == pytest.approx(0.40)        # floor wins
+    assert stop_buffer_for("xyz:SILVER", 0.50, 50.0) == pytest.approx(0.65)        # ATR wider: kept
+    assert stop_buffer_for("xyz:SILVER", 0.16) == pytest.approx(0.208)             # no mid: old rule
+    assert stop_buffer_for("xyz:SILVER", None, 50.0) is None                       # no ATR: no line
+    assert stop_buffer_for("xyz:BRENTOIL", 0.10, 110.0) == 0.75                    # Brent unchanged
+
+
+def test_the_floor_refuses_the_two_shorts_stopped_on_2026_11_02():
+    """The 00:51Z short (mid 49.93, ATR buffer ~0.21 over the 24h high 49.892)
+    paid 2.31R live; with the 0.40 floor the same setup no longer clears 2R."""
+    old = next_trade("short", 49.93, 49.194, 49.892, thesis_entry=49.70, leverage=20,
+                     coin_max_leverage=25, stop_buffer=0.209)
+    new = next_trade("short", 49.93, 49.194, 49.892, thesis_entry=49.70, leverage=20,
+                     coin_max_leverage=25, stop_buffer=stop_buffer_for("xyz:SILVER", 0.161, 49.93))
+    assert old["ok"] and not new["ok"]

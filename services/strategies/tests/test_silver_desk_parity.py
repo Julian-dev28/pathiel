@@ -57,7 +57,7 @@ def test_next_route_for_silver_uses_the_atr_stop_buffer_not_brents(client, monke
     assert r.status_code == 200
     body = r.json()
     assert body["coin"] == "xyz:SILVER"
-    expected_buf = stop_buffer_for("xyz:SILVER", 0.5)
+    expected_buf = stop_buffer_for("xyz:SILVER", 0.5, 56.9)     # max(0.65, 0.8% x 56.9 = 0.455)
     assert expected_buf != 0.75          # sanity: this is NOT Brent's fixed buffer
     assert body["stop_buffer"] == pytest.approx(expected_buf)
 
@@ -114,3 +114,22 @@ def test_the_equity_slice_note_is_wired_into_the_refresh_loop():
     assert "loadEquitySlice()" in js   # actually called from loadAll(), not just defined
     assert "Sizes off" in js
     assert 'id="line-equity-share"' in html
+
+
+
+def test_the_route_applies_the_0_8pct_floor_on_a_quiet_atr(client, monkeypatch):
+    journal.save_thesis(make_thesis(desk_id="metals", side="short", instrument="xyz:SILVER",
+                                    entry_px=50.4, stop_px=50.75, targets=[47.15], leverage=10))
+    monkeypatch.setattr("pathiel.client.exchange.get_max_leverage", lambda coin: 25)
+    monkeypatch.setattr(strategies_api.levels, "summarize_coin", lambda coin: {
+        "mid": 50.0, "range_24h": {"low": 49.2, "high": 50.25}, "atr14_1h": 0.16})
+    body = client.get("/api/desks/metals/next").json()
+    assert body["stop_buffer"] == pytest.approx(0.40)          # not 1.3 x 0.16 = 0.208
+
+
+def test_the_tick_agent_states_the_silver_floor():
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[3]
+    for rel in (".claude/agents/desk-tick.md", "agents/desk-tick.md"):
+        text = (root / rel).read_text()
+        assert "LARGER of 1.3 x the levels script's `atr14_1h` and" in text and "0.8% of the mid" in text, rel

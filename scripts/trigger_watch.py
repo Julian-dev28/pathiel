@@ -52,7 +52,7 @@ def evaluate(side: Optional[str], thesis_entry: Optional[float], mid: Optional[f
         return {"ok": False, "reason": f"thesis is {side or 'missing'}"}
     if mid is None or r24.get("low") is None or r24.get("high") is None:
         return {"ok": False, "reason": "no mid or 24h range"}
-    buf = stop_buffer_for(coin, levels.get("atr14_1h"))
+    buf = stop_buffer_for(coin, levels.get("atr14_1h"), mid)
     if buf is None:
         return {"ok": False, "reason": "no ATR for the stop buffer"}
     out = next_trade(side, float(mid), float(r24["low"]), float(r24["high"]),

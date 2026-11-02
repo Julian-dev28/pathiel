@@ -325,7 +325,7 @@ def get_next_trade(desk_id: str, leverage: float = Query(20, gt=0, le=100)) -> D
     except Exception as e:  # noqa: BLE001
         logger.warning(f"[strategies.api] get_max_leverage({coin!r}) failed: {e}")
         coin_max = None
-    buf = next_trade_mod.stop_buffer_for(coin, lv.get("atr14_1h"))
+    buf = next_trade_mod.stop_buffer_for(coin, lv.get("atr14_1h"), lv.get("mid"))
     if buf is None:
         return {"ok": False, "source": "desk_rules", "reason": f"no ATR for {coin} to size the stop buffer"}
     out = next_trade_mod.next_trade(call.side, float(lv["mid"]), float(r24["low"]), float(r24["high"]),
