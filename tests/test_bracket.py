@@ -1004,3 +1004,24 @@ def test_the_floored_cap_always_fits_free_margin_on_random_books():
             else:
                 assert need <= free * (1 - v.free_margin_floor_frac) + 1e-9, (free, px, lev, d, size)
     assert broke_nearest > 0, "the old nearest-rounding over-sized on some draws"
+
+
+def test_handler_refuses_new_oil_entries_inside_the_eia_blackout(monkeypatch):
+    """Operator 2026-11-03 "DO THIS THEN" (OIL_EVENT_TIMING_TEST_2026-11-03.md,
+    eia_2_2): Wed 2026-11-04 14:00Z sits inside 13:30Z-17:30Z. No sizing, no
+    order; a dry run still sizes; silver is never blocked."""
+    mcp = _mcp()
+    from pathiel.agents import bracket as br
+    from services.strategies import event_blackout
+    monkeypatch.setattr(event_blackout, "now_ms", lambda: 1793714400000 + 24 * 3_600_000)  # Wed 11-04 14:00Z
+    called = []
+    monkeypatch.setattr(br, "place_bracket", lambda coin, **k: called.append(coin) or {"ok": True})
+    monkeypatch.setattr(mcp, "_risk_inputs", lambda: called.append("sized") or (_ for _ in ()).throw(RuntimeError("stop")))
+    out = json.loads(mcp.handle_place_bracket({"coin": COIN, "stop_px": 100.0, "tp_px": 110.0}))
+    assert out["ok"] is False and out["placed"] is False and "EIA blackout" in out["error"]
+    assert out["blackout"]["until_utc"] == "2026-11-04 17:30Z" and called == []
+    out = json.loads(mcp.handle_place_bracket({"coin": COIN, "stop_px": 100.0, "tp_px": 110.0, "dry_run": True}))
+    assert called == ["sized"] and "EIA blackout" not in json.dumps(out)
+    called.clear()
+    out = json.loads(mcp.handle_place_bracket({"coin": "xyz:SILVER", "stop_px": 48.0, "tp_px": 52.0}))
+    assert called == ["sized"] and "EIA blackout" not in json.dumps(out)

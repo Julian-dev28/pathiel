@@ -3090,7 +3090,19 @@ def _live_rule(desk_id: str, brief: Any) -> Dict[str, Any]:
         from services.strategies.next_trade import live_rule_line
         lev = float(((read_agent_config() or {}).get("risk_profile") or {}).get("max_leverage") or 20)
         nt = _bounded(desk_next_trade, desk_id, lev, brief=brief)
-        return {"next": nt, "line": live_rule_line(nt)}
+        line = live_rule_line(nt)
+        from services.strategies.desks import get_spec
+        from services.strategies.event_blackout import eia_blackout, next_eia_blackout
+        spec = get_spec(desk_id)
+        coin = next((i.coin for i in spec.instruments if i.role == "primary"), spec.instruments[0].coin) if spec else ""
+        active = eia_blackout(coin)
+        if active:
+            line += f" {active['reason']}: the tick does not enter until then."
+        else:
+            nxt = next_eia_blackout(coin)
+            if nxt:
+                line += f" Next EIA blackout {nxt['start_utc']} to {nxt['until_utc']}."
+        return {"next": nt, "line": line}
     except Exception as e:  # noqa: BLE001 - the brief still answers without it
         return {"next": None, "line": f"Live rule: unavailable ({type(e).__name__}: {str(e)[:80]})."}
 
@@ -3360,6 +3372,15 @@ def handle_place_bracket(params: Dict[str, Any]) -> str:
     except (KeyError, TypeError, ValueError):
         return json.dumps({"ok": False, "coin": coin, "error": "stop_px and tp_px are required numbers"})
     min_r = _fnum(params.get("min_r")) if params.get("min_r") not in (None, "") else bracket.DEFAULT_MIN_R
+    if not params.get("dry_run"):
+        # Operator 2026-11-03 "DO THIS THEN": no new oil entry 2h either side
+        # of the EIA report (OIL_EVENT_TIMING_TEST_2026-11-03.md, eia_2_2).
+        # Open positions, stops, targets and closes are never touched.
+        from services.strategies.event_blackout import eia_blackout
+        blackout = eia_blackout(coin)
+        if blackout:
+            return json.dumps({"ok": False, "coin": coin, "placed": False, "blackout": blackout,
+                               "error": blackout["reason"]})
     lev_raw = params.get("leverage")
     try:
         from pathiel.client.exchange import get_hl_price

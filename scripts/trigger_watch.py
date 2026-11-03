@@ -100,6 +100,7 @@ def watch(*, once: bool, cooldown_min: float, sleep: Callable[[float], None] = t
     from pathiel.client.exchange import get_max_leverage
     from services.strategies import desk_share, journal, levels
     from services.strategies.desks import get_spec
+    from services.strategies.event_blackout import eia_blackout
     import desk_slot
 
     os.makedirs(STATE_DIR, exist_ok=True)
@@ -123,6 +124,10 @@ def watch(*, once: bool, cooldown_min: float, sleep: Callable[[float], None] = t
             coin = (t.call.instrument if t is not None else None) or primary
             if coin != primary:
                 parts.append(f"{desk}: thesis on {coin}, not {primary}")
+                continue
+            blackout = eia_blackout(coin, int(now * 1000))
+            if blackout:   # place_bracket would refuse anyway; don't wake a tick for nothing
+                parts.append(f"{desk}: {blackout['reason']}")
                 continue
             if not cooled_down(fired, desk, now, cooldown_min * 60):
                 parts.append(f"{desk}: cooling down")

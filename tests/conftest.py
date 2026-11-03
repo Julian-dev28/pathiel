@@ -31,3 +31,16 @@ os.environ["SESSION_LOG_PATH"] = os.path.join(_tmp, "session-log.jsonl")
 # test files it protected against cross-contaminating went with it — the
 # fixture had been a no-op (clearing an attribute and a file nothing sets any
 # more) since that wave.
+
+
+import pytest  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _outside_eia_blackout(monkeypatch):
+    """place_bracket refuses new oil entries 2h either side of the EIA report
+    (services/strategies/event_blackout.py). Pin its clock to a Monday so a
+    suite run on a Wednesday afternoon stays deterministic; blackout tests
+    set their own time."""
+    from services.strategies import event_blackout
+    monkeypatch.setattr(event_blackout, "now_ms", lambda: 1793635200000)  # Mon 2026-11-02 16:00Z
