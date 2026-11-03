@@ -211,3 +211,9 @@ See `WIDE_STOP_SWING_TEST_2026-11-03.md`.
 
 Full sweep tables: `docs/overhaul/BACKTEST_RESULTS_2026-10-25.md`, sections
 2026-10-29 and 2026-10-30.
+
+## Decision log
+
+| Date | Change tested | Verdict | Evidence |
+|---|---|---|---|
+| 2026-11-04 | Final adoption test: `lev_fit` (entry_fit_leverage), `entries_reclaim`, `eia_2_2` blackout, and half-off at 3/4/5/6R, alone and combined, on one pinned candle snapshot across the live journal, Sept replay, Oct replay, and the Sept+Oct chain | **Adopt `lev_fit_eia`** (lev_fit + eia_2_2): beats live on 4/4 thesis datasets, max DD no worse than live, stop never past 49.8% of the liquidation distance. Reject `entries_reclaim`/`combined` (2/4 — loses on journal and Oct despite winning big on Sept/chain). Half-off at 3R is optional (3/4, not required to clear the bar) | `FINAL_STRATEGY_TEST_2026-11-04.md` |
