@@ -47,6 +47,7 @@ Every change was backtested before it went live (operator rule since
 
 | Date | Change | Why |
 |---|---|---|
+| 2026-11-03 | No closer target (keep the far 24h edge, 0.5% in) | Operator asked for a realistic-high check on the open 103.61 long (13R target). Fixed-R targets (4R-10R), wider offsets (2%-4%), the range midpoint/75% point and a hard cap on the target all lose or barely tie live on the real thesis sets; best is `target_cap_frac` 4-5%, which only ties because it almost never binds. A fixed-R target raises trade count (more re-entries into chop) and cuts the rare big win that pays for the losers. New field `desk_tick_sim.Params.target_cap_frac`, off by default (`CLOSER_TARGET_TEST_2026-11-03.md`) |
 | 2026-11-02 | No regime filter, side override or range-scaled stop/target | The live rule fades the 24h range; lately it earned in chop (+41.0R) and lost in straight-line down days (-17.0R on 16 trades). No chop filter, with-trend filter, 20-day veto or override beat live on more datasets than sitting out does, or held across +-25% thresholds; every one lost or tied on the thesis sets. Closest: stop max(0.75, 0.15 x 24h range), 6 of 8 but no plateau, and it never binds at today's 2.3% range (`OIL_REGIME_TEST_2026-11-02.md`) |
 | 2026-11-02 | Stop stays 0.75; weekends stay on; no weekend-only profit lock | A wider stop never survived the 11-02 dip (0.80 to 0.90 lose more, 0.95 and up fail 2R); 0.90 wins October only by refusing entries. Weekend-off: no thesis trade changes. Weekend lock at 1R: never lost but never touched a thesis trade (`BRENT_STOP_BUFFER_TEST_2026-11-02.md`; live journal still to run) |
 | 2026-11-02 | No daily stop-out cap | Blocking new entries after 1 to 3 stops in a UTC day lost to no cap on the thesis sets; on Brent theses 2 stops in a day never happened (`STOP_CAP_TEST_2026-11-02.md`) |
@@ -141,6 +142,11 @@ Each was one change from the old rules; per day with thesis, old = 11.2%.
 | Trade only 07:00 to 21:00 UTC | 9.0% | Better without thesis, worse with it |
 | Target 0.75%, 1% or 1.5% inside the edge | 10.4% / 7.4% / 7.7% | 0.5% stays best |
 | 1h clock | 7.4% | Slower ticks miss entries |
+
+2026-11-03 extended this on the current rules and data: fixed 4R-10R
+targets, 2%/3%/4% offsets, the range midpoint/75% point and a target cap
+(`target_cap_frac`) all lose or barely tie live on the real thesis sets;
+see `CLOSER_TARGET_TEST_2026-11-03.md`.
 
 ## Risks and when to re-check
 

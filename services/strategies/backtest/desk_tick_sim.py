@@ -255,6 +255,19 @@ equity, so every existing result is byte-identical.
 with it, each sized off its share of the whole account, as live
 (DESK_SPLIT_TEST_2026-11-02.md).
 
+Target cap (2026-11-03)
+-----------------------
+`Params.target_cap_frac` (None = off, the live rule). After whichever rule
+sets the entry's target (the far 24h edge, `target_offset_frac`, `target_r`
+or `target_offset_range_frac`), the target is pulled in to at most
+`target_cap_frac` x entry away from the entry when it would otherwise sit
+further out: the nearer of the rule's own target and entry +/-
+`target_cap_frac` x entry. It only ever pulls the target closer, never
+pushes it further out, and it changes the R the min-R gate sees (a capped
+target can fail `min_r` where the uncapped one would have passed). Applies
+in `_setup` only (the live structural entry); a pullback or flip entry's
+target is unaffected. (CLOSER_TARGET_TEST_2026-11-03.md.)
+
 Liquidation
 -----------
 Checked every bar a position is open against Hyperliquid's isolated-margin
@@ -442,6 +455,13 @@ class Params:
     pb_cancel_h: float = 4.0                 # a3: cancel the resting entry after N hours
     pb_fresh_h: float = 2.0                  # a4: the thesis's own levels while it is under N hours old
     pb_fit_leverage: bool = False            # a stop too wide for 20x trades at the highest leverage it passes (>= 5x)
+    # ── closer target test (2026-11-03, operator after the 103.61 Brent long
+    # chopped under its far-edge target: "whats the realistic high? ...
+    # test it"). See "Target cap" below. None (the default) keeps every
+    # existing result byte-identical (test_closer_target_sim.py's golden
+    # check). `target_offset_range_frac` at 0.5 / 0.25 already gives the 24h
+    # range midpoint / 75% point, so no new field was needed for those.
+    target_cap_frac: Optional[float] = None  # cap the target at entry +/- this fraction of price, whichever is nearer
 
 
 # Per-side market-sell slippage (bps) by notional (USD), walked on the live
@@ -675,6 +695,22 @@ def offset_target(target_px: float, side: str, frac: float) -> float:
     if frac <= 0:
         return target_px
     return target_px * (1.0 - frac) if side == "long" else target_px * (1.0 + frac)
+
+
+def cap_target(target_px: float, entry: float, side: str, cap_frac: Optional[float]) -> float:
+    """The nearer of `target_px` and `entry +/- cap_frac x entry` (2026-11-03,
+    CLOSER_TARGET_TEST_2026-11-03.md): a hard ceiling on how far the target
+    may sit from the entry, applied after whichever rule (far edge, offset,
+    target_r, range fraction) set `target_px`. None or <= 0 is off and
+    returns `target_px` unchanged. Only ever pulls the target CLOSER to the
+    entry, never further. Pure."""
+    if cap_frac is None or cap_frac <= 0 or entry <= 0:
+        return target_px
+    cap_dist = cap_frac * entry
+    dist = abs(target_px - entry)
+    if dist <= cap_dist:
+        return target_px
+    return entry + cap_dist if side == "long" else entry - cap_dist
 
 
 # The operator's floor (2026-10-30): a conviction-sized trade's leverage
@@ -1185,6 +1221,7 @@ def _setup(d: Direction, mid: float, lv: Dict[str, Any], params: Params,
         target_px = structural_target - off if is_long else structural_target + off
     else:
         target_px = offset_target(structural_target, d.side, params.target_offset_frac)
+    target_px = cap_target(target_px, entry, d.side, params.target_cap_frac)
     gate = None
     if not check_leverage(entry, stop_px, lev, params.max_leverage)["ok"]:
         gate = "leverage"
@@ -1844,7 +1881,7 @@ def simulate_steps(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], 
 
 
 __all__ = ["Direction", "DirectionAt", "Params", "Trade", "Run", "simulate", "simulate_steps", "tick_bars",
-          "SizeEquity", "offset_target", "regime_key",
+          "SizeEquity", "offset_target", "cap_target", "regime_key",
           "trade_leverage", "CONVICTION_LEVERAGE_FLOOR", "live_params", "profit_lock_stop", "stop_cap_blocks",
           "tally_stops", "floored_buffer", "weekend_closed", "lock_on", "risk_capped_notional", "filters_on",
           "call_start", "entry_filter", "EntryGuard", "PULLBACK_MODES", "PB_TARGETS", "PB_TRIGGERS",
