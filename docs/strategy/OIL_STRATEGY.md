@@ -150,6 +150,25 @@ targets, 2%/3%/4% offsets, the range midpoint/75% point and a target cap
 (`target_cap_frac`) all lose or barely tie live on the real thesis sets;
 see `CLOSER_TARGET_TEST_2026-11-03.md`.
 
+2026-11-03/04 ("fewer, wider, longer", after September lost 56% at 20x on
+11 stops in 21 trades and three same-thesis longs stopped twice in 30
+minutes on 2026-11-03): a wider stop (48h/24h edge plus 0.5-3x ATR14_1h)
+alone loses on the thesis sets and often pushes the stop past half the
+liquidation distance. Fitting the leverage DOWN to the stop
+(`entry_fit_leverage`, highest of 20/15/10/8/5x that still clears the 20x
+line, same 15% risk cap) beats live on both available thesis datasets
+(journal +21% more, Sept replay +43% less lost) and on the chain, and
+halves the loss on the 2026-11-03 three-long day; one re-entry per thesis
+gated on a 1h close back inside the range (`max_stop_reentries=1`,
+`reentry_needs_1h_reclaim`) wins big on Sept and the chain but trails
+live on the journal. Not adopted: the October replay is unavailable
+(regenerating -- macOS cleared `/tmp` around 16:00Z) this run, so the
+plateau check has only two thesis datasets to stand on (journal, Sept),
+and `entry_fit_leverage`'s realized fills touch 0.506 of the liquidation
+distance (0.006 over) in one control series. Re-run with
+`--oil-replay-dir` pointed at October's regenerated set before shipping.
+See `WIDE_STOP_SWING_TEST_2026-11-03.md`.
+
 ## Risks and when to re-check
 
 - **Live result, first trade under the 0.5% offset target (2026-10-30).**
