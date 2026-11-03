@@ -287,6 +287,144 @@ def test_a4_fresh_stale_and_the_leverage_gate():
         == {"refused": "pb_no_levels"}
 
 
+# ── a5: breakdown/breakout continuation ─────────────────────────────────────
+#
+# 24 flat "prior" hours (24h range 100.0-104.0, so the measured move is 4.0),
+# then ONE bar that CLOSES under the prior low (99.6 < 100.0) -- the
+# breakdown itself, not a pullback back up to it. `pb_breakout_stop_h=1`
+# isolates the stop to that one bar's own high (100.05) so the fixture's
+# numbers are easy to hand-check; the default (4) is covered by the sim-level
+# test below on a calmer fixture.
+
+PRIOR_LOW, PRIOR_HIGH = 100.0, 104.0
+BREAKOUT_SHORT = Direction(side="short", regime_id=str(T0))
+BREAKOUT_LONG = Direction(side="long", regime_id=str(T0))
+
+
+def breakout_hours_short(break_close: float = 99.6) -> list:
+    out = [bar(i, 102.0, PRIOR_HIGH, PRIOR_LOW, 102.0) for i in range(24)]
+    out.append(bar(24, 100.0, 100.05, 95.0, break_close))
+    return out
+
+
+def breakout_hours_long(break_close: float = 104.4) -> list:
+    out = [bar(i, 102.0, PRIOR_HIGH, PRIOR_LOW, 102.0) for i in range(24)]
+    out.append(bar(24, 104.0, 109.0, 103.95, break_close))
+    return out
+
+
+def test_a5_validation():
+    c1h = breakout_hours_short()
+    for bad in ({"pullback_entry": "a5", "pb_breakout_lookback_h": 0}, {"pullback_entry": "a5", "pb_breakout_stop_h": 0}):
+        with pytest.raises(ValueError):
+            simulate([], c1h, lambda t: BREAKOUT_SHORT, _base(**bad))
+
+
+def test_a5_short_breaks_and_targets_the_measured_move():
+    c1h = breakout_hours_short()
+    t = c1h[24].t + HOUR_MS
+    lv = _levels(c1h, 24, 24)
+    mid = 99.7
+    p = _base(pullback_entry="a5", pb_breakout_stop_h=1, pb_target="measured")
+    s = pullback_setup(BREAKOUT_SHORT, t, mid, lv, c1h, p)
+    assert s["pb"] == "a5" and s["is_market"] and s["side"] == "short" and s["leverage"] == 20.0
+    assert s["stop_px"] == pytest.approx(100.05 + 0.75)                      # the break bar's own high + Brent's 0.75
+    measured_target = (PRIOR_LOW - (PRIOR_HIGH - PRIOR_LOW)) * 1.005         # 96.0 x the live 0.5% offset
+    assert s["target_px"] == pytest.approx(measured_target)
+    risk = s["stop_px"] - mid
+    r = (mid - s["target_px"]) / risk
+    assert r >= 2.0                                                          # clears the live 2R gate
+
+
+def test_a5_no_break_yet_returns_none():
+    c1h = breakout_hours_short(break_close=100.5)   # closed back inside the prior range: no signal
+    t = c1h[24].t + HOUR_MS
+    lv = _levels(c1h, 24, 24)
+    p = _base(pullback_entry="a5", pb_breakout_stop_h=1, pb_target="measured")
+    assert pullback_setup(BREAKOUT_SHORT, t, 100.3, lv, c1h, p) is None
+
+
+def test_a5_long_mirrors_short():
+    c1h = breakout_hours_long()
+    t = c1h[24].t + HOUR_MS
+    lv = _levels(c1h, 24, 24)
+    mid = 104.3
+    p = _base(pullback_entry="a5", pb_breakout_stop_h=1, pb_target="measured")
+    s = pullback_setup(BREAKOUT_LONG, t, mid, lv, c1h, p)
+    assert s["pb"] == "a5" and s["is_market"] and s["side"] == "long"
+    assert s["stop_px"] == pytest.approx(103.95 - 0.75)                      # the break bar's own low - Brent's 0.75
+    measured_target = (PRIOR_HIGH + (PRIOR_HIGH - PRIOR_LOW)) * 0.995
+    assert s["target_px"] == pytest.approx(measured_target)
+
+
+def test_a5_fixed_r_target_overrides_measured_move():
+    c1h = breakout_hours_short()
+    t = c1h[24].t + HOUR_MS
+    lv = _levels(c1h, 24, 24)
+    mid = 99.7
+    p = _base(pullback_entry="a5", pb_breakout_stop_h=1, pb_target="measured", target_r=2.5)
+    s = pullback_setup(BREAKOUT_SHORT, t, mid, lv, c1h, p)
+    risk = s["stop_px"] - mid
+    assert s["target_px"] == pytest.approx(mid - 2.5 * risk)                 # target_r wins over pb_target="measured"
+
+
+def test_a5_pb_target_r_wins_over_global_target_r_and_leaves_the_main_rule_alone():
+    c1h = breakout_hours_short()
+    t = c1h[24].t + HOUR_MS
+    lv = _levels(c1h, 24, 24)
+    mid = 99.7
+    p = _base(pullback_entry="a5", pb_breakout_stop_h=1, pb_target="measured", target_r=1.0, pb_target_r=3.0)
+    s = pullback_setup(BREAKOUT_SHORT, t, mid, lv, c1h, p)
+    risk = s["stop_px"] - mid
+    assert s["target_px"] == pytest.approx(mid - 3.0 * risk)   # pb_target_r (3.0) wins over target_r (1.0)
+    # the global target_r (unset here) still reaches the MAIN rule's own target; pb_target_r never does
+    main_wide = dataclasses.replace(BREAKOUT_SHORT, entry_ceiling=None)
+    main_r22 = _setup(main_wide, mid, lv, dataclasses.replace(p, target_r=2.2, pb_target_r=None), 1.0)
+    main_live = _setup(main_wide, mid, lv, dataclasses.replace(p, target_r=None, pb_target_r=None), 1.0)
+    assert not main_r22.get("refused")    # target_r=2.2 gives the far-stop main entry enough R to pass
+    # target_r changes the main rule's own target/gate outcome; pb_target_r (set on `p`, read above) never does
+    assert main_r22.get("target_px") != main_live.get("target_px") or bool(main_r22.get("refused")) != bool(main_live.get("refused"))
+
+
+def test_a5_cap_thesis_stop():
+    c1h = breakout_hours_short()
+    t = c1h[24].t + HOUR_MS
+    lv = _levels(c1h, 24, 24)
+    mid = 99.7
+    p = _base(pullback_entry="a5", pb_breakout_stop_h=1, pb_target="measured")
+    tight = dataclasses.replace(BREAKOUT_SHORT, stop_px=100.3)               # narrower than a5's own 100.8
+    assert pullback_setup(tight, t, mid, lv, c1h, p) == {"refused": "pb_wide"}
+    assert pullback_setup(tight, t, mid, lv, c1h, dataclasses.replace(p, pb_cap_thesis_stop=False))["pb"] == "a5"
+
+
+def breakout_hours_short_calm_tail() -> list:
+    """18 wide "far" hours (100.6-104.0, the measured-move's raw material),
+    6 tight "near" hours right at the low (99.95-100.05 -- so the sim's own
+    DEFAULT `pb_breakout_stop_h` of 4 reads a tight recent structure, not
+    the far bars' wide range, and the 20x gate still clears), then the
+    break bar itself."""
+    out = [bar(i, 101.0, 104.0, 100.6, 101.0) for i in range(18)]
+    out += [bar(18 + j, 100.0, 100.05, 99.95, 100.0) for j in range(6)]
+    out.append(bar(24, 99.95, 100.0, 95.0, 99.6))
+    return out
+
+
+def test_a5_in_the_sim_takes_the_entry_live_refuses():
+    """A short thesis entered well above the current mid (a chase live
+    refuses outright): a5 catches the breakdown the moment the 1h bar
+    closes under the prior 24h low, on the sim's own default
+    `pb_breakout_stop_h` (4)."""
+    c1h = breakout_hours_short_calm_tail()
+    c15 = flat_ticks(c1h, px=99.6, n=8)       # ticks start right after the break bar CLOSES
+    chase_thesis = lambda t: Direction(side="short", entry_ceiling=103.0, regime_id=str(T0))   # noqa: E731
+    live = simulate(c15, c1h, chase_thesis, _base())
+    assert not live.trades and live.open_position_at_end is None and live.refused["chase"] > 0
+    run = simulate(c15, c1h, chase_thesis, _base(pullback_entry="a5", pb_target="measured"))
+    assert run.open_position_at_end is not None and run.open_position_at_end["side"] == "short"
+    assert run.open_position_levels["entry_kind"] == "a5"
+    assert run.position_side == "short"
+
+
 # ── the entry guard ────────────────────────────────────────────────────────
 
 def test_entry_guard_blocks_and_scales_and_top_up_keeps_the_scale():

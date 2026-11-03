@@ -60,3 +60,9 @@ margin, about $2,180 of Brent at 20x.
   loses the silver slice fast; at 10% that is about $12.
 - Two tick loops and two thesis writers: silver's rewrites run on the live
   thesis model (Fable), the same weekly meter oil uses.
+
+## Decision log
+
+| Date | Change tested | Verdict | Evidence |
+|---|---|---|---|
+| 2026-11-04 | Strategy test, prompted by "silver seems mad quiet, any strategies we can test there?": missed-opportunity rate, `lev_fit`, `ai_levels`, `entry_lookback_8h`, `pullback_8h`, a new breakdown/breakout continuation entry (`pullback_entry="a5"`, measured-move or fixed-R target), `min_r_1.5`, and the best-2 combo, on one pinned candle snapshot across the live metals journal (silver-only) and the 30-day silver replay | **Do not adopt yet.** The thesis was right 7-9/11 times (journal) and 19-23/28 times (replay) over 24h/72h while the live rule took no trade -- the size of the prize. `combo_best2` (breakout + lev_fit) ties live on the journal and beats it by +106% net on the replay, clearing every adopt check except "beats live on both thesis datasets" (a tie, not a loss, on a 1-trade journal window). Watch `combo_best2` / `breakout_24h_measured` as the journal grows; `pullback_8h` and `min_r_1.5` are rejected (lose on both thesis datasets) | `SILVER_STRATEGY_TEST_2026-11-04.md` |
