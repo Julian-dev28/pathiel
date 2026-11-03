@@ -66,6 +66,86 @@ def fetch_candles_cached(coin: str, interval: str, count: int, cache_dir: str,
     return candles
 
 
+# ── paged candles (2026-11-03, SCALP_TEST_2026-11-03.md) ───────────────────
+# `fetch_candles_cached` above asks for `count` bars ending NOW, and the
+# venue's own `candleSnapshot` caps a single request at 5000 bars (about
+# 17.4 days of 5m, 52 days of 15m) -- too short a window for a scalp sim's
+# walk-forward split on 5m bars. These page backward in <=5000-bar windows
+# from `end_ms` to `start_ms`, so the window can run as long as the venue
+# actually has history for, at the cost of more than one request.
+
+_PAGE_INTERVAL_MS: Dict[str, int] = {"1m": 60_000, "5m": 300_000, "15m": 900_000, "1h": HOUR_MS, "4h": 4 * HOUR_MS,
+                                     "1d": DAY_MS}
+CandlePager = Callable[[str, str, int, int], Sequence[Candle]]
+
+
+def _raw_candle_snapshot(coin: str, interval: str, start_ms: int, end_ms: int) -> List[Candle]:
+    """One `candleSnapshot` request against the venue's public, read-only
+    `/info` endpoint for an explicit [start_ms, end_ms) window (<=5000 bars
+    returned; the venue silently caps a wider request). No key, no order."""
+    import requests
+
+    payload = {"type": "candleSnapshot",
+               "req": {"coin": coin, "interval": interval, "startTime": int(start_ms), "endTime": int(end_ms)}}
+    resp = requests.post("https://api.hyperliquid.xyz/info", json=payload, timeout=20)
+    resp.raise_for_status()
+    raw = resp.json()
+    if not isinstance(raw, list):
+        return []
+    return [Candle(t=c["t"], o=float(c["o"]), h=float(c["h"]), l=float(c["l"]), c=float(c["c"]),
+                   v=float(c.get("v", "0"))) for c in raw]
+
+
+def fetch_candles_paged(coin: str, interval: str, start_ms: int, end_ms: int,
+                        fetch_page: Optional[CandlePager] = None, max_pages: int = 60) -> List[Candle]:
+    """Every candle of `interval` for `coin` in [start_ms, end_ms), oldest
+    first, paging backward from `end_ms` in <=5000-bar windows until
+    `start_ms` is reached, the venue runs out of history (an empty or
+    non-progressing page), or `max_pages` requests have been made.
+    `fetch_page` is injectable (gate tests never touch the network).
+    De-duped by timestamp; pure given `fetch_page`."""
+    fetch_page = fetch_page or _raw_candle_snapshot
+    ms_per = _PAGE_INTERVAL_MS.get(interval)
+    if ms_per is None:
+        raise ValueError(f"unknown interval {interval!r}")
+    page_span = ms_per * 5000
+    out: Dict[int, Candle] = {}
+    cur_end = end_ms
+    for _ in range(max_pages):
+        if cur_end <= start_ms:
+            break
+        cur_start = max(start_ms, cur_end - page_span)
+        got = fetch_page(coin, interval, cur_start, cur_end)
+        if not got:
+            break
+        for c in got:
+            if start_ms <= c.t < end_ms:
+                out[c.t] = c
+        earliest = min(c.t for c in got)
+        if earliest >= cur_end:   # no progress: stop rather than loop forever
+            break
+        cur_end = earliest
+    return [out[t] for t in sorted(out)]
+
+
+def fetch_candles_paged_cached(coin: str, interval: str, start_ms: int, end_ms: int, cache_dir: str,
+                               fetch_page: Optional[CandlePager] = None) -> List[Candle]:
+    """`fetch_candles_paged`, cached to disk per (coin, interval, window) the
+    same way `fetch_candles_cached` is. Pass a fresh `cache_dir` to force a
+    refetch."""
+    path = _cache_path(cache_dir, coin, f"paged_{interval}_{start_ms}_{end_ms}")
+    cached = read_json(path)
+    if isinstance(cached, list) and cached:
+        try:
+            return [Candle(**row) for row in cached]
+        except (TypeError, ValueError):
+            pass
+    candles = fetch_candles_paged(coin, interval, start_ms, end_ms, fetch_page)
+    if candles:
+        write_json_atomic(path, [c.model_dump() for c in candles])
+    return candles
+
+
 def fetch_funding_cached(coin: str, start_ms: int, end_ms: int, cache_dir: str,
                          fetch: Optional[FundingFetcher] = None) -> List[Dict[str, Any]]:
     """Hourly funding history for `coin` over [start_ms, end_ms], cached the
@@ -171,5 +251,6 @@ def load_journaled_theses(theses_dir: str) -> List[ThesisDirection]:
 
 __all__ = [
     "HOUR_MS", "DAY_MS", "fetch_candles_cached", "fetch_funding_cached",
+    "fetch_candles_paged", "fetch_candles_paged_cached", "CandlePager",
     "ThesisDirection", "parse_invalidation_px", "load_thesis_file", "load_journaled_theses",
 ]
