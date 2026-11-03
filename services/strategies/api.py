@@ -340,7 +340,8 @@ def desk_next_trade(desk_id: str, leverage: float, brief=None) -> Dict[str, obje
         return {"ok": False, "source": "desk_rules", "reason": f"no ATR for {coin} to size the stop buffer"}
     out = next_trade_mod.next_trade(call.side, float(lv["mid"]), float(r24["low"]), float(r24["high"]),
                                     thesis_entry=call.entry_px, leverage=leverage,
-                                    coin_max_leverage=coin_max, stop_buffer=buf)
+                                    coin_max_leverage=coin_max, stop_buffer=buf,
+                                    leverage_fit=next_trade_mod.leverage_fit_for(coin))
     out["coin"] = coin
     return out
 

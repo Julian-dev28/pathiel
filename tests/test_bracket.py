@@ -1025,3 +1025,37 @@ def test_handler_refuses_new_oil_entries_inside_the_eia_blackout(monkeypatch):
     called.clear()
     out = json.loads(mcp.handle_place_bracket({"coin": "xyz:SILVER", "stop_px": 48.0, "tp_px": 52.0}))
     assert called == ["sized"] and "EIA blackout" not in json.dumps(out)
+
+
+def test_handler_fits_brent_leverage_to_the_stop(monkeypatch):
+    """Operator 2026-11-04 "TURN ON LEVERAGE FIT": a Brent stop too far for
+    20x sizes and places at 15x; a stop that fits stays 20x; a top-up, an
+    explicit leverage and silver never refit."""
+    mcp = _mcp()
+    from pathiel.agents import bracket as br
+    import pathiel.client.exchange as ex
+    monkeypatch.setattr(ex, "resolve_user_address", lambda: "0xu")
+    monkeypatch.setattr(ex, "_position_size_on_coin", lambda user, coin: 0.0)
+    monkeypatch.setattr(br, "slot_taken_by", lambda user, coin, n: None)
+    monkeypatch.setattr(mcp, "_risk_inputs", lambda: (SimpleNamespace(max_leverage=20.0), [], None))
+    monkeypatch.setattr(mcp, "_coin_specs", lambda c: (20.0, 2))
+    monkeypatch.setattr(mcp, "_live_equity", lambda: 200.0)
+    import pathiel.client.account_snapshot as snap
+    monkeypatch.setattr(snap, "account_state", lambda user, include_hip3=True, **kw: {
+        "equity": 200.0, "dex_available": {"xyz": 500.0}})
+    sized_at, placed_at = [], []
+    import services.risk.size as size_mod
+    monkeypatch.setattr(size_mod, "size_trade", lambda *a, **k: sized_at.append(k["leverage"]) or SimpleNamespace(
+        can_trade=True, size=5.0, leverage=k["leverage"], reason="", notional_usd=500.0,
+        margin_usd=30.0, risk_usd=9.0, risk_pct=15.0))
+    monkeypatch.setattr(br, "place_bracket", lambda coin, **k: placed_at.append(k["leverage"]) or {"ok": True})
+
+    def place(**p):
+        sized_at.clear(); placed_at.clear()
+        json.loads(mcp.handle_place_bracket(p))
+        return sized_at[-1], placed_at[-1]
+
+    assert place(coin=COIN, entry_px=100.0, stop_px=98.2, tp_px=110.0) == (15.0, 15)   # 1.8%: no 20x
+    assert place(coin=COIN, entry_px=103.61, stop_px=102.99, tp_px=111.77) == (20.0, 20)  # fits 20x
+    assert place(coin=COIN, entry_px=100.0, stop_px=98.2, tp_px=110.0, leverage=20) == (20.0, 20)
+    assert place(coin="xyz:SILVER", entry_px=50.0, stop_px=49.1, tp_px=55.0) == (20.0, 20)

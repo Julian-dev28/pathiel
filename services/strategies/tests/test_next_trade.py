@@ -112,7 +112,9 @@ def test_next_route_uses_the_live_range_and_the_thesis_side(client, monkeypatch)
         "mid": 113.135, "range_24h": {"low": 109.01, "high": 114.07}, "atr14_1h": 0.83})
     body = client.get("/api/desks/oil/next").json()
     assert body["source"] == "desk_rules" and body["coin"] == "xyz:BRENTOIL"
-    assert body["r_now"] == 0.07 and body["leverage"] == 20
+    # the trigger (about 110.0, stop 108.26, 1.6% away) is too wide for 20x:
+    # since the 2026-11-04 leverage fit the tick trades it at 15x
+    assert body["r_now"] == 0.07 and body["leverage"] == 15
     assert body["stop_px"] != 111.29                          # the thesis's stop is not the tick's
 
 
@@ -184,3 +186,62 @@ def test_live_rule_line_when_it_trades_now_or_has_no_side():
     flat = next_trade("flat", 110.0, 108.0, 112.0, thesis_entry=None, leverage=20,
                       coin_max_leverage=20, stop_buffer=0.75)
     assert live_rule_line(flat).startswith("Live rule: no trade")
+
+
+# ── leverage fit (operator 2026-11-04: "TURN ON LEVERAGE FIT") ──────────────
+
+def test_fit_leverage_keeps_20x_when_the_stop_fits():
+    from services.strategies.next_trade import LEVERAGE_FIT, fit_leverage
+    lev, gate = fit_leverage(103.61, 102.99, 20.0, 20.0, LEVERAGE_FIT)   # the 2026-11-03 first long
+    assert lev == 20.0 and gate["ok"]
+
+
+def test_fit_leverage_drops_to_15x_never_lower():
+    from pathiel.agents.bracket import check_leverage
+    from services.strategies.next_trade import LEVERAGE_FIT, fit_leverage
+    # a stop 1.8% away fails 20x but passes 15x
+    assert not check_leverage(100.0, 98.2, 20.0, 20.0)["ok"]
+    lev, gate = fit_leverage(100.0, 98.2, 20.0, 20.0, LEVERAGE_FIT)
+    assert lev == 15.0 and gate["ok"]
+    # 2.6% away fails 15x too: the rule refuses rather than going to 10x
+    lev, gate = fit_leverage(100.0, 97.4, 20.0, 20.0, LEVERAGE_FIT)
+    assert lev == 15.0 and not gate["ok"]
+    assert LEVERAGE_FIT == (20.0, 15.0)
+
+
+def test_fit_leverage_without_candidates_is_the_old_fixed_rule():
+    from pathiel.agents.bracket import check_leverage
+    from services.strategies.next_trade import fit_leverage
+    lev, gate = fit_leverage(100.0, 97.4, 20.0, 20.0, ())
+    assert lev == 20.0 and gate == check_leverage(100.0, 97.4, 20.0, 20.0)
+
+
+def test_fit_leverage_never_exceeds_the_configured_or_venue_cap():
+    from services.strategies.next_trade import fit_leverage
+    assert fit_leverage(100.0, 99.5, 15.0, 20.0, (20.0, 15.0))[0] == 15.0
+    assert fit_leverage(100.0, 99.5, 20.0, 15.0, (20.0, 15.0))[0] == 15.0
+
+
+def test_only_brent_fits_its_leverage():
+    from services.strategies.next_trade import LEVERAGE_FIT, leverage_fit_for
+    assert leverage_fit_for("xyz:BRENTOIL") == LEVERAGE_FIT
+    for coin in ("xyz:SILVER", "xyz:CL", "BTC"):
+        assert leverage_fit_for(coin) == ()
+
+
+def test_next_trade_takes_a_wide_stop_long_at_15x_instead_of_waiting():
+    from services.strategies.next_trade import LEVERAGE_FIT
+    # 24h range 98.60-110: stop 97.85 is 1.7% under a 99.50 mid -> no 20x, 15x ok
+    kw = dict(thesis_entry=None, leverage=20.0, coin_max_leverage=20.0, stop_buffer=0.75)
+    fixed = next_trade("long", 99.5, 98.6, 110.0, **kw)
+    fitted = next_trade("long", 99.5, 98.6, 110.0, leverage_fit=LEVERAGE_FIT, **kw)
+    assert not fixed["ok"] and any("20x" in b for b in fixed["blockers"])
+    assert fitted["ok"] and fitted["leverage"] == 15.0 and fitted["verdict"] == "buys now"
+    assert fitted["stop_px"] == fixed["stop_px"]          # the stop never moves, only the leverage
+
+
+def test_fit_leverage_without_a_venue_max_keeps_the_leverage_and_never_raises():
+    from services.strategies.next_trade import LEVERAGE_FIT, fit_leverage
+    for cands in ((), LEVERAGE_FIT):
+        lev, gate = fit_leverage(100.0, 98.2, 20.0, None, cands)
+        assert lev == 20.0 and gate["ok"] is False

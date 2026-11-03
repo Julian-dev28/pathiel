@@ -23,7 +23,7 @@ Backs `GET /api/desks/{desk_id}/next`.
 """
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from pathiel.agents.bracket import (DEFAULT_MIN_R, TARGET_OFFSET_FRAC, check_leverage,
                                     check_levels, offset_target)
@@ -58,10 +58,48 @@ def stop_buffer_for(coin: str, atr14: Optional[float],
     return round(buf, 6)
 
 
+# Leverage fit (operator, 2026-11-04: "TURN ON LEVERAGE FIT"). A Brent entry
+# whose stop is too far for 20x trades at 15x instead of being skipped; every
+# trade that fits 20x stays 20x, and dollar risk stays the 15% cap (size is
+# the same risk at any leverage). The final test (FINAL_STRATEGY_TEST_2026-11-04.md,
+# lev_fit_eia) beat live on 4 of 4 thesis datasets with candidates 20/15/10/8/5
+# but never used anything under 15x; the operator wants no lower, so 20/15.
+LEVERAGE_FIT = (20.0, 15.0)
+LEVERAGE_FIT_COINS = frozenset({BRENT})
+
+
+def leverage_fit_for(coin: str) -> Tuple[float, ...]:
+    """The candidates a coin's new entries fit their leverage from; () = the
+    fixed configured leverage (silver and every other coin, untested there)."""
+    return LEVERAGE_FIT if coin in LEVERAGE_FIT_COINS else ()
+
+
+def fit_leverage(entry: float, stop: float, leverage: float, coin_max_leverage: Optional[float],
+                 candidates: Sequence[float] = ()) -> Tuple[float, Dict[str, Any]]:
+    """(leverage, check_leverage gate) for a new entry. With no candidates,
+    the configured `leverage`. Otherwise the highest candidate, capped at
+    `leverage` and the venue max, whose gate passes; when none passes, the
+    lowest candidate and its failing gate. Mirrors desk_tick_sim.
+    _fit_leverage_setup. Pure."""
+    if not coin_max_leverage:
+        return leverage, {"ok": False, "reason": "venue max leverage is unavailable"}
+    if not candidates:
+        return leverage, check_leverage(entry, stop, leverage, coin_max_leverage)
+    cap = min(leverage, coin_max_leverage) if coin_max_leverage else leverage
+    cands = sorted({float(c) for c in candidates if 0 < c <= cap}, reverse=True) or [float(leverage)]
+    gate: Dict[str, Any] = {}
+    for lev in cands:
+        gate = check_leverage(entry, stop, lev, coin_max_leverage)
+        if gate.get("ok"):
+            return lev, gate
+    return cands[-1], gate
+
+
 def next_trade(side: str, mid: float, low_24h: float, high_24h: float, *,
                thesis_entry: Optional[float], leverage: float, coin_max_leverage: Optional[float],
                stop_buffer: float, min_r: float = DEFAULT_MIN_R,
-               offset_frac: float = TARGET_OFFSET_FRAC) -> Dict[str, Any]:
+               offset_frac: float = TARGET_OFFSET_FRAC,
+               leverage_fit: Sequence[float] = ()) -> Dict[str, Any]:
     """The tick's next trade for a `side` thesis. `ok` is True when the tick
     would send the market order at `mid` right now. Every other answer says
     why not (`blockers`) and where it would trade (`trigger_px`)."""
@@ -80,7 +118,7 @@ def next_trade(side: str, mid: float, low_24h: float, high_24h: float, *,
                 else "price is at the target already: nothing to sell into"}
 
     now_r = check_levels(mid, stop, tp, min_r)
-    now_lev = check_leverage(mid, stop, leverage, coin_max_leverage)
+    now_x, now_lev = fit_leverage(mid, stop, leverage, coin_max_leverage, leverage_fit)
     chase = thesis_entry is not None and ((mid > thesis_entry) if long else (mid < thesis_entry))
 
     # The furthest mid that still pays min_r with these levels (the stop sits
@@ -90,26 +128,27 @@ def next_trade(side: str, mid: float, low_24h: float, high_24h: float, *,
     trigger = (tp + min_r * edge_stop) / (1.0 + min_r)
     if thesis_entry is not None:
         trigger = min(trigger, thesis_entry) if long else max(trigger, thesis_entry)
-    trig_lev = check_leverage(trigger, edge_stop, leverage, coin_max_leverage)
+    trig_x, trig_lev = fit_leverage(trigger, edge_stop, leverage, coin_max_leverage, leverage_fit)
+    floor_x = min([c for c in leverage_fit if c <= leverage] or [leverage])   # the lowest leverage the rule uses
 
     blockers: List[str] = []
     if not now_r.get("ok"):
         blockers.append(f"pays {now_r.get('r_multiple', 0):.2f}R at {mid:g}, needs {min_r:g}R")
     if not now_lev.get("ok"):
-        blockers.append(f"stop too wide for {leverage:g}x (max {now_lev.get('max_leverage_ok')}x)")
+        blockers.append(f"stop too wide for {floor_x:g}x (max {now_lev.get('max_leverage_ok')}x)")
     if chase:
         blockers.append(f"mid {'above' if long else 'below'} the thesis entry {thesis_entry:g}: never chase")
     ok = not blockers
 
     # The leverage box prices the order the tick would send: at the mid when it
     # trades now, else at the trigger price.
-    at_px, at_stop, at_lev = (mid, stop, now_lev) if ok else (trigger, edge_stop, trig_lev)
+    at_px, at_stop, at_lev, at_x = (mid, stop, now_lev, now_x) if ok else (trigger, edge_stop, trig_lev, trig_x)
     r_at = abs(tp - at_px) / abs(at_px - at_stop) if at_px != at_stop else None
     verdict = ("buys now" if long else "sells now") if ok else (
         f"waits: {'buy' if long else 'sell'} at {trigger:.2f} or {'lower' if long else 'higher'}"
-        + ("" if trig_lev.get("ok") else f", but no {leverage:g}x there (max {trig_lev.get('max_leverage_ok')}x)"))
+        + ("" if trig_lev.get("ok") else f", but no {floor_x:g}x there (max {trig_lev.get('max_leverage_ok')}x)"))
     return {
-        "ok": ok, "source": "desk_rules", "side": side, "leverage": leverage, "min_r": min_r,
+        "ok": ok, "source": "desk_rules", "side": side, "leverage": at_x, "min_r": min_r,
         "mid": mid, "range_24h": {"low": low_24h, "high": high_24h}, "stop_buffer": stop_buffer,
         "stop_px": round(at_stop, 6), "tp_px": tp, "structure_tp_px": structure_tp, "targets": [tp],
         "entry_px": round(at_px, 6), "trigger_px": round(trigger, 6), "trigger_leverage_ok": bool(trig_lev.get("ok")),
@@ -142,4 +181,5 @@ def live_rule_line(nt: Dict[str, Any]) -> str:
     return head + "."
 
 
-__all__ = ["next_trade", "stop_buffer_for", "live_rule_line", "BRENT_STOP_BUFFER"]
+__all__ = ["next_trade", "stop_buffer_for", "live_rule_line", "fit_leverage", "leverage_fit_for",
+           "BRENT_STOP_BUFFER", "LEVERAGE_FIT"]

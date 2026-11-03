@@ -13,7 +13,10 @@ and silver (the metals desk) are both live, each on its own slice of equity
 `place_bracket` sizes off the desk's slice by itself, and an oil position
 never blocks the silver tick or the other way round. Leverage up to the risk profile's `max_leverage`
 (20x since 2026-10-24; `place_bracket` caps it and runs the 20x rule: the
-stop must use under half the distance to liquidation). Never chase. Never
+stop must use under half the distance to liquidation). Brent fits its
+leverage since 2026-11-04: a stop too far for 20x trades at 15x, never
+lower (`next_trade.LEVERAGE_FIT`); `place_bracket` does it by itself, so
+never pass `leverage` on a new entry. Never chase. Never
 add at market above the thesis entry. Every number comes from a tool or a
 script, never from mental arithmetic. The scripts below run through the plugin's own Python from the plugin
 root; no checkout is needed.
@@ -120,7 +123,8 @@ ToolSearch call: `select:mcp__pathiel__desk_brief,mcp__pathiel__bracket_sweep,mc
          for a long (below it for a short).
      Judge it first: `place_bracket {coin, stop_px, tp_px, dry_run: true}`
      (no `entry_px` = market at the live mid). Only when the dry run says
-     ok (2R or more on the offset target, the 20x line passes), send the
+     ok (2R or more on the offset target, the 20x line passes at the
+     leverage it fitted), send the
      same call without `dry_run`. Let the tool size it. Most ticks the mid
      sits too high in the range to pay 2R: no trade, one clause why
      ("pays 1.4R at 111.40", "mid above thesis entry").

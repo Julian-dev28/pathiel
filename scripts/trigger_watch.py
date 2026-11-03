@@ -46,7 +46,7 @@ def evaluate(side: Optional[str], thesis_entry: Optional[float], mid: Optional[f
              leverage: float) -> Dict[str, Any]:
     """Pure: would the tick trade `coin` at `mid` right now? Same answer as
     GET /api/desks/{id}/next, with the mid refreshed between level reads."""
-    from services.strategies.next_trade import next_trade, stop_buffer_for
+    from services.strategies.next_trade import leverage_fit_for, next_trade, stop_buffer_for
     r24 = levels.get("range_24h") or {}
     if side not in ("long", "short"):
         return {"ok": False, "reason": f"thesis is {side or 'missing'}"}
@@ -57,7 +57,8 @@ def evaluate(side: Optional[str], thesis_entry: Optional[float], mid: Optional[f
         return {"ok": False, "reason": "no ATR for the stop buffer"}
     out = next_trade(side, float(mid), float(r24["low"]), float(r24["high"]),
                      thesis_entry=thesis_entry, leverage=leverage,
-                     coin_max_leverage=coin_max_leverage, stop_buffer=buf)
+                     coin_max_leverage=coin_max_leverage, stop_buffer=buf,
+                     leverage_fit=leverage_fit_for(coin))
     return out
 
 

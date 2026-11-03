@@ -3163,8 +3163,14 @@ def _thesis_sizing(brief: Any) -> "Dict[str, Any] | None":
         # against an 11.84 position and the tick's top-up rule ("brief size
         # bigger than the position") never fired: $7.24 of a $69.85 account
         # sat idle. Same leverage as place_bracket, so the two sizes agree.
+        # Same leverage fit as place_bracket (2026-11-04), so the two sizes agree.
+        from services.strategies.next_trade import fit_leverage, leverage_fit_for
+        lev = _bracket_leverage(profile)
+        if lev:
+            lev, _gate = fit_leverage(float(call.entry_px), float(call.stop_px), float(lev), coin_max,
+                                      leverage_fit_for(call.instrument))
         sized = size_trade(equity, profile, books, entry_px=call.entry_px, stop_px=call.stop_px,
-                           leverage=_bracket_leverage(profile), coin_max_leverage=coin_max,
+                           leverage=lev, coin_max_leverage=coin_max,
                            targets=call.targets or [], venue=venue, sz_decimals=sz_dec)
         out = {"coin": call.instrument, "equity_usd": equity, "desk": dslice["desk"],
                "equity_share": dslice["equity_share"], **sized.model_dump(mode="json")}
@@ -3422,11 +3428,18 @@ def handle_place_bracket(params: Dict[str, Any]) -> str:
             return json.dumps({"ok": False, "coin": coin, "placed": False,
                                "error": f"slot taken by {taken}: the account allows {slots} open position(s)"})
         ref = entry if entry is not None else float(get_hl_price(coin))
+        add = _as_bool(params.get("add"))
         leverage = _bracket_leverage(profile, lev_raw)
+        if lev_raw in (None, "") and not add and leverage:
+            # Leverage fit (operator 2026-11-04 "TURN ON LEVERAGE FIT"): a
+            # Brent stop too far for 20x trades at 15x instead of being
+            # refused. A top-up never refits (the venue sets one leverage
+            # for the whole position); an explicit leverage is the caller's.
+            from services.strategies.next_trade import fit_leverage, leverage_fit_for
+            leverage, _gate = fit_leverage(ref, stop, float(leverage), coin_max, leverage_fit_for(coin))
         sized = size_trade(dslice["slice_usd"], profile, books, entry_px=ref, stop_px=stop,
                            leverage=leverage, coin_max_leverage=coin_max, targets=[tp],
                            venue=venue, sz_decimals=sz_dec)
-        add = _as_bool(params.get("add"))
         size = float(sized.size or 0)
         topup: Optional[Dict[str, Any]] = None
         if add:
