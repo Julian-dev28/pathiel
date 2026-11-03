@@ -161,14 +161,25 @@ def truncating_fetcher(all_candles: Dict[str, Dict[str, Sequence[Candle]]], now:
 # ── one full day's worth of raw candles, fetched once and reused ───────────
 
 def fetch_all_candles(spec: DeskSpec, cache_dir: str, days: int,
-                      fetch_cached=None) -> Dict[str, Dict[str, List[Candle]]]:
+                      fetch_cached=None, end: Optional[datetime] = None) -> Dict[str, Dict[str, List[Candle]]]:
     """Every instrument coin's full daily history, and every PRIMARY
     coin's hourly history far enough back to cover the whole replay
     window -- fetched ONCE (disk-cached under `cache_dir`, so a resumed
     run never re-fetches) and reused for every day D through
     `truncating_fetcher`. `fetch_cached` defaults to services.strategies.
     backtest.data.fetch_candles_cached (the live, public candleSnapshot
-    read); injectable for tests."""
+    read); injectable for tests.
+
+    `fetch_cached`'s default fetcher asks for `count` bars ending at the
+    REAL wall-clock now, not at `end` -- so a `--days N` window pinned by
+    `--end-day` into the past (2026-11-03, EXTENDED_HISTORY_TEST) needs
+    MORE than `N` days of hourly bars fetched, enough to reach from real
+    now all the way back past the window's earliest day plus warm-up, or
+    that earliest day gets zero closed 1h bars and build_analytics fails
+    for it. `end=None` (a window ending at real now, the harness's
+    original use) reproduces the exact old formula byte-for-byte --
+    `days_for_fetch` only grows when `end` is far enough in the past that
+    the gap from now back to the window start exceeds `days` itself."""
     from services.strategies import analytics as analytics_mod
     from services.strategies.backtest import data as D
 
@@ -180,10 +191,16 @@ def fetch_all_candles(spec: DeskSpec, cache_dir: str, days: int,
         out[coin]["1d"] = list(fetch_cached(coin, "1d", analytics_mod.DAILY_CANDLE_COUNT, cache_dir))
     # HOURLY_CANDLE_COUNT (60) is all build_analytics ever asks for in one
     # call; the replay needs that many CLOSED bars available on the
-    # EARLIEST day too, so the raw fetch reaches back `days` further still,
-    # plus the same warm-up pad analytics.py's own HOURLY_CANDLE_COUNT implies.
+    # EARLIEST day too, so the raw fetch reaches back `days_for_fetch`
+    # further still, plus the same warm-up pad analytics.py's own
+    # HOURLY_CANDLE_COUNT implies.
     from services.strategies.analytics import HOURLY_CANDLE_COUNT
-    hourly_count = (days + 5) * 24 + HOURLY_CANDLE_COUNT
+    days_for_fetch = days
+    if end is not None:
+        window_start = end - timedelta(days=days)
+        gap_days = (datetime.now(timezone.utc) - window_start).days + 1
+        days_for_fetch = max(days, gap_days)
+    hourly_count = (days_for_fetch + 5) * 24 + HOURLY_CANDLE_COUNT
     for coin in primaries:
         out[coin]["1h"] = list(fetch_cached(coin, "1h", hourly_count, cache_dir))
     return out
@@ -414,7 +431,7 @@ def main(argv: Optional[List[str]] = None) -> int:
          f"end_day={args.end_day or 'now'}")
     print("[replay] price data only: no intel packet is built or passed to any day's thesis")
 
-    all_candles = fetch_all_candles(spec, cache_dir, args.days)
+    all_candles = fetch_all_candles(spec, cache_dir, args.days, end=end_day)
     meta_once = analytics_mod.default_meta_fetcher()
     meta_fetcher = lambda: meta_once  # noqa: E731 - fetched once, reused every day on purpose
 

@@ -337,6 +337,67 @@ def test_fetch_all_candles_fetches_daily_for_every_coin_and_hourly_only_for_prim
     assert ("SECONDARY", "1h") not in by_coin_interval   # hourly structure is primaries-only
 
 
+def test_fetch_all_candles_hourly_count_unchanged_when_end_is_none():
+    """`end=None` (a window ending at real now, the harness's original use)
+    must reproduce the exact pre-fix formula -- (days + 5) * 24 + 60."""
+    spec = DeskSpec(id="test4", name="Test", tagline="t",
+                    instruments=[Instrument(coin="PRIMARY", label="P", role="primary")])
+    calls = []
+
+    def fake_fetch_cached(coin, interval, count, cache_dir):
+        calls.append((coin, interval, count))
+        return []
+
+    R.fetch_all_candles(spec, "/tmp/doesnt-matter", 5, fetch_cached=fake_fetch_cached)
+    hourly = [c for coin, interval, c in calls if interval == "1h"]
+    assert hourly == [(5 + 5) * 24 + 60]
+
+
+def test_fetch_all_candles_extends_hourly_count_for_a_window_pinned_far_in_the_past():
+    """A 30-day window pinned (`end=`) 60 days into the past needs MORE
+    than 30 days of hourly bars fetched -- the gap from real now back to
+    the window's start, not just the window's own length -- or the
+    earliest days in the window get zero closed 1h bars."""
+    from datetime import datetime, timedelta, timezone
+
+    spec = DeskSpec(id="test5", name="Test", tagline="t",
+                    instruments=[Instrument(coin="PRIMARY", label="P", role="primary")])
+    calls = []
+
+    def fake_fetch_cached(coin, interval, count, cache_dir):
+        calls.append((coin, interval, count))
+        return []
+
+    end = datetime.now(timezone.utc) - timedelta(days=60)
+    R.fetch_all_candles(spec, "/tmp/doesnt-matter", 30, fetch_cached=fake_fetch_cached, end=end)
+    hourly = [c for coin, interval, c in calls if interval == "1h"]
+    unfixed_formula = (30 + 5) * 24 + 60
+    assert hourly and hourly[0] > unfixed_formula
+    # must reach back far enough: window start is ~90 days before real now
+    # (60 days pin + 30 days window); the fetched count in hours should
+    # cover at least that gap plus the usual 5-day/60-bar warm-up pad.
+    assert hourly[0] >= (90 + 5) * 24 + 60
+
+
+def test_fetch_all_candles_does_not_extend_when_end_is_recent():
+    """`end` close to real now (the gap smaller than `days` itself) leaves
+    the formula at its `days`-only floor -- no spurious inflation."""
+    from datetime import datetime, timedelta, timezone
+
+    spec = DeskSpec(id="test6", name="Test", tagline="t",
+                    instruments=[Instrument(coin="PRIMARY", label="P", role="primary")])
+    calls = []
+
+    def fake_fetch_cached(coin, interval, count, cache_dir):
+        calls.append((coin, interval, count))
+        return []
+
+    end = datetime.now(timezone.utc) + timedelta(hours=1)   # effectively "now"
+    R.fetch_all_candles(spec, "/tmp/doesnt-matter", 5, fetch_cached=fake_fetch_cached, end=end)
+    hourly = [c for coin, interval, c in calls if interval == "1h"]
+    assert hourly == [(5 + 5) * 24 + 60]
+
+
 # ── main(): the guard rails, offline ─────────────────────────────────────────
 
 def test_main_refuses_the_fable_model_without_touching_the_network():
