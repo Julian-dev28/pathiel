@@ -268,6 +268,28 @@ target can fail `min_r` where the uncapped one would have passed). Applies
 in `_setup` only (the live structural entry); a pullback or flip entry's
 target is unaffected. (CLOSER_TARGET_TEST_2026-11-03.md.)
 
+Wide-stop swing test ("fewer, wider, longer", 2026-11-03/04)
+--------------------------------------------------------------
+`Params.entry_fit_leverage` (None = off, the live rule): a tuple of
+candidate leverages (e.g. 20/15/10/8/5x); the MAIN structural entry
+(`_setup`, via `_fit_leverage_setup`) trades at the highest one whose
+`check_leverage` gate clears its stop, so a wide stop sizes down in
+leverage, not just in dollars. `Params.reentry_after_stop` (True = off,
+the live rule; False blocks a NEW entry under the SAME call after a
+"stop" exit until a new call -- the "one entry per thesis" variant, the
+stop-exit mirror of `reentry_after_target`), `Params.max_stop_reentries`
+(None = unlimited, the live rule; an int caps how many new entries may
+open under one call after a stop, same effect as `reentry_after_stop`=
+False but counted instead of immediate) and `Params.reentry_needs_1h_
+reclaim` (False = off; True gates an allowed re-entry on a 1h bar that
+closes STRICTLY AFTER the stop, back inside the 24h range the stop broke
+out of, snapshotted at the stop). See `services/strategies/evals/wide_stop_swing_test.py` and
+`docs/strategy/WIDE_STOP_SWING_TEST_2026-11-03.md`. The stop and target
+variants need no new field (`entry_lookback_h` x `stop_buffer_atr` and
+`target_lookback_h` x `target_offset_frac` already cover them). Every
+default above keeps every existing result byte-identical (test_wide_stop_
+swing_sim.py's golden check).
+
 Liquidation
 -----------
 Checked every bar a position is open against Hyperliquid's isolated-margin
@@ -473,6 +495,49 @@ class Params:
     # keeps every existing result byte-identical (test_funding_signal.py's
     # golden check) -- it never reads funding_history at all unless set.
     funding_z_filter: Optional[float] = None
+    # ── wide-stop swing test (2026-11-03/04, WIDE_STOP_SWING_TEST_2026-11-03.md;
+    # operator: "fewer, wider, longer" -- trade the thesis direction with a
+    # WIDER stop, a LOWER leverage, the SAME 15% risk cap (live_params.
+    # LIVE_RISK_CAP_FRAC) and FEWER entries per thesis, so the thesis
+    # survives the noise instead of being stopped out by it. Every default
+    # keeps every existing result byte-identical (test_wide_stop_swing_
+    # sim.py's golden check). The stop and target themselves need no new
+    # field: entry_lookback_h (8/24/48h structure) x stop_buffer_atr (x
+    # ATR14) already gives "beyond the 48h edge plus N x ATR" / "beyond the
+    # 24h edge plus N x ATR", and target_lookback_h x target_offset_frac
+    # already gives "the far 48h edge, 0.5% inside it" on top of the live
+    # 24h/0.5% target.
+    entry_fit_leverage: Optional[Tuple[float, ...]] = None
+    # The highest leverage in this tuple (any order, capped at max_leverage)
+    # whose check_leverage gate clears this entry's stop (`_fit_leverage_
+    # setup`), for the MAIN structural entry only (`_setup`; a pullback,
+    # flip or AI-levels entry is unaffected -- none of this test's variants
+    # turn those on). None (the default) trades every entry at
+    # `trade_leverage(d, params)`, unchanged. `_setup`'s entry/stop/target
+    # never depend on leverage (only the gate does), so a refusal for any
+    # OTHER reason (min_r, chase, break) is the same at every candidate and
+    # returns at once; only a "leverage" refusal tries the next, lower one.
+    reentry_after_stop: bool = True
+    # False: no NEW entry under the SAME call (Direction.regime_id, or a
+    # control's own UTC day, see `regime_key`) after a "stop" exit, until a
+    # new call starts -- the "one entry per thesis" variant, the stop-exit
+    # mirror of `reentry_after_target`. True (the default, live): unlimited
+    # re-entry under one call, unchanged from before this field existed.
+    max_stop_reentries: Optional[int] = None
+    # Caps how many NEW entries may open under the same call after a
+    # "stop" exit: the (max_stop_reentries + 1)th stop under one call
+    # blocks further entries under it, same effect as reentry_after_stop=
+    # False but counted instead of immediate. None (the default) is
+    # unlimited, the live rule. Read only while reentry_after_stop is True.
+    reentry_needs_1h_reclaim: bool = False
+    # A re-entry `max_stop_reentries` still allows must also wait for a 1h
+    # bar that CLOSES STRICTLY AFTER the stop (never one already closed
+    # before it -- that would prove nothing about price coming back) whose
+    # close falls back inside the 24h range the stop broke out of
+    # (snapshotted at the moment of that stop), before it may open --
+    # "don't re-enter until price proves it came back". Off (the default)
+    # leaves `reentry_after_stop`/`max_stop_reentries` as the only gate on
+    # a re-entry.
 
 
 # Per-side market-sell slippage (bps) by notional (USD), walked on the live
@@ -1259,6 +1324,30 @@ def _setup(d: Direction, mid: float, lv: Dict[str, Any], params: Params,
     return out
 
 
+def _fit_leverage_setup(d: Direction, mid: float, lv: Dict[str, Any], params: Params
+                        ) -> Tuple[Optional[Dict[str, Any]], float]:
+    """`_setup`'s result, with the leverage fitted from `params.
+    entry_fit_leverage` (candidates, any order) instead of a single fixed
+    value: the highest candidate (capped at `max_leverage`) whose
+    `check_leverage` gate clears this entry's stop, else the lowest
+    candidate's own refusal. `_setup`'s entry/stop/target never depend on
+    leverage (only the gate does), so a refusal for any OTHER reason
+    (min_r, chase, break) is identical at every candidate and is returned
+    at once, same as the baseline `trade_leverage` + `_setup` call; only a
+    "leverage" refusal tries the next, lower candidate. Returns (setup,
+    leverage): the candidate that won, for the caller to size and gate the
+    fill at (unused when setup is None or refused). Pure."""
+    cands = sorted({c for c in params.entry_fit_leverage if 0 < c <= params.max_leverage}, reverse=True)
+    if not cands:
+        return {"refused": "leverage"}, params.leverage
+    result: Optional[Dict[str, Any]] = None
+    for lev in cands:
+        result = _setup(d, mid, lv, params, lev)
+        if result is None or result.get("refused") != "leverage":
+            return result, lev
+    return result, cands[-1]
+
+
 def _market_open(setup: Dict[str, Any], bar: Candle, t: int, equity: float,
                  params: Params, leverage: Optional[float] = None,
                  size_eq: Optional[float] = None) -> Tuple[_Position, float, float]:
@@ -1442,6 +1531,14 @@ def simulate_steps(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], 
     initial_size = 0.0          # the size the position opened with, for R-multiple risk
     blocked_regime: Optional[Tuple[str, Any]] = None   # no re-entry under this call (reentry_after_target=False)
     pending_flip: Optional[Tuple[str, float]] = None   # (side to open, target) after a target filled
+    # Re-entry after a stop (Params.reentry_after_stop / max_stop_reentries /
+    # reentry_needs_1h_reclaim). stop_count_by_call: call key (regime_key)
+    # -> "stop" exits so far under it. reclaim_wait: {"call_id", "low",
+    # "high", "ok"} once a re-entry is waiting on a closed 1h bar back
+    # inside the range the stop broke out of; never reset, same as
+    # blocked_regime (a new call's own key simply stops matching it).
+    stop_count_by_call: Counter = Counter()
+    reclaim_wait: Optional[Dict[str, Any]] = None
     seen_1h_close: set = set()
     cap_on = params.daily_stop_cap is not None
     stops_by_day: Counter = Counter()  # (UTC day, None|side) -> stop exits (Params.daily_stop_cap)
@@ -1475,6 +1572,13 @@ def simulate_steps(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], 
         while n_closed < len(c1h) and c1h[n_closed].t + HOUR_MS <= t:
             n_closed += 1
         lv = _levels(c1h[max(0, n_closed - need):n_closed], params.entry_lookback_h, params.target_lookback_h)
+        if reclaim_wait is not None and not reclaim_wait["ok"] and n_closed > reclaim_wait["since_n_closed"]:
+            # only a bar that closed strictly AFTER the stop counts -- a bar
+            # already closed before it (e.g. the padding history) proves
+            # nothing about price coming back
+            new_bars = c1h[reclaim_wait["since_n_closed"]:n_closed]
+            if any(reclaim_wait["low"] <= b.c <= reclaim_wait["high"] for b in new_bars):
+                reclaim_wait["ok"] = True
         if filt_on:
             d_now = direction_at(t)
             if d_now is not None and d_now.side != side_seen:
@@ -1621,6 +1725,23 @@ def simulate_steps(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], 
                 run.trades.append(trade)
                 run.gross_pnl_usd += trade.gross_pnl_usd
                 run.fees_total_usd += trade.fees_usd
+                if trade.exit_reason == "stop" and (not params.reentry_after_stop
+                                                     or params.max_stop_reentries is not None
+                                                     or params.reentry_needs_1h_reclaim):
+                    key = regime_key(direction_at(t), t)
+                    if key is not None:
+                        if not params.reentry_after_stop:
+                            blocked_regime = key
+                        else:
+                            stop_count_by_call[key] += 1
+                            if (params.max_stop_reentries is not None
+                                    and stop_count_by_call[key] > params.max_stop_reentries):
+                                blocked_regime = key
+                            elif (params.reentry_needs_1h_reclaim and lv is not None
+                                  and lv["range_24h_low"] is not None):
+                                reclaim_wait = {"call_id": key, "low": lv["range_24h_low"],
+                                               "high": lv["range_24h_high"], "ok": False,
+                                               "since_n_closed": n_closed}
                 position = None
                 resting_add = None
             elif target_hit:
@@ -1754,6 +1875,10 @@ def simulate_steps(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], 
             d = direction_at(t)
             if blocked_regime is not None and regime_key(d, t) == blocked_regime:
                 d = None            # a target filled under this call: wait for the next one
+            if (reclaim_wait is not None and d is not None and not reclaim_wait["ok"]
+                    and regime_key(d, t) == reclaim_wait["call_id"]):
+                run.refused["reentry_wait"] += 1
+                d = None            # the allowed re-entry waits for a closed 1h bar back inside the range
             if d is not None and params.session_utc is not None and not _in_session(t, params.session_utc):
                 d = None
             if d is not None and in_weekend:
@@ -1776,19 +1901,29 @@ def simulate_steps(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], 
                     run.refused[why] += 1
                     d = None
             if d is not None and lv is not None and lv["atr14"] and lv["target_low"] is not None:
-                # Variant A (Params.ai_levels): try the thesis's own levels
-                # first, at the leverage variant B (conviction_leverage)
-                # would size this trade at either way. A None/refused AI
-                # setup falls back to the structural rule exactly as if
-                # ai_levels were off.
-                lev = trade_leverage(d, params)
-                ai_setup = _ai_setup(d, mid, params, lev) if params.ai_levels else None
-                if ai_setup is not None and not ai_setup.get("refused"):
-                    setup = ai_setup
-                    open_now = setup["is_market"]
-                else:
-                    setup = _setup(d, mid, lv, params, lev)
+                # Wide-stop swing test (Params.entry_fit_leverage): the main
+                # structural entry fits its leverage to the stop instead of
+                # a single fixed value. Mutually exclusive with ai_levels/
+                # conviction_leverage in practice (none of this test's
+                # variants turn those on); when set it is the only path, so
+                # the baseline (None) leaves the block below byte-identical.
+                if params.entry_fit_leverage is not None:
+                    setup, lev = _fit_leverage_setup(d, mid, lv, params)
                     open_now = params.entry_mode == "market"
+                else:
+                    # Variant A (Params.ai_levels): try the thesis's own levels
+                    # first, at the leverage variant B (conviction_leverage)
+                    # would size this trade at either way. A None/refused AI
+                    # setup falls back to the structural rule exactly as if
+                    # ai_levels were off.
+                    lev = trade_leverage(d, params)
+                    ai_setup = _ai_setup(d, mid, params, lev) if params.ai_levels else None
+                    if ai_setup is not None and not ai_setup.get("refused"):
+                        setup = ai_setup
+                        open_now = setup["is_market"]
+                    else:
+                        setup = _setup(d, mid, lv, params, lev)
+                        open_now = params.entry_mode == "market"
                 if (params.pullback_entry is not None and setup is not None
                         and setup.get("refused") in PB_TRIGGERS):
                     pb = pullback_setup(d, t, mid, lv, c1h[max(0, n_closed - pb_need):n_closed], params, lev)
