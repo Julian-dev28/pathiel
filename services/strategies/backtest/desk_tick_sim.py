@@ -285,6 +285,8 @@ from zoneinfo import ZoneInfo
 
 from pathiel.agents.bracket import check_leverage, check_levels, liq_estimate, max_leverage_for_stop
 from pathiel.models.types import Candle
+from services.strategies.backtest.funding_signal import (
+    FUNDING_FILTER_NAME, funding_filter_blocks, funding_z_at, funding_zscore_series)
 from services.strategies.backtest.regime import FILTERS as REGIME_FILTERS
 from services.strategies.backtest.regime import RegimeConfig, RegimeSeries, label_series, regime_blocks
 
@@ -462,6 +464,15 @@ class Params:
     # check). `target_offset_range_frac` at 0.5 / 0.25 already gives the 24h
     # range midpoint / 75% point, so no new field was needed for those.
     target_cap_frac: Optional[float] = None  # cap the target at entry +/- this fraction of price, whichever is nearer
+    # ── funding-extreme filter (2026-11-03, FUNDING_EXTREME_TEST_2026-11-03.md;
+    # research/alpha_swarm/findings/D4_funding_extreme_reversion.md, D5_basis_
+    # premium_signal.md). See services.strategies.backtest.funding_signal. A
+    # new LONG is refused while the coin's own trailing-24h funding z-score
+    # (vs its own trailing-30d distribution) is at or above this threshold;
+    # a new SHORT while it is at or below the negative. None (the default)
+    # keeps every existing result byte-identical (test_funding_signal.py's
+    # golden check) -- it never reads funding_history at all unless set.
+    funding_z_filter: Optional[float] = None
 
 
 # Per-side market-sell slippage (bps) by notional (USD), walked on the live
@@ -1411,6 +1422,16 @@ def simulate_steps(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], 
         (int(r["time"]), float(r["fundingRate"])) for r in (funding_history or [])
         if r.get("time") is not None and r.get("fundingRate") is not None
     )
+    # funding-extreme filter (Params.funding_z_filter): the z series is
+    # computed once, off the same funding_sorted above, so the per-tick hook
+    # below is an O(log n) lookup. Untouched (and funding_history need not
+    # even carry a "premium" field) when the filter is off.
+    funding_z_times: List[int] = []
+    funding_z_values: List[float] = []
+    if params.funding_z_filter is not None and funding_sorted:
+        z_map = funding_zscore_series(funding_sorted)
+        funding_z_times = sorted(z_map)
+        funding_z_values = [z_map[t] for t in funding_z_times]
 
     run = Run(params=params)
     equity = params.starting_equity
@@ -1742,6 +1763,11 @@ def simulate_steps(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], 
                 why = entry_filter(d, t, side_since, c1h[n_closed - 1] if n_closed else None, params)
                 if why is not None:
                     run.refused[why] += 1
+                    d = None
+            if d is not None and params.funding_z_filter is not None:
+                z = funding_z_at(funding_z_times, funding_z_values, t)
+                if funding_filter_blocks(z, d.side, params.funding_z_filter):
+                    run.refused[FUNDING_FILTER_NAME] += 1
                     d = None
             if d is not None and regime is not None:
                 asof = t - t % DAY_MS if params.regime_refresh == "day" else t

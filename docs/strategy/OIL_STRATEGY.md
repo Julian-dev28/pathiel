@@ -150,6 +150,19 @@ targets, 2%/3%/4% offsets, the range midpoint/75% point and a target cap
 (`target_cap_frac`) all lose or barely tie live on the real thesis sets;
 see `CLOSER_TARGET_TEST_2026-11-03.md`.
 
+2026-11-03: old alpha-swarm research (D4/D5) found shorting a crowded-long
+funding z-spike (z>=2.0 of trailing-24h funding vs trailing-30d) a real
+edge on 40 crypto majors. Rebuilt it on Brent/silver's own public funding
+history as a `Params.funding_z_filter` (off by default): **0 of 36 tested
+cells clear EVIDENCE_DOCTRINE.md**, and as a filter it is a no-op on both
+the live journal and the oil replay (no qualifying spike ever lands in
+those windows; silver's journal gets dozens of refusals that never
+changed a trade). Brent's own funding runs net NEGATIVE over its 8-month
+history (longs were paid, not charged), and a crowded-long spike (the
+signal this filter needs) fires 1-3 times in 244 days -- nowhere near the
+40-coin pool D4 needed. Not adopted. See
+`FUNDING_EXTREME_TEST_2026-11-03.md`.
+
 ## Risks and when to re-check
 
 - **Live result, first trade under the 0.5% offset target (2026-10-30).**
