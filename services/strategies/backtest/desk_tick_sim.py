@@ -559,6 +559,37 @@ class Params:
     # ("event_blackout" in Run.refused). None (the default) keeps every
     # existing result byte-identical (test_oil_calendar.py's golden check).
     event_blackout_windows: Optional[Tuple[Tuple[int, int], ...]] = None
+    # ── breakdown/breakout continuation entry, mode a5 (2026-11-04 silver
+    # strategy test, docs/strategy/SILVER_STRATEGY_TEST_2026-11-04.md;
+    # operator: "silver seems mad quiet, any strategies we can test
+    # there?"). `Params.pullback_entry="a5"`: on a live refusal (chase/
+    # min_r -- the live rule never chases below a short thesis's entry and
+    # needs 2R to the far 24h edge, which is exactly why the silver desk's
+    # short thesis never filled while price fell from ~51.3 to ~49.6), sell
+    # a SHORT thesis the moment a 1h bar CLOSES below the prior `pb_breakout_
+    # lookback_h` hours' low (mirror: buy a long above the prior high) --
+    # trading the break itself, in the thesis direction, instead of waiting
+    # for a pullback back up to structure (a1-a4's job). Stop beyond the
+    # last `pb_breakout_stop_h` hours' extreme, the SAME buffer formula
+    # `_stop_buffer` already uses for every other mode (the ATR rule with
+    # its floor on silver -- in effect "k x ATR" beyond the recent swing").
+    # Target: `pb_target`'s existing "far"/"thesis" rule, or the new
+    # "measured" (the broken level projected out by the height of the range
+    # that broke -- a measured move), or, with `target_r` set, a fixed-R
+    # target off this setup's OWN stop (same arithmetic `_setup`'s own
+    # target_r branch uses, so it works for every pullback mode, not just
+    # a5). Every default (`pullback_entry` stays None) keeps every existing
+    # result byte-identical.
+    pb_breakout_lookback_h: int = 24   # the prior N hours' low/high the close must break
+    pb_breakout_stop_h: int = 4        # stop beyond the last N hours' extreme (the far side)
+    # A fixed-R target for a PULLBACK setup only (entry +/- this many x the
+    # setup's own stop risk), independent of the global `target_r` (which
+    # also reaches the MAIN structural entry, `_setup` -- changing what the
+    # live rule's own fills target whenever they still fire, not just the
+    # pullback/breakout ones). Read by every pullback mode's shared tail;
+    # takes priority over `target_r` when both are set. None (the default)
+    # keeps every existing result byte-identical.
+    pb_target_r: Optional[float] = None
 
 
 # Per-side market-sell slippage (bps) by notional (USD), walked on the live
@@ -1157,8 +1188,8 @@ def _stop_buffer(params: Params, lv: Dict[str, Any], entry: float) -> Tuple[floa
     return buf, raw_buf
 
 
-PULLBACK_MODES = ("a1", "a2", "a3", "a4")
-PB_TARGETS = ("far", "thesis")
+PULLBACK_MODES = ("a1", "a2", "a3", "a4", "a5")
+PB_TARGETS = ("far", "thesis", "measured")
 # The live refusals a pullback entry may answer: the mid is past the thesis
 # entry ("chase"), or the 24h-edge stop leaves under min_r ("min_r").
 PB_TRIGGERS = ("chase", "min_r")
@@ -1239,9 +1270,11 @@ def pullback_setup(d: Direction, t: int, mid: float, lv: Dict[str, Any], closed_
             return {"refused": "pb_" + s["refused"]}
         return {**s, "pb": mode, "expires_at": start + int(params.pb_fresh_h * HOUR_MS), "call_id": d.regime_id,
                 "leverage": lev}
-    if len(closed_1h) < max(params.pb_struct_h, 1):
+    if mode != "a5" and len(closed_1h) < max(params.pb_struct_h, 1):
         return None
     expires_at = None
+    breakout_level: Optional[float] = None
+    breakout_range: Optional[float] = None
     if mode == "a1":
         entry, is_market = mid, True
         recent = closed_1h[-params.pb_struct_h:]
@@ -1263,6 +1296,25 @@ def pullback_setup(d: Direction, t: int, mid: float, lv: Dict[str, Any], closed_
         recent = closed_1h[-params.pb_struct_h:]
         struct = min(min(c.l for c in recent), entry) if is_long else max(max(c.h for c in recent), entry)
         expires_at = t + int(params.pb_cancel_h * HOUR_MS)
+    elif mode == "a5":
+        lookback = max(params.pb_breakout_lookback_h, 1)
+        stop_h = max(params.pb_breakout_stop_h, 1)
+        if len(closed_1h) < lookback + 1 or len(closed_1h) < stop_h:
+            return None
+        last = closed_1h[-1]
+        prior = closed_1h[-(lookback + 1):-1]
+        if is_long:
+            breakout_level = max(c.h for c in prior)
+            broke = last.c > breakout_level
+        else:
+            breakout_level = min(c.l for c in prior)
+            broke = last.c < breakout_level
+        if not broke:
+            return None            # the last closed bar did not confirm the break: nothing to chase yet
+        breakout_range = max(c.h for c in prior) - min(c.l for c in prior)
+        entry, is_market = mid, True
+        recent = closed_1h[-stop_h:]
+        struct = min(min(c.l for c in recent), mid) if is_long else max(max(c.h for c in recent), mid)
     else:
         raise ValueError(f"unknown pullback_entry {mode!r}")
     buf, _ = _stop_buffer(params, lv, entry)
@@ -1273,7 +1325,23 @@ def pullback_setup(d: Direction, t: int, mid: float, lv: Dict[str, Any], closed_
     structural = lv["target_high"] if is_long else lv["target_low"]
     if params.pb_target == "thesis" and d.target_px is not None:
         structural = d.target_px
+    elif params.pb_target == "measured" and breakout_level is not None and breakout_range is not None:
+        # mode a5 only: the broken level projected out by the height of the
+        # range that broke (a measured move). Falls back to the far-edge
+        # default on every other mode (breakout_level/breakout_range stay None).
+        structural = breakout_level + breakout_range if is_long else breakout_level - breakout_range
     target_px = offset_target(structural, d.side, params.target_offset_frac)
+    r_override = params.pb_target_r if params.pb_target_r is not None else params.target_r
+    if r_override is not None:
+        # a fixed-R target off THIS setup's own stop -- the same arithmetic
+        # `_setup`'s own target_r branch uses, so any pullback mode (not
+        # just a5) can target a multiple of its own risk instead of a
+        # structural level. `pb_target_r` (pullback-only) wins over the
+        # global `target_r` when both are set, so a pullback-only fixed-R
+        # test cannot also change what the MAIN rule's own entries target.
+        risk = abs(entry - stop_px)
+        target_px = entry + r_override * risk if is_long else entry - r_override * risk
+        structural = target_px
     if (target_px <= entry) if is_long else (target_px >= entry):
         return {"refused": "pb_no_room"}
     if not check_leverage(entry, stop_px, lev, params.max_leverage)["ok"]:
@@ -1532,6 +1600,8 @@ def simulate_steps(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], 
             raise ValueError("pb_struct_h and pb_retest_h must be 1 or more")
         if params.pb_cancel_h <= 0 or params.pb_fresh_h <= 0 or params.pb_bounce_atr < 0:
             raise ValueError("pb_cancel_h and pb_fresh_h must be over 0, pb_bounce_atr 0 or more")
+        if params.pb_breakout_lookback_h < 1 or params.pb_breakout_stop_h < 1:
+            raise ValueError("pb_breakout_lookback_h and pb_breakout_stop_h must be 1 or more")
     c15 = sorted(candles_15m, key=lambda c: c.t)
     c1h = sorted(candles_1h, key=lambda c: c.t)
     regime: Optional[RegimeSeries] = None
@@ -1591,7 +1661,8 @@ def simulate_steps(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], 
     # rescan every tick.
     by_close = {c.t + HOUR_MS: c for c in c1h}
     need = max(15, params.entry_lookback_h, params.target_lookback_h)
-    pb_need = max(params.pb_struct_h, params.pb_retest_h + RANGE_H + 1)
+    pb_need = max(params.pb_struct_h, params.pb_retest_h + RANGE_H + 1,
+                 params.pb_breakout_lookback_h + 1, params.pb_breakout_stop_h)
     n_closed = 0
 
     for bar in ticks:
