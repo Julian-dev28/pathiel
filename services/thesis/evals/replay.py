@@ -96,12 +96,21 @@ DEFAULT_MODEL = "opus"      # never "fable" -- see module docstring
 LIVE_STATE_DIR = os.path.join(os.path.expanduser("~"), "Documents", "code", "pathia", ".state")
 
 
+def replay_root() -> str:
+    """Where replayed theses live by default. NOT /tmp: macOS's daily tmp
+    cleanup deleted the 30 October replay theses on 2026-11-03 (files older
+    than 3 days), emptying a dataset every backtest used. PATHIEL_REPLAY_DIR
+    overrides; the default sits outside the repo so nothing gets committed."""
+    return os.environ.get("PATHIEL_REPLAY_DIR") or os.path.join(
+        os.path.expanduser("~"), "Documents", "code", "pathiel-replays")
+
+
 def default_out_dir(desk_id: str) -> str:
-    return os.path.join("/tmp", "thesis-replay", desk_id, "theses")
+    return os.path.join(replay_root(), desk_id, "theses")
 
 
 def default_cache_dir(desk_id: str) -> str:
-    return os.path.join("/tmp", "thesis-replay", desk_id, "candle-cache")
+    return os.path.join(replay_root(), desk_id, "candle-cache")
 
 
 def default_summary_path(out_dir: str) -> str:
@@ -367,8 +376,8 @@ def main(argv: Optional[List[str]] = None) -> int:
                     help="UTC hour of day to replay each day's thesis at")
     ap.add_argument("--model", default=DEFAULT_MODEL,
                     help='LLM model alias for every call this run makes (default "opus"; never "fable")')
-    ap.add_argument("--out-dir", default=None, help="default /tmp/thesis-replay/<desk>/theses")
-    ap.add_argument("--cache-dir", default=None, help="default /tmp/thesis-replay/<desk>/candle-cache")
+    ap.add_argument("--out-dir", default=None, help="default $PATHIEL_REPLAY_DIR or ~/Documents/code/pathiel-replays, /<desk>/theses")
+    ap.add_argument("--cache-dir", default=None, help="default $PATHIEL_REPLAY_DIR or ~/Documents/code/pathiel-replays, /<desk>/candle-cache")
     ap.add_argument("--summary", default=None, help="default <out-dir>/../summary.json")
     ap.add_argument("--primary", default=None,
                     help="make this coin the desk's only primary for the run (e.g. xyz:SILVER on metals)")

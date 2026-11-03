@@ -430,3 +430,16 @@ def test_with_primary_refuses_a_coin_the_desk_does_not_list():
     from services.thesis.evals.replay import with_primary
     with pytest.raises(ValueError, match="not an instrument"):
         with_primary(get_spec("metals"), "xyz:BRENTOIL")
+
+
+def test_replay_defaults_never_land_in_tmp(monkeypatch, tmp_path):
+    """2026-11-03: macOS tmp cleanup wiped the October replay theses under
+    /tmp. Default output must be durable; PATHIEL_REPLAY_DIR overrides."""
+    from services.thesis.evals import replay as R
+    monkeypatch.delenv("PATHIEL_REPLAY_DIR", raising=False)
+    for path in (R.default_out_dir("oil"), R.default_cache_dir("oil")):
+        assert not path.startswith(("/tmp", "/private/tmp"))
+        assert "pathiel-replays" in path
+    monkeypatch.setenv("PATHIEL_REPLAY_DIR", str(tmp_path))
+    assert R.default_out_dir("oil") == str(tmp_path / "oil" / "theses")
+    assert R.default_cache_dir("metals") == str(tmp_path / "metals" / "candle-cache")
