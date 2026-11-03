@@ -1,5 +1,17 @@
 """Closer-target backtest, 2026-11-03 (docs/strategy/CLOSER_TARGET_TEST_2026-11-03.md).
 
+Correction (2026-11-03): the docstring below has always claimed the 15%
+risk cap, but the original `bp`/`sp` were built by hand
+(`dataclasses.replace(base_params()/scouting_params(...), starting_equity=...)`)
+and never actually set `risk_cap_frac` -- full-port size, not the real live
+rule (`EXTENDED_HISTORY_TEST_2026-11-03.md`'s Caveats first caught this).
+`bp`/`sp` now build through `live_params.live_brent_params`/
+`live_silver_params`, so this file's numbers really do carry the cap; see
+`docs/strategy/CLOSER_TARGET_TEST_2026-11-03.md` for the re-run and whether
+the "keep the far-edge target" verdict held. Also adds `brent_replay_sep`
+(`/tmp/thesis-replay-sep/oil/theses`, the September replay) as a dataset
+when present.
+
 Operator, 2026-11-03, on the open long of 38.05 xyz:BRENTOIL from 103.61
 (stop 102.99, risk $23.59, target 111.77, about 13R, the live rule's far
 24h-range edge with `bracket.TARGET_OFFSET_FRAC` = 0.5% inside it): "whats
@@ -27,14 +39,16 @@ entry off the 24h range, 2R gate, stop 0.75 beyond the edge, limit target,
             desk_tick_sim from OIL_REGIME_TEST_2026-11-02.md, so no new
             field was needed for these two)
 
-Datasets, live rules otherwise ($64 Brent / scouting_params silver, 20x,
-15-minute ticks, 15% risk cap, size-aware slippage, funding):
+Datasets, live rules otherwise (`live_params.live_brent_params`/
+`live_silver_params`, $64, 20x, 15-minute ticks, 15% risk cap, size-aware
+slippage and funding on Brent):
   brent_journal          the live oil journal (READ ONLY, --oil-theses-dir; skipped when not given)
   brent_replay30         the 30 replayed Brent theses (/tmp/thesis-replay-30b)
-  brent_<ctrl>_replay    always_long / always_short / daily_sign on the replay window
+  brent_replay_sep       the September replay (/tmp/thesis-replay-sep/oil/theses), skipped when absent
+  brent_<ctrl>_replay    always_long / always_short / daily_sign on the replay30 window
   brent_<ctrl>_30d       the same on the last 30 days
   silver_<top variant>   the top 2-3 Brent variants re-run on silver (its own live params,
-                         SILVER_LIVE) as a secondary check, same dataset family
+                         `live_silver_params`) as a secondary check, same dataset family
 
 Adopt bar (the other 2026-11-02 tests' rule): beats live on most datasets
 with a geo-mean ratio of 1 or more; a plateau across neighbouring settings,
@@ -68,8 +82,9 @@ from pathiel.models.types import Candle
 from services.strategies.backtest import data as D
 from services.strategies.backtest.desk_tick_sim import HOUR_MS, Params, _levels, cap_target, offset_target
 from services.strategies.evals.brent_stop_buffer_test import (
-    BASELINE, CONTROLS, SILVER_LIVE, _ms, _scores, pick_best, rule_pass, run_dataset, verdict)
+    BASELINE, CONTROLS, _ms, _scores, pick_best, rule_pass, run_dataset, verdict)
 from services.strategies.evals.desk_tick_backtest import DAY_MS, journaled_direction
+from services.strategies.evals.live_params import live_brent_params, live_silver_params
 from services.strategies.evals.stop_cap_test import FIFTEEN_MS, START, _iso, closed_only
 
 # ── the grid (pure) ─────────────────────────────────────────────────────────
@@ -194,14 +209,14 @@ def summary_csv_rows(results: Dict[str, Any]) -> List[Dict[str, Any]]:
 # ── main ─────────────────────────────────────────────────────────────────
 
 def main(argv: Optional[List[str]] = None) -> int:
-    from services.strategies.evals.market_scout import direction_series, fetch_market_meta, load_coin_candles, \
-        scouting_params
-    from services.strategies.evals.strategy_sweep import base_params
+    from services.strategies.evals.market_scout import direction_series, fetch_market_meta, load_coin_candles
 
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--oil-theses-dir", default=os.environ.get("PATHIEL_OIL_THESES_DIR", ""),
                     help="READ ONLY: the live oil journal's theses (skipped when empty)")
     ap.add_argument("--oil-replay-dir", default="/tmp/thesis-replay-30b/oil/theses")
+    ap.add_argument("--oil-replay-sep-dir", default="/tmp/thesis-replay-sep/oil/theses",
+                    help="the September replay (EXTENDED_HISTORY_TEST_2026-11-03.md); skipped when absent")
     ap.add_argument("--metals-theses-dir", default=os.environ.get("PATHIEL_METALS_THESES_DIR", ""),
                     help="READ ONLY: the live metals journal's theses (skipped when empty)")
     ap.add_argument("--silver-theses-dir", default="/tmp/thesis-replay-silver/theses")
@@ -231,10 +246,11 @@ def main(argv: Optional[List[str]] = None) -> int:
     b15, b1h = fresh("xyz:BRENTOIL")
     b_end = b15[-1].t + FIFTEEN_MS
     funding = D.fetch_funding_cached("xyz:BRENTOIL", b15[0].t, b_end, a.cache_dir)
-    bp = dataclasses.replace(base_params(), starting_equity=START)
+    bp = live_brent_params(size_slippage=True, starting_equity=START)
     brent_sets: Dict[str, Tuple[Callable[[int], Any], int, int]] = {}
     for label, tdir, end_rule in (("brent_journal", a.oil_theses_dir, "data"),
-                                  ("brent_replay30", a.oil_replay_dir, "last+1d")):
+                                  ("brent_replay30", a.oil_replay_dir, "last+1d"),
+                                  ("brent_replay_sep", a.oil_replay_sep_dir, "last+1d")):
         theses = D.load_journaled_theses(tdir) if tdir else []
         if not theses:
             log(f"{label}: no theses at {tdir!r}, skipped")
@@ -256,7 +272,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         res[ds] = run_dataset(b15, b1h, d_at, bp, st, en, named, funding=funding)
     log(f"brent grid: {len(res)} datasets x {len(named)} variants ({time.time() - t0:.0f}s)")
 
-    groups = {"thesis": [k for k in ("brent_journal", "brent_replay30") if k in res],
+    groups = {"thesis": [k for k in ("brent_journal", "brent_replay30", "brent_replay_sep") if k in res],
              "controls_replay": [k for k in res if k.endswith("_replay")],
              "controls_30d": [k for k in res if k.endswith("_30d")], "all": list(res)}
     scores = _scores(res, groups)
@@ -271,8 +287,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     today = current_trade_targets(b15, b1h, named, bp)
 
     # ── silver secondary check: the top N Brent variants (by beats-of, tie
-    # to geo-mean), on silver's own live rule (SILVER_LIVE), same dataset
-    # family (replay theses, the live metals journal, controls).
+    # to geo-mean), on silver's own live rule (`live_silver_params`), same
+    # dataset family (replay theses, the live metals journal, controls).
     ranked = sorted(candidates, key=lambda v: (scores["all"][v]["beats"] - scores["all"][v]["loses"],
                                                scores["all"][v]["geo_mean_ratio"]), reverse=True)
     top_n = ranked[:max(0, a.top_n)]
@@ -285,7 +301,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     s15, s1h = silver["c15"], silver["c1h"]
     from services.strategies.evals.cross_market_backtest import mean_atr
     atr, _ = mean_atr(s1h)
-    sp = dataclasses.replace(scouting_params(a.silver_max_leverage, atr), starting_equity=START, **SILVER_LIVE)
+    sp = live_silver_params(a.silver_max_leverage, atr, starting_equity=START)
     s_theses = D.load_journaled_theses(a.silver_theses_dir)
     silver_sets: Dict[str, Tuple[Sequence[Candle], Sequence[Candle], Callable[[int], Any], int, int]] = {}
     if s_theses:

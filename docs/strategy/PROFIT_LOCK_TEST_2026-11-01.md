@@ -1,5 +1,21 @@
 # Profit lock test, 2026-11-01
 
+**Correction (2026-11-03): verdict holds, confirmed by re-run.** This file
+ran on 2026-11-01, a day before `Params.risk_cap_frac` existed
+(`loss_fix_test.py`, 2026-11-02 17:59, `LOSS_AUDIT_2026-11-02.md`), so the
+numbers below were accurately full-port at the time. `bp` now builds
+through `live_params.live_brent_params`; `sp` carries `risk_cap_frac=0.15`
+directly (it keeps a non-live, mean-ATR silver stop shape on purpose).
+Re-ran it with the fix (`--oil-theses-dir` given): on the thesis datasets
+(`score [thesis]`), **every one of the 32 lock/trail variants still has
+ZERO wins against the fixed stop** (0 beats of 3 datasets each) -- if
+anything stronger than the original "1 of 48 tries" below, not weaker.
+This can't be a cap artifact: every lock/trail candidate shares the SAME
+entry stop distance as the baseline (only the EXIT moves), and
+`risk_capped_notional` sizes once, at entry, off that shared distance --
+so baseline and every candidate size identically whether the cap is on or
+off.
+
 Operator, 2026-11-01: a Brent long opened Sat 2026-10-31 16:17Z at 111.48
 (40.73 Brent, 20x, stop 111.02, target 113.66) reached +1.9R on the mid
 (112.36, +$35.84 unrealized), drifted back, and closed +$7.83 net. "we were

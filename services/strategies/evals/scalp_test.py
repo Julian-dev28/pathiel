@@ -1,6 +1,17 @@
 #!/usr/bin/env python3
 """The "wiggle" scalp eval, 2026-11-03 (docs/strategy/SCALP_TEST_2026-11-03.md).
 
+Note (2026-11-03): `desk_live_params` (used only to replay the REAL oil/
+metals desk's own trades, so the netting section knows when that desk is
+flat -- see `netting` below) now comes from `live_params.live_brent_params`
+and so carries the real 15% `risk_cap_frac`. This changes nothing reported
+here: the cap only scales a trade's dollar SIZE, never which setups the
+desk takes or when (`risk_capped_notional` runs after `check_leverage`/
+`check_levels` already decided the trade), so `oil_desk_trades_in_window`
+and `share_of_ticks_oil_desk_flat` are identical either way -- this file's
+own scalp book (`scalp_sim.Params`, sized by `slice_frac`/`risk_frac`) is
+a completely separate model, never touched by `desk_tick_sim.Params.risk_cap_frac`.
+
 Operator: "can u test a strategy where we play the wiggle? like something
 small like 5% of the portfolio at 20x leverage intraday/intrahour swing
 trade so we can still profit in a sideways market like this?" Brent is
@@ -67,12 +78,12 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 from pathiel.models.types import Candle
 
 from services.strategies.backtest import data as D
-from services.strategies.backtest.desk_tick_sim import live_params as desk_live_params
 from services.strategies.backtest.desk_tick_sim import simulate as desk_simulate
 from services.strategies.backtest.regime import RegimeConfig, label_series
 from services.strategies.backtest.scalp_sim import (
     Params, Run, oil_desk_flat_at, simulate, simulate_random_control)
 from services.strategies.evals.desk_tick_backtest import journaled_direction
+from services.strategies.evals.live_params import live_brent_params as desk_live_params
 from services.strategies.evals.market_scout import fetch_market_meta
 from services.strategies.evals.strategy_sweep import daily_marks, period_returns
 

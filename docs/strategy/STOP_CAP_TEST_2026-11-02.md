@@ -1,5 +1,24 @@
 # Daily stop-out cap test, 2026-11-02
 
+**Correction (2026-11-03): verdict holds, confirmed by re-run.** This file
+ran at 14:02 on 2026-11-02, before `Params.risk_cap_frac` (the live 15%
+risk cap) existed at all (`loss_fix_test.py`, 17:59,
+`LOSS_AUDIT_2026-11-02.md`), so its numbers below were accurately
+full-port for their own time, not a bug. `stop_cap_test.py`'s `bp`/`sp`/
+`fp` now carry `risk_cap_frac=0.15` (via `live_params.live_brent_params`
+for Brent; the constant applied directly for silver, which deliberately
+keeps a different, non-live stop-rule shape for its own comparison -- see
+the file's own comments). Re-ran it with the fix
+(`--oil-theses-dir`/`--metals-theses-dir` given): `score [thesis]` --
+cap_1/side_1 geo-mean 0.598 (loses on 3 of 5), cap_2/side_2 0.874, cap_3/
+side_3 0.988 -- **still no N wins on the thesis datasets**, same as
+below. The cap can't change this verdict mechanically either way: it only
+scales position SIZE, never which trades fire or when
+(`risk_capped_notional` runs strictly after `check_leverage`/
+`check_levels` already decided the trade), and the daily-stop-cap feature
+itself only gates NEW entries by a stop COUNT, not by price level, so it
+never interacts with the cap's sizing math.
+
 Operator, 2026-11-02 ("go"): the silver desk shorted three times into a
 rising market. Two shorts were stopped (-$1.82 at 01:05Z, -$2.56 at
 05:30Z). A third opened at 05:35Z because a fresh thesis still said short

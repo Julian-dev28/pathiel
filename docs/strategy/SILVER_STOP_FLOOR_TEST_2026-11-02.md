@@ -1,5 +1,18 @@
 # Silver stop floor test, 2026-11-02
 
+**Correction (2026-11-03): verdict holds, confirmed by re-run.** This file
+ran at 15:05 on 2026-11-02, before `Params.risk_cap_frac` existed
+(`loss_fix_test.py`, 17:59, `LOSS_AUDIT_2026-11-02.md`), so the numbers
+below were accurately full-port at the time. `bp`/`sp` now carry
+`risk_cap_frac=0.15` (the constant applied directly, not the full
+`live_silver_params` wrapper, since this file's `sp` is itself the
+no-floor baseline the floor candidates are swept against). Re-ran it with
+the fix (`--oil-theses-dir`/`--metals-theses-dir` given): `score [all]`
+still ranks **`pct_0.8` (the adopted 0.8%-of-mid floor) first, 8 beats / 0
+losses of 8**, same winner as below. The floor WIDENS the stop (never
+narrows it), the same mechanism `BRENT_STOP_BUFFER_TEST_2026-11-02.md`'s
+buffer sweep has with the cap -- but here it doesn't move the winner.
+
 Operator, 2026-11-02 ("yes"). The stop-cap test (`STOP_CAP_TEST_2026-11-02.md`)
 found the live silver stop is not the one the 30-day silver test validated.
 The test ran a fixed 0.41 buffer (1.3 x silver's mean 1h ATR14). Live runs

@@ -1,5 +1,20 @@
 """Brent stop buffer, weekend-off and weekend-only profit lock backtest, 2026-11-02.
 
+Correction (2026-11-03): this eval's original run (17:17 the same day) was
+accurate at the time -- `Params.risk_cap_frac` (the live 15% risk cap)
+wasn't added until `loss_fix_test.py`, about 40 minutes later (17:59,
+`LOSS_AUDIT_2026-11-02.md`). Every number in
+`docs/strategy/BRENT_STOP_BUFFER_TEST_2026-11-02.md` is full-port size, not
+today's live rule. `bp`/`sp` below now build through
+`live_params.live_brent_params`/`live_silver_params`, so a fresh run of
+this file matches the real live rule. Unlike `stop_cap_test.py` (the cap
+there can't change which trades fire), study A here sweeps the STOP BUFFER
+itself, which the cap interacts with directly: `risk_capped_notional`
+shrinks size only once a stop's own risk fraction clears 15% of equity, so
+a WIDE buffer gets capped more often than a narrow one, cutting its
+downside more too -- the cap can plausibly change which buffer wins. See
+that doc's correction note for the re-run and whether the verdict held.
+
 Operator, 2026-11-02 ("sure"): "backtest whether a wider Brent stop would
 have survived this dip without losing more over the full history". The live
 long of 42.36 Brent from 110.0099 (stop 109.25 = 0.75 under the 110.00 mid,
@@ -65,6 +80,7 @@ from services.strategies.backtest import data as D
 from services.strategies.backtest.desk_tick_sim import (
     Direction, Params, Run, _levels, _setup, profit_lock_stop, simulate, weekend_closed)
 from services.strategies.evals.desk_tick_backtest import DAY_MS, HOUR_MS, journaled_direction
+from services.strategies.evals.live_params import live_brent_params, live_silver_params
 from services.strategies.evals.profit_lock_test import LIVE_TRADE as WEEKEND_LIVE_TRADE
 from services.strategies.evals.profit_lock_test import score
 from services.strategies.evals.silver_stop_floor_test import attribute, attribution_summary
@@ -489,8 +505,7 @@ def _scores(results: Dict[str, Any], groups: Dict[str, List[str]], baseline: str
 
 def main(argv: Optional[List[str]] = None) -> int:
     from services.strategies.evals.cross_market_backtest import mean_atr
-    from services.strategies.evals.market_scout import direction_series, load_coin_candles, scouting_params
-    from services.strategies.evals.strategy_sweep import base_params
+    from services.strategies.evals.market_scout import direction_series, load_coin_candles
 
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--oil-theses-dir", default=os.environ.get("PATHIEL_OIL_THESES_DIR", ""),
@@ -524,7 +539,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     b15, b1h = fresh("xyz:BRENTOIL")
     b_end = b15[-1].t + FIFTEEN_MS
     funding = D.fetch_funding_cached("xyz:BRENTOIL", b15[0].t, b_end, a.cache_dir)
-    bp = dataclasses.replace(base_params(), starting_equity=START)
+    bp = live_brent_params(size_slippage=True, starting_equity=START)
     brent_sets: Dict[str, Tuple[Callable[[int], Any], int, int]] = {}
     for label, tdir, end_rule in (("brent_journal", a.oil_theses_dir, "data"),
                                   ("brent_replay30", a.oil_replay_dir, "last+1d")):
@@ -574,7 +589,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     silver = load_coin_candles("xyz:SILVER", a.silver_cache_dir)
     s15, s1h = silver["c15"], silver["c1h"]
     atr, _ = mean_atr(s1h)
-    sp = dataclasses.replace(scouting_params(a.silver_max_leverage, atr), starting_equity=START, **SILVER_LIVE)
+    sp = live_silver_params(a.silver_max_leverage, atr, starting_equity=START)
     s_theses = D.load_journaled_theses(a.silver_theses_dir)
     silver_sets: Dict[str, Tuple[Sequence[Candle], Sequence[Candle], Callable[[int], Any], int, int]] = {}
     if s_theses:

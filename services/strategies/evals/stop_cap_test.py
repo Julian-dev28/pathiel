@@ -1,5 +1,17 @@
 """Daily stop-out cap backtest, 2026-11-02: baseline (no cap) vs a cap.
 
+Correction (2026-11-03): this eval was written before `Params.risk_cap_frac`
+existed (17:17 the same day), so its original run's "baseline"/"live" rows
+were accurately full-port at the time. Today's live rule also carries the
+15% risk cap (`LOSS_AUDIT_2026-11-02.md`); `bp`/`sp`/`fp` below now route
+through `live_params.live_brent_params` or set `risk_cap_frac` directly, so
+a fresh run of this file matches the real live rule. The cap only changes
+position SIZE, never entry/exit gating or timing (`risk_capped_notional` is
+applied after `check_leverage`/`check_levels` already decided whether a
+setup trades), so re-running with the cap on does not flip this file's
+"keep live, no cap" verdict -- see
+`docs/strategy/STOP_CAP_TEST_2026-11-02.md`'s correction note.
+
 Operator, 2026-11-02 ("go"): the silver desk shorted three times into a
 rising market. Two shorts were stopped (-$1.82 at 01:05Z, -$2.56 at 05:30Z)
 and a third opened at 05:35Z because a fresh thesis still said short and
@@ -58,6 +70,7 @@ from pathiel.models.types import Candle
 from services.strategies.backtest import data as D
 from services.strategies.backtest.desk_tick_sim import Params, Run, _full_size_notional, simulate
 from services.strategies.evals.desk_tick_backtest import DAY_MS, HOUR_MS, journaled_direction
+from services.strategies.evals.live_params import LIVE_RISK_CAP_FRAC, live_brent_params
 from services.strategies.evals.profit_lock_test import score
 from services.strategies.next_trade import ATR_BUFFER_MULT
 
@@ -292,7 +305,6 @@ def run_dataset(c15: Sequence[Candle], c1h: Sequence[Candle], direction_at, base
 def main(argv: Optional[List[str]] = None) -> int:
     from services.strategies.evals.cross_market_backtest import mean_atr
     from services.strategies.evals.market_scout import direction_series, load_coin_candles, scouting_params
-    from services.strategies.evals.strategy_sweep import base_params
 
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--oil-theses-dir", default=os.environ.get("PATHIEL_OIL_THESES_DIR", ""),
@@ -328,7 +340,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     b15, b1h = fresh("xyz:BRENTOIL")
     b_end = b15[-1].t + FIFTEEN_MS
     funding = D.fetch_funding_cached("xyz:BRENTOIL", b15[0].t, b_end, a.cache_dir)
-    bp = dataclasses.replace(base_params(), starting_equity=START)
+    bp = live_brent_params(size_slippage=True, starting_equity=START)
 
     for label, tdir, end_rule in (("brent_journal", a.oil_theses_dir, "data"),
                                   ("brent_replay30", a.oil_replay_dir, "last+1d")):
@@ -361,7 +373,12 @@ def main(argv: Optional[List[str]] = None) -> int:
         s15, s1h = silver["c15"], silver["c1h"]
         atr, _ = mean_atr(s1h)
         sp = scouting_params(a.silver_max_leverage, atr)
-        sp = dataclasses.replace(sp, starting_equity=START)
+        # risk_cap_frac only (2026-11-02's 15% cap): deliberately NOT routed through
+        # live_silver_params, which would also swap in the per-tick ATR stop + its
+        # floor -- this dataset intentionally keeps the OLD fixed, mean-ATR stop
+        # (contrast with silver_theses_atr/silver_journal below, which use the real
+        # live per-tick rule). See live_params.py's docstring.
+        sp = dataclasses.replace(sp, starting_equity=START, risk_cap_frac=LIVE_RISK_CAP_FRAC)
         s_start = min(th.created_at_ms for th in s_theses)
         s_end = max(c.t for c in s15) + FIFTEEN_MS
         results["silver_theses"] = run_dataset(s15, s1h, journaled_direction(s_theses), sp, s_start, s_end,
@@ -384,7 +401,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         m_theses = same_market(m_all, f1h)
         atr, _ = mean_atr(f1h)
         fp = dataclasses.replace(scouting_params(a.silver_max_leverage, atr), starting_equity=START,
-                                 stop_buffer_atr=ATR_BUFFER_MULT)
+                                 stop_buffer_atr=ATR_BUFFER_MULT, risk_cap_frac=LIVE_RISK_CAP_FRAC)
         m_start = min(th.created_at_ms for th in m_theses)
         m_end = f15[-1].t + FIFTEEN_MS
         results["silver_journal"] = run_dataset(f15, f1h, journaled_direction(m_theses), fp, m_start, m_end,

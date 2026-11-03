@@ -1,5 +1,60 @@
 # Brent stop buffer, weekend-off and weekend lock test, 2026-11-02
 
+**Correction (2026-11-03).** This file ran at 17:17 on 2026-11-02, about 40
+minutes before `Params.risk_cap_frac` (the live 15% risk cap) existed at
+all (`loss_fix_test.py`, 17:59, `LOSS_AUDIT_2026-11-02.md`). Every number
+below is accurately full-port size FOR ITS OWN TIME -- it was not a bug
+when written. It is stale now: `brent_stop_buffer_test.py`'s `bp`/`sp` have
+been fixed to build through `live_params.live_brent_params`/
+`live_silver_params` (the shared "live" baseline every eval now uses), so
+a fresh run matches today's real live rule.
+
+**Re-ran it (2026-11-03) to check: does the cap change any of the three
+verdicts below? No.** Full details:
+
+- **A. Wider Brent stop -- verdict unchanged (keep 0.75).** Isolating the
+  cap's effect alone (same fresh candles, capped vs. uncapped, controls
+  only): the mechanical `rule_pass` list -- candidates that clear ALL
+  three of the operator's bars (beats live on most datasets, a plateau,
+  stop inside half the way to liquidation) -- narrows from `['pct_0.95']`
+  (uncapped) to `[]` (capped). The cap shrinks a wider stop's downside
+  less than you'd think relative to its upside here, so it makes the bar
+  *harder* to clear, not easier -- the opposite of a risk to the "keep
+  0.75" verdict. (Mechanism: `risk_capped_notional` shrinks size once a
+  stop's own risk fraction clears 15% of equity, so a wide buffer gets
+  capped more often than 0.75 -- but the "Why not 0.90" judgment calls
+  below, about round-tripping the actual 11-02 dip and a jagged curve,
+  were never about the mechanical gates anyway, so they stand either
+  way.) A full re-run with the live oil + metals journals included (`A
+  best`: `pct_0.7`, 6 beats / 2 losses of 8, fails "plateau") tells the
+  same story: nothing clears `rule_pass`.
+- **B. No entries on weekends -- verdict unchanged (do not adopt).** The
+  mechanical per-desk `adopt: true` flag this file's code computes for
+  Brent's `wk_flat` (weekend-flatten) candidate was ALSO `true` before the
+  cap (isolated check, controls only: uncapped geo-mean 1.348 vs. capped
+  1.124, both `adopt: true`) -- this is a pre-existing property of
+  scoring Brent's weekend candidates on CONTROLS ALONE with no plateau
+  check (`families=None`), not something the cap introduced. The doc's own
+  "Do not adopt" verdict already overrode that flag with judgment (no
+  thesis trade changed, and silver loses outright); that judgment doesn't
+  depend on the cap.
+- **C. Weekend-only profit lock -- verdict unchanged (do not adopt yet).**
+  Every lock/trail candidate here shares the SAME entry stop distance as
+  live (only the EXIT moves, via the lock), and `risk_capped_notional`
+  sizes once, at entry, off that shared distance -- so live and every
+  candidate size identically whether the cap is on or off (same proof as
+  `PROFIT_LOCK_TEST_2026-11-01.md`'s correction note). A full re-run
+  confirms it: still fails "plateau" on Brent (1R locks beat live, 1.5R/2R
+  do not) and "beats live on most datasets" on silver.
+
+Numbers below are the ORIGINAL, uncapped run; not re-published, since none
+of the three verdicts moves. Re-run with
+`python -m services.strategies.evals.brent_stop_buffer_test
+--oil-theses-dir <pathia>/.state/strategies/oil/theses --metals-theses-dir
+<pathia>/.state/strategies/metals/theses` (now capped) for current
+numbers, or see `CLOSER_TARGET_TEST_2026-11-03.md` for a worked example of
+a re-run with the fix.
+
 **Verdict: keep the 0.75 Brent stop, keep trading weekends, no weekend lock
 yet.** None of the three clears the operator's rules on what the desk
 actually trades. The closest is break-even plus fees after +1R on weekends

@@ -1,5 +1,78 @@
 # Closer target backtest, 2026-11-03
 
+**Correction (2026-11-03, later the same day):** this doc's original numbers
+below were full-port size, not the real live rule. `bp`/`sp` in
+`closer_target_test.py` were built by hand
+(`dataclasses.replace(base_params()/scouting_params(...), starting_equity=...)`)
+and never actually set `Params.risk_cap_frac` -- the 15% risk cap live since
+2026-11-02 -- even though this doc's own "Results" line always claimed it
+("15% risk cap" in the dataset description below).
+`EXTENDED_HISTORY_TEST_2026-11-03.md`'s Caveats caught this first. Fixed:
+`bp`/`sp` now build through the new `services/strategies/evals/live_params.py`
+(`live_brent_params`/`live_silver_params`, the one shared place every eval
+now builds its "live" baseline from). Re-run with the fix, plus a new
+`brent_replay_sep` dataset (the September replay,
+`EXTENDED_HISTORY_TEST_2026-11-03.md`'s window, read via
+`/tmp/thesis-replay-sep/oil/theses`):
+
+**The verdict holds: keep the live far-edge target. No closer target beats
+it, capped or not.** `best (all datasets)` is still `cap_5` (the loosest
+cap, which essentially never binds); `adopt: none`. Every number below is
+now the corrected, capped run (`risk_cap_frac=0.15`); the original
+full-port numbers are struck through context in the Method section for the
+record.
+
+## Corrected results (capped, 2026-11-03 rerun)
+
+Live vs. the best 3 candidates (`cap_5`, `cap_3.5`, `cap_2.5` -- picked by
+the eval's own `--top-n 3` ranking) on the journal, the October replay and
+the new September replay. Net $ = final equity − $64 start.
+
+| Dataset | Variant | Net $ | Max DD | Trades | Win rate |
+|---|---|---|---|---|---|
+| brent_journal (live oil journal, 21 theses) | **live** | **+259.77** | 39.3% | 12 | 58% |
+| brent_journal | cap_5 | +259.77 | 39.3% | 12 | 58% (ties live -- never binds) |
+| brent_journal | cap_3.5 | +227.98 | 39.3% | 12 | 58% |
+| brent_journal | cap_2.5 | +195.79 | 39.3% | 12 | 58% |
+| brent_replay30 (October replay) | **live** | **+53.64** | 55.9% | 38 | 45% |
+| brent_replay30 | cap_5 / cap_3.5 / cap_2.5 | +53.64 (all three tie live) | 55.9% | 38 | 45% |
+| brent_replay_sep (September replay, new) | **live** | **-34.45** | 80.8% | 18 | 28% |
+| brent_replay_sep | cap_5 | -35.67 | 80.8% | 18 | 28% |
+| brent_replay_sep | cap_3.5 | -29.71 | 80.8% | 18 | 28% |
+| brent_replay_sep | cap_2.5 | **+3.56** | **60.1%** | 22 | 36% |
+
+September is the one dataset where a tighter cap (`cap_2.5`) actually beats
+live in dollar terms (+$3.56 vs -$34.45) and cuts drawdown (60.1% vs
+80.8%) -- but it loses on 5 of the other 7 scored datasets (see the score
+table), so it fails the plateau/adopt bar on the full grid, same as every
+other candidate. September alone is not enough to adopt it; see
+`EXTENDED_HISTORY_TEST_2026-11-03.md` for the standalone September verdict
+(the live rule loses that month regardless of the target).
+
+Full score across all 9 Brent datasets (journal, replay30, replay_sep, and
+always-long/always-short/daily-sign on both the replay30 window and the
+last 30 days): `rule_pass: []` -- nothing clears all three adoption bars
+(beats live on most datasets, a plateau, stop inside half the way to
+liquidation). Best overall: `cap_5` (1 beat / 2 losses of 9, geo-mean
+0.992 -- a near-tie because it almost never binds). `cap_4`/`cap_3.5`
+geo-mean just over 1.0 (1.015 / 1.002) but both fail "beats on most" and
+the liquidation-fraction check.
+
+Silver secondary check (top 3 Brent variants on `live_silver_params`):
+`cap_3.5` and `cap_5` beat live on both silver control groups (2/0 of 8
+and 2/0 of 8) but neither has a thesis dataset to test against this run
+(no silver theses were loaded); `cap_2.5` loses on 5 of 8. Nothing here
+changes the Brent verdict.
+
+### Current (open) trade regression -- long from 103.61
+
+Unchanged by the cap (the cap only affects position SIZE, and this
+regression is priced at the trade's own fixed size, not a fresh sim size).
+Brent's high since entry, fetched fresh at this rerun: still **105.51**,
+still short of every target tested, live included.
+
+## Original (uncapped) verdict, for the record
+
 **Verdict: keep the live far-edge target. No closer target beats it.** Every
 fixed-R target (4R to 10R), every wider percentage offset (2% to 4%), the
 24h range midpoint and its 75% point all lose money or barely tie live on
@@ -19,11 +92,14 @@ It backtests as the opposite: the rare big win it does occasionally pay
 more than makes up for the many trades that never reach it, and a closer
 target cuts the tail off without cutting the losses.
 
-## Results
+## Results (ORIGINAL -- uncapped; see the correction at the top)
 
 $64 start, live rules otherwise (market entry off the 24h range, 2R gate,
-stop 0.75 beyond the edge, limit target, 20x, 15-minute ticks, 15% risk
-cap, size-aware slippage and funding on Brent).
+stop 0.75 beyond the edge, limit target, 20x, 15-minute ticks, size-aware
+slippage and funding on Brent). **This table's "15% risk cap" claim was
+wrong when written -- `bp`/`sp` did not actually set it; every number
+below is full-port size.** See "Corrected results" above for the capped
+re-run.
 
 | Dataset | Variant | Net $ | Per-day % | Win rate | Max DD | Trades |
 |---|---|---|---|---|---|---|
@@ -135,6 +211,19 @@ byte-identical check) and `test_closer_target_eval.py` (the variant grid,
 `per_day_pct`, the summary CSV rows, and the current-trade regression,
 including a causality check that bars after the entry tick cannot change
 its levels). Both synthetic, no network, under the gate-test budget.
+
+**2026-11-03 correction.** `bp`/`sp` now build through
+`services/strategies/evals/live_params.py` (`live_brent_params`/
+`live_silver_params`), the shared function every eval's "live" baseline
+now goes through, so `risk_cap_frac=0.15` is actually set (it never was
+before). Also added `--oil-replay-sep-dir` (default
+`/tmp/thesis-replay-sep/oil/theses`, skipped when absent): the September
+replay as a `brent_replay_sep` dataset, so this file covers the same two
+replayed months `EXTENDED_HISTORY_TEST_2026-11-03.md` does. New gate
+tests: `services/strategies/tests/test_live_params.py` pins
+`live_brent_params`/`live_silver_params`'s values and fails if this file
+(or any of the five other harnesses with the same gap) stops importing
+them.
 
 Reproduce:
 

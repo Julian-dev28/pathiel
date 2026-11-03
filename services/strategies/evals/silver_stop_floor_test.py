@@ -1,6 +1,19 @@
 """Silver stop buffer floor backtest, 2026-11-02: the live per-tick ATR stop
 vs a floor under it.
 
+Correction (2026-11-03): this eval's original run (15:05 the same day)
+predates `Params.risk_cap_frac` (added ~17:17-17:59,
+`LOSS_AUDIT_2026-11-02.md`), so its published numbers are full-port size,
+not today's live rule. `bp`/`sp` below now carry the 15% cap
+(`risk_cap_frac=LIVE_RISK_CAP_FRAC`) on top of the SAME no-floor baseline
+this file always used -- not the full `live_params.live_silver_params`,
+which would also bake this file's own candidate floor onto that baseline.
+Because the floor candidates WIDEN the stop (never narrow it, `floored_
+buffer`), the cap can shrink a floored variant's size more than the
+no-floor baseline's, the same interaction `BRENT_STOP_BUFFER_TEST_2026-11-
+02.md`'s buffer sweep has -- see `docs/strategy/SILVER_STOP_FLOOR_TEST_
+2026-11-02.md`'s correction note for whether a re-run changed the verdict.
+
 Operator, 2026-11-02 ("yes"). The stop-cap test (STOP_CAP_TEST_2026-11-02.md)
 found the live silver stop is not the one the 30-day silver test validated.
 The test ran a fixed 0.41 buffer (1.3 x silver's MEAN 1h ATR14); live runs
@@ -67,6 +80,7 @@ from pathiel.models.types import Candle
 from services.strategies.backtest import data as D
 from services.strategies.backtest.desk_tick_sim import Params, Run, _levels, _setup, simulate
 from services.strategies.evals.desk_tick_backtest import DAY_MS, HOUR_MS, journaled_direction
+from services.strategies.evals.live_params import LIVE_RISK_CAP_FRAC, live_brent_params
 from services.strategies.evals.profit_lock_test import score
 from services.strategies.evals.stop_cap_test import (
     FIFTEEN_MS, START, _iso, closed_only, same_market, stops_per_day, walk_entry)
@@ -384,7 +398,6 @@ def summary_csv_rows(results: Dict[str, Any]) -> List[Dict[str, Any]]:
 def main(argv: Optional[List[str]] = None) -> int:
     from services.strategies.evals.cross_market_backtest import mean_atr
     from services.strategies.evals.market_scout import direction_series, load_coin_candles, scouting_params
-    from services.strategies.evals.strategy_sweep import base_params
 
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--metals-theses-dir", default="", help="READ ONLY: the live metals journal's theses")
@@ -425,7 +438,12 @@ def main(argv: Optional[List[str]] = None) -> int:
     silver = load_coin_candles("xyz:SILVER", a.silver_cache_dir)
     s15, s1h = silver["c15"], silver["c1h"]
     atr, _ = mean_atr(s1h)
-    sp = dataclasses.replace(scouting_params(a.silver_max_leverage, atr), starting_equity=START)
+    # risk_cap_frac only (2026-11-02's 15% cap), NOT the full live_silver_params
+    # (whose stop_buffer_floor_frac default would bake this file's own candidate
+    # floor onto its no-floor baseline) -- this `sp` is the "live rule today, no
+    # floor" baseline the floor variants (`variants(fixed)`) are swept against.
+    sp = dataclasses.replace(scouting_params(a.silver_max_leverage, atr), starting_equity=START,
+                             risk_cap_frac=LIVE_RISK_CAP_FRAC)
     fixed = sp.stop_buffer
     named = variants(fixed)
     s_start = min(th.created_at_ms for th in s_theses)
@@ -460,7 +478,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     b15, b1h = fresh("xyz:BRENTOIL")
     b_end = b15[-1].t + FIFTEEN_MS
     funding = D.fetch_funding_cached("xyz:BRENTOIL", b15[0].t, b_end, a.cache_dir)
-    bp = dataclasses.replace(base_params(), starting_equity=START)
+    bp = live_brent_params(size_slippage=True, starting_equity=START)
     for label, tdir, end_rule in (("brent_journal", a.oil_theses_dir, "data"),
                                   ("brent_replay30", a.oil_replay_dir, "last+1d")):
         theses = D.load_journaled_theses(tdir) if tdir else []

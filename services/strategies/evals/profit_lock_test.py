@@ -1,5 +1,15 @@
 """Profit lock backtest, 2026-11-01: baseline (fixed stop) vs locking profit.
 
+Correction (2026-11-03): this eval predates `Params.risk_cap_frac` (added
+2026-11-02, `LOSS_AUDIT_2026-11-02.md`), so its published numbers in
+`docs/strategy/PROFIT_LOCK_TEST_2026-11-01.md` are accurately full-port
+for their own time. `bp`/`sp` below now carry the 15% cap
+(`live_brent_params`/`risk_cap_frac=LIVE_RISK_CAP_FRAC`). This does not
+risk flipping the verdict: every lock/trail variant here shares the SAME
+entry stop distance as the baseline (only the EXIT moves, via the lock),
+and `risk_capped_notional` sizes once, at entry, off that shared distance
+-- so baseline and every candidate size identically either way.
+
 Operator, 2026-11-01, after a Brent long from 111.48 (stop 111.02, target
 113.66) reached +1.9R and drifted back to close +$7.83: "we were up like 35$
 and we round tripped" ... "yeah backtest it".
@@ -52,6 +62,7 @@ from pathiel.models.types import Candle
 from services.strategies.backtest import data as D
 from services.strategies.backtest.desk_tick_sim import Params, Run, Trade, profit_lock_stop, simulate
 from services.strategies.evals.desk_tick_backtest import DAY_MS, HOUR_MS, journaled_direction
+from services.strategies.evals.live_params import LIVE_RISK_CAP_FRAC, live_brent_params
 
 START = 64.0
 FIFTEEN_MS = 900_000
@@ -324,7 +335,6 @@ def run_dataset(name: str, c15: Sequence[Candle], c1h: Sequence[Candle], directi
 def main(argv: Optional[List[str]] = None) -> int:
     from services.strategies.evals.cross_market_backtest import mean_atr
     from services.strategies.evals.market_scout import direction_series, load_coin_candles, scouting_params
-    from services.strategies.evals.strategy_sweep import base_params
 
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--oil-theses-dir", default=os.environ.get("PATHIEL_OIL_THESES_DIR", ""),
@@ -353,7 +363,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     b15, b1h = brent["c15"], brent["c1h"]
     b_end = b15[-1].t + FIFTEEN_MS
     funding = D.fetch_funding_cached("xyz:BRENTOIL", b15[0].t, b_end, a.cache_dir)
-    bp = dataclasses.replace(base_params(), starting_equity=START)
+    bp = live_brent_params(size_slippage=True, starting_equity=START)
 
     for label, tdir, end_rule in (("brent_journal", a.oil_theses_dir, "data"),
                                   ("brent_replay30", a.oil_replay_dir, "last+1d")):
@@ -385,7 +395,10 @@ def main(argv: Optional[List[str]] = None) -> int:
             from services.strategies.evals.market_scout import fetch_market_meta
             a.silver_max_leverage = float((fetch_market_meta(["xyz:SILVER"]).get("xyz:SILVER") or {})
                                           .get("maxLeverage") or 20)
-        sp = scouting_params(a.silver_max_leverage, atr)
+        # risk_cap_frac only (the live 15% cap); this file's own mean-ATR,
+        # no-floor stop-rule shape (thesis_backtest.score's original rule) is
+        # intentional here, not live_silver_params's per-tick ATR + floor.
+        sp = dataclasses.replace(scouting_params(a.silver_max_leverage, atr), risk_cap_frac=LIVE_RISK_CAP_FRAC)
         s_start = min(th.created_at_ms for th in s_theses)
         s_end = max(c.t for c in s15) + FIFTEEN_MS
         results["silver_theses"] = run_dataset("silver_theses", s15, s1h, journaled_direction(s_theses), sp,
