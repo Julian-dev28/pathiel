@@ -296,6 +296,17 @@ Checked every bar a position is open against Hyperliquid's isolated-margin
 liquidation price (`pathiel.agents.bracket.liq_estimate`). A breach ends the
 run immediately: equity is zeroed, `Run.liquidated` is True, and no later
 bar is processed (the account is gone).
+
+Event blackout (2026-11-03)
+----------------------------
+`Params.event_blackout_windows` (None = off, the live rule): a tuple of
+[start_ms, end_ms) UTC windows. A new entry (never a flip, never an open
+position) is refused while the tick's `t` falls inside any window
+("event_blackout" in `Run.refused`). The windows themselves are built
+outside the simulator, by `services.strategies.backtest.oil_calendar`
+(deterministic EIA/API report and OPEC+ event timestamps) and passed in by
+the caller -- this field is a plain time-window gate with no knowledge of
+what event it is blocking. (OIL_EVENT_TIMING_TEST_2026-11-03.md.)
 """
 from __future__ import annotations
 
@@ -538,6 +549,16 @@ class Params:
     # "don't re-enter until price proves it came back". Off (the default)
     # leaves `reentry_after_stop`/`max_stop_reentries` as the only gate on
     # a re-entry.
+    # ── oil event timing test (2026-11-03, OIL_EVENT_TIMING_TEST_2026-11-03.md;
+    # operator: "sure" to testing the EIA/API reports and OPEC+ dates as
+    # entry filters). A tuple of [start_ms, end_ms) UTC blackout windows
+    # (oil_calendar.blackout_windows around EIA/API/OPEC event times, or a
+    # narrow window just after an event so a tick waits for the first
+    # closed bar before it may enter): a NEW entry (never a flip, never an
+    # open position) is refused while `t` falls inside any window
+    # ("event_blackout" in Run.refused). None (the default) keeps every
+    # existing result byte-identical (test_oil_calendar.py's golden check).
+    event_blackout_windows: Optional[Tuple[Tuple[int, int], ...]] = None
 
 
 # Per-side market-sell slippage (bps) by notional (USD), walked on the live
@@ -1094,6 +1115,16 @@ def _in_session(t: int, session: Tuple[int, int]) -> bool:
     hr = (t // HOUR_MS) % 24
     start, end = session
     return start <= hr < end if start <= end else (hr >= start or hr < end)
+
+
+def in_event_blackout(t: int, windows: Optional[Sequence[Tuple[int, int]]]) -> bool:
+    """Is `t` (ms) inside any of `windows`' half-open [start, end) ranges?
+    None/empty is never a blackout. Pure (`services.strategies.backtest.
+    oil_calendar.blackout_windows` builds `windows` from EIA/API/OPEC event
+    timestamps)."""
+    if not windows:
+        return False
+    return any(start <= t < end for start, end in windows)
 
 
 def floored_buffer(raw_buffer: float, price: float, floor: Optional[float],
@@ -1881,6 +1912,9 @@ def simulate_steps(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], 
                 d = None            # the allowed re-entry waits for a closed 1h bar back inside the range
             if d is not None and params.session_utc is not None and not _in_session(t, params.session_utc):
                 d = None
+            if d is not None and in_event_blackout(t, params.event_blackout_windows):
+                run.refused["event_blackout"] += 1
+                d = None
             if d is not None and in_weekend:
                 run.refused["weekend"] += 1
                 d = None
@@ -2046,4 +2080,4 @@ __all__ = ["Direction", "DirectionAt", "Params", "Trade", "Run", "simulate", "si
           "trade_leverage", "CONVICTION_LEVERAGE_FLOOR", "live_params", "profit_lock_stop", "stop_cap_blocks",
           "tally_stops", "floored_buffer", "weekend_closed", "lock_on", "risk_capped_notional", "filters_on",
           "call_start", "entry_filter", "EntryGuard", "PULLBACK_MODES", "PB_TARGETS", "PB_TRIGGERS",
-          "pullback_setup", "retest_level", "pb_cancel"]
+          "pullback_setup", "retest_level", "pb_cancel", "in_event_blackout"]
