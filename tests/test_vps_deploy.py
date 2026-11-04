@@ -148,7 +148,7 @@ def test_main_refuses_without_writing(tmp_path, monkeypatch, capsys):
 
 # ── the shell scripts ────────────────────────────────────────────────────────
 
-SCRIPTS = ["setup_server.sh", "push.sh", "start.sh", "pull_state.sh"]
+SCRIPTS = ["setup_server.sh", "push.sh", "start.sh", "pull_state.sh", "e2e_docker.sh"]
 
 
 @pytest.mark.parametrize("name", SCRIPTS)
@@ -193,3 +193,33 @@ def test_start_runs_the_same_loops_as_the_mac():
     assert "'/desk-loops'" in text and "--permission-mode auto" in text
     assert "--require-hashes -r requirements.lock" in text
     assert "scripts/restart.sh" in text
+
+
+# Both found by scripts/vps/e2e_docker.sh on 2026-11-04, before first use.
+
+def test_push_env_copy_works_with_the_macos_rsync():
+    """macOS ships openrsync, which has no --chmod: the env copy died with
+    "--chmod=F600: invalid argument" after the repo and state were already
+    pushed."""
+    text = (VPS / "push.sh").read_text()
+    assert not [ln for ln in text.splitlines() if ln.lstrip().startswith("rsync") and "--chmod" in ln]
+    assert 'umask 077 && cat > $SERVER_REPO/.env.local' in text
+
+
+def test_pull_pkill_cannot_match_its_own_ssh_shell():
+    """`pkill -f scripts/trigger_watch.py` inside `ssh HOST '...'` matched the
+    remote shell running that very command line and killed the session
+    (exit 255): the Desk server kept running and the key was never deleted."""
+    text = (VPS / "pull_state.sh").read_text()
+    assert 'pkill -f "[s]cripts/trigger_watch.py"' in text
+    remote = [ln for ln in text.splitlines() if "pkill -f" in ln or "pgrep -f" in ln]
+    assert all("[" in ln for ln in remote), remote
+
+
+def test_command_only_ssh_calls_do_not_eat_stdin():
+    """A piped key must reach make_server_env.py, not the guard's ssh."""
+    for name in ("push.sh", "pull_state.sh"):
+        for ln in (VPS / name).read_text().splitlines():
+            s = ln.strip()
+            if s.startswith(("ssh ", "if ssh ")) and "< " not in s:
+                assert "ssh -n" in s, (name, s)

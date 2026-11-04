@@ -42,6 +42,7 @@ SKIPPED: Dict[str, str] = {
     "close_position": "closes a live position",
     "set_leverage": "changes live leverage",
     "cancel_order": "cancels a live order",
+    "set_target": "moves a live take-profit order",
     "desk_refresh": "spends LLM tokens (run it on purpose, not in a smoke)",
     "desk_submit_call": "writes to the desk journal",
     "desk_grade": "writes grades into the desk journal (the server's hourly sweep runs it)",
@@ -200,16 +201,34 @@ class Client:
             self.proc.kill()
 
 
+# Under this, the slow call answered from cache: there was nothing for the
+# fast call to overtake, so the answer order proves nothing either way.
+PARALLEL_MIN_SLOW_S = 0.5
+
+
+def parallel_verdict(order: List[str], slow_s: float) -> Optional[bool]:
+    """True = not serialized, False = serialized, None = inconclusive."""
+    if slow_s < PARALLEL_MIN_SLOW_S:
+        return None
+    return order[:1] == ["get_server_time"]
+
+
 def _parallel_check(client: Client, rows: List[Dict[str, Any]]) -> int:
     """The transport must not serialize calls: a fast read sent right after a
-    slow desk_brief comes back first. Returns 1 on failure, 0 on success."""
+    slow desk_brief comes back first. Returns 1 on failure, 0 on success.
+    A cached desk_brief (under PARALLEL_MIN_SLOW_S) is reported as
+    inconclusive, not as a failure: a second smoke run in a row used to fail
+    here on a warm cache."""
     order: List[str] = []
+    took: Dict[str, float] = {}
     lock = threading.Lock()
 
     def call(name: str, args: Dict[str, Any]) -> None:
+        t = time.monotonic()
         client.request("tools/call", {"name": name, "arguments": args}, timeout=300)
         with lock:
             order.append(name)
+            took[name] = time.monotonic() - t
 
     slow = threading.Thread(target=call, args=("desk_brief", {"desk": "ai", "mode": "full"}))
     fast = threading.Thread(target=call, args=("get_server_time", {}))
@@ -219,11 +238,13 @@ def _parallel_check(client: Client, rows: List[Dict[str, Any]]) -> int:
     fast.start()
     slow.join(300)
     fast.join(300)
-    ok = order[:1] == ["get_server_time"]
+    verdict = parallel_verdict(order, took.get("desk_brief", 0.0))
+    ok = verdict is not False
+    note = "" if verdict is not None else " (inconclusive: desk_brief was cached)"
     rows.append({"tool": "(parallel)", "ok": ok, "s": round(time.monotonic() - t0, 3),
-                 "preview": f"answer order: {order}"})
+                 "preview": f"answer order: {order}{note}"})
     print(f"{'ok  ' if ok else 'FAIL'} {'(parallel) slow+fast':32} {time.monotonic() - t0:6.2f}s "
-          f"answer order: {order}")
+          f"answer order: {order}{note}")
     return 0 if ok else 1
 
 

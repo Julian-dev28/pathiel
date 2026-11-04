@@ -27,7 +27,7 @@ if pgrep -f scripts/trigger_watch.py >/dev/null; then
   exit 1
 fi
 # Once the server trades, its state is the newer one. Never overwrite it.
-if ssh "$HOST" 'tmux has-session -t desk 2>/dev/null'; then
+if ssh -n "$HOST" 'tmux has-session -t desk 2>/dev/null'; then
   echo "the server's desk loops are running; its state is newer than the Mac's." >&2
   echo "Use scripts/vps/pull_state.sh to bring it home instead." >&2
   exit 1
@@ -52,8 +52,9 @@ rsync -az --delete \
 # 3. Live state: theses, journals, intel cache, desk config.
 rsync -az --delete "$LOCAL_STATE/" "$HOST:$SERVER_STATE/"
 
-# 4. The env file, 0600 on arrival.
-rsync -a --chmod=F600 "$TMP/env" "$HOST:$SERVER_REPO/.env.local"
+# 4. The env file, 0600 on arrival. (macOS rsync has no --chmod; ssh + umask
+#    works with every client.)
+ssh "$HOST" "umask 077 && cat > $SERVER_REPO/.env.local && chmod 600 $SERVER_REPO/.env.local" < "$TMP/env"
 
 echo "pushed repo, state and env to $HOST"
 echo "next, on the server: scripts/vps/start.sh"

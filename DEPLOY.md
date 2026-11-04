@@ -102,6 +102,17 @@ open http://localhost:8000/.
 2. Revoke the API wallet on Hyperliquid (More > API).
 3. Start the Mac's loops again with `/desk-loops`.
 
+### Test it
+
+`scripts/vps/e2e_docker.sh` runs the whole path against a local Ubuntu
+24.04 container (amd64, like a CX22) with Docker running: setup, push,
+start, the tick's scripts, the full read-only MCP smoke on the box, both
+push guards, and the pull. It uses a fake Mac env and random keys
+Hyperliquid never authorized, copies the live state instead of touching it,
+and cleans up. About 8 minutes; it ends with `PASS` or the failing step, and
+logs to `/tmp/pathiel-vps-e2e/progress.log`. It cannot log in to Claude
+(step 5 above), so it proves everything up to the first tick.
+
 ### Guards
 
 - `push.sh` refuses while the Mac's price watcher runs, and while the

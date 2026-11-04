@@ -15,9 +15,11 @@ SERVER_HOME="/home/pathiel"
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 SNAP="/tmp/pathiel-state-before-pull-$STAMP"
 
-# 1. Stop everything that writes state on the server.
-ssh "$HOST" 'tmux kill-session -t desk 2>/dev/null || true;
-  pkill -f scripts/trigger_watch.py || true;
+# 1. Stop everything that writes state on the server. The [s] keeps pkill
+#    from matching this ssh command's own shell, whose command line contains
+#    the same text (it killed the session mid-script in the deploy test).
+ssh -n "$HOST" 'tmux kill-session -t desk 2>/dev/null || true;
+  pkill -f "[s]cripts/trigger_watch.py" || true;
   cd ~/pathiel && scripts/restart.sh stop'
 
 # 2. Snapshot the Mac's state, then pull the server's over it.
@@ -30,7 +32,7 @@ mkdir -p /tmp/oil-loop
 rsync -az "$HOST:/tmp/oil-loop/progress.log" "/tmp/oil-loop/progress.server-$STAMP.log" || true
 
 # 4. The server's key is useless once revoked; delete it anyway.
-ssh "$HOST" 'shred -u ~/pathiel/.env.local 2>/dev/null || rm -f ~/pathiel/.env.local'
+ssh -n "$HOST" 'shred -u ~/pathiel/.env.local 2>/dev/null || rm -f ~/pathiel/.env.local'
 
 echo "state pulled into $LOCAL_STATE (undo: rsync -a --delete $SNAP/ $LOCAL_STATE/)"
 echo "server tick log: /tmp/oil-loop/progress.server-$STAMP.log"
