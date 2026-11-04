@@ -1027,7 +1027,7 @@ def test_handler_refuses_new_oil_entries_inside_the_eia_blackout(monkeypatch):
     assert called == ["sized"] and "EIA blackout" not in json.dumps(out)
 
 
-def test_handler_fits_brent_leverage_to_the_stop(monkeypatch):
+def test_handler_fits_brent_and_silver_leverage_to_the_stop(monkeypatch):
     """Operator 2026-11-04 "TURN ON LEVERAGE FIT": a Brent stop too far for
     20x sizes and places at 15x; a stop that fits stays 20x; a top-up, an
     explicit leverage and silver never refit."""
@@ -1058,4 +1058,6 @@ def test_handler_fits_brent_leverage_to_the_stop(monkeypatch):
     assert place(coin=COIN, entry_px=100.0, stop_px=98.2, tp_px=110.0) == (15.0, 15)   # 1.8%: no 20x
     assert place(coin=COIN, entry_px=103.61, stop_px=102.99, tp_px=111.77) == (20.0, 20)  # fits 20x
     assert place(coin=COIN, entry_px=100.0, stop_px=98.2, tp_px=110.0, leverage=20) == (20.0, 20)
-    assert place(coin="xyz:SILVER", entry_px=50.0, stop_px=49.1, tp_px=55.0) == (20.0, 20)
+    # silver fits too since 2026-11-04: 1.8% is past its 20x line, 15x holds it; a 1% stop stays 20x
+    assert place(coin="xyz:SILVER", entry_px=50.0, stop_px=49.1, tp_px=55.0) == (15.0, 15)
+    assert place(coin="xyz:SILVER", entry_px=50.0, stop_px=49.5, tp_px=55.0) == (20.0, 20)

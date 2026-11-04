@@ -24,6 +24,22 @@ def test_evaluate_matches_the_tick_rule():
     assert W.evaluate("long", 112.20, None, BRENT_LV, "xyz:BRENTOIL", 20, 20)["ok"] is False
 
 
+# A silver breakdown (services/strategies/tests/test_silver_breakout.py's
+# fixture): 24h range 47.85-50, the last 1h bar closed 47.9 under the prior 48.0 low.
+SILVER_BO = {"prior_low": 48.0, "prior_high": 50.0, "last_close": 47.9, "recent_high": 48.05,
+             "recent_low": 47.85, "lookback_h": 24, "stop_h": 4}
+SILVER_LV = {"range_24h": {"low": 47.85, "high": 50.0}, "atr14_1h": 0.2, "breakout_24h": SILVER_BO}
+
+
+def test_evaluate_wakes_the_silver_breakout_and_never_a_brent_one():
+    hit = W.evaluate("short", 49.0, 47.9, SILVER_LV, "xyz:SILVER", 25, 20)
+    assert hit["ok"] is True and hit["source"] == "breakout"
+    same_on_brent = W.evaluate("short", 49.0, 47.9, SILVER_LV, "xyz:BRENTOIL", 20, 20)
+    assert same_on_brent["ok"] is False and "breakout" not in same_on_brent
+    no_break = dict(SILVER_LV, breakout_24h=dict(SILVER_BO, last_close=48.1))
+    assert W.evaluate("short", 49.0, 47.9, no_break, "xyz:SILVER", 25, 20)["ok"] is False
+
+
 def test_cooldown():
     assert W.cooled_down({}, "oil", 1000.0, 1800)
     assert not W.cooled_down({"oil": 900.0}, "oil", 1000.0, 1800)

@@ -13,6 +13,33 @@ against the idea, it is an empty sample. Recommend watching `combo_best2`
 and `breakout_24h_measured` as the two live journal grows past a handful of
 trades; do not ship on this data alone.
 
+## Live config (2026-11-04, operator's call)
+
+The operator turned it on the same day: "turn on silver breakout, chase OK
+on silver". Shipped: the breakout entry exactly as `breakout_24h_measured`
+(a5, 24h lookback, 4h stop, measured target, 2R and the 20x line at 20x,
+no fit on the breakout itself) plus leverage fit **20/15 only** (the
+operator's floor; combo_best2 tested 20/15/10/8/5). Rerun on this test's
+data (`python -m services.strategies.evals.silver_breakout_live_check`):
+
+| Dataset | live | combo_best2 | **live config** |
+|---|---|---|---|
+| Journal | -$9.92 (1) | -$9.92 (1) | **-$9.92 (1)** |
+| Replay | $132.92 (12) | $273.91 (16) | **$273.91 (16)** |
+| always_long | -$60.25 | -$60.83 | **-$60.83** |
+| always_short | $326.64 | $606.66 | **$326.64** |
+| daily_sign | $326.64 | $606.66 | **$326.64** |
+
+The 20/15 floor gives up combo_best2's extra control profit (its trades
+under 15x), and nothing on the thesis datasets. Code:
+`services/strategies/next_trade.py` (`breakout_levels`, `breakout_trade`,
+`next_trade(breakout=...)`), fed by `levels.summarize`'s `breakout_24h`;
+used by the Desk page, `desk_brief`, `scripts/trigger_watch.py` and the
+tick (`scripts/oil_levels.py --next`). `test_silver_breakout.py` checks
+the live answer against `desk_tick_sim._fit_leverage_setup` +
+`pullback_setup` on 6000 random markets: same trade or no trade, same
+entry type, stop, target and leverage.
+
 ## The missed-opportunity rate (the size of the prize)
 
 How often was the silver thesis direction right over the next 24h/72h

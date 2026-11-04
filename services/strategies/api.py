@@ -341,7 +341,8 @@ def desk_next_trade(desk_id: str, leverage: float, brief=None) -> Dict[str, obje
     out = next_trade_mod.next_trade(call.side, float(lv["mid"]), float(r24["low"]), float(r24["high"]),
                                     thesis_entry=call.entry_px, leverage=leverage,
                                     coin_max_leverage=coin_max, stop_buffer=buf,
-                                    leverage_fit=next_trade_mod.leverage_fit_for(coin))
+                                    leverage_fit=next_trade_mod.leverage_fit_for(coin),
+                                    breakout=lv.get("breakout_24h") if next_trade_mod.breakout_for(coin) else None)
     out["coin"] = coin
     return out
 

@@ -46,7 +46,7 @@ def evaluate(side: Optional[str], thesis_entry: Optional[float], mid: Optional[f
              leverage: float) -> Dict[str, Any]:
     """Pure: would the tick trade `coin` at `mid` right now? Same answer as
     GET /api/desks/{id}/next, with the mid refreshed between level reads."""
-    from services.strategies.next_trade import leverage_fit_for, next_trade, stop_buffer_for
+    from services.strategies.next_trade import breakout_for, leverage_fit_for, next_trade, stop_buffer_for
     r24 = levels.get("range_24h") or {}
     if side not in ("long", "short"):
         return {"ok": False, "reason": f"thesis is {side or 'missing'}"}
@@ -58,7 +58,8 @@ def evaluate(side: Optional[str], thesis_entry: Optional[float], mid: Optional[f
     out = next_trade(side, float(mid), float(r24["low"]), float(r24["high"]),
                      thesis_entry=thesis_entry, leverage=leverage,
                      coin_max_leverage=coin_max_leverage, stop_buffer=buf,
-                     leverage_fit=leverage_fit_for(coin))
+                     leverage_fit=leverage_fit_for(coin),
+                     breakout=levels.get("breakout_24h") if breakout_for(coin) else None)
     return out
 
 
@@ -142,7 +143,8 @@ def watch(*, once: bool, cooldown_min: float, sleep: Callable[[float], None] = t
                     parts.append(f"{desk}: {held[1]} (tick handles it)")
                     continue
                 lv = lv_cache.get(coin)
-                if lv is None or now - lv[0] > LEVELS_REFRESH_S:
+                # also re-read on a new hour: the breakout reads the last CLOSED 1h bar
+                if lv is None or now - lv[0] > LEVELS_REFRESH_S or int(lv[0] // 3600) != int(now // 3600):
                     lv_cache[coin] = lv = (now, levels.summarize_coin(coin))
                 if coin not in coin_max:
                     coin_max[coin] = float(get_max_leverage(coin))
@@ -157,7 +159,8 @@ def watch(*, once: bool, cooldown_min: float, sleep: Callable[[float], None] = t
                 _write_json(fired_path, fired)
                 line = {"fire": desk, "coin": coin, "utc": _utc(), "mid": mid,
                         "stop_px": res.get("stop_px"), "tp_px": res.get("tp_px"),
-                        "r_now": res.get("r_now"), "verdict": res.get("verdict")}
+                        "r_now": res.get("r_now"), "verdict": res.get("verdict"),
+                        "source": res.get("source")}
                 _log(f"{_utc()} FIRE {json.dumps(line)}")
                 print(json.dumps(line), flush=True)
                 return 0

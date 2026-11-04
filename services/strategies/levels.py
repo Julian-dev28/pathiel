@@ -65,12 +65,19 @@ def summarize(c1h: List[Dict[str, Any]], c15: List[Dict[str, Any]], mid: float, 
         "atr14_1h": atr(closed),
         "range_15m_last4": price_range(closed_only(c15, now_ms)[-4:]),
         "n_closed_1h": len(closed),
+        # the silver breakout entry's inputs (next_trade.breakout_levels); None under 25 closed bars
+        "breakout_24h": _breakout_levels(closed),
     }
     if r24 and r24["high"] > r24["low"]:
         out["mid_pos_in_24h"] = round((mid - r24["low"]) / (r24["high"] - r24["low"]), 3)
     if out["atr14_1h"]:
         out["atr14_pct"] = round(out["atr14_1h"] / mid * 100, 3)
     return out
+
+
+def _breakout_levels(closed: List[Dict[str, Any]]) -> Optional[Dict[str, float]]:
+    from services.strategies.next_trade import breakout_levels
+    return breakout_levels(closed)
 
 
 def fetch_candles(coin: str, interval: str, hours: int, now_ms: Optional[int] = None) -> List[Dict[str, Any]]:
