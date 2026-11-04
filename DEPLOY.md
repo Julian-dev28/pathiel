@@ -67,28 +67,44 @@ the server never gets the Mac's key either, so it can be revoked on its own.
 | File | Runs on | Does |
 |---|---|---|
 | `scripts/vps/setup_server.sh` | server, as root, once | `pathiel` user (root's SSH key carries over), python, tmux, rsync, Claude Code, firewall with only SSH open |
-| `scripts/vps/push.sh pathiel@IP` | Mac | builds the server env (hidden key prompt), copies the repo working tree and the live state |
-| `scripts/vps/make_server_env.py` | Mac, from `push.sh` | the Mac's env with the server's API wallet swapped in, master key dropped, Mac paths moved, 0600, prints names only |
-| `scripts/vps/start.sh` | server, as `pathiel` | venv from the hashed lock, `scripts/restart.sh`, `/desk-loops` in tmux session `desk` |
+| `scripts/vps/push.sh pathiel@IP` | Mac | builds the server env, copies the repo working tree and the live state |
+| `scripts/vps/make_server_env.py` | Mac, from `push.sh` | the Mac's env with the server's API wallet swapped in (`HYPERLIQUID_VPS_PRIVATE_KEY`, or a hidden prompt), master key dropped, Mac paths moved, 0600, prints names only. `--check` is a dry run |
+| `scripts/vps/check_claude.sh` | server, from `start.sh` | one `claude -p` call that may only use `desk_list`: proves the login, the MCP approval and the MCP server, the path every tick takes |
+| `scripts/vps/start.sh` | server, as `pathiel` | venv from the hashed lock, `scripts/restart.sh`, `check_claude.sh`, `/desk-loops` in tmux session `desk` |
 | `scripts/vps/pull_state.sh pathiel@IP` | Mac, after the trip | stops the server, snapshots the Mac's state to `/tmp`, pulls the server's state home, deletes the server's key |
 
 ### Going
 
 1. **API wallet.** app.hyperliquid.xyz, More > API: create one **named**
    (e.g. `vps`; registering an unnamed one can replace the Mac's), authorize
-   it with the main wallet for the length of the trip, copy its private key.
+   it with the main wallet for the length of the trip. Put it in the Mac's
+   `.env.local`:
+
+   ```
+   HYPERLIQUID_VPS_WALLET_ADDRESS=<its address>
+   HYPERLIQUID_VPS_PRIVATE_KEY=<its private key>
+   ```
+
+   The Mac never signs with these. Check the pair before pushing:
+   `.venv/bin/python scripts/vps/make_server_env.py --check` must end with
+   "OK to push" (it refuses a key that is not that address's, the Mac's own
+   key, or the main wallet's).
 2. **Server.** Create it with your SSH key, then from the Mac:
    `ssh root@IP 'bash -s' < scripts/vps/setup_server.sh`
 3. **Stop the Mac's loops.** Close the "pathiel desk loops" window, then
    `pkill -f scripts/trigger_watch.py`.
-4. **Push.** `scripts/vps/push.sh pathiel@IP` and paste the step 1 key at
-   the hidden prompt. Check that "server signer" matches the API wallet
-   address Hyperliquid shows.
+4. **Push.** `scripts/vps/push.sh pathiel@IP`. It reads the step 1 key
+   (no prompt; without `HYPERLIQUID_VPS_PRIVATE_KEY` it asks for the key
+   hidden). "server signer" must be the `vps` address. On the server the key
+   is plain `HYPERLIQUID_PRIVATE_KEY`; no `VPS_` name goes there.
 5. **Log in once.** `ssh pathiel@IP`, run `claude`, log in with the Max
    account, trust the folder, approve the project's `pathiel` MCP server,
    `/exit`.
-6. **Start.** `cd ~/pathiel && scripts/vps/start.sh`, then
-   `tail -f /tmp/oil-loop/progress.log` until one tick lands.
+6. **Start.** `cd ~/pathiel && scripts/vps/start.sh`. Before the loops
+   start it has Claude call the MCP server once and prints
+   `CLAUDE-CHECK OK DESKS=oil,metals`; otherwise it stops and names what is
+   missing (login, MCP approval). Then `tail -f /tmp/oil-loop/progress.log`
+   until one tick lands.
 
 Watch from anywhere with SSH: `tmux attach -t desk` (detach with ctrl-b d).
 The Desk page stays private: `ssh -L 8000:localhost:8000 pathiel@IP`, then
@@ -107,11 +123,14 @@ open http://localhost:8000/.
 `scripts/vps/e2e_docker.sh` runs the whole path against a local Ubuntu
 24.04 container (amd64, like a CX22) with Docker running: setup, push,
 start, the tick's scripts, the full read-only MCP smoke on the box, both
-push guards, and the pull. It uses a fake Mac env and random keys
-Hyperliquid never authorized, copies the live state instead of touching it,
-and cleans up. About 8 minutes; it ends with `PASS` or the failing step, and
-logs to `/tmp/pathiel-vps-e2e/progress.log`. It cannot log in to Claude
-(step 5 above), so it proves everything up to the first tick.
+push guards, and the pull. It uses a fake Mac env (with
+`HYPERLIQUID_VPS_*` set, as in step 1) and random keys Hyperliquid never
+authorized, copies the live state instead of touching it, and cleans up.
+About 8 minutes; it ends with `PASS` or the failing step, and logs to
+`/tmp/pathiel-vps-e2e/progress.log`. It cannot log in to Claude (step 5
+above), so there `check_claude.sh` must refuse, and does. The passing side
+of that check is run on the Mac, where Claude is logged in:
+`scripts/vps/check_claude.sh`.
 
 ### Guards
 

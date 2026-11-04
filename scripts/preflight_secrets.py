@@ -97,6 +97,10 @@ REGISTRY: Tuple[SecretSpec, ...] = (
     SecretSpec("HYPERLIQUID_PRIVATE_KEY", "agent/API wallet private key — signs orders", "always"),
     SecretSpec("HYPERLIQUID_MASTER_ADDRESS", "master account public address (funds live here)", "always"),
     SecretSpec("HYPERLIQUID_MASTER_PRIVATE_KEY", "master account private key — treasury transfers only", "local_only"),
+    # The rented server's own API wallet, kept on the Mac between trips. Only
+    # scripts/vps/make_server_env.py reads it; on the server it becomes
+    # HYPERLIQUID_PRIVATE_KEY. Declared so a copy in a tracked file fails.
+    SecretSpec("HYPERLIQUID_VPS_PRIVATE_KEY", "rented server's API wallet key (scripts/vps)", "optional"),
     SecretSpec("PATHIEL_METRICS_TOKEN", "bearer token /metrics requires when set (internet-facing deploys)", "optional"),
 )
 

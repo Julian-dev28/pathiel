@@ -45,11 +45,12 @@ PATHIEL_PORT=8000
 """
 
 
-def _build(env_text=MAC_ENV, key=NEW_KEY, derive=lambda k: NEW_AGENT):
+def _build(env_text=MAC_ENV, key=NEW_KEY, derive=lambda k: NEW_AGENT, expected_agent=None):
     return mse.build_server_env(
         mse.parse_env(env_text), agent_key=key,
         path_map={MAC_STATE: SRV_STATE, MAC_REPO: SRV_REPO},
-        local_home=MAC_HOME, server_state=SRV_STATE, derive=derive)
+        local_home=MAC_HOME, server_state=SRV_STATE, derive=derive,
+        expected_agent=expected_agent)
 
 
 def test_server_env_swaps_in_the_new_api_wallet_and_keeps_the_rest():
@@ -148,7 +149,8 @@ def test_main_refuses_without_writing(tmp_path, monkeypatch, capsys):
 
 # ── the shell scripts ────────────────────────────────────────────────────────
 
-SCRIPTS = ["setup_server.sh", "push.sh", "start.sh", "pull_state.sh", "e2e_docker.sh"]
+SCRIPTS = ["setup_server.sh", "push.sh", "start.sh", "pull_state.sh", "e2e_docker.sh",
+           "check_claude.sh"]
 
 
 @pytest.mark.parametrize("name", SCRIPTS)
@@ -223,3 +225,142 @@ def test_command_only_ssh_calls_do_not_eat_stdin():
             s = ln.strip()
             if s.startswith(("ssh ", "if ssh ")) and "< " not in s:
                 assert "ssh -n" in s, (name, s)
+
+
+# ── the server key kept in the Mac env (2026-11-04) ──────────────────────────
+
+VPS_ENV = MAC_ENV + f"HYPERLIQUID_VPS_WALLET_ADDRESS={NEW_AGENT}\nHYPERLIQUID_VPS_PRIVATE_KEY={NEW_KEY}\n"
+
+
+def test_vps_names_never_reach_the_server():
+    out, _ = _build(VPS_ENV, expected_agent=NEW_AGENT)
+    env = dict(out)
+    assert "HYPERLIQUID_VPS_PRIVATE_KEY" not in env and "HYPERLIQUID_VPS_WALLET_ADDRESS" not in env
+    assert env["HYPERLIQUID_PRIVATE_KEY"] == NEW_KEY
+    assert [k for k, _ in out].count("HYPERLIQUID_PRIVATE_KEY") == 1
+
+
+def test_key_must_match_the_vps_address():
+    other = "0x3333333333333333333333333333333333333333"
+    with pytest.raises(mse.EnvError) as e:
+        _build(VPS_ENV, expected_agent=other)
+    assert other in str(e.value) and NEW_AGENT in str(e.value)
+    assert NEW_KEY not in str(e.value) and NEW_KEY[2:] not in str(e.value)
+    # Case alone is not a mismatch (checksummed vs lower-case paste).
+    _build(VPS_ENV, expected_agent=NEW_AGENT.upper().replace("0X", "0x"))
+
+
+def _run_main(tmp_path, monkeypatch, env_text, argv, prompt_key=None):
+    src = tmp_path / "mac.env"
+    src.write_text(env_text)
+    monkeypatch.setattr(mse, "local_env_path", lambda: str(src))
+    monkeypatch.setattr(mse, "derive_address", lambda k: NEW_AGENT if k == NEW_KEY else OLD_AGENT)
+
+    def no_prompt(prompt=""):
+        if prompt_key is None:
+            raise AssertionError("prompted although the Mac env holds the key")
+        return prompt_key
+    monkeypatch.setattr(mse.getpass, "getpass", no_prompt)
+    return mse.main(argv)
+
+
+def test_main_takes_the_key_from_the_mac_env_without_prompting(tmp_path, monkeypatch, capsys):
+    out = tmp_path / "server.env"
+    rc = _run_main(tmp_path, monkeypatch, VPS_ENV,
+                   ["--out", str(out), "--server-repo", SRV_REPO, "--server-state", SRV_STATE])
+    printed = capsys.readouterr()
+    assert rc == 0
+    assert "HYPERLIQUID_VPS_PRIVATE_KEY in" in printed.out
+    for secret in (NEW_KEY, NEW_KEY[2:], OLD_KEY, "c" * 64):
+        assert secret not in printed.out and secret not in printed.err
+    text = out.read_text()
+    assert f"HYPERLIQUID_PRIVATE_KEY={NEW_KEY}" in text and "VPS" not in text
+
+
+@pytest.mark.parametrize("quote", ['"', "'"])
+def test_a_quoted_vps_key_still_works(tmp_path, monkeypatch, capsys, quote):
+    text = MAC_ENV + f"HYPERLIQUID_VPS_PRIVATE_KEY={quote}{NEW_KEY}{quote}\n"
+    out = tmp_path / "server.env"
+    assert _run_main(tmp_path, monkeypatch, text, ["--out", str(out), "--server-repo", SRV_REPO,
+                                                   "--server-state", SRV_STATE]) == 0
+    assert f"HYPERLIQUID_PRIVATE_KEY={NEW_KEY}\n" in out.read_text()
+
+
+def test_main_falls_back_to_the_prompt_without_a_vps_key(tmp_path, monkeypatch, capsys):
+    out = tmp_path / "server.env"
+    argv = ["--out", str(out), "--server-repo", SRV_REPO, "--server-state", SRV_STATE]
+    assert _run_main(tmp_path, monkeypatch, MAC_ENV, argv, prompt_key=NEW_KEY) == 0
+    assert "hidden prompt" in capsys.readouterr().out
+
+
+def test_check_writes_nothing_and_says_ok(tmp_path, monkeypatch, capsys):
+    rc = _run_main(tmp_path, monkeypatch, VPS_ENV, ["--check"])
+    printed = capsys.readouterr()
+    assert rc == 0 and "OK to push" in printed.out
+    assert NEW_KEY not in printed.out
+    assert not [p for p in tmp_path.iterdir() if p.name != "mac.env"]
+
+
+def test_check_refuses_a_mismatched_pair(tmp_path, monkeypatch, capsys):
+    text = MAC_ENV + f"HYPERLIQUID_VPS_WALLET_ADDRESS={OLD_AGENT}\nHYPERLIQUID_VPS_PRIVATE_KEY={NEW_KEY}\n"
+    rc = _run_main(tmp_path, monkeypatch, text, ["--check"])
+    printed = capsys.readouterr()
+    assert rc == 1 and "refused" in printed.err and NEW_KEY not in printed.err
+
+
+def test_main_needs_out_or_check(tmp_path, monkeypatch):
+    with pytest.raises(SystemExit):
+        _run_main(tmp_path, monkeypatch, VPS_ENV, [])
+
+
+# ── Claude reaches the MCP server (check_claude.sh) ──────────────────────────
+
+def test_start_proves_claude_reaches_the_mcp_server_before_the_loops():
+    text = (VPS / "start.sh").read_text()
+    check = text.index("scripts/vps/check_claude.sh\n")
+    assert check < text.index("tmux new-session")
+    assert check > text.index("scripts/restart.sh\n")
+
+
+def test_claude_check_may_only_call_one_read_only_tool():
+    text = (VPS / "check_claude.sh").read_text()
+    call = [ln for ln in text.splitlines() if "--allowedTools" in ln and not ln.lstrip().startswith("#")]
+    assert call == ["  --allowedTools mcp__pathiel__desk_list </dev/null >\"$LOG\" 2>&1 || rc=$?"]
+    assert "--permission-mode" not in text and "dangerously" not in text
+
+
+def test_claude_check_puts_the_prompt_before_the_tool_list():
+    """--allowedTools takes a list: a prompt after it was swallowed and claude
+    said "Input must be provided" (found running the check on the Mac)."""
+    text = (VPS / "check_claude.sh").read_text()
+    assert 'claude -p "$PROMPT"' in text
+    assert text.index('claude -p "$PROMPT"') < text.index("--allowedTools mcp__")
+
+
+def test_claude_check_only_passes_on_a_listed_oil_desk(tmp_path):
+    """Run the real script against a fake `claude` that answers each way."""
+    answers = {
+        "DESKS=oil,metals": (0, ""),
+        "NO_MCP": (1, "MCP server is not loaded"),
+        "Invalid API key · Please run /login": (1, "not logged in"),
+        "DESKS=": (1, "unexpected answer"),
+        "I listed the desks for you.": (1, "unexpected answer"),
+    }
+    for answer, (want, reason) in answers.items():
+        bin_dir = tmp_path / "bin"
+        bin_dir.mkdir(exist_ok=True)
+        fake = bin_dir / "claude"
+        fake.write_text(f"#!/bin/bash\necho '{answer}'\n")
+        fake.chmod(0o755)
+        env = {"PATH": f"{bin_dir}:/usr/bin:/bin", "HOME": str(tmp_path)}
+        r = subprocess.run(["bash", str(VPS / "check_claude.sh")], env=env,
+                           capture_output=True, text=True)
+        assert r.returncode == want, (answer, r.stdout, r.stderr)
+        assert ("CLAUDE-CHECK OK" in r.stdout) == (want == 0), answer
+        assert reason in r.stderr, (answer, r.stderr)
+
+
+def test_out_needs_the_server_paths(tmp_path, monkeypatch):
+    with pytest.raises(SystemExit):
+        _run_main(tmp_path, monkeypatch, VPS_ENV, ["--out", str(tmp_path / "x")])
+    assert not (tmp_path / "x").exists()

@@ -7,7 +7,8 @@
 #
 # First time only: run `claude` once by hand, log in with the Max account,
 # trust the folder, approve the project's pathiel MCP server, then /exit.
-# start.sh refuses until that login exists.
+# start.sh refuses until that login exists, then proves it: Claude calls the
+# pathiel MCP server once (scripts/vps/check_claude.sh) before any loop runs.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -33,6 +34,12 @@ fi
 .venv/bin/python -c "import pathiel.server, services.strategies.api, services.intel.api; print('imports ok')"
 
 scripts/restart.sh
+
+# The loops are Claude calling the MCP server. Prove that path works before
+# leaving it alone for a trip.
+if [[ -z "${PATHIEL_SKIP_LOGIN_CHECK:-}" ]]; then
+  scripts/vps/check_claude.sh
+fi
 
 if tmux has-session -t desk 2>/dev/null; then
   echo "desk loops already running: tmux attach -t desk"

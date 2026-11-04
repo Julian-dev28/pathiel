@@ -15,7 +15,9 @@
 #     trade. The main account address is public and is only read.
 #   - the live state is COPIED to a temp dir first; pull_state.sh writes into
 #     that copy, never into LOCAL_STATE_DIR.
-#   - Claude Code is installed but not logged in, so no tick runs.
+#   - Claude Code is installed but not logged in, so no tick runs. The
+#     check that Claude reaches the MCP server is run anyway and must FAIL
+#     here (no login): it may never pass on a box that cannot trade.
 # A shim stands in for `pgrep` on the Mac (the live watcher would make push.sh
 # refuse, correctly); tests/test_vps_deploy.py covers that guard, and this
 # script checks it against the real pgrep at the end.
@@ -91,11 +93,15 @@ HYPERLIQUID_MASTER_ADDRESS=0x2c2e4efF574B3Fd9879AdeF9c5CAC6fD7C916985
 HYPERLIQUID_MASTER_PRIVATE_KEY=0x$(printf 'c%.0s' {1..64})
 PATHIEL_STATE_DIR=$W/state
 EOF
-printf '%s\n' "$NEWKEY" | PATHIEL_ENV_FILE="$W/mac.env" "$ROOT/scripts/vps/push.sh" pathiel@localhost "$W/state" \
+NEWADDR=$("$PY" -c "from eth_account import Account;print(Account.from_key('$NEWKEY').address)")
+printf 'HYPERLIQUID_VPS_WALLET_ADDRESS=%s\nHYPERLIQUID_VPS_PRIVATE_KEY=%s\n' "$NEWADDR" "$NEWKEY" >> "$W/mac.env"
+PATHIEL_ENV_FILE="$W/mac.env" "$ROOT/scripts/vps/push.sh" pathiel@localhost "$W/state" \
   >"$W/push.log" 2>&1 || { grep -v "$NEWKEY" "$W/push.log" | tail -10; fail "push.sh"; }
 grep -q "$NEWKEY" "$W/push.log" && fail "push.sh printed the key"
 R "test \"\$(stat -c %a .env.local)\" = 600" || fail ".env.local is not 0600"
 R "grep -qx 'HYPERLIQUID_PRIVATE_KEY=$NEWKEY' .env.local" || fail "server key is not the new API wallet key"
+R "! grep -q VPS .env.local" || fail "a HYPERLIQUID_VPS_ name reached the server"
+grep -q "server signer  $NEWADDR" "$W/push.log" || fail "push.sh did not report the VPS address as the signer"
 R "! grep -q MASTER_PRIVATE .env.local && ! grep -q '$OLDKEY' .env.local" || fail "a Mac key reached the server"
 R "test ! -d .git && test -d ~/state/strategies" || fail "repo or state did not land"
 
@@ -105,6 +111,9 @@ R "PATHIEL_SKIP_LOGIN_CHECK=1 scripts/vps/start.sh" >"$W/start.log" 2>&1 || { ta
 R "test \"\$(curl -s -o /dev/null -w %{http_code} localhost:8000/api/health)\" = 200" || fail "/api/health"
 R "test \"\$(curl -s -o /dev/null -w %{http_code} localhost:8000/desk/oil)\" = 200" || fail "/desk/oil"
 R "tmux has-session -t desk" || fail "no tmux session"
+R "scripts/vps/check_claude.sh" >"$W/claude.log" 2>&1 && fail "check_claude.sh passed without a login"
+grep -q "CLAUDE-CHECK FAIL" "$W/claude.log" || { cat "$W/claude.log"; fail "check_claude.sh gave no reason"; }
+say "    no login, as expected: $(grep -m1 'CLAUDE-CHECK FAIL' "$W/claude.log" | cut -c1-90)"
 
 # ── what a tick runs ─────────────────────────────────────────────────────────
 say "5/7 tick scripts and the MCP smoke on the server"
@@ -141,4 +150,4 @@ R "! tmux has-session -t desk 2>/dev/null && ! pgrep -f '[p]athiel.server' && ! 
   || fail "something still runs on the server after pull"
 ssh -n pathiel@localhost 'test ! -f ~/pathiel/.env.local' || fail "server key not deleted"
 
-say "PASS: setup, push, start, tick scripts, MCP smoke, guards, pull"
+say "PASS: setup, push, start, Claude check refuses, tick scripts, MCP smoke, guards, pull"

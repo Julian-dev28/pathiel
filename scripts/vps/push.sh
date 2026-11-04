@@ -5,8 +5,9 @@
 #   scripts/vps/push.sh pathiel@SERVER [LOCAL_STATE_DIR]
 #
 # LOCAL_STATE_DIR defaults to $HOME/Documents/code/pathia/.state (the live
-# PATHIEL_STATE_DIR). The env file is built by make_server_env.py, which asks
-# for the server's own API wallet key (hidden prompt) and never prints it.
+# PATHIEL_STATE_DIR). The env file is built by make_server_env.py from the
+# Mac's env: the server's own API wallet comes from HYPERLIQUID_VPS_PRIVATE_KEY
+# (a hidden prompt when that is unset), and no secret is ever printed.
 # Nothing secret is written to disk on the Mac except a 0600 temp file that
 # is deleted on exit.
 set -euo pipefail

@@ -9,16 +9,25 @@ are rewritten to the server's paths, and any Mac path left over is dropped.
     .venv/bin/python scripts/vps/make_server_env.py --out FILE \
         --server-repo SERVER_REPO --server-state SERVER_STATE
 
-It asks for the API wallet's private key with a hidden prompt, derives the
-address, and prints names and public addresses only. It never prints a
-secret value. The file it writes is mode 0600. scripts/vps/push.sh runs it.
+The server's key comes from the Mac env file (HYPERLIQUID_VPS_PRIVATE_KEY,
+checked against HYPERLIQUID_VPS_WALLET_ADDRESS when that is set), or from a
+hidden prompt when the file has none. Neither VPS_ name reaches the server:
+there the key is plain HYPERLIQUID_PRIVATE_KEY. It derives the address and
+prints names and public addresses only, never a secret value. The file it
+writes is mode 0600. scripts/vps/push.sh runs it.
+
+    .venv/bin/python scripts/vps/make_server_env.py --check
+
+builds the same env without writing it: a dry run that confirms the key
+before a push.
 
 Refuses when:
   - the key is malformed;
   - the key belongs to the main wallet (that key can withdraw);
   - the key is the one the Mac already uses (the server's key has to be
     revocable on its own after the trip);
-  - the Mac env names no main account.
+  - the Mac env names no main account;
+  - the key's address is not HYPERLIQUID_VPS_WALLET_ADDRESS.
 """
 from __future__ import annotations
 
@@ -37,6 +46,10 @@ from _state_env import env_file_candidates  # noqa: E402
 
 KEY_RE = re.compile(r"^0x[0-9a-fA-F]{64}$")
 
+# The server's own API wallet, kept in the Mac env file between trips.
+VPS_KEY = "HYPERLIQUID_VPS_PRIVATE_KEY"
+VPS_ADDRESS = "HYPERLIQUID_VPS_WALLET_ADDRESS"
+
 # Never shipped as-is. The identity keys are re-added with the server's
 # values; the master key never leaves the Mac.
 DROP = frozenset({
@@ -46,6 +59,8 @@ DROP = frozenset({
     "HYPERLIQUID_MASTER_PRIVATE_KEY",
     "PATHIEL_STATE_DIR",
     "PATHIEL_ENV_FILE",
+    VPS_KEY,
+    VPS_ADDRESS,
 })
 
 
@@ -78,10 +93,12 @@ def build_server_env(
     local_home: str,
     server_state: str,
     derive: Optional[Callable[[str], str]] = None,
+    expected_agent: Optional[str] = None,
 ) -> Tuple[List[Tuple[str, str]], Dict[str, object]]:
     """The server's env pairs and a report of names only.
 
     path_map maps a Mac path prefix to the server's (longest prefix wins).
+    expected_agent, when set, is the address the key must derive to.
     """
     if not KEY_RE.match(agent_key or ""):
         raise EnvError("the API wallet key must be 0x plus 64 hex characters")
@@ -95,6 +112,10 @@ def build_server_env(
     if agent.lower() == master.lower():
         raise EnvError("that key is the main wallet's key, which can withdraw. "
                        "Make an API wallet on Hyperliquid and use its key")
+    if expected_agent and agent.lower() != expected_agent.strip().lower():
+        raise EnvError(f"{VPS_KEY} belongs to {agent}, not the "
+                       f"{VPS_ADDRESS} {expected_agent.strip()}. One of the two "
+                       f"was pasted from a different API wallet")
     old_key = (env.get("HYPERLIQUID_PRIVATE_KEY") or "").strip()
     if old_key and old_key.lower() == agent_key.lower():
         raise EnvError("that is the key the Mac already uses. Make a separate API "
@@ -146,10 +167,19 @@ def local_env_path() -> Optional[str]:
 
 def main(argv: Optional[List[str]] = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    ap.add_argument("--out", required=True, help="file to write (mode 0600)")
-    ap.add_argument("--server-repo", required=True, help="repo path on the server")
-    ap.add_argument("--server-state", required=True, help="state dir path on the server")
+    ap.add_argument("--out", help="file to write (mode 0600)")
+    ap.add_argument("--check", action="store_true",
+                    help="build and report, write nothing (dry run before a push)")
+    ap.add_argument("--server-repo", help="repo path on the server (push.sh passes it)")
+    ap.add_argument("--server-state", help="state dir path on the server (push.sh passes it)")
     args = ap.parse_args(argv)
+    if not args.out and not args.check:
+        ap.error("--out FILE or --check")
+    if args.out and not (args.server_repo and args.server_state):
+        ap.error("--out needs --server-repo and --server-state")
+    # A dry run writes nothing, so the server paths are only labels.
+    args.server_repo = args.server_repo or "SERVER_REPO"
+    args.server_state = args.server_state or "SERVER_STATE"
 
     src = local_env_path()
     if not src:
@@ -161,15 +191,24 @@ def main(argv: Optional[List[str]] = None) -> int:
     path_map = {os.path.realpath(local_state): args.server_state, local_state: args.server_state,
                 os.path.realpath(ROOT): args.server_repo, ROOT: args.server_repo}
 
-    key = getpass.getpass("Server API wallet private key (hidden): ").strip()
+    mac = dict(pairs)
+    key = _unquote(mac.get(VPS_KEY, ""))
+    if key:
+        source = f"{VPS_KEY} in {src}"
+    else:
+        key = getpass.getpass("Server API wallet private key (hidden): ").strip()
+        source = "hidden prompt"
     try:
         out, report = build_server_env(pairs, agent_key=key, path_map=path_map,
                                        local_home=os.path.expanduser("~"),
-                                       server_state=args.server_state)
+                                       server_state=args.server_state,
+                                       expected_agent=_unquote(mac.get(VPS_ADDRESS, "")) or None)
     except EnvError as e:
         print(f"refused: {e}", file=sys.stderr)
         return 1
-    write_env(args.out, out)
+    if not args.check:
+        write_env(args.out, out)
+    print(f"key from       {source}")
     print(f"main account   {report['master']}")
     print(f"server signer  {report['agent']}  (must match the API wallet address on Hyperliquid)")
     print(f"vars           {', '.join(report['kept'])}")
@@ -177,7 +216,16 @@ def main(argv: Optional[List[str]] = None) -> int:
         print(f"paths moved    {', '.join(report['rewritten'])}")
     if report["dropped_mac_paths"]:
         print(f"dropped        {', '.join(report['dropped_mac_paths'])} (Mac-only paths)")
+    if args.check:
+        print("check only     nothing written. OK to push")
     return 0
+
+
+def _unquote(value: str) -> str:
+    value = (value or "").strip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in "'\"":
+        value = value[1:-1].strip()
+    return value
 
 
 if __name__ == "__main__":
