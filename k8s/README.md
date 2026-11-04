@@ -60,7 +60,7 @@ kubectl apply -f k8s/namespace.yaml
 kubectl create secret generic pathiel-secrets -n pathiel \
   --from-literal=HYPERLIQUID_WALLET_ADDRESS="${HYPERLIQUID_WALLET_ADDRESS:-0xdummy}" \
   --from-literal=HYPERLIQUID_PRIVATE_KEY="${HYPERLIQUID_PRIVATE_KEY:-0xdummy}" \
-  --from-literal=HYPERLIQUID_MASTER_ADDRESS="${HYPERLIQUID_MASTER_ADDRESS:-0xdummy}" \
+  --from-literal=HYPERLIQUID_MASTER_ADDRESS="${HYPERLIQUID_MASTER_ADDRESS:-0xdummy}"
 ```
 
 ## 3. Deploy the app
