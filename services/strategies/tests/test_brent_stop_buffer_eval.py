@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 import pytest
 
 from pathiel.models.types import Candle
-from services.strategies.backtest.desk_tick_sim import Direction, Run, Trade, live_params, simulate
+from services.strategies.backtest.desk_tick_sim import Direction, Run, Trade, live_params, live_params_before_no_break, simulate
 from services.strategies.evals import brent_stop_buffer_test as T
 from services.strategies.evals.profit_lock_test import replay_position
 
@@ -27,7 +27,7 @@ def ms(*parts: int) -> int:
 
 
 def _base(**over):
-    return dataclasses.replace(live_params(), starting_equity=64.0, **over)
+    return dataclasses.replace(live_params_before_no_break(), starting_equity=64.0, **over)
 
 
 # ── the grids ──────────────────────────────────────────────────────────────

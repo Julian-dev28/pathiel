@@ -19,7 +19,8 @@ import pytest
 
 from pathiel.models.types import Candle
 from services.strategies.backtest.desk_tick_sim import (
-    Direction, Params, _full_size_notional, live_params, risk_capped_notional, simulate, simulate_steps)
+    Direction, Params, _full_size_notional, live_params_before_no_break, risk_capped_notional,
+    simulate, simulate_steps)
 from services.strategies.backtest.portfolio import (
     Desk, account_equity, daily_changes, desk_correlation, pearson, portfolio_stats, simulate_portfolio,
     validate_shares)
@@ -60,7 +61,7 @@ def never(t: int) -> Optional[Direction]:
 
 
 def _p(**over) -> Params:
-    return dataclasses.replace(live_params(), starting_equity=START, **over)
+    return dataclasses.replace(live_params_before_no_break(), starting_equity=START, **over)
 
 
 # ── shares ─────────────────────────────────────────────────────────────────

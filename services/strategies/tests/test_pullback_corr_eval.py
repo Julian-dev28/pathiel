@@ -126,7 +126,9 @@ def nov2():
     b1h, s1h = candles(fx["bars"]["brent"]["1h"]), candles(fx["bars"]["silver"]["1h"])
     return {"b1h": b1h, "b15": candles(fx["bars"]["brent"]["15m"]), "s1h": s1h,
             "s15": candles(fx["bars"]["silver"]["15m"]), "oil": direction("brent"), "silver": direction("silver"),
-            "bp": P.brent_params(), "sp": P.silver_params(s1h)}
+            # The rule live on 11-02 (breaks allowed; no_break_entry since 11-04).
+            "bp": dataclasses.replace(P.brent_params(), no_break_entry=False),
+            "sp": dataclasses.replace(P.silver_params(s1h), no_break_entry=False)}
 
 
 def _a_row(nov2, coin, variant):

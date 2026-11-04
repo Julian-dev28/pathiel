@@ -31,7 +31,14 @@ SILVER_BO = {"prior_low": 48.0, "prior_high": 50.0, "last_close": 47.9, "recent_
 SILVER_LV = {"range_24h": {"low": 47.85, "high": 50.0}, "atr14_1h": 0.2, "breakout_24h": SILVER_BO}
 
 
-def test_evaluate_wakes_the_silver_breakout_and_never_a_brent_one():
+def test_evaluate_never_wakes_a_breakout_now():
+    out = W.evaluate("short", 49.0, 47.9, SILVER_LV, "xyz:SILVER", 25, 20)
+    assert out["ok"] is False and out.get("source") != "breakout"
+
+
+def test_evaluate_wakes_the_silver_breakout_and_never_a_brent_one(monkeypatch):
+    from services.strategies import next_trade as NT
+    monkeypatch.setattr(NT, "BREAKOUT_COINS", frozenset({"xyz:SILVER"}))   # the switch, if it comes back
     hit = W.evaluate("short", 49.0, 47.9, SILVER_LV, "xyz:SILVER", 25, 20)
     assert hit["ok"] is True and hit["source"] == "breakout"
     same_on_brent = W.evaluate("short", 49.0, 47.9, SILVER_LV, "xyz:BRENTOIL", 20, 20)

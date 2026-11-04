@@ -156,11 +156,14 @@ def test_the_silver_stop_buffer_never_drops_under_0_8pct_of_the_mid():
 
 def test_the_floor_refuses_the_two_shorts_stopped_on_2026_11_02():
     """The 00:51Z short (mid 49.93, ATR buffer ~0.21 over the 24h high 49.892)
-    paid 2.31R live; with the 0.40 floor the same setup no longer clears 2R."""
+    paid 2.31R live; with the 0.40 floor the same setup no longer clears 2R.
+    (no_break=False: the mid sat over the 24h high, which the 11-04 rule
+    refuses on its own; this pins the floor alone.)"""
     old = next_trade("short", 49.93, 49.194, 49.892, thesis_entry=49.70, leverage=20,
-                     coin_max_leverage=25, stop_buffer=0.209)
+                     coin_max_leverage=25, stop_buffer=0.209, no_break=False)
     new = next_trade("short", 49.93, 49.194, 49.892, thesis_entry=49.70, leverage=20,
-                     coin_max_leverage=25, stop_buffer=stop_buffer_for("xyz:SILVER", 0.161, 49.93))
+                     coin_max_leverage=25, stop_buffer=stop_buffer_for("xyz:SILVER", 0.161, 49.93),
+                     no_break=False)
     assert old["ok"] and not new["ok"]
 
 

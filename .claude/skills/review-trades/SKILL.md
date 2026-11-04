@@ -24,14 +24,28 @@ just flukes or a predictions"). One script call; no agent, no LLM, no MCP.
    lever the report proposes, from the report's "What to try next"), and
    append the summary line to `/tmp/oil-loop/progress.log` as
    `REVIEW <utc> <rest of the line>`.
-4. **If it fails** (network, a parse error): print the last line of the
+4. **A new LEAK goes to the operator as a yes/no, the same day**
+   (operator, 2026-11-04: "aren't we grading and growing... too many tests
+   not enough results"). When `new_leaks` names a slice, send ONE
+   `PushNotification` and print the same question:
+
+       LEAK <slice>: <n> trades, <wins> win(s), <net $>. Turn on <lever>? yes/no
+
+   `<lever>` is that slice's line under "What to try next" (its `Try` and
+   what it does in plain words). Ask once per new leak. A yes is the go:
+   make the change in the desk rules with a gate test and a real-fills
+   eval (`services/strategies/evals/no_break_real_fills.py` is the pattern),
+   commit, and say what to restart. A no: note it in the next report run and
+   do not ask again for that slice. The review itself still changes nothing.
+5. **If it fails** (network, a parse error): print the last line of the
    error once and stop. Do not retry in a loop; the next scheduled run will.
 
 ## Rules
 
-- Proposals are backtested on the operator's OK, with the command the
-  report gives. Adopt only what beats live on most datasets as a plateau,
-  and then only on the operator's go.
+- LEANING proposals are backtested on the operator's OK, with the command
+  the report gives, and adopted only on the operator's go. A LEAK (10+
+  trades, labeled LEAK) skips the backtest: it goes straight to the
+  operator as the yes/no in step 4.
 - Never edit live config, `.claude/agents/desk-tick.md`, the desk-tick
   skill, or a live constant from this skill. Never call a pathiel MCP tool
   here. The review only reads.

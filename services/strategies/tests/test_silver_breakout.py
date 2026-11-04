@@ -32,8 +32,12 @@ def _flat_then(close, n=24, lo=48.0, hi=50.0, last_h=None, last_l=None):
 
 # ── switches ─────────────────────────────────────────────────────────────
 
-def test_breakout_and_leverage_fit_are_silver_only():
-    assert NT.breakout_for(SILVER) and not NT.breakout_for("xyz:BRENTOIL") and not NT.breakout_for("xyz:CL")
+def test_breakout_is_off_on_every_coin_since_2026_11_04():
+    """It sells after the 24h low broke: the review's LEAK (range=past own
+    edge, 1 win in 10). next_trade.NO_BREAK_ENTRY replaced it."""
+    assert NT.BREAKOUT_COINS == frozenset()
+    assert not NT.breakout_for(SILVER) and not NT.breakout_for("xyz:BRENTOIL") and not NT.breakout_for("xyz:CL")
+    assert NT.NO_BREAK_ENTRY is True
     assert NT.leverage_fit_for(SILVER) == (20.0, 15.0) == NT.leverage_fit_for("xyz:BRENTOIL")
     assert (NT.BREAKOUT_LOOKBACK_H, NT.BREAKOUT_STOP_H) == (24, 4)
 
@@ -240,8 +244,15 @@ def _summary(bars, mid, atr14=0.2):
             "breakout_24h": NT.breakout_levels(rows)}
 
 
-def test_levels_script_prints_the_place_bracket_args_with_the_structural_target():
+def test_levels_script_takes_no_breakout_now():
     ol = _oil_levels()
+    out = ol.next_order(SILVER, "short", _summary(_tight_breakdown(), 47.9), 49.0, 20.0, 25.0)
+    assert out["ok"] is False and out.get("source") != "breakout" and "place_bracket" not in out
+
+
+def test_levels_script_prints_the_place_bracket_args_with_the_structural_target(monkeypatch):
+    ol = _oil_levels()
+    monkeypatch.setattr(ol, "breakout_for", lambda coin: coin == SILVER)   # the switch, if it comes back
     out = ol.next_order(SILVER, "short", _summary(_tight_breakdown(), 47.9), 49.0, 20.0, 25.0)
     assert out["ok"] and out["source"] == "breakout"
     # place_bracket applies the 0.5% offset itself: it gets the measured level, not tp_px

@@ -311,7 +311,7 @@ what event it is blocking. (OIL_EVENT_TIMING_TEST_2026-11-03.md.)
 from __future__ import annotations
 
 from collections import Counter
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace as _dc_replace
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, Generator, List, Optional, Sequence, Tuple
 from zoneinfo import ZoneInfo
@@ -813,8 +813,18 @@ def _open_position(resting: _Resting, fill_px: float, t: int, params: Params) ->
 # defaults the existing evals and tests pin; compare a variant against
 # live_params(). docs/strategy/OIL_STRATEGY.md has both rule sets.
 def live_params() -> "Params":
+    # no_break_entry since 2026-11-04 (next_trade.NO_BREAK_ENTRY, the review's LEAK).
     return Params(stop_buffer=0.75, target_offset_frac=0.005, target_mode="limit", leverage=20.0,
-                  entry_mode="market", entry_lookback_h=24, min_r=2.0)
+                  entry_mode="market", entry_lookback_h=24, min_r=2.0, no_break_entry=True)
+
+
+def live_params_before_no_break() -> "Params":
+    """The live rule from the 2026-10-30 switch to market entries until
+    2026-11-04 evening: `live_params()` with breaks allowed (a long could buy
+    under the 24h low, its stop 0.75 under the mid). Tests and evals that
+    replay a real trade from that window (the 11-02 long, the 11-02 silver
+    shorts) use this, so they keep reproducing what actually traded."""
+    return _dc_replace(live_params(), no_break_entry=False)
 
 
 def offset_target(target_px: float, side: str, frac: float) -> float:

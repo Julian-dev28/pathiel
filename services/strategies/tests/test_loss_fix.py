@@ -20,7 +20,7 @@ import pytest
 
 from pathiel.models.types import Candle
 from services.strategies.backtest.desk_tick_sim import (
-    Direction, Params, _full_size_notional, _setup, call_start, entry_filter, filters_on, live_params,
+    Direction, Params, _full_size_notional, _setup, call_start, entry_filter, filters_on, live_params_before_no_break,
     risk_capped_notional, simulate)
 
 HOUR_MS = 3_600_000
@@ -32,7 +32,7 @@ def ms(*parts: int) -> int:
 
 
 def _base(**over) -> Params:
-    return dataclasses.replace(live_params(), starting_equity=64.0, **over)
+    return dataclasses.replace(live_params_before_no_break(), starting_equity=64.0, **over)
 
 
 # ── risk-capped size ───────────────────────────────────────────────────────

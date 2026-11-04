@@ -17,7 +17,7 @@ import pytest
 
 from pathiel.models.types import Candle
 from services.strategies.backtest.data import ThesisDirection
-from services.strategies.backtest.desk_tick_sim import Run, Trade, live_params
+from services.strategies.backtest.desk_tick_sim import Run, Trade, live_params, live_params_before_no_break
 from services.strategies.evals import loss_fix_test as F
 from services.strategies.tests.test_loss_fix import NOV2_1H, nov2_bars, nov2_direction
 
@@ -170,7 +170,8 @@ def test_lock_real_round_trip_and_fee_rate():
 
 def test_nov2_long_runs_every_variant():
     c15, c1h = nov2_bars()
-    base = dataclasses.replace(live_params(), starting_equity=64.0, size_slippage=True)
+    # The rule live on 11-02 (breaks allowed; no_break_entry since 11-04).
+    base = dataclasses.replace(live_params_before_no_break(), starting_equity=64.0, size_slippage=True)
     named = {"live": {}, "risk_10": {"risk_cap_frac": 0.10}, "no_break": {"no_break_entry": True}}
     out = F.nov2_long(c15, c1h, nov2_direction, base, named, ms(2026, 11, 2, 3, 45), ms(2026, 11, 2, 9, 0))
     assert out["live"]["reason"] == "stop" and out["live"]["pct_equity"] == pytest.approx(-16.5, abs=0.3)

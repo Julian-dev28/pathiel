@@ -85,8 +85,26 @@ LEVERAGE_FIT_COINS = frozenset({BRENT, SILVER})
 # leverage fit on this entry (the test never fitted it). This is the one
 # place a new entry may sell under a short thesis's entry ("chase OK on
 # silver"); Brent keeps never-chase.
-BREAKOUT_COINS = frozenset({SILVER})
+# OFF since 2026-11-04 evening (operator: "DO WHAT U THINK IS MORE
+# PROFITABLE"): the breakout sells AFTER the 24h low broke, which is the
+# review's one LEAK (range=past own edge, see NO_BREAK_ENTRY). Silver's two
+# breakout-day shorts stopped. The code stays for the backtest's parity
+# tests; an empty set means no live coin takes it.
+BREAKOUT_COINS: frozenset = frozenset()
 BREAKOUT_LOOKBACK_H = 24
+
+# No new entry once the mid is past the 24h range's own edge (a long under
+# the 24h low, a short over the 24h high). Operator, 2026-11-04: "go", then
+# "DO WHAT U THINK IS MORE PROFITABLE". The trade review's first LEAK:
+# range=past own edge, 10 real trades, 1 win, -$117.26, mean -0.97R,
+# p=0.002 (docs/strategy/learning/REVIEW_2026-11-04.md); every other trade
+# together made +$62. Market entries inside the range are unchanged. The
+# backtest (LOSS_AUDIT_2026-11-02.md, "No buy under the 24h low") scored it
+# Brent 1/8 geo 0.66, silver 3/8 geo 1.26, and a resting limit at the edge
+# worse on both (2/8 0.52, 2/8 0.40); the real fills since the 10-30 switch
+# to market entries disagree with the Brent replay, so the live rule
+# follows the fills. desk_tick_sim.live_params() sets no_break_entry to match.
+NO_BREAK_ENTRY = True
 BREAKOUT_STOP_H = 4
 
 
@@ -181,7 +199,8 @@ def next_trade(side: str, mid: float, low_24h: float, high_24h: float, *,
                stop_buffer: float, min_r: float = DEFAULT_MIN_R,
                offset_frac: float = TARGET_OFFSET_FRAC,
                leverage_fit: Sequence[float] = (),
-               breakout: Optional[Dict[str, float]] = None) -> Dict[str, Any]:
+               breakout: Optional[Dict[str, float]] = None,
+               no_break: bool = NO_BREAK_ENTRY) -> Dict[str, Any]:
     """The tick's next trade for a `side` thesis. `ok` is True when the tick
     would send the market order at `mid` right now. Every other answer says
     why not (`blockers`) and where it would trade (`trigger_px`).
@@ -189,10 +208,11 @@ def next_trade(side: str, mid: float, low_24h: float, high_24h: float, *,
     (`breakout_for`), None elsewhere. When the main rule refuses for chase or
     R (the backtest's PB_TRIGGERS, in its gate order: chase, then the
     leverage line, then R), the breakout is tried; `source: "breakout"`
-    when it trades."""
+    when it trades. `no_break` (NO_BREAK_ENTRY, live): no entry while the
+    mid is past the 24h range's own edge."""
     out = _main_rule(side, mid, low_24h, high_24h, thesis_entry=thesis_entry, leverage=leverage,
                      coin_max_leverage=coin_max_leverage, stop_buffer=stop_buffer, min_r=min_r,
-                     offset_frac=offset_frac, leverage_fit=leverage_fit)
+                     offset_frac=offset_frac, leverage_fit=leverage_fit, no_break=no_break)
     pb_trigger = out.pop("_pb_trigger", False)
     trigger_lev = out.pop("_trigger_lev", None) or leverage
     if breakout is None or out.get("ok") or not pb_trigger:
@@ -226,7 +246,7 @@ def next_trade(side: str, mid: float, low_24h: float, high_24h: float, *,
 def _main_rule(side: str, mid: float, low_24h: float, high_24h: float, *,
                thesis_entry: Optional[float], leverage: float, coin_max_leverage: Optional[float],
                stop_buffer: float, min_r: float, offset_frac: float,
-               leverage_fit: Sequence[float]) -> Dict[str, Any]:
+               leverage_fit: Sequence[float], no_break: bool = NO_BREAK_ENTRY) -> Dict[str, Any]:
     """The 24h-range rule (the docstring of `next_trade`). Adds `_pb_trigger`
     (would the backtest try its breakout after this refusal) and
     `_trigger_lev` (the leverage that refusal was judged at) for next_trade."""
@@ -272,6 +292,11 @@ def _main_rule(side: str, mid: float, low_24h: float, high_24h: float, *,
         blockers.append(f"stop too wide for {floor_x:g}x (max {now_lev.get('max_leverage_ok')}x)")
     if chase:
         blockers.append(f"mid {'above' if long else 'below'} the thesis entry {thesis_entry:g}: never chase")
+    edge = low_24h if long else high_24h
+    broke = no_break and ((mid < edge) if long else (mid > edge))
+    if broke:
+        blockers.append(f"mid {mid:g} {'under the 24h low' if long else 'over the 24h high'} "
+                        f"{edge:g}: no entry after a break")
     ok = not blockers
 
     # The leverage box prices the order the tick would send: at the mid when it
@@ -281,6 +306,10 @@ def _main_rule(side: str, mid: float, low_24h: float, high_24h: float, *,
     verdict = ("buys now" if long else "sells now") if ok else (
         f"waits: {'buy' if long else 'sell'} at {trigger:.2f} or {'lower' if long else 'higher'}"
         + ("" if trig_lev.get("ok") else f", but no {floor_x:g}x there (max {trig_lev.get('max_leverage_ok')}x)"))
+    if broke:
+        verdict = (f"waits: price broke the 24h {'low' if long else 'high'} {edge:g}; no entry until it "
+                   f"trades back {'above' if long else 'below'} it, then {'buy' if long else 'sell'} "
+                   f"at {trigger:.2f} or {'lower' if long else 'higher'}")
     return {
         "ok": ok, "source": "desk_rules", "side": side, "leverage": at_x, "min_r": min_r,
         "mid": mid, "range_24h": {"low": low_24h, "high": high_24h}, "stop_buffer": stop_buffer,
@@ -318,4 +347,5 @@ def live_rule_line(nt: Dict[str, Any]) -> str:
 
 __all__ = ["next_trade", "stop_buffer_for", "live_rule_line", "fit_leverage", "leverage_fit_for",
            "breakout_for", "breakout_levels", "breakout_trade",
-           "BRENT_STOP_BUFFER", "LEVERAGE_FIT", "BREAKOUT_COINS", "BREAKOUT_LOOKBACK_H", "BREAKOUT_STOP_H"]
+           "BRENT_STOP_BUFFER", "LEVERAGE_FIT", "BREAKOUT_COINS", "BREAKOUT_LOOKBACK_H", "BREAKOUT_STOP_H",
+           "NO_BREAK_ENTRY"]

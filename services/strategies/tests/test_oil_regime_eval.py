@@ -16,7 +16,8 @@ import math
 import pytest
 
 from pathiel.models.types import Candle
-from services.strategies.backtest.desk_tick_sim import Direction, Params, Run, Trade, live_params, simulate
+from services.strategies.backtest.desk_tick_sim import (Direction, Params, Run, Trade, live_params,
+                                                        live_params_before_no_break, simulate)
 from services.strategies.backtest.regime import (
     CHOP, DAY_MS, HOUR_MS, TREND_DOWN, TREND_UP, RegimeConfig, RegimeFeatures, RegimeSeries, label_series)
 from services.strategies.evals import oil_regime_test as O
@@ -222,7 +223,9 @@ def test_nov2_hourly_with_trend_refuses_the_long_the_day_label_does_not():
     s = label_series(c1h)
     assert s.label_at(ms(2026, 11, 2)) != TREND_DOWN                  # what the desk knew at 00:00
     assert s.label_at(ms(2026, 11, 2, 3, 45)) == TREND_DOWN           # the 03:00 close: a straight-line fall
-    base = dataclasses.replace(live_params(), starting_equity=225.0, size_slippage=True, risk_cap_frac=0.15)
+    # The rule live on 11-02 (breaks allowed; no_break_entry since 11-04).
+    base = dataclasses.replace(live_params_before_no_break(), starting_equity=225.0, size_slippage=True,
+                               risk_cap_frac=0.15)
     live = simulate(c15, c1h, nov2_direction, base)
     assert live.trades[0].entry_time == ms(2026, 11, 2, 3, 45) and live.trades[0].exit_reason == "stop"
     by_day = simulate(c15, c1h, nov2_direction, dataclasses.replace(base, regime_filter="with_trend"))

@@ -15,11 +15,11 @@ never blocks the silver tick or the other way round. Leverage up to the risk pro
 stop must use under half the distance to liquidation). Brent and silver
 fit their leverage since 2026-11-04: a stop too far for 20x trades at 15x,
 never lower (`next_trade.LEVERAGE_FIT`); `place_bracket` does it by itself,
-so never pass `leverage` on a new entry. Never chase, with ONE exception:
-the silver breakout entry (operator, 2026-11-04: "turn on silver breakout,
-chase OK on silver"), and only when `oil_levels.py --next` answers
-`source: "breakout"`. Brent never chases. Never add at market above the
-thesis entry (a top-up never takes the breakout). Every number comes from a
+so never pass `leverage` on a new entry. Never chase, on every desk: the
+silver breakout exception ended 2026-11-04 evening. No entry after a break
+either: none while the mid is past the 24h range's own edge (a long under
+the 24h low, a short over the 24h high). Never add at market above the
+thesis entry. Every number comes from a
 tool or a script, never from mental arithmetic. Work from the repo root: the working
 directory you are given is the pathiel checkout.
 
@@ -132,16 +132,13 @@ ToolSearch call: `select:mcp__pathiel__desk_brief,mcp__pathiel__bracket_sweep,mc
          so never shave the target yourself.
        - **Never chase:** no entry when the mid is above the thesis entry
          for a long (below it for a short).
-       - **Silver breakout** (silver only, since 2026-11-04,
-         docs/strategy/SILVER_STRATEGY_TEST_2026-11-04.md): when the rule
-         above refuses for never-chase or for R, a short thesis sells at
-         the mid once the last CLOSED 1h candle closed under the low of the
-         24 candles before it (a long: over their high). Stop: silver's
-         buffer beyond the last 4 closed candles' high (a long: low).
-         Target: the broken low minus the height of that 24h range (a
-         measured move). Needs 2R and the 20x line at 20x. The script
-         marks it `source: "breakout"`; that is the only entry that may
-         sell under a short thesis's entry (buy over a long's).
+       - **No entry after a break** (operator, 2026-11-04: "go"; the trade
+         review's LEAK range=past own edge, 1 win in 10, -$117): none
+         while the mid is under the 24h low for a long (over the 24h high
+         for a short). The script says "no entry after a break"; log it as
+         the reason. When price trades back inside the range the rule
+         above applies again. The silver breakout entry that sold such
+         breaks is off (`next_trade.BREAKOUT_COINS` is empty).
      Judge it first: `place_bracket {coin, stop_px, tp_px, dry_run: true}`
      (no `entry_px` = market at the live mid). Only when the dry run says
      ok (2R or more on the offset target, the 20x line passes at the
