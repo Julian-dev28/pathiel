@@ -42,7 +42,7 @@ def test_a_day_old_thesis_is_due():
     assert out["due"] and out["reasons"] == ["daily: thesis is 24.1h old"]
 
 
-def test_api_eia_and_opec_trigger_after_they_print_but_fomc_does_not():
+def test_api_eia_opec_and_fomc_trigger_after_they_print():
     # 15 minutes after the API print: due for it; EIA has not printed yet
     out = M.refresh_due(_thesis(), datetime(2026, 10, 27, 20, 46, tzinfo=timezone.utc), mid=110.5)
     assert any("API weekly" in r for r in out["reasons"]) and not any("EIA" in r for r in out["reasons"])
@@ -50,10 +50,15 @@ def test_api_eia_and_opec_trigger_after_they_print_but_fomc_does_not():
     early = M.refresh_due(_thesis(created_at=datetime(2026, 10, 27, 10, tzinfo=timezone.utc).isoformat()),
                           datetime(2026, 10, 27, 20, 40, tzinfo=timezone.utc), mid=110.5)
     assert not any("API" in r for r in early["reasons"])
-    # after FOMC only (a thesis written after EIA): FOMC is not a rewrite trigger
+    # after FOMC only (a thesis written after EIA): since 2026-11-05 FOMC is a
+    # rewrite trigger too (the midterm result moved Brent 9% and the desk reacted late)
     late = M.refresh_due(_thesis(created_at=datetime(2026, 10, 28, 15, tzinfo=timezone.utc).isoformat()),
                          datetime(2026, 10, 28, 18, 30, tzinfo=timezone.utc), mid=110.5)
-    assert late["due"] is False
+    assert late["due"] is True and late["reasons"] == ["catalyst passed: FOMC decision at 2026-10-28 18:00Z"]
+    # a lower-impact release the thesis lists (PPI) is still not one
+    ppi = _thesis(created_at=datetime(2026, 10, 28, 15, tzinfo=timezone.utc).isoformat(),
+                  catalysts=[{"kind": "ppi", "title": "US PPI", "at": "2026-10-28T18:00:00Z"}])
+    assert M.refresh_due(ppi, datetime(2026, 10, 28, 18, 30, tzinfo=timezone.utc), mid=110.5)["due"] is False
 
 
 def test_a_catalyst_before_the_thesis_was_written_does_not_count():

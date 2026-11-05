@@ -15,6 +15,14 @@ when a closed 1h candle breaks the thesis's own stop (operator: "go").
 A rewrite costs about a dollar of local model time, so no reason fires
 inside an hour of the last thesis.
 
+Since 2026-11-05 (operator: "FIX THEM") a surprise headline is a reason too:
+an alert the price watcher recorded (services/intel/headline_watch.py: a
+matching headline, an odds jump, a price shock) on this desk's coins after
+the thesis was written makes it due as "headline: <label>: <title>", and it
+waits only HEADLINE_MIN_GAP_MIN (30) after the last thesis, not the hour.
+The after-catalyst reasons also cover FOMC, CPI, NFP and elections now
+(11-04: the midterm result dropped Brent 9% and the desk reacted late).
+
 Read-only: the journal on disk, the public info API for the mid and the
 account's fills; no key.
 """
@@ -34,20 +42,28 @@ sys.path.insert(0, _SCRIPTS)
 DAILY_HOURS = 24.0
 MIN_GAP_MINUTES = 60.0           # at most one rewrite an hour
 MOVE_FRAC = 0.015                # 1.5% from where price stood when the thesis was written
-CATALYST_KINDS = ("api_weekly", "eia_weekly", "opec_meeting")
+# the scheduled releases the thesis lists (services/intel/sources/catalysts.py
+# kinds plus services/intel/data/scheduled_events.json kinds) that earn a
+# rewrite once they have printed
+CATALYST_KINDS = ("api_weekly", "eia_weekly", "opec_meeting", "fomc", "cpi", "nfp", "election")
 CATALYST_SETTLE_MINUTES = 15.0   # let the number print and the market react first
+HEADLINE_MIN_GAP_MINUTES = 30.0  # a headline alert overrides the hour, but not this
 
 
 def refresh_due(thesis: Dict[str, Any], now: datetime, mid: Optional[float],
                 closes_since: Iterable[Dict[str, Any]] = (),
                 px_at_writing: Optional[float] = None,
-                hour_closes: Iterable[Dict[str, Any]] = ()) -> Dict[str, Any]:
+                hour_closes: Iterable[Dict[str, Any]] = (),
+                headline_alerts: Iterable[Dict[str, Any]] = ()) -> Dict[str, Any]:
     """Pure. `thesis` = the journal's thesis as a dict (created_at, expires_at,
     call, catalysts); `closes_since` = closing fills on this desk's coins after
     the thesis was written; `px_at_writing` = the price when it was written;
     `hour_closes` = 1h candles ({"t": open ms, "c": close}) that opened after
     the thesis was written. A CLOSED one beyond the call's stop_px (below for
     a long, above for a short) invalidates the thesis and makes it due.
+    `headline_alerts` = headline_watch alerts ({"at_ms", "label", "title"})
+    on this desk's coins; one newer than the thesis makes it due past the
+    hourly gap (HEADLINE_MIN_GAP_MINUTES still holds).
 
     The 1.5% move is measured from `px_at_writing`, not from the call's entry:
     a WAIT thesis puts its entry away from price on purpose (2026-10-28: a
@@ -56,10 +72,19 @@ def refresh_due(thesis: Dict[str, Any], now: datetime, mid: Optional[float],
     created = _ts(thesis["created_at"])
     age_h = (now - created).total_seconds() / 3600.0
     out: Dict[str, Any] = {"thesis_id": thesis.get("id"), "age_h": round(age_h, 2), "reasons": []}
+    headline = headline_reason(created, headline_alerts, now)
+    if age_h * 60.0 < HEADLINE_MIN_GAP_MINUTES:
+        out.update(due=False, held_back=f"last thesis is {age_h * 60:.0f} min old; "
+                   f"even a headline waits {HEADLINE_MIN_GAP_MINUTES:.0f} min")
+        return out
     if age_h * 60.0 < MIN_GAP_MINUTES:
+        if headline:
+            out.update(due=True, reasons=[headline],
+                       held_back=f"last thesis is {age_h * 60:.0f} min old; a headline alert overrides the hour")
+            return out
         out.update(due=False, held_back=f"last thesis is {age_h * 60:.0f} min old; at most one rewrite an hour")
         return out
-    reasons: List[str] = []
+    reasons: List[str] = [headline] if headline else []
     expires = thesis.get("expires_at")
     if expires and now >= _ts(expires):
         reasons.append("expired")
@@ -85,6 +110,18 @@ def refresh_due(thesis: Dict[str, Any], now: datetime, mid: Optional[float],
             reasons.append(f"price moved {move:.1%} since the thesis was written ({ref:g} -> {mid:g})")
     out.update(due=bool(reasons), reasons=reasons)
     return out
+
+
+def headline_reason(created: datetime, alerts: Iterable[Dict[str, Any]], now: datetime) -> Optional[str]:
+    """Pure. The newest headline alert recorded after `created` (and not in
+    the future) as "headline: <label>: <title>"; None when there is none."""
+    created_ms = int(created.timestamp() * 1000)
+    now_ms = int(now.timestamp() * 1000)
+    hits = [a for a in alerts if created_ms < int(a.get("at_ms") or 0) <= now_ms]
+    if not hits:
+        return None
+    a = max(hits, key=lambda a: int(a["at_ms"]))
+    return f"headline: {a.get('label') or a.get('kind') or 'alert'}: {str(a.get('title') or '')[:120]}"
 
 
 def invalidating_close(thesis: Dict[str, Any], hour_closes: Iterable[Dict[str, Any]],
@@ -187,9 +224,15 @@ def main(argv: Optional[List[str]] = None) -> int:
         bars = _hour_closes(coin, _ts(thesis["created_at"]))
     except Exception as e:  # noqa: BLE001 - a missing candle read only drops the invalidation reason
         print(f"[thesis_due] 1h candles unavailable: {e}", file=sys.stderr)
+    alerts: List[Dict[str, Any]] = []
+    try:
+        from services.intel import headline_watch
+        alerts = headline_watch.alerts_for(coins, headline_watch.read_alerts())
+    except Exception as e:  # noqa: BLE001 - a missing alert file only drops the headline reason
+        print(f"[thesis_due] headline alerts unavailable: {e}", file=sys.stderr)
     out = refresh_due(thesis, datetime.now(timezone.utc), mid, closes, px_at_writing=px0,
-                      hour_closes=bars)
-    out.update(desk=a.desk, coin=coin, mid=mid, px_at_writing=px0)
+                      hour_closes=bars, headline_alerts=alerts)
+    out.update(desk=a.desk, coin=coin, mid=mid, px_at_writing=px0, headline_alerts=len(alerts))
     print(json.dumps(out, default=str))
     return 0
 

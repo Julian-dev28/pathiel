@@ -20,7 +20,14 @@ its stop/target orders handle it), and a desk that fired in the last
 --cooldown-min minutes (a tick that declined must not be re-woken every
 minute). State and a per-minute log live under /tmp/trigger-watch/.
 Read-only on the venue and the journal: it never places, cancels or writes
-anything but its own log and cooldown file.
+anything but its own log, cooldown file and headline state.
+
+Since 2026-11-05 (operator: "FIX THEM") every pass starts with the headline
+step (services/intel/headline_watch.py): new matching news, a Polymarket
+odds jump or a 1% / 1.2% mid move inside 15 minutes is recorded as an alert
+and wakes the desk at once, position or not, as
+{"fire": desk, "also": [...], "reason": "headline", ...}. The first run
+ever (no headline state file) only learns the current headlines.
 """
 from __future__ import annotations
 
@@ -30,7 +37,7 @@ import os
 import sys
 import time
 from datetime import datetime, timezone
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 _SCRIPTS = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(_SCRIPTS))
@@ -60,6 +67,88 @@ def evaluate(side: Optional[str], thesis_entry: Optional[float], mid: Optional[f
                      coin_max_leverage=coin_max_leverage, stop_buffer=buf,
                      leverage_fit=leverage_fit_for(coin),
                      breakout=levels.get("breakout_24h") if breakout_for(coin) else None)
+    return out
+
+
+def fetch_headlines(group: str) -> List[Dict[str, Any]]:
+    """Targeted Google News RSS for `group` plus oilprice.com for oil. A feed
+    that fails is skipped; the next poll tries again."""
+    from urllib.parse import quote
+    from services.intel import headline_watch as HW
+    from services.intel import http_client
+    from services.intel.sources.news import GOOGLE_NEWS_URL, OILPRICE_URL, parse_rss_items
+    items: List[Dict[str, Any]] = []
+    for q in HW.NEWS_QUERIES.get(group, []):
+        text, err = http_client.fetch_text(f"{GOOGLE_NEWS_URL}?q={quote(q)}&hl=en-US&gl=US&ceid=US:en", timeout_s=8.0)
+        if not err and text:
+            try:
+                items += parse_rss_items(text, split_source_from_title=True)
+            except Exception:  # noqa: BLE001 - a broken feed is skipped
+                pass
+    if group == "oil":
+        text, err = http_client.fetch_text(OILPRICE_URL, timeout_s=8.0)
+        if not err and text:
+            try:
+                items += parse_rss_items(text, default_source="oilprice.com")
+            except Exception:  # noqa: BLE001
+                pass
+    return items
+
+
+def fetch_odds(desk: str) -> List[Dict[str, Any]]:
+    """Polymarket markets for the desk (the intel source the thesis reads)."""
+    from services.intel.sources.predictions import fetch_polymarket
+    from services.strategies.desks import get_spec
+    rows, _err = fetch_polymarket(get_spec(desk))
+    return [{"id": r.id, "question": r.question, "probability": r.probability, "url": r.url} for r in rows]
+
+
+def headline_pass(targets: List[Tuple[str, str, str]], now_s: float, state: Dict[str, Any],
+                  history: Dict[str, List[Tuple[int, float]]], mids: Dict[str, float], *,
+                  fetch_news: Optional[Callable[[str], List[Dict[str, Any]]]] = None,
+                  fetch_odds_fn: Optional[Callable[[str], List[Dict[str, Any]]]] = None,
+                  prime: bool = False) -> List[Tuple[str, Dict[str, Any]]]:
+    """One pass of the headline check (services/intel/headline_watch.py).
+    targets: (desk, coin, group). Returns (desk, alert) pairs. Mutates
+    `state` (seen keys, odds, last poll, last shock per coin) and `history`
+    ((ms, mid) per coin, trimmed to the shock window). `prime`: the first
+    run ever only learns what is already out there. The fetchers default to
+    this module's at call time, so a test can replace them."""
+    from services.intel import headline_watch as HW
+    fetch_news = fetch_news or fetch_headlines
+    fetch_odds_fn = fetch_odds_fn or fetch_odds
+    now_ms = int(now_s * 1000)
+    out: List[Tuple[str, Dict[str, Any]]] = []
+    last_shock = state.setdefault("last_shock_ms", {})
+    for desk, coin, group in targets:
+        mid = mids.get(coin)
+        if mid:
+            h = history.setdefault(coin, [])
+            shock = HW.price_shock(coin, h, now_ms, mid)
+            h.append((now_ms, mid))
+            del h[:-(HW.PRICE_WINDOW_MIN + 2)]
+            # one alert per shock, not one a minute while the move stays in the window
+            armed = now_ms - int(last_shock.get(coin) or 0) >= HW.PRICE_REARM_MIN * HW.MIN_MS
+            if shock and armed:
+                last_shock[coin] = now_ms
+                shock.setdefault("group", group)
+                out.append((desk, shock))
+    if now_s - float(state.get("last_news_s") or 0) >= HW.NEWS_POLL_S:
+        state["last_news_s"] = now_s
+        seen = set(state.get("seen") or [])
+        prev_odds = state.setdefault("odds", {})
+        for desk, _coin, group in targets:
+            try:
+                news = HW.news_alerts(group, fetch_news(group), seen, now_ms)
+            except Exception:  # noqa: BLE001 - news is best effort; price shocks still work
+                news = []
+            try:
+                odds = HW.odds_alerts(group, fetch_odds_fn(desk), prev_odds, now_ms)
+            except Exception:  # noqa: BLE001
+                odds = []
+            if not prime:
+                out += [(desk, a) for a in news + odds]
+        state["seen"] = list(seen)
     return out
 
 
@@ -110,6 +199,14 @@ def watch(*, once: bool, cooldown_min: float, sleep: Callable[[float], None] = t
     lv_cache: Dict[str, Any] = {}
     slot_cache: Dict[str, Any] = {}
     coin_max: Dict[str, Optional[float]] = {}
+    from services.intel import headline_watch as HW
+    from services.intel.scheduled_events import COIN_GROUPS
+    hl_state = HW.load_state()
+    prime = hl_state is None          # first run ever: learn the feed, alert on nothing
+    hl_state = hl_state or {}
+    # the mid history survives a restart (the watcher exits on every fire)
+    price_hist: Dict[str, List[Tuple[int, float]]] = {
+        c: [(int(t), float(m)) for t, m in v] for c, v in (hl_state.get("hist") or {}).items()}
 
     while True:
         now = clock()
@@ -119,6 +216,44 @@ def watch(*, once: bool, cooldown_min: float, sleep: Callable[[float], None] = t
         lev = float((cfg.get("risk_profile") or {}).get("max_leverage") or 20)
         fired = _read_json(fired_path)
         parts = []
+        # Surprise headlines first (operator 2026-11-05 "FIX THEM"): a hit wakes
+        # the desk's tick even in a position or a blackout and records the alert
+        # (thesis_due rewrites; event_blackout holds new entries 30 min).
+        targets = []
+        for desk in desks:
+            spec = get_spec(desk)
+            primary = next((i.coin for i in spec.instruments if i.role == "primary"), spec.instruments[0].coin)
+            group = next((g for g, cs in COIN_GROUPS.items() if primary in cs), None)
+            if group:
+                targets.append((desk, primary, group))
+        mids: Dict[str, float] = {}
+        for _d, c, _g in targets:
+            try:
+                mids[c] = float(levels.fetch_mid(c))
+            except Exception:  # noqa: BLE001 - no mid this minute
+                pass
+        hits = headline_pass(targets, now, hl_state, price_hist, mids, prime=prime)
+        hl_state["hist"] = price_hist
+        HW.save_state(hl_state)
+        parts.append("headlines: primed (first run, nothing alerts)" if prime
+                     else f"headlines: {len(hits)} hit(s)" if hits else "headlines: quiet")
+        prime = False
+        if hits:
+            kept = HW.record([a for _d, a in hits])
+            wake = [d for d, a in hits if a in kept and cooled_down(fired, f"{d}:headline", now, cooldown_min * 60)]
+            wake = list(dict.fromkeys(wake))
+            if wake:
+                for d in wake:
+                    fired[f"{d}:headline"] = now
+                _write_json(fired_path, fired)
+                first = next(a for d, a in hits if d == wake[0])
+                line = {"fire": wake[0], "also": wake[1:], "reason": "headline", "utc": _utc(),
+                        "coin": first.get("coin") or next(c for d, c, _g in targets if d == wake[0]),
+                        "label": first.get("label"), "headline": first.get("title")}
+                _log(f"{_utc()} FIRE {json.dumps(line)}")
+                print(json.dumps(line), flush=True)
+                return 0
+            parts[-1] += " (capped or cooling down)"
         for desk in desks:
             t = journal.latest_thesis(desk)
             spec = get_spec(desk)
@@ -148,7 +283,7 @@ def watch(*, once: bool, cooldown_min: float, sleep: Callable[[float], None] = t
                     lv_cache[coin] = lv = (now, levels.summarize_coin(coin))
                 if coin not in coin_max:
                     coin_max[coin] = float(get_max_leverage(coin))
-                mid = levels.fetch_mid(coin)
+                mid = mids[coin] if coin in mids else levels.fetch_mid(coin)   # read once a minute
             except Exception as e:  # noqa: BLE001 - one bad read waits for the next minute
                 parts.append(f"{desk}: read failed ({str(e)[:80]})")
                 continue

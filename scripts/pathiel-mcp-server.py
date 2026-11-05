@@ -3102,6 +3102,10 @@ def _live_rule(desk_id: str, brief: Any) -> Dict[str, Any]:
             nxt = next_eia_blackout(coin)
             if nxt:
                 line += f" Next EIA blackout {nxt['start_utc']} to {nxt['until_utc']}."
+        # Operator 2026-11-05 "FIX THEM": a surprise headline the watcher caught
+        # in the last 2h stays on the brief after its 30-min blackout ended, so
+        # the tick runs the rewrite check and judges a position on the NEW thesis.
+        line += _headline_alert_line(coin)
         # Operator 2026-11-05: the midterms were missing from the calendar.
         from services.intel.scheduled_events import calendar_warning, short_line
         evs = upcoming_events(coin, 72.0)
@@ -3112,6 +3116,29 @@ def _live_rule(desk_id: str, brief: Any) -> Dict[str, Any]:
         return {"next": nt, "line": line}
     except Exception as e:  # noqa: BLE001 - the brief still answers without it
         return {"next": None, "line": f"Live rule: unavailable ({type(e).__name__}: {str(e)[:80]})."}
+
+
+HEADLINE_ALERT_SHOW_S = 2 * 3600.0
+
+
+def _headline_alert_line(coin: str, now_s: Optional[float] = None) -> str:
+    """' Last headline alert <utc>: <label>: <title>.' when the newest
+    headline_watch alert on `coin` is under HEADLINE_ALERT_SHOW_S old, else
+    ''. Never raises: the brief answers without it."""
+    try:
+        from datetime import datetime, timezone
+        from services.intel import headline_watch
+        a = headline_watch.latest_for(coin)
+        if not a:
+            return ""
+        now_s = time.time() if now_s is None else now_s
+        at_ms = int(a["at_ms"])
+        if now_s * 1000 - at_ms > HEADLINE_ALERT_SHOW_S * 1000:
+            return ""
+        when = datetime.fromtimestamp(at_ms / 1000, tz=timezone.utc).strftime("%Y-%m-%d %H:%MZ")
+        return f" Last headline alert {when}: {a.get('label')}: {str(a.get('title') or '')[:120]}."
+    except Exception:  # noqa: BLE001
+        return ""
 
 
 DESK_BRIEF_MAX_AGE_S = 120.0

@@ -32,6 +32,12 @@ window"). Start it from the repo root:
 
 - It printed `{"fire": "<desk>", ...}`: run `/desk-tick <desk>` (the
   desk-tick skill), then start the watcher again exactly as in step 2.
+- The fire line says `"reason": "headline"` (a surprise headline, an odds
+  jump or a price shock; operator, 2026-11-05: "FIX THEM"): run
+  `/desk-tick` for the `"fire"` desk AND for each desk listed in `"also"`,
+  one agent per desk (the overlap rule below still applies to each), then
+  start the watcher again. The tick runs the rewrite check first; the
+  `"headline"` field is what it will read about.
 - It exited without a fire line (error, crash): print the last lines of
   `/tmp/trigger-watch/stderr.log` in one line, then start it again. If it
   crashes 3 times within 10 minutes, stop restarting and say so.

@@ -61,7 +61,13 @@ ToolSearch call: `select:mcp__pathiel__desk_brief,mcp__pathiel__bracket_sweep,mc
    when the mid has moved 1.5% or more since the thesis was written, and when a closed 1h
    candle broke the thesis's own stop (2026-11-02); never inside an hour
    of the last thesis (operator, 2026-10-28; about one dollar a rewrite on
-   Fable 5.1). After a rewrite, read the brief again.
+   Fable 5.1). Since 2026-11-05 (operator: "FIX THEM") also after a
+   surprise headline: the price watcher records a matching headline, an
+   odds jump or a 1% move inside 15 minutes as an alert
+   (services/intel/headline_watch.py), the brief then shows "Last headline
+   alert <utc>: ...", and the check answers `"headline: ..."` past the
+   hourly gap (it still waits 30 minutes after the last thesis). After a
+   rewrite, read the brief again.
 2. **Housekeeping.** `bracket_sweep {coin: COIN}`. Cancels the sibling left
    after a stop or target fired; reports a resting entry with its attached
    stop and target; says whether an open position is covered. "NOT FULLY
@@ -82,6 +88,12 @@ ToolSearch call: `select:mcp__pathiel__desk_brief,mcp__pathiel__bracket_sweep,mc
    - **In a position on COIN:** HOLD. `close_position` only if the thesis
      invalidation triggered on a CLOSED hourly candle, or a headline from
      the brief's `what_changes_my_mind` landed. After any close, sweep again.
+     **When the brief shows a headline alert and you hold a position:** run
+     the rewrite check first (it will be due), then judge the position with
+     the NEW thesis. Close only under these same rules: invalidation on a
+     closed 1h candle, a `what_changes_my_mind` headline landing, or the new
+     thesis calling the opposite side. A headline alone is not a close.
+     Say the headline in your operator sentence.
      **A newer thesis that is flat or WAIT does not close the position**
      (2026-10-28: a rewrite went flat at 112.24 because no NEW long paid
      1.5R there): the position keeps its own resting stop and target, and
@@ -171,6 +183,12 @@ ToolSearch call: `select:mcp__pathiel__desk_brief,mcp__pathiel__bracket_sweep,mc
   midterms: 24h before the polls closed to 18h after). `place_bracket`
   refuses with "Event blackout: ..."; log `action=NONE event blackout until
   <utc>` and stop.
+- Headline blackout (every desk, since 2026-11-05; operator: "FIX THEM"):
+  no new entry or top-up for 30 minutes after a surprise-headline alert on
+  the desk's coins, so nothing opens on a thesis that has not read it yet.
+  `place_bracket` refuses with "Headline blackout: ...". That refusal is
+  not an error: log `action=NONE headline blackout until <utc>` and stop.
+  Open positions, stops, targets and closes are unaffected.
 - **Events next 72h** (the brief's line under the live rule): read it every
   tick. When you hold a position and an impact-3 event or a `[blackout]`
   row lands before your next tick, say so in your operator sentence (event,

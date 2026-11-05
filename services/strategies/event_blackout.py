@@ -15,6 +15,7 @@ window matches the backtest's `eia_2_2` variant exactly
 
 Enforced in place_bracket (scripts/pathiel-mcp-server.py), shown in the
 desk brief's live-rule line, and honored by scripts/trigger_watch.py.
+event_blackout() stacks the scheduled-event and headline blackouts behind it.
 """
 from __future__ import annotations
 
@@ -73,15 +74,22 @@ def next_eia_blackout(coin: str, at_ms: Optional[int] = None) -> Optional[Dict[s
 def event_blackout(coin: str, at_ms: Optional[int] = None) -> Optional[Dict[str, Any]]:
     """The active blackout for `coin`: the EIA window first, else an impact-3
     scheduled event (FOMC, CPI, OPEC+, an election; services/intel/
-    scheduled_events.py), else None. What place_bracket, the brief and the
-    price watcher check (operator, 2026-11-05: "AUDIT THE EVENT CALENDAR AND
-    TAKE THEM INTO ACCOUNT"). Never touches an open position."""
+    scheduled_events.py), else a headline blackout (30 min after the newest
+    surprise-headline alert on the coin; services/intel/headline_watch.py,
+    operator 2026-11-05: "FIX THEM"), else None. What place_bracket, the
+    brief and the price watcher check (operator, 2026-11-05: "AUDIT THE
+    EVENT CALENDAR AND TAKE THEM INTO ACCOUNT"). Never touches an open
+    position, its stop, its target or a close."""
     t = now_ms() if at_ms is None else int(at_ms)
     eia = eia_blackout(coin, t)
     if eia:
         return eia
     from services.intel import scheduled_events
-    return scheduled_events.blackout(coin, t)
+    sched = scheduled_events.blackout(coin, t)
+    if sched:
+        return sched
+    from services.intel import headline_watch
+    return headline_watch.headline_blackout(coin, t)
 
 
 def upcoming_events(coin: str, hours: float = 72.0, at_ms: Optional[int] = None) -> list:

@@ -69,6 +69,26 @@ named in `IntelPacket.sources_failed` as `<source>:<fn>:<KEY>_missing`;
 too, so it is visible wherever a human reads the brief, not just in the
 packet's own JSON.
 
+### Surprise headlines (`headline_watch.py`, since 2026-11-05)
+
+Operator: "FIX THEM". A US-Iran deal, a strike or a Trump post has no date,
+and the thesis only saw it at the next rewrite. `scripts/trigger_watch.py`
+runs the pure functions here every minute, no LLM: `news_alerts` (targeted
+Google News RSS and oilprice.com, `PATTERNS` per group, trusted sources
+only, price wraps skipped, dedup by title), `odds_alerts` (a Polymarket
+move of 0.08 or more) and `price_shock` (the mid 1% off any mid of the last
+15 minutes on Brent, 1.2% on silver). An alert is recorded in
+`/tmp/trigger-watch/headline_alerts.json` (6 a day per group) and then:
+the watcher wakes the desk's tick at once (`"reason": "headline"`),
+`scripts/thesis_due.py` makes the thesis due past the hourly gap (30
+minutes still hold), and `services/strategies/event_blackout.event_blackout`
+refuses new entries on the group's coins for 30 minutes. Open positions,
+stops, targets and closes are never touched. The first watcher run with no
+state file only learns the current headlines. Eval:
+`python -m services.strategies.evals.headline_replay` replays the 11-04
+midterm drop on public 1h candles (first shock by 02:00Z, the desk's first
+reaction 10:25Z). Tests: `tests/test_headline_watch.py`.
+
 ## Hard numbers, and the crowding flags
 
 `IntelPacket.datapoints: List[DataPoint]` (contract 1.2.0, additive) is
