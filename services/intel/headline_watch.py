@@ -56,6 +56,18 @@ HEADLINE_BLACKOUT_MIN = 30
 HEADLINE_MIN_GAP_MIN = 30          # a headline rewrite still waits this long after the last thesis
 MAX_ALERTS_PER_DAY = 6             # per group; caps rewrite cost (~$1 each)
 PRICE_REARM_MIN = PRICE_WINDOW_MIN  # one price-shock alert per coin per window, not one a minute
+
+# Drift: a steady repricing the 15-minute shock misses (operator, 2026-11-05:
+# "Brent crude jumps, settles up over $3 after tanker attacks" -- the climb
+# ran +1.2% per 2h from 17:00 to 20:40Z, no 15-minute leg reached 1%, and the
+# attack headline itself never reached a trusted feed in time). Thresholds sit
+# near each coin's 95th percentile of 4h moves over the 60 days to 2026-11-05
+# (xyz:BRENTOIL p90 1.56% p95 1.93%; xyz:GOLD p90 0.66% p95 0.90%); Brent's
+# 1.75% catches that evening's +1.83%. One alert per coin per window.
+DRIFT_WINDOW_MIN = 240
+PRICE_DRIFT = {"xyz:BRENTOIL": 0.0175, "xyz:CL": 0.0175, "xyz:SILVER": 0.025, "xyz:GOLD": 0.009}
+DRIFT_REARM_MIN = DRIFT_WINDOW_MIN
+HISTORY_KEEP_MIN = DRIFT_WINDOW_MIN + 2   # minutes of mids the watcher keeps per coin
 KEEP_ALERTS = 100
 MIN_MS = 60_000
 
@@ -332,6 +344,25 @@ def odds_alerts(group: str, odds: Iterable[Dict[str, Any]], prev: Dict[str, floa
     return out
 
 
+def price_drift(coin: str, history: Sequence[Tuple[int, float]], now_ms: int, mid: float) -> Optional[Dict[str, Any]]:
+    """An alert when `mid` sits PRICE_DRIFT or more from any mid in the last
+    DRIFT_WINDOW_MIN of `history`. Needs at least half the window of history,
+    so a fresh start cannot call a 30-minute move a 4-hour drift. Pure."""
+    thr = PRICE_DRIFT.get(coin)
+    if not thr or not mid or not history:
+        return None
+    window = [(t, p) for t, p in history if now_ms - t <= DRIFT_WINDOW_MIN * MIN_MS]
+    if not window or now_ms - window[0][0] < (DRIFT_WINDOW_MIN // 2) * MIN_MS:
+        return None
+    ref = max((p for _t, p in window), key=lambda p: abs(mid - p))
+    move = (mid - ref) / ref
+    if abs(move) >= thr:
+        return {"coin": coin, "group": _group_of(coin), "kind": "price", "label": "price drift",
+                "title": f"{coin} {move:+.2%} within {DRIFT_WINDOW_MIN // 60}h ({ref:g} -> {mid:g})",
+                "at_ms": now_ms, "move": round(move, 5)}
+    return None
+
+
 def price_shock(coin: str, history: Sequence[Tuple[int, float]], now_ms: int, mid: float) -> Optional[Dict[str, Any]]:
     """An alert when `mid` sits PRICE_SHOCK or more from any mid in the last
     PRICE_WINDOW_MIN of `history` ((ms, mid), oldest first). None otherwise."""
@@ -437,6 +468,7 @@ def save_state(state: Dict[str, Any], path: Optional[str] = None) -> None:
 
 __all__ = ["ALERTS_PATH", "HEADLINE_BLACKOUT_MIN", "HEADLINE_MIN_GAP_MIN", "NEWS_POLL_S", "NEWS_QUERIES",
            "PATTERNS", "POSTS_POLL_S", "POST_PATTERNS", "PRICE_REARM_MIN", "PRICE_SHOCK", "PRICE_WINDOW_MIN",
+           "DRIFT_WINDOW_MIN", "DRIFT_REARM_MIN", "PRICE_DRIFT", "HISTORY_KEEP_MIN", "price_drift",
            "PRICE_WRAP", "TRUSTED_SOURCES", "alerts_for", "headline_blackout", "latest_for", "load_state",
            "match_headline", "match_post", "news_alerts", "odds_alerts", "post_alerts", "price_shock",
            "read_alerts", "record", "save_state", "trusted_source"]

@@ -165,14 +165,21 @@ def headline_pass(targets: List[Tuple[str, str, str]], now_s: float, state: Dict
         if mid:
             h = history.setdefault(coin, [])
             shock = HW.price_shock(coin, h, now_ms, mid)
+            drift = HW.price_drift(coin, h, now_ms, mid)
             h.append((now_ms, mid))
-            del h[:-(HW.PRICE_WINDOW_MIN + 2)]
+            del h[:-HW.HISTORY_KEEP_MIN]
             # one alert per shock, not one a minute while the move stays in the window
             armed = now_ms - int(last_shock.get(coin) or 0) >= HW.PRICE_REARM_MIN * HW.MIN_MS
             if shock and armed:
                 last_shock[coin] = now_ms
                 shock.setdefault("group", group)
                 out.append((desk, shock))
+            # a steady 4h repricing (price_drift): once per coin per drift window
+            last_drift = state.setdefault("last_drift_ms", {})
+            if drift and not shock and now_ms - int(last_drift.get(coin) or 0) >= HW.DRIFT_REARM_MIN * HW.MIN_MS:
+                last_drift[coin] = now_ms
+                drift.setdefault("group", group)
+                out.append((desk, drift))
     if now_s - float(state.get("last_posts_s") or 0) >= HW.POSTS_POLL_S:
         state["last_posts_s"] = now_s
         seen = set(state.get("seen") or [])

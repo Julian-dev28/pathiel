@@ -308,7 +308,7 @@ def test_headline_pass_price_shock_fires_once_then_rearms():
     out = W.headline_pass(TARGETS, t0 + 600 + 60 * HW.PRICE_REARM_MIN, state, hist, {"xyz:BRENTOIL": 97.7},
                           fetch_news=quiet[0], fetch_odds_fn=quiet[1])
     assert len(out) == 1 and "-1.2" in out[0][1]["title"]
-    assert len(hist["xyz:BRENTOIL"]) <= HW.PRICE_WINDOW_MIN + 2
+    assert len(hist["xyz:BRENTOIL"]) <= HW.HISTORY_KEEP_MIN   # 4h kept for the drift alarm
 
 
 def test_headline_pass_odds_jump_wakes_the_desk():
