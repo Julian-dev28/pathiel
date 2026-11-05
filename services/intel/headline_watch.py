@@ -7,7 +7,13 @@ a scheduled release, or once price had already moved 1.5%).
 scripts/trigger_watch.py runs this every minute, no LLM:
   - news: targeted Google News RSS + oilprice.com every NEWS_POLL_S; a NEW
     headline (not seen before, published in the last MAX_AGE_MIN) whose
-    title matches a desk's PATTERNS is an alert.
+    title matches a desk's PATTERNS is an alert. The official whitehouse.gov
+    news feed (sources/social.py; state.gov refuses our User-Agent) rides
+    the same poll and the same PATTERNS.
+  - posts: Trump's Truth Social posts via the trumpstruth.org archive every
+    POSTS_POLL_S; a NEW post (by id) inside MAX_AGE_MIN of its original time
+    that matches POST_PATTERNS is an alert. Truth Social itself and X have
+    no feed we may read (sources/social.py has the check).
   - odds: Polymarket markets matching the desk's ODDS_TERMS; a move of
     ODDS_JUMP or more since the last poll is an alert.
   - price shock: the mid moving PRICE_SHOCK or more within PRICE_WINDOW_MIN
@@ -37,6 +43,7 @@ ALERTS_PATH = os.environ.get("PATHIEL_HEADLINE_ALERTS") or "/tmp/trigger-watch/h
 STATE_PATH = os.environ.get("PATHIEL_HEADLINE_STATE") or "/tmp/trigger-watch/headline_state.json"
 
 NEWS_POLL_S = 120
+POSTS_POLL_S = 60                  # Trump's posts (the trumpstruth.org archive): every pass
 MAX_AGE_MIN = 45
 ODDS_JUMP = 0.08
 PRICE_WINDOW_MIN = 15
@@ -80,6 +87,59 @@ PATTERNS: Dict[str, List[Tuple[str, re.Pattern]]] = {
 ODDS_TERMS = {"oil": re.compile(r"(iran|hormuz|ceasefire|opec|oil)", re.I),
               "silver": re.compile(r"(fed|rate cut|powell|recession)", re.I)}
 
+# Trump's own posts (operator, 2026-11-05: "A Truth Social / X feed for the
+# headline watcher"). A post is short and not headline-shaped: "Oil Prices
+# are DROPPING LIKE A ROCK ... there will not be a War with Iran" has no
+# verb a wire would use, so PATTERNS miss it. Tuned on 540 real posts of
+# 2026-11-01..05 (fixtures/trumpstruth_feed.xml keeps 12): the 538 that are
+# endorsements, election posts and TV complaints must not match. "deal",
+# "strike", "attack", "sanction", "tariff", "war" need a counterparty or a
+# trade partner next to them ("KENTUCKY CLOSING SOON. A BIG DEAL!" is not
+# news); "rates" needs "interest" or "cut"/"hike" ("crime rates" is not).
+_POST_OIL = (r"(oil prices?|price of oil|oil (is|was|has|went|going|dropping|falling|rising|surging|down|up)|"
+             r"oil (production|output|supply|exports?|imports?|embargo|sanctions?|tankers?|fields?)|barrels?|crude|"
+             r"gasoline|opec\+?|saudi\w*|aramco|strategic petroleum reserve|spr|energy prices|drill,? baby)")
+_POST_GEO_ACT = (r"(ceasefire|cease-fire|truce|peace (deal|agreement|talks|plan)|deal|agreement|settlement|strikes?|"
+                 r"struck|attack\w*|bomb\w*|sanction\w*|blockade|embargo|invasion|invade\w*|troops|warships?|"
+                 r"war(?! (veteran|hero|college)))")
+_POST_GEO_WHO = (r"(israel\w*|netanyahu|russia\w*|putin|ukrain\w*|zelensk\w*|venezuela\w*|maduro|china|chinese|"
+                 r"xi jinping|president xi|houthi\w*|yemen|hamas|gaza|hezbollah|lebanon|iraq\w*|syria\w*|qatar|"
+                 r"kuwait|emirates|uae|middle east)")
+_POST_TARIFF_WHO = r"(china|chinese|india\w*|russia\w*|canad\w*|mexic\w*|europe\w*|eu|oil|crude|energy)"
+_POST_FED = (r"(the fed|federal reserve|fomc|interest rates?|rate cuts?|rate hikes?|(cut|lower|raise) (the )?rates|"
+             r"(jerome|chairman|\"?too late\"?) powell)")
+_POST_FED_NAME = r"(powell|hassett|warsh)"
+_POST_FED_CTX = r"(fed|federal reserve|rates?|interest|too late|jerome|chairman|inflation)"
+POST_PATTERNS: Dict[str, List[Tuple[str, re.Pattern]]] = {
+    "oil": [
+        ("trump:iran", re.compile(rf"\b{_IRAN}\w*\b", re.I)),
+        ("trump:oil", re.compile(rf"\b{_POST_OIL}\b", re.I)),
+        ("trump:geo", re.compile(rf"\b{_POST_GEO_ACT}\b.*\b{_POST_GEO_WHO}\b|\b{_POST_GEO_WHO}\b.*\b{_POST_GEO_ACT}\b",
+                                 re.I | re.S)),
+        ("trump:tariff", re.compile(rf"\btariff\w*\b.*\b{_POST_TARIFF_WHO}\b|\b{_POST_TARIFF_WHO}\b.*\btariff\w*\b",
+                                    re.I | re.S)),
+    ],
+    "silver": [
+        ("trump:fed", re.compile(rf"\b{_POST_FED}\b", re.I)),
+        # a Fed name only with Fed context: "Tracey Powell for State Senate" is a candidate
+        ("trump:fed", re.compile(rf"\b{_POST_FED_NAME}\b.*\b{_POST_FED_CTX}\b|\b{_POST_FED_CTX}\b.*\b{_POST_FED_NAME}\b",
+                                 re.I | re.S)),
+        ("trump:tariff/metals", re.compile(r"\btariff\w*\b.*\b(silver|gold|copper|metals?)\b|"
+                                           r"\b(silver|gold|copper|metals?)\b.*\btariff\w*\b", re.I | re.S)),
+    ],
+}
+# An archived image/video post with no words, or a bare link: nothing to read.
+_POST_EMPTY = re.compile(r"^(\s*(view (image|video)|rt:?|rt @ \w+|reposted donald j\. trump|quoted donald j\. trump|"
+                         r"https?://\S*|\S*truthsocial\.com\S*)\s*)*$", re.I)
+# Endorsements and get-out-the-vote lists: the bulk of the feed, never market
+# news, and the text that mentions "Oil & Gas", "Iraq War Veteran", "STEEL
+# TARIFFS" or a candidate named Powell (22 of 503 real posts matched before
+# this guard; 0 after).
+_POST_ROUTINE = re.compile(r"(my great honor to endorse|complete and total endorsement|get out and vote for|"
+                           r"make a plan to (get out and )?vote|is running (for|to represent|to be the next|to become)|"
+                           r"for (u\.s\. )?(senate|congress|governor|lieutenant governor|attorney general|"
+                           r"secretary of state) \(|\bvote for\b.*\bfor (u\.s\. )?(senate|congress|governor)\b)", re.I | re.S)
+
 # A price wrap ("Oil falls as ...", "Brent edges higher on ...") reports the
 # market's reaction, which price_shock already catches; the news alert is for
 # the event itself, before the move. Never a news alert.
@@ -110,6 +170,8 @@ TRUSTED_SOURCES = (
     "energyintel", "quantum commodity", "montel", "hellenic shipping", "lloyd's list", "tradewinds", "splash247",
     "maritime executive", "gcaptain", "spglobal", "ice.com", "cme", "world oil", "hart energy", "ogj",
     "oil & gas journal", "upstream", "offshore", "natural gas intel", "kitco", "mining.com", "bullionvault",
+    # the official feeds and Trump's posts (sources/social.py), since 2026-11-05
+    "whitehouse.gov", "state.gov", "truthsocial:realdonaldtrump",
 )
 
 
@@ -139,6 +201,18 @@ def match_headline(group: str, title: str) -> Optional[str]:
     return None
 
 
+def match_post(group: str, text: str) -> Optional[str]:
+    """The first POST_PATTERNS label a Trump post `text` matches for `group`,
+    else None. An image/video/link-only post never matches."""
+    text = (text or "").strip()
+    if not text or _POST_EMPTY.match(text) or _POST_ROUTINE.search(text):
+        return None
+    for label, rx in POST_PATTERNS.get(group, []):
+        if rx.search(text):
+            return label
+    return None
+
+
 _TRUSTED_RX = re.compile(r"\b(" + "|".join(re.escape(t) for t in TRUSTED_SOURCES) + r")\b", re.I)
 
 
@@ -148,16 +222,20 @@ def trusted_source(source: Optional[str]) -> bool:
     return True if not source else bool(_TRUSTED_RX.search(source))
 
 
-def news_alerts(group: str, items: Iterable[Dict[str, Any]], seen: set, now_ms: int) -> List[Dict[str, Any]]:
+def news_alerts(group: str, items: Iterable[Dict[str, Any]], seen: set, now_ms: int, *,
+                shared: bool = False) -> List[Dict[str, Any]]:
     """New matching headlines from trusted sources, feed order. Adds every
     item's key to `seen` (matching or not) so a headline alerts once. Items:
-    parse_rss_items rows ({title, url, source, published_at})."""
+    parse_rss_items rows ({title, url, source, published_at}). `shared`: the
+    same items go to every group (the official feeds), so the key carries the
+    group and the item id (URL): each desk judges the item once, and an edited
+    title does not alert twice."""
     out = []
     for it in items:
         title = (it.get("title") or "").strip()
         if not title:
             continue
-        k = _key(title)
+        k = f"{group}:{_key(str(it.get('id') or title))}" if shared else _key(title)
         if k in seen:
             continue
         seen.add(k)
@@ -172,6 +250,35 @@ def news_alerts(group: str, items: Iterable[Dict[str, Any]], seen: set, now_ms: 
             out.append({"group": group, "kind": "news", "label": label, "title": title[:200],
                         "source": it.get("source"), "url": it.get("url"), "at_ms": now_ms,
                         "published_ms": pub_ms})
+    return out
+
+
+def post_alerts(group: str, posts: Iterable[Dict[str, Any]], seen: set, now_ms: int) -> List[Dict[str, Any]]:
+    """New Trump posts (sources/social.parse_trumpstruth rows: {id, url, text,
+    source, published_at, post_type}) that match POST_PATTERNS for `group`,
+    feed order. Dedup by post id per group (an edited post keeps its id and
+    does not alert twice); every post's key goes to `seen`. A post older than
+    MAX_AGE_MIN by its ORIGINAL time, or with no time, never alerts: the
+    archive catches up on old posts in bursts."""
+    out = []
+    for p in posts:
+        text = (p.get("text") or "").strip()
+        pid = str(p.get("id") or p.get("url") or "")
+        if not pid and not text:
+            continue
+        k = f"{group}:post:{pid or _key(text)}"
+        if k in seen:
+            continue
+        seen.add(k)
+        pub = p.get("published_at")
+        pub_ms = int(pub.timestamp() * 1000) if isinstance(pub, datetime) else None
+        if pub_ms is None or now_ms - pub_ms > MAX_AGE_MIN * MIN_MS:
+            continue
+        label = match_post(group, text)
+        if label:
+            out.append({"group": group, "kind": "post", "label": label, "title": text[:200],
+                        "source": p.get("source"), "url": p.get("url"), "at_ms": now_ms,
+                        "published_ms": pub_ms, "post_id": pid, "post_type": p.get("post_type")})
     return out
 
 
@@ -301,6 +408,7 @@ def save_state(state: Dict[str, Any], path: Optional[str] = None) -> None:
 
 
 __all__ = ["ALERTS_PATH", "HEADLINE_BLACKOUT_MIN", "HEADLINE_MIN_GAP_MIN", "NEWS_POLL_S", "NEWS_QUERIES",
-           "PATTERNS", "PRICE_REARM_MIN", "PRICE_SHOCK", "PRICE_WINDOW_MIN", "PRICE_WRAP", "TRUSTED_SOURCES",
-           "alerts_for", "headline_blackout", "latest_for", "load_state", "match_headline", "news_alerts",
-           "odds_alerts", "price_shock", "read_alerts", "record", "save_state", "trusted_source"]
+           "PATTERNS", "POSTS_POLL_S", "POST_PATTERNS", "PRICE_REARM_MIN", "PRICE_SHOCK", "PRICE_WINDOW_MIN",
+           "PRICE_WRAP", "TRUSTED_SOURCES", "alerts_for", "headline_blackout", "latest_for", "load_state",
+           "match_headline", "match_post", "news_alerts", "odds_alerts", "post_alerts", "price_shock",
+           "read_alerts", "record", "save_state", "trusted_source"]

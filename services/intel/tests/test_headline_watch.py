@@ -38,6 +38,14 @@ def _item(title, age_min=5, source="Reuters"):
             "published_at": NOW - timedelta(minutes=age_min)}
 
 
+@pytest.fixture(autouse=True)
+def _no_social_fetch(monkeypatch):
+    """headline_pass defaults to the module's post/official fetchers (network);
+    the social source has its own tests (test_sources_social.py)."""
+    monkeypatch.setattr(W, "fetch_posts", lambda: [])
+    monkeypatch.setattr(W, "fetch_official", lambda: [])
+
+
 @pytest.fixture
 def alerts_file(tmp_path, monkeypatch):
     path = tmp_path / "headline_alerts.json"

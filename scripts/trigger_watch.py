@@ -27,7 +27,12 @@ step (services/intel/headline_watch.py): new matching news, a Polymarket
 odds jump or a 1% / 1.2% mid move inside 15 minutes is recorded as an alert
 and wakes the desk at once, position or not, as
 {"fire": desk, "also": [...], "reason": "headline", ...}. The first run
-ever (no headline state file) only learns the current headlines.
+ever (no headline state file) only learns the current headlines. Since the
+same day the pass also reads Trump's posts (the trumpstruth.org archive of
+Truth Social, every minute) and the official whitehouse.gov news feed (with
+the news poll); Truth Social itself and X have no feed we may read, and
+state.gov refuses our User-Agent (services/intel/sources/social.py). A
+source new to the state file is learned on its first poll, not alerted on.
 """
 from __future__ import annotations
 
@@ -95,6 +100,23 @@ def fetch_headlines(group: str) -> List[Dict[str, Any]]:
     return items
 
 
+def fetch_posts() -> List[Dict[str, Any]]:
+    """Trump's newest posts from the trumpstruth.org archive (Truth Social and
+    X have no feed we may read; services/intel/sources/social.py). A failed
+    fetch is an empty list; the next poll tries again."""
+    from services.intel.sources.social import fetch_trump_posts
+    posts, _err = fetch_trump_posts()
+    return posts
+
+
+def fetch_official() -> List[Dict[str, Any]]:
+    """The official feeds (whitehouse.gov news; social.OFFICIAL_FEEDS), one
+    list of headline rows like fetch_headlines. A feed that fails is skipped."""
+    from services.intel.sources.social import fetch_official_feeds
+    items, _errs = fetch_official_feeds()
+    return items
+
+
 def fetch_odds(desk: str) -> List[Dict[str, Any]]:
     """Polymarket markets for the desk (the intel source the thesis reads)."""
     from services.intel.sources.predictions import fetch_polymarket
@@ -107,18 +129,27 @@ def headline_pass(targets: List[Tuple[str, str, str]], now_s: float, state: Dict
                   history: Dict[str, List[Tuple[int, float]]], mids: Dict[str, float], *,
                   fetch_news: Optional[Callable[[str], List[Dict[str, Any]]]] = None,
                   fetch_odds_fn: Optional[Callable[[str], List[Dict[str, Any]]]] = None,
+                  fetch_posts_fn: Optional[Callable[[], List[Dict[str, Any]]]] = None,
+                  fetch_official_fn: Optional[Callable[[], List[Dict[str, Any]]]] = None,
                   prime: bool = False) -> List[Tuple[str, Dict[str, Any]]]:
     """One pass of the headline check (services/intel/headline_watch.py).
     targets: (desk, coin, group). Returns (desk, alert) pairs. Mutates
-    `state` (seen keys, odds, last poll, last shock per coin) and `history`
-    ((ms, mid) per coin, trimmed to the shock window). `prime`: the first
-    run ever only learns what is already out there. The fetchers default to
-    this module's at call time, so a test can replace them."""
+    `state` (seen keys, odds, last polls, last shock per coin, primed
+    sources) and `history` ((ms, mid) per coin, trimmed to the shock
+    window). `prime`: the first run ever only learns what is already out
+    there. A source added later (posts, the official feeds since 2026-11-05)
+    is primed on its own first poll: `state["primed_sources"]` names the
+    sources already learned, so a watcher restarted on an older state file
+    learns the feed instead of alerting on every post already out. The
+    fetchers default to this module's at call time, so a test can replace them."""
     from services.intel import headline_watch as HW
     fetch_news = fetch_news or fetch_headlines
     fetch_odds_fn = fetch_odds_fn or fetch_odds
+    fetch_posts_fn = fetch_posts_fn or fetch_posts
+    fetch_official_fn = fetch_official_fn or fetch_official
     now_ms = int(now_s * 1000)
     out: List[Tuple[str, Dict[str, Any]]] = []
+    primed = set(state.get("primed_sources") or [])
     last_shock = state.setdefault("last_shock_ms", {})
     for desk, coin, group in targets:
         mid = mids.get(coin)
@@ -133,22 +164,49 @@ def headline_pass(targets: List[Tuple[str, str, str]], now_s: float, state: Dict
                 last_shock[coin] = now_ms
                 shock.setdefault("group", group)
                 out.append((desk, shock))
+    if now_s - float(state.get("last_posts_s") or 0) >= HW.POSTS_POLL_S:
+        state["last_posts_s"] = now_s
+        seen = set(state.get("seen") or [])
+        try:
+            posts = fetch_posts_fn()
+        except Exception:  # noqa: BLE001 - the archive is best effort
+            posts = []
+        learn_only = prime or "posts" not in primed
+        for desk, _coin, group in targets:
+            hits = HW.post_alerts(group, posts, seen, now_ms)
+            if not learn_only:
+                out += [(desk, a) for a in hits]
+        primed.add("posts")
+        state["seen"] = list(seen)
     if now_s - float(state.get("last_news_s") or 0) >= HW.NEWS_POLL_S:
         state["last_news_s"] = now_s
         seen = set(state.get("seen") or [])
         prev_odds = state.setdefault("odds", {})
+        try:
+            official_items = fetch_official_fn()      # one fetch, every group reads it
+        except Exception:  # noqa: BLE001
+            official_items = []
+        official_learn_only = prime or "official" not in primed
         for desk, _coin, group in targets:
             try:
                 news = HW.news_alerts(group, fetch_news(group), seen, now_ms)
             except Exception:  # noqa: BLE001 - news is best effort; price shocks still work
                 news = []
             try:
+                official = HW.news_alerts(group, official_items, seen, now_ms, shared=True)
+            except Exception:  # noqa: BLE001
+                official = []
+            try:
                 odds = HW.odds_alerts(group, fetch_odds_fn(desk), prev_odds, now_ms)
             except Exception:  # noqa: BLE001
                 odds = []
             if not prime:
                 out += [(desk, a) for a in news + odds]
+                if not official_learn_only:
+                    out += [(desk, a) for a in official]
+        primed.add("official")
         state["seen"] = list(seen)
+    state["primed_sources"] = sorted(primed)
     return out
 
 

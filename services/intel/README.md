@@ -106,6 +106,46 @@ state file only learns the current headlines. Eval:
 midterm drop on public 1h candles (first shock by 02:00Z, the desk's first
 reaction 10:25Z). Tests: `tests/test_headline_watch.py`.
 
+### Trump posts and official feeds (`sources/social.py`, since 2026-11-05)
+
+Operator: "A Truth Social / X feed for the headline watcher. BUILD IT THEN,
+CHECK IF IT CAN BE DONE FIRST". Checked from this machine on 2026-11-05,
+read only, a handful of requests each:
+
+| source | works | latency | auth / cost | terms | verdict |
+|---|---|---|---|---|---|
+| truthsocial.com RSS (`/@realDonaldTrump.rss`) | no: 200 but the web-app HTML, no feed | - | - | ToS bans any scraper, robot or automated access | rejected |
+| truthsocial.com API (`/api/v1/accounts/lookup`, `/statuses`) | no: 403 Cloudflare without a session (`/api/v1/instance` alone answers) | - | login | same ToS | rejected |
+| X API (`docs.x.com/x-api/getting-started/pricing`) | yes, paid | seconds | no free read tier in 2026: pay-per-use, $0.005 per post read, card on file, 3M reads/month cap; Nitter-style mirrors dead or against terms | commercial terms | rejected (cost reported, not bought) |
+| www.trumpstruth.org RSS (`/feed?limit=40`) | yes, 200 to our UA | pubDate is the ORIGINAL post time; the archive captured posts 14.5 min, 83 min, 14 h and 32 h after posting (4 samples, status pages show both times) | none | robots.txt `Disallow:` (all allowed), RSS documented on /about with `limit`/date filters, non-affiliated public archive | used, best effort |
+| whitehouse.gov `/news/feed/` (also `/presidential-actions/feed/`, `/briefings-statements/feed/`, `/fact-sheets/feed/`) | yes, 200 to our UA, 643 KB (full bodies, ignores If-Modified-Since; `/wp-json` is 403) | newest item 2026-11-04 22:39Z at 15:06Z (17 h; a slow news day) | none | robots.txt allows all but search URLs | used |
+| state.gov `/rss-feed/press-releases/feed/` | 200 to a browser UA, **403 to ours** | items 2026-11-05 02:24Z, fresh | none | bot filter by User-Agent; we do not spoof one | rejected (parser + fixture kept) |
+| Treasury press / OFAC | no press RSS: `home.treasury.gov/rss.xml` is a site-wide feed of program pages, `ofac.treasury.gov/rss.xml` lists sanctions programs (newest 2025), `/recent-actions.xml` 404 | - | none | - | rejected; OFAC's HTML is already read by `policy.py` for the thesis (10 s a page, too slow for the watcher) |
+
+What ships: `scripts/trigger_watch.py` polls the trumpstruth.org archive
+every `POSTS_POLL_S` (60 s, one 85 KB page) and the whitehouse.gov news
+feed with the news poll (120 s). Trump posts go through
+`headline_watch.match_post` / `post_alerts` (`POST_PATTERNS`: Iran/Hormuz,
+oil prices/OPEC/Saudi/SPR, a deal/ceasefire/strike/attack/sanctions/war
+word next to a counterparty, tariffs next to a trade partner, for oil; the
+Fed/Powell/interest rates and metal tariffs, for silver). Tuned on 503 real
+posts of 2026-11-01..05: 2 hits, both the 11-02 "Oil Prices are DROPPING
+LIKE A ROCK ... War with Iran" post and its repost; the 414 endorsement and
+get-out-the-vote posts are excluded as a class (`_POST_ROUTINE`), an image,
+video or link-only post never matches. Dedup by post id per group (an
+edited post does not alert twice); a post older than `MAX_AGE_MIN` by its
+original time never alerts, so a late archive capture is dropped. Official
+items are headline-shaped and use the existing `PATTERNS`, keyed by URL
+and group (`news_alerts(shared=True)`) so both desks judge them. Sources
+labelled `truthsocial:realDonaldTrump` and `whitehouse.gov` are trusted. A
+source new to the watcher's state file is learned on its first poll
+(`state["primed_sources"]`), never alerted on, so a restart on an older
+state file is quiet. A failed fetch costs that poll's source only.
+Eval: `python3 -m services.intel.evals.eval_social_feed` (three GETs, read
+only: counts, newest age, which items would alert). Tests:
+`tests/test_sources_social.py`, fixtures `trumpstruth_feed.xml` (12 real
+posts), `whitehouse_news.xml`, `state_press_releases.xml`.
+
 ## Hard numbers, and the crowding flags
 
 `IntelPacket.datapoints: List[DataPoint]` (contract 1.2.0, additive) is
