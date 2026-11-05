@@ -46,6 +46,11 @@ window"). Start it from the repo root:
   one agent per desk (the overlap rule below still applies to each), then
   start the watcher again. The tick runs the rewrite check first; the
   `"headline"` field is what it will read about.
+- The fire line says `"reason": "weekend_flat"` (operator, 2026-11-05:
+  "weekend flat"; the oil futures weekend just opened and the oil desk
+  holds a position or a resting entry): run `/desk-tick oil`; the tick's
+  weekend step closes it. Then start the watcher again. It fires once per
+  weekend; the 15-minute cron covers a tick that fails.
 - It exited without a fire line (error, crash): print the last lines of
   `/tmp/trigger-watch/stderr.log` in one line, then start it again. If it
   crashes 3 times within 10 minutes, stop restarting and say so.

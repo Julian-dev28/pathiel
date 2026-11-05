@@ -48,7 +48,7 @@ def test_buffer_grid():
 
 def test_weekend_grid():
     w = T.weekend_variants({"stop_buffer": 0.9}, "fixed_0.90")
-    assert w == {"fixed_0.90_24/7": {"stop_buffer": 0.9},
+    assert w == {"fixed_0.90_24/7": {"stop_buffer": 0.9, "weekend_off": None},
                  "fixed_0.90_wk_hold": {"stop_buffer": 0.9, "weekend_off": "hold"},
                  "fixed_0.90_wk_flat": {"stop_buffer": 0.9, "weekend_off": "flatten"}}
     assert set(T.weekend_variants({})) == {"24/7", "wk_hold", "wk_flat"}
@@ -291,3 +291,47 @@ def test_run_dataset_and_csv_rows():
     assert [x["variant"] for x in rows] == ["live", "fixed_0.90"] and set(rows[0]) == set(T.SUMMARY_FIELDS)
     for e in T.entry_csv_rows({"ds": r}):
         assert set(e) == set(T.ENTRY_FIELDS)
+
+
+# ── 2026-11-05: the live rule IS wk_flat ─────────────────────────────────────
+
+def _weekend_bars():
+    """A Friday-afternoon long carried into the window: 1h warmup with the
+    24h range 100 to 104, a market long at 100.3 on the 20:45Z bar, then
+    Saturday bars that never reach the stop or the target."""
+    fri = ms(2026, 11, 6, 20, 45)
+    c1h = [Candle(t=fri - (26 - i) * HOUR_MS, o=102.0, h=104.0, l=100.0, c=102.0, v=1.0) for i in range(26)]
+    rows = [(100.3, 100.4, 100.2, 100.3), (100.3, 100.9, 100.3, 100.8), (100.8, 100.85, 100.6, 100.7),
+            (100.7, 100.75, 100.5, 100.6), (100.6, 100.65, 100.4, 100.5)]
+    c15 = [Candle(t=fri + i * Q, o=o, h=h, l=l, c=c, v=1.0) for i, (o, h, l, c) in enumerate(rows)]
+    return c15, c1h
+
+
+def test_live_baseline_equals_wk_flat_and_differs_from_24_7():
+    """After the 2026-11-05 adoption `live` and `wk_flat` are the same
+    Params and the same run (the eval's "tie" is by construction); `24/7`
+    is the old rule and keeps the position through the weekend."""
+    c15, c1h = _weekend_bars()
+    base = dataclasses.replace(live_params(), starting_equity=64.0, stop_buffer=0.2, slippage=0.0)
+    named = T.weekend_variants({}, "")
+    named = {("live" if k == "24/7" else k): v for k, v in named.items()}
+    assert dataclasses.replace(base, **named["wk_flat"]) == base       # the live rule is wk_flat
+    r = T.run_dataset(c15, c1h, lambda t: Direction(side="long"), base, c15[0].t, c15[-1].t + Q,
+                      {"live": {}, "wk_flat": named["wk_flat"], "24/7": T.weekend_variants({})["24/7"]})
+    live, flat, always = (r["variants"][k] for k in ("live", "wk_flat", "24/7"))
+    assert live == flat
+    assert live["trades"] == 1 and always["trades"] == 0               # closed at 21:00Z vs still open
+    run = simulate(c15, c1h, lambda t: Direction(side="long"), base)
+    assert run.trades[0].exit_reason == "weekend" and run.trades[0].exit_time == ms(2026, 11, 6, 21)
+    assert run.open_position_at_end is None
+    old = simulate(c15, c1h, lambda t: Direction(side="long"), dataclasses.replace(base, weekend_off=None))
+    assert old.trades == [] and old.open_position_at_end is not None
+
+
+def test_live_ties_wk_flat_check():
+    same = {"variants": {"live": {"final_equity": 1.0}, "wk_flat": {"final_equity": 1.0}}}
+    diff = {"variants": {"live": {"final_equity": 1.0}, "wk_flat": {"final_equity": 2.0}}}
+    assert T.live_ties_wk_flat({"a": same, "b": same}) == {"pass": True, "per_dataset": {"a": True, "b": True}}
+    out = T.live_ties_wk_flat({"a": same, "b": diff})
+    assert out["pass"] is False and out["per_dataset"] == {"a": True, "b": False}
+    assert T.live_ties_wk_flat({})["pass"] is False

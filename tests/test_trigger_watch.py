@@ -156,3 +156,54 @@ def test_a_price_shock_wakes_the_desk_with_its_own_mid_history(monkeypatch, tmp_
     line = json.loads(capsys.readouterr().out.strip())
     assert line["reason"] == "headline" and line["label"] == "price shock" and line["coin"] == "xyz:BRENTOIL"
     assert "-1.06%" in line["headline"]
+
+
+# ── weekend flat (operator, 2026-11-05) ──────────────────────────────────────
+
+SAT_S = 1794139200.0        # Sat 2026-11-07 12:00Z, inside Fri 21:00Z to Sun 23:00Z
+WINDOW_START_MS = 1793998800000
+
+
+def _quiet_calendar(monkeypatch):
+    from services.intel import headline_watch, scheduled_events
+    monkeypatch.setattr(scheduled_events, "blackout", lambda coin, t, path=None: None)
+    monkeypatch.setattr(headline_watch, "headline_blackout", lambda coin, t, path=None: None)
+
+
+def test_weekend_open_wakes_a_desk_that_holds_a_position_once(monkeypatch, tmp_path, capsys):
+    _quiet_calendar(monkeypatch)
+    _stub(monkeypatch, tmp_path, [112.30], held="holds position on xyz:BRENTOIL")
+    assert W.watch(once=False, cooldown_min=30, clock=lambda: SAT_S) == 0
+    line = json.loads(capsys.readouterr().out.strip())
+    assert line["fire"] == "oil" and line["reason"] == "weekend_flat" and line["coin"] == "xyz:BRENTOIL"
+    assert line["held"] == "holds position on xyz:BRENTOIL" and line["until_utc"] == "2026-11-08 23:00Z"
+    assert json.loads((tmp_path / "fired.json").read_text()) == {"oil:weekend_flat": WINDOW_START_MS}
+    assert "FIRE" in (tmp_path / "watch.log").read_text()
+    # the same window again, still holding: no second fire, the desk is a plain blackout skip
+    _stub(monkeypatch, tmp_path, [112.30], held="holds position on xyz:BRENTOIL")
+    W.watch(once=True, cooldown_min=30, clock=lambda: SAT_S + 600)
+    out = capsys.readouterr().out
+    assert '"fire"' not in out and "Weekend flat: no new oil entries until 2026-11-08 23:00Z" in out
+
+
+def test_weekend_open_does_not_wake_a_flat_desk(monkeypatch, tmp_path, capsys):
+    _quiet_calendar(monkeypatch)
+    _stub(monkeypatch, tmp_path, [112.04])                   # the entry rule would pass on a weekday
+    W.watch(once=True, cooldown_min=30, clock=lambda: SAT_S)
+    out = capsys.readouterr().out
+    assert '"fire"' not in out and "Weekend flat" in out
+    assert not (tmp_path / "fired.json").exists()
+
+
+def test_weekend_fire_is_pure_and_keyed_on_the_window():
+    bo = {"flatten": True, "start_ms": WINDOW_START_MS, "until_utc": "2026-11-08 23:00Z", "reason": "Weekend flat"}
+    fired = {}
+    assert W.weekend_fire("oil", "xyz:BRENTOIL", bo, fired, SAT_S, lambda: "") is None and fired == {}
+    line = W.weekend_fire("oil", "xyz:BRENTOIL", bo, fired, SAT_S, lambda: "holds resting_entry on xyz:BRENTOIL")
+    assert line["reason"] == "weekend_flat" and fired == {"oil:weekend_flat": WINDOW_START_MS}
+    assert W.weekend_fire("oil", "xyz:BRENTOIL", bo, fired, SAT_S + 60, lambda: "holds position on xyz:BRENTOIL") is None
+    nxt = dict(bo, start_ms=WINDOW_START_MS + 7 * 86_400_000)      # next weekend fires again
+    assert W.weekend_fire("oil", "xyz:BRENTOIL", nxt, fired, SAT_S, lambda: "holds position on xyz:BRENTOIL")
+    def boom():
+        raise RuntimeError("venue")
+    assert W.weekend_fire("oil", "xyz:BRENTOIL", bo, {}, SAT_S, boom) is None   # a bad read waits a minute

@@ -715,3 +715,24 @@ def test_set_leverage_sends_the_open_positions_margin_type_and_is_strict(monkeyp
     monkeypatch.setattr(M, "_open_position_margin_is_cross", lambda coin, positions=None: None)
     out = json.loads(M.handle_set_leverage({"coin": "ETH", "leverage": 5}))
     assert seen["is_cross"] is None and out["margin_type"].startswith("market default: ")
+
+
+# ── the brief's weekend line (operator, 2026-11-05: "weekend flat") ──────────
+
+def test_weekend_line_shows_the_coming_window_inside_24h_and_only_for_oil():
+    fri_09z = 1793955600000                     # Fri 2026-11-06 09:00Z, 12h before the close
+    line = M._weekend_line("xyz:BRENTOIL", fri_09z)
+    assert line == (" Weekend flat 2026-11-06 21:00Z to 2026-11-08 23:00Z: no new oil entries,"
+                    " an open oil position is closed at the window open.")
+    assert M._weekend_line("xyz:CL", fri_09z) == line
+    assert M._weekend_line("xyz:BRENTOIL", fri_09z - 2 * 86_400_000) == ""     # Wednesday: more than 24h out
+    assert M._weekend_line("xyz:BRENTOIL", fri_09z + 13 * 3_600_000) == ""     # inside: event_blackout has it
+    for coin in ("xyz:GOLD", "xyz:SILVER", "BTC"):
+        assert M._weekend_line(coin, fri_09z) == ""
+
+
+def test_weekend_line_reads_the_blackout_clock_by_default(monkeypatch):
+    from services.strategies import event_blackout
+    monkeypatch.setattr(event_blackout, "now_ms", lambda: 1793955600000)
+    assert M._weekend_line("xyz:BRENTOIL").startswith(" Weekend flat 2026-11-06 21:00Z")
+    assert M.WEEKEND_SHOW_H == 24.0

@@ -45,8 +45,10 @@ LIVE_RISK_CAP_FRAC = 0.15
 def live_brent_params(**overrides: Any) -> Params:
     """The live Brent/oil rule: `desk_tick_sim.live_params()` (market entry
     off the 24h range, stop 0.75 beyond structure, target 0.5% inside the
-    far edge as a limit, 2R gate, 20x, 15-minute ticks) plus the 15% risk
-    cap. `**overrides` applies last (`dataclasses.replace`), so a caller
+    far edge as a limit, 2R gate, 20x, 15-minute ticks, no entry after a
+    break, weekend flat since 2026-11-05) plus the 15% risk cap. A replay of
+    a trade from before a rule change starts from the sim's
+    `live_params_before_*` instead. `**overrides` applies last (`dataclasses.replace`), so a caller
     can still set e.g. `starting_equity` or the Brent-only
     `size_slippage=True` fidelity knob (`base_params()`'s own addition --
     EXIT_SLIP_CURVE is calibrated off the live xyz:BRENTOIL book, so it is
@@ -63,7 +65,9 @@ def live_silver_params(venue_max_leverage: float, atr_price_mean: float, **overr
     1.3 x that tick's own closed-1h ATR14, not the dataset's mean ATR) with
     its live floor (`Params.stop_buffer_floor_frac = next_trade.
     STOP_BUFFER_FLOOR_FRAC`, 0.8% of the mid; `SILVER_STOP_FLOOR_TEST_2026-
-    11-02.md`). `**overrides` applies last."""
+    11-02.md`). Silver trades the weekend (`scouting_params` sets
+    `weekend_off=None`: the oil weekend flat lost on silver). `**overrides`
+    applies last."""
     base = scouting_params(venue_max_leverage, atr_price_mean, base=live_brent_params())
     return dataclasses.replace(base, stop_buffer_atr=ATR_BUFFER_MULT,
                                stop_buffer_floor_frac=STOP_BUFFER_FLOOR_FRAC, **overrides)

@@ -1084,3 +1084,40 @@ def test_handler_fits_brent_and_silver_leverage_to_the_stop(monkeypatch):
     # silver fits too since 2026-11-04: 1.8% is past its 20x line, 15x holds it; a 1% stop stays 20x
     assert place(coin="xyz:SILVER", entry_px=50.0, stop_px=49.1, tp_px=55.0) == (15.0, 15)
     assert place(coin="xyz:SILVER", entry_px=50.0, stop_px=49.5, tp_px=55.0) == (20.0, 20)
+
+
+def test_handler_refuses_new_oil_entries_inside_the_weekend(monkeypatch):
+    """Operator 2026-11-05 "weekend flat" (BRENT_STOP_BUFFER_TEST study B,
+    wk_flat 5 of 8): Sat 2026-11-07 12:00Z sits inside Fri 21:00Z to Sun
+    23:00Z. No sizing, no order, the window says flatten; a dry run still
+    sizes; gold and silver are never blocked; the minute before the close
+    still trades."""
+    mcp = _mcp()
+    from pathiel.agents import bracket as br
+    from services.intel import headline_watch, scheduled_events
+    from services.strategies import event_blackout
+    sat = 1793635200000 + 5 * 86_400_000 - 4 * 3_600_000       # Sat 11-07 12:00Z
+    monkeypatch.setattr(event_blackout, "now_ms", lambda: sat)
+    monkeypatch.setattr(scheduled_events, "blackout", lambda coin, t, path=None: None)   # the Iran row that day
+    monkeypatch.setattr(headline_watch, "headline_blackout", lambda coin, t, path=None: None)
+    called = []
+    monkeypatch.setattr(br, "place_bracket", lambda coin, **k: called.append(coin) or {"ok": True})
+    monkeypatch.setattr(mcp, "_risk_inputs", lambda: called.append("sized") or (_ for _ in ()).throw(RuntimeError("stop")))
+    for coin in (COIN, "xyz:CL"):
+        out = json.loads(mcp.handle_place_bracket({"coin": coin, "stop_px": 100.0, "tp_px": 110.0}))
+        assert out["ok"] is False and out["placed"] is False, coin
+        assert out["error"] == "Weekend flat: no new oil entries until 2026-11-08 23:00Z (oil futures weekend)"
+        assert out["blackout"]["flatten"] is True and out["blackout"]["kind"] == "weekend"
+        out = json.loads(mcp.handle_place_bracket({"coin": coin, "stop_px": 100.0, "tp_px": 110.0, "add": True}))
+        assert out["ok"] is False and "Weekend flat" in out["error"], coin            # a top-up too
+    assert called == []
+    out = json.loads(mcp.handle_place_bracket({"coin": COIN, "stop_px": 100.0, "tp_px": 110.0, "dry_run": True}))
+    assert called == ["sized"] and "Weekend flat" not in json.dumps(out)
+    called.clear()
+    for coin, stop, tp in (("xyz:GOLD", 3900.0, 4100.0), ("xyz:SILVER", 48.0, 52.0)):
+        out = json.loads(mcp.handle_place_bracket({"coin": coin, "stop_px": stop, "tp_px": tp}))
+        assert called[-1] == "sized" and "Weekend flat" not in json.dumps(out), coin
+    called.clear()
+    monkeypatch.setattr(event_blackout, "now_ms", lambda: 1793635200000 + 4 * 86_400_000 + 4 * 3_600_000 + 59 * 60_000)  # Fri 20:59Z
+    json.loads(mcp.handle_place_bracket({"coin": COIN, "stop_px": 100.0, "tp_px": 110.0}))
+    assert called == ["sized"]

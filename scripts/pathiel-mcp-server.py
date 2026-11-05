@@ -3098,10 +3098,15 @@ def _live_rule(desk_id: str, brief: Any) -> Dict[str, Any]:
         active = event_blackout(coin)
         if active:
             line += f" {active['reason']}: the tick does not enter until then."
+            if active.get("flatten"):
+                # Operator 2026-11-05 "weekend flat": the one window that also
+                # closes. The agent confirms with scripts/weekend.py before it does.
+                line += " An open oil position is closed in this tick (weekend flat)."
         else:
             nxt = next_eia_blackout(coin)
             if nxt:
                 line += f" Next EIA blackout {nxt['start_utc']} to {nxt['until_utc']}."
+        line += _weekend_line(coin)
         # Operator 2026-11-05 "FIX THEM": a surprise headline the watcher caught
         # in the last 2h stays on the brief after its 30-min blackout ended, so
         # the tick runs the rewrite check and judges a position on the NEW thesis.
@@ -3119,6 +3124,27 @@ def _live_rule(desk_id: str, brief: Any) -> Dict[str, Any]:
 
 
 HEADLINE_ALERT_SHOW_S = 2 * 3600.0
+WEEKEND_SHOW_H = 24.0
+
+
+def _weekend_line(coin: str, now_ms: Optional[int] = None) -> str:
+    """' Weekend flat <start> to <end>: ...' when the oil weekend opens inside
+    WEEKEND_SHOW_H hours (operator 2026-11-05 "weekend flat"), '' otherwise
+    and for every non-oil coin. An active window is already on the line
+    through event_blackout. Never raises: the brief answers without it."""
+    try:
+        from services.strategies.event_blackout import next_weekend
+        nxt = next_weekend(coin, now_ms)
+        if not nxt or nxt["active"]:
+            return ""
+        from services.strategies.event_blackout import now_ms as _now
+        t = _now() if now_ms is None else now_ms
+        if nxt["start_ms"] - t > WEEKEND_SHOW_H * 3_600_000:
+            return ""
+        return (f" Weekend flat {nxt['start_utc']} to {nxt['until_utc']}: no new oil entries,"
+                " an open oil position is closed at the window open.")
+    except Exception:  # noqa: BLE001
+        return ""
 
 
 def _headline_alert_line(coin: str, now_s: Optional[float] = None) -> str:
@@ -3416,8 +3442,11 @@ def handle_place_bracket(params: Dict[str, Any]) -> str:
         # Operator 2026-11-03 "DO THIS THEN": no new oil entry 2h either side
         # of the EIA report (OIL_EVENT_TIMING_TEST_2026-11-03.md, eia_2_2).
         # 2026-11-05: the same for impact-3 scheduled events (FOMC, CPI,
-        # OPEC+, elections; services/intel/scheduled_events.py).
-        # Open positions, stops, targets and closes are never touched.
+        # OPEC+, elections; services/intel/scheduled_events.py) and, operator
+        # "weekend flat", the oil futures weekend (Fri 16:00 to Sun 18:00 New
+        # York, oil coins only; services/strategies/weekend.py). This handler
+        # never touches an open position, a stop, a target or a close; the
+        # weekend close itself is the desk-tick agent's call.
         from services.strategies.event_blackout import event_blackout
         blackout = event_blackout(coin)
         if blackout:

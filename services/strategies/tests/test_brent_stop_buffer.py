@@ -21,7 +21,8 @@ import pytest
 
 from pathiel.models.types import Candle
 from services.strategies.backtest.desk_tick_sim import (
-    Direction, Params, live_params, lock_on, profit_lock_stop, simulate, weekend_closed)
+    Direction, Params, live_params, live_params_before_weekend_flat, lock_on, profit_lock_stop, simulate,
+    weekend_closed)
 
 HOUR_MS = 3_600_000
 Q = 900_000
@@ -48,8 +49,11 @@ def _bars(rows, t0: int = T0):
 
 
 def _params(**over) -> Params:
-    base = dataclasses.replace(live_params(), stop_buffer=0.2, target_offset_frac=0.0, slippage=0.0,
-                               starting_equity=64.0)
+    # The pre-2026-11-05 live rule (weekends traded): these tests set
+    # weekend_off themselves to probe the sim's weekend machinery, and the
+    # lock tests need a position that is still open inside the window.
+    base = dataclasses.replace(live_params_before_weekend_flat(), stop_buffer=0.2, target_offset_frac=0.0,
+                               slippage=0.0, starting_equity=64.0)
     return dataclasses.replace(base, **over)
 
 
@@ -100,9 +104,11 @@ def test_weekend_window_is_one_contiguous_block_a_week():
 
 def test_new_options_are_off_by_default():
     for p in (Params(), live_params()):
-        assert p.fixed_buffer_floor_frac is None and p.weekend_off is None
+        assert p.fixed_buffer_floor_frac is None
         assert p.lock_weekend_only is False and p.lock_trigger_target_frac is None and p.lock_plus_fees is False
         assert not lock_on(p)
+    assert Params().weekend_off is None
+    assert live_params().weekend_off == "flatten"           # operator 2026-11-05 "weekend flat"
 
 
 def test_defaults_spelled_out_are_byte_identical():

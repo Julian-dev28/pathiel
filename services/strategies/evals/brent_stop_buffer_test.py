@@ -158,9 +158,13 @@ WEEKEND_ONLY = ("wk_hold", "wk_flat")
 
 
 def weekend_variants(base_ov: Dict[str, Any], prefix: str = "") -> Dict[str, Dict[str, Any]]:
-    """Study B: 24/7 (the given rule), weekend hold, weekend flatten."""
+    """Study B: 24/7 (the given rule trading through the weekend), weekend
+    hold, weekend flatten. Since 2026-11-05 the live Brent rule IS wk_flat
+    (`live_params().weekend_off == "flatten"`, operator "weekend flat"), so
+    24/7 sets `weekend_off=None` explicitly and the `live` baseline row ties
+    `wk_flat` exactly; `test_brent_stop_buffer_eval.py` pins both."""
     p = f"{prefix}_" if prefix else ""
-    return {f"{p}24/7": dict(base_ov), f"{p}wk_hold": {**base_ov, "weekend_off": "hold"},
+    return {f"{p}24/7": {**base_ov, "weekend_off": None}, f"{p}wk_hold": {**base_ov, "weekend_off": "hold"},
             f"{p}wk_flat": {**base_ov, "weekend_off": "flatten"}}
 
 
@@ -423,6 +427,14 @@ def weekend_long(c15: Sequence[Candle], named: Dict[str, Dict[str, Any]], base: 
     return out
 
 
+def live_ties_wk_flat(results: Dict[str, Any], baseline: str = BASELINE, candidate: str = "wk_flat") -> Dict[str, Any]:
+    """The 2026-11-05 adoption check: on every Brent dataset the `live` row
+    (the live rule as given) and `wk_flat` must summarize identically.
+    `pass` is False the day live_params() drifts from the adopted variant."""
+    per = {ds: r["variants"].get(baseline) == r["variants"].get(candidate) for ds, r in results.items()}
+    return {"pass": bool(per) and all(per.values()), "per_dataset": per}
+
+
 def weekend_trade_rows(trades: Sequence[Dict[str, Any]] = WEEKEND_TRADES) -> List[Dict[str, Any]]:
     """This weekend's closed trades: was the entry inside the window (so
     weekend-off would have skipped it), and was the position open at the
@@ -573,13 +585,17 @@ def main(argv: Optional[List[str]] = None) -> int:
     today = todays_long(b15, b1h, named_a, bp)
 
     # ── B: weekend off on Brent (live + best buffer) and silver (live)
+    # Since 2026-11-05 the live Brent rule is wk_flat, so the baseline is the
+    # live rule as given ({}), 24/7 is its own explicit row, and the
+    # `live_is_wk_flat` check below must hold on every dataset.
     best_ov = named_a[best] if best else {}
-    named_b = {**weekend_variants({}, ""), **weekend_variants(best_ov, best or "best")}
-    named_b = {(BASELINE if k == "24/7" else k): v for k, v in named_b.items()}
+    named_b = {BASELINE: {}, **weekend_variants({}, ""), **weekend_variants(best_ov, best or "best")}
     res_b_brent: Dict[str, Any] = {}
     for ds, (d_at, st, en) in brent_sets.items():
         res_b_brent[ds] = run_dataset(b15, b1h, d_at, bp, st, en, named_b, funding=funding)
-    log(f"B weekend Brent done ({time.time() - t0:.0f}s)")
+    ties = live_ties_wk_flat(res_b_brent)
+    log(f"B weekend Brent done ({time.time() - t0:.0f}s); live == wk_flat on "
+        f"{sum(ties['per_dataset'].values())} of {len(ties['per_dataset'])} datasets")
 
     # silver: the replay (its own cache), the live journal when given, the controls
     if a.silver_max_leverage is None:
@@ -658,7 +674,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         "A": {"variants": named_a, "datasets": strip(res_a), "scores": scores_a, "max_stop_liq_frac": max_liq,
               "best": best, "verdict": verdict_a, "todays_long": today},
         "B": {"variants_brent": named_b, "brent": strip(res_b_brent), "silver": strip(res_b_silver),
-              "scores": scores_b, "verdict": verdict_b, "weekend_trades": weekend_trade_rows()},
+              "scores": scores_b, "verdict": verdict_b, "weekend_trades": weekend_trade_rows(),
+              "live_is_wk_flat": ties},
         "C": {"variants": named_c, "brent": strip(res_c_brent), "silver": strip(res_c_silver), "scores": scores_c,
               "verdict": verdict_c, "weekend_long": weekend_trade},
     }
@@ -727,6 +744,8 @@ def _print(rep: Dict[str, Any]) -> None:
     for desk, sc in B["scores"].items():
         _scores_print(f"B {desk}", sc)
     print(f"\nB verdict {json.dumps(B['verdict'])}")
+    if "live_is_wk_flat" in B:
+        print(f"B live == wk_flat (the 2026-11-05 live rule): {json.dumps(B['live_is_wk_flat'])}")
     for r in B["weekend_trades"]:
         print(f"  {json.dumps(r)}")
     _table("C: weekend-only lock, Brent", C["brent"])

@@ -19,7 +19,8 @@ import pytest
 
 from pathiel.models.types import Candle
 from services.strategies.backtest.desk_tick_sim import (
-    DAY_MS, Direction, Params, Trade, live_params, simulate, stop_cap_blocks, tally_stops)
+    DAY_MS, Direction, Params, Trade, live_params, live_params_before_weekend_flat, simulate, stop_cap_blocks,
+    tally_stops)
 
 HOUR_MS = 3_600_000
 Q = 900_000
@@ -35,9 +36,11 @@ def _bars(rows, t0: int):
 
 def _params(**over) -> Params:
     """Live rules (market entry off the 24h range, 2R gate, limit target),
-    no target offset and no slippage so prices are exact."""
-    base = dataclasses.replace(live_params(), stop_buffer=0.2, target_offset_frac=0.0, slippage=0.0,
-                               starting_equity=64.0)
+    no target offset and no slippage so prices are exact. Weekends traded
+    (the pre-2026-11-05 rule): the bars here start at the epoch, and
+    1970-01-02 23:00Z is a Friday evening inside the oil weekend window."""
+    base = dataclasses.replace(live_params_before_weekend_flat(), stop_buffer=0.2, target_offset_frac=0.0,
+                               slippage=0.0, starting_equity=64.0)
     return dataclasses.replace(base, **over)
 
 

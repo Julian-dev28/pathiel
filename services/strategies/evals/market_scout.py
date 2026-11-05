@@ -266,11 +266,15 @@ def scouting_params(venue_max_leverage: float, atr_price_mean: float, base: Opti
     ATR -- `services.strategies.next_trade.stop_buffer_for`) and leverage
     capped at the venue max. Everything else (market entry, 24h range, 2R
     gate, 0.5% target offset, limit target, fixed stop, re-entry) is
-    untouched, so these runs are judged on the SAME mechanics as Brent."""
+    untouched, so these runs are judged on the SAME mechanics as Brent,
+    except the oil weekend flat (`weekend_off`, live on Brent since
+    2026-11-05): silver lost with it (BRENT_STOP_BUFFER_TEST study B, 0 of
+    3, geo 0.80) and gold is untested, so the non-Brent rule trades the
+    weekend (None)."""
     base = base or live_params()
     leverage = min(base.leverage, venue_max_leverage)
     return dataclasses.replace(base, stop_buffer=ATR_BUFFER_MULT * atr_price_mean,
-                               leverage=leverage, max_leverage=venue_max_leverage)
+                               leverage=leverage, max_leverage=venue_max_leverage, weekend_off=None)
 
 
 DirectionName = str   # "always_long" | "always_short" | "daily_sign"

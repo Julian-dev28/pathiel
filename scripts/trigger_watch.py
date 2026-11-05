@@ -33,6 +33,15 @@ Truth Social, every minute) and the official whitehouse.gov news feed (with
 the news poll); Truth Social itself and X have no feed we may read, and
 state.gov refuses our User-Agent (services/intel/sources/social.py). A
 source new to the state file is learned on its first poll, not alerted on.
+
+Since 2026-11-05 (operator: "weekend flat") the oil futures weekend
+(services/strategies/weekend.py, Fri 16:00 to Sun 18:00 New York) wakes
+the oil desk ONCE at the window open when it holds a position or a resting
+entry, as {"fire": desk, "reason": "weekend_flat", ...}: the tick closes it
+(desk-tick agent, scripts/weekend.py) instead of waiting up to 15 minutes
+for the cron. The cooldown key `<desk>:weekend_flat` remembers the window
+it fired for, so it never fires twice for one weekend. A flat desk inside
+the window is skipped like any other blackout (place_bracket refuses).
 """
 from __future__ import annotations
 
@@ -210,6 +219,29 @@ def headline_pass(targets: List[Tuple[str, str, str]], now_s: float, state: Dict
     return out
 
 
+def weekend_fire(desk: str, coin: str, blackout: Dict[str, Any], fired: Dict[str, Any], now_s: float,
+                 slot: Callable[[], str]) -> Optional[Dict[str, Any]]:
+    """The one weekend_flat fire line for `desk`, or None. Fires when the
+    blackout says `flatten`, `fired` has not recorded this window's
+    `start_ms` under `<desk>:weekend_flat`, and the desk holds a position or
+    a resting entry (`slot()`, '' when flat). Records the window in `fired`
+    (the caller writes it) so one weekend wakes the desk once. A slot read
+    that fails is treated as flat: the cron tick closes within 15 minutes."""
+    key = f"{desk}:weekend_flat"
+    start = int(blackout.get("start_ms") or 0)
+    if int(fired.get(key) or 0) == start:
+        return None
+    try:
+        held = slot()
+    except Exception:  # noqa: BLE001 - one bad read; the next minute tries again
+        return None
+    if not held:
+        return None
+    fired[key] = start
+    return {"fire": desk, "coin": coin, "reason": "weekend_flat", "utc": _utc(), "held": held,
+            "until_utc": blackout.get("until_utc"), "note": blackout.get("reason")}
+
+
 def cooled_down(fired: Dict[str, float], desk: str, now_s: float, cooldown_s: float) -> bool:
     """True when `desk` never fired or fired at least `cooldown_s` ago."""
     if desk not in fired:
@@ -321,6 +353,14 @@ def watch(*, once: bool, cooldown_min: float, sleep: Callable[[float], None] = t
                 parts.append(f"{desk}: thesis on {coin}, not {primary}")
                 continue
             blackout = event_blackout(coin, int(now * 1000))
+            if blackout and blackout.get("flatten"):
+                # weekend flat: a held position or resting entry is closed by the tick, once per window
+                line = weekend_fire(desk, coin, blackout, fired, now, lambda: _slot(desk_slot, desk))
+                if line:
+                    _write_json(fired_path, fired)
+                    _log(f"{_utc()} FIRE {json.dumps(line)}")
+                    print(json.dumps(line), flush=True)
+                    return 0
             if blackout:   # place_bracket would refuse anyway; don't wake a tick for nothing
                 parts.append(f"{desk}: {blackout['reason']}")
                 continue

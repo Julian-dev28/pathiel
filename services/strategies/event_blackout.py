@@ -15,7 +15,9 @@ window matches the backtest's `eia_2_2` variant exactly
 
 Enforced in place_bracket (scripts/pathiel-mcp-server.py), shown in the
 desk brief's live-rule line, and honored by scripts/trigger_watch.py.
-event_blackout() stacks the scheduled-event and headline blackouts behind it.
+event_blackout() stacks the oil weekend (services/strategies/weekend.py,
+operator 2026-11-05 "weekend flat"), the scheduled-event and the headline
+blackouts behind it, in that order.
 """
 from __future__ import annotations
 
@@ -24,10 +26,10 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 from services.strategies.backtest.oil_calendar import HOUR_MS, eia_report_times
+from services.strategies.weekend import OIL_COINS, next_oil_weekend, oil_weekend
 
 BEFORE_H = 2.0
 AFTER_H = 2.0
-OIL_COINS = frozenset({"xyz:BRENTOIL", "xyz:CL"})
 
 
 def now_ms() -> int:
@@ -72,18 +74,26 @@ def next_eia_blackout(coin: str, at_ms: Optional[int] = None) -> Optional[Dict[s
 
 
 def event_blackout(coin: str, at_ms: Optional[int] = None) -> Optional[Dict[str, Any]]:
-    """The active blackout for `coin`: the EIA window first, else an impact-3
-    scheduled event (FOMC, CPI, OPEC+, an election; services/intel/
-    scheduled_events.py), else a headline blackout (30 min after the newest
+    """The active blackout for `coin`, first match wins: the EIA window; the
+    oil futures weekend (oil coins only, Fri 16:00 to Sun 18:00 New York;
+    services/strategies/weekend.py, operator 2026-11-05 "weekend flat"; the
+    one window with `flatten: True`, an open oil position is closed too); an
+    impact-3 scheduled event (FOMC, CPI, OPEC+, an election; services/intel/
+    scheduled_events.py); a headline blackout (30 min after the newest
     surprise-headline alert on the coin; services/intel/headline_watch.py,
-    operator 2026-11-05: "FIX THEM"), else None. What place_bracket, the
-    brief and the price watcher check (operator, 2026-11-05: "AUDIT THE
-    EVENT CALENDAR AND TAKE THEM INTO ACCOUNT"). Never touches an open
-    position, its stop, its target or a close."""
+    operator 2026-11-05: "FIX THEM"); else None. The order puts the two
+    pure, calendar-known oil windows before the data-driven ones, so a
+    refusal names the rule the operator set, not whichever event overlaps
+    it. What place_bracket, the brief and the price watcher check (operator,
+    2026-11-05: "AUDIT THE EVENT CALENDAR AND TAKE THEM INTO ACCOUNT"). Never
+    touches an open position's stop, its target or a close by itself."""
     t = now_ms() if at_ms is None else int(at_ms)
     eia = eia_blackout(coin, t)
     if eia:
         return eia
+    wk = oil_weekend(coin, t)
+    if wk:
+        return wk
     from services.intel import scheduled_events
     sched = scheduled_events.blackout(coin, t)
     if sched:
@@ -101,5 +111,15 @@ def upcoming_events(coin: str, hours: float = 72.0, at_ms: Optional[int] = None)
             or (r["window"] and r["window"]["end_ms"] > t)]
 
 
+def weekend_blackout(coin: str, at_ms: Optional[int] = None) -> Optional[Dict[str, Any]]:
+    """`weekend.oil_weekend` on this module's clock (tests replace `now_ms`)."""
+    return oil_weekend(coin, now_ms() if at_ms is None else int(at_ms))
+
+
+def next_weekend(coin: str, at_ms: Optional[int] = None) -> Optional[Dict[str, Any]]:
+    """`weekend.next_oil_weekend` on this module's clock, for the brief."""
+    return next_oil_weekend(coin, now_ms() if at_ms is None else int(at_ms))
+
+
 __all__ = ["AFTER_H", "BEFORE_H", "OIL_COINS", "eia_blackout", "event_blackout", "next_eia_blackout",
-           "now_ms", "upcoming_events"]
+           "next_weekend", "now_ms", "upcoming_events", "weekend_blackout"]

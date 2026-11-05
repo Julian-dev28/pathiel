@@ -146,7 +146,8 @@ Weekend window (2026-11-02)
 the oil futures close-to-reopen. zoneinfo does the daylight saving, so it
 is Fri 21:00 to Sun 23:00 UTC in US winter time and Fri 20:00 to Sun 22:00
 UTC in US summer time. The xyz HIP-3 perps trade straight through it.
-`Params.weekend_off` (None = off, the live rule): "hold" takes no NEW entry
+`Params.weekend_off` (None = off; "flatten" is the live oil rule since
+2026-11-05, `live_params()`; silver and gold stay None): "hold" takes no NEW entry
 (and no flip) on a tick inside the window, open positions keep their stop
 and target; "flatten" also closes an open position at market (taker fee,
 exit slippage, exit_reason "weekend") on the first tick inside the window
@@ -312,9 +313,8 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass, field, replace as _dc_replace
-from datetime import datetime, timezone
+
 from typing import Any, Callable, Dict, Generator, List, Optional, Sequence, Tuple
-from zoneinfo import ZoneInfo
 
 from pathiel.agents.bracket import check_leverage, check_levels, liq_estimate, max_leverage_for_stop
 from pathiel.models.types import Candle
@@ -322,6 +322,7 @@ from services.strategies.backtest.funding_signal import (
     FUNDING_FILTER_NAME, funding_filter_blocks, funding_z_at, funding_zscore_series)
 from services.strategies.backtest.regime import FILTERS as REGIME_FILTERS
 from services.strategies.backtest.regime import RegimeConfig, RegimeSeries, label_series, regime_blocks
+from services.strategies.weekend import WEEKEND_CLOSE_NY, WEEKEND_OPEN_NY, weekend_closed  # noqa: F401
 
 HOUR_MS = 3_600_000
 FIFTEEN_MIN_MS = 900_000
@@ -814,17 +815,31 @@ def _open_position(resting: _Resting, fill_px: float, t: int, params: Params) ->
 # live_params(). docs/strategy/OIL_STRATEGY.md has both rule sets.
 def live_params() -> "Params":
     # no_break_entry since 2026-11-04 (next_trade.NO_BREAK_ENTRY, the review's LEAK).
+    # weekend_off "flatten" since 2026-11-05 (operator "weekend flat"; the
+    # BRENT_STOP_BUFFER_TEST study B rerun: wk_flat beat live 5 of 8, lost 1,
+    # geo 1.033, tied both thesis sets). Brent/WTI only: market_scout.
+    # scouting_params turns it back off for silver and gold (silver lost with it).
     return Params(stop_buffer=0.75, target_offset_frac=0.005, target_mode="limit", leverage=20.0,
-                  entry_mode="market", entry_lookback_h=24, min_r=2.0, no_break_entry=True)
+                  entry_mode="market", entry_lookback_h=24, min_r=2.0, no_break_entry=True,
+                  weekend_off="flatten")
+
+
+def live_params_before_weekend_flat() -> "Params":
+    """The live rule from 2026-11-04 evening (no-break) until 2026-11-05
+    evening: `live_params()` trading through the weekend. Replays of a real
+    trade from before the weekend rule use this, so they keep reproducing
+    what actually traded."""
+    return _dc_replace(live_params(), weekend_off=None)
 
 
 def live_params_before_no_break() -> "Params":
     """The live rule from the 2026-10-30 switch to market entries until
     2026-11-04 evening: `live_params()` with breaks allowed (a long could buy
-    under the 24h low, its stop 0.75 under the mid). Tests and evals that
-    replay a real trade from that window (the 11-02 long, the 11-02 silver
-    shorts) use this, so they keep reproducing what actually traded."""
-    return _dc_replace(live_params(), no_break_entry=False)
+    under the 24h low, its stop 0.75 under the mid) and weekends traded.
+    Tests and evals that replay a real trade from that window (the 11-02
+    long, the 11-02 silver shorts) use this, so they keep reproducing what
+    actually traded."""
+    return _dc_replace(live_params_before_weekend_flat(), no_break_entry=False)
 
 
 def offset_target(target_px: float, side: str, frac: float) -> float:
@@ -980,24 +995,9 @@ def profit_lock_stop(side: str, entry: float, risk: float, best: float,
     return stop
 
 
-_NEW_YORK = ZoneInfo("America/New_York")
-WEEKEND_CLOSE_NY = (4, 16 * 60)     # Friday 16:00 New York (weekday, minute of day)
-WEEKEND_OPEN_NY = (6, 18 * 60)      # Sunday 18:00 New York
-
-
-def weekend_closed(t_ms: int) -> bool:
-    """True when `t_ms` falls in the oil futures weekend: Friday 16:00 to
-    Sunday 18:00 New York time (Fri 21:00 to Sun 23:00 UTC in winter, Fri
-    20:00 to Sun 22:00 UTC in summer; zoneinfo does the switch). Pure."""
-    lt = datetime.fromtimestamp(t_ms / 1000.0, tz=timezone.utc).astimezone(_NEW_YORK)
-    wd, minute = lt.weekday(), lt.hour * 60 + lt.minute
-    if wd == 5:
-        return True
-    if wd == WEEKEND_CLOSE_NY[0]:
-        return minute >= WEEKEND_CLOSE_NY[1]
-    if wd == WEEKEND_OPEN_NY[0]:
-        return minute < WEEKEND_OPEN_NY[1]
-    return False
+# The window itself lives in services/strategies/weekend.py since 2026-11-05
+# (operator: "weekend flat"), so the live gate, the brief, the watcher and this
+# sim share one definition; `weekend_closed` is re-exported here unchanged.
 
 
 def filters_on(params: Params) -> bool:
@@ -2158,7 +2158,8 @@ def simulate_steps(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], 
 
 __all__ = ["Direction", "DirectionAt", "Params", "Trade", "Run", "simulate", "simulate_steps", "tick_bars",
           "SizeEquity", "offset_target", "cap_target", "regime_key",
-          "trade_leverage", "CONVICTION_LEVERAGE_FLOOR", "live_params", "profit_lock_stop", "stop_cap_blocks",
+          "trade_leverage", "CONVICTION_LEVERAGE_FLOOR", "live_params", "live_params_before_weekend_flat",
+          "live_params_before_no_break", "profit_lock_stop", "stop_cap_blocks",
           "tally_stops", "floored_buffer", "weekend_closed", "lock_on", "risk_capped_notional", "filters_on",
           "call_start", "entry_filter", "EntryGuard", "PULLBACK_MODES", "PB_TARGETS", "PB_TRIGGERS",
           "pullback_setup", "retest_level", "pb_cancel", "in_event_blackout"]

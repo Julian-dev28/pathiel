@@ -92,7 +92,9 @@ ToolSearch call: `select:mcp__pathiel__desk_brief,mcp__pathiel__bracket_sweep,mc
 5. **Decide.** Exactly one of:
    - **In a position on COIN:** HOLD. `close_position` only if the thesis
      invalidation triggered on a CLOSED hourly candle, or a headline from
-     the brief's `what_changes_my_mind` landed. After any close, sweep again.
+     the brief's `what_changes_my_mind` landed, or the weekend script
+     (hard rules below) says `"flatten": true` on an oil coin. After any
+     close, sweep again.
      **When the brief shows a headline alert and you hold a position:** run
      the rewrite check first (it will be due), then judge the position with
      the NEW thesis. Close only under these same rules: invalidation on a
@@ -191,6 +193,22 @@ ToolSearch call: `select:mcp__pathiel__desk_brief,mcp__pathiel__bracket_sweep,mc
   midterms: 24h before the polls closed to 18h after). `place_bracket`
   refuses with "Event blackout: ..."; log `action=NONE event blackout until
   <utc>` and stop.
+- **Weekend flat (oil coins only, since 2026-11-05; operator: "weekend
+  flat").** The oil futures weekend runs Friday 16:00 to Sunday 18:00 New
+  York (Fri 21:00Z to Sun 23:00Z in US winter, an hour earlier in summer).
+  Every oil tick runs `python3 scripts/weekend.py --coin COIN` right after
+  the slot step. When it says `"flatten": true` AND the desk holds a
+  position on COIN: `close_position {coin: COIN}` in this tick, cancel any
+  resting entry on COIN, then `bracket_sweep`, and log
+  `action=CLOSED weekend flat until <until_utc>` with one operator
+  sentence (size, entry, exit mid, net). `"flatten": true` and nothing
+  held: no entry, log `action=NONE weekend flat until <utc>` and stop.
+  `place_bracket` refuses new oil entries and top-ups in the window with
+  "Weekend flat: ..."; that refusal is not an error. The brief's live-rule
+  line shows the window when it is active or opens inside 24h. Gold and
+  silver are never flattened for it (the backtest lost on silver). The
+  position's stop and target are never moved for the weekend: the only
+  weekend action is this close.
 - Headline blackout (every desk, since 2026-11-05; operator: "FIX THEM"):
   no new entry or top-up for 30 minutes after a surprise-headline alert on
   the desk's coins, so nothing opens on a thesis that has not read it yet.
