@@ -3092,16 +3092,23 @@ def _live_rule(desk_id: str, brief: Any) -> Dict[str, Any]:
         nt = _bounded(desk_next_trade, desk_id, lev, brief=brief)
         line = live_rule_line(nt)
         from services.strategies.desks import get_spec
-        from services.strategies.event_blackout import eia_blackout, next_eia_blackout
+        from services.strategies.event_blackout import event_blackout, next_eia_blackout, upcoming_events
         spec = get_spec(desk_id)
         coin = next((i.coin for i in spec.instruments if i.role == "primary"), spec.instruments[0].coin) if spec else ""
-        active = eia_blackout(coin)
+        active = event_blackout(coin)
         if active:
             line += f" {active['reason']}: the tick does not enter until then."
         else:
             nxt = next_eia_blackout(coin)
             if nxt:
                 line += f" Next EIA blackout {nxt['start_utc']} to {nxt['until_utc']}."
+        # Operator 2026-11-05: the midterms were missing from the calendar.
+        from services.intel.scheduled_events import calendar_warning, short_line
+        evs = upcoming_events(coin, 72.0)
+        line += "\nEvents next 72h: " + ("; ".join(short_line(r) for r in evs) if evs else "none scheduled") + "."
+        warn = calendar_warning(int(time.time() * 1000))
+        if warn:
+            line += f" WARNING: {warn}."
         return {"next": nt, "line": line}
     except Exception as e:  # noqa: BLE001 - the brief still answers without it
         return {"next": None, "line": f"Live rule: unavailable ({type(e).__name__}: {str(e)[:80]})."}
@@ -3381,9 +3388,11 @@ def handle_place_bracket(params: Dict[str, Any]) -> str:
     if not params.get("dry_run"):
         # Operator 2026-11-03 "DO THIS THEN": no new oil entry 2h either side
         # of the EIA report (OIL_EVENT_TIMING_TEST_2026-11-03.md, eia_2_2).
+        # 2026-11-05: the same for impact-3 scheduled events (FOMC, CPI,
+        # OPEC+, elections; services/intel/scheduled_events.py).
         # Open positions, stops, targets and closes are never touched.
-        from services.strategies.event_blackout import eia_blackout
-        blackout = eia_blackout(coin)
+        from services.strategies.event_blackout import event_blackout
+        blackout = event_blackout(coin)
         if blackout:
             return json.dumps({"ok": False, "coin": coin, "placed": False, "blackout": blackout,
                                "error": blackout["reason"]})

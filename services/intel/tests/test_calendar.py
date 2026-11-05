@@ -313,10 +313,10 @@ def test_cpi_release_dates_are_sorted_and_future_looking():
 
 def test_opec_plus_releases_known_meeting():
     releases = opec_plus_releases(date(2026, 10, 17), date(2026, 11, 30))
-    assert len(releases) == 1
-    assert releases[0].at_utc.date() == date(2026, 11, 1)
-    assert "ASSUMPTION" in releases[0].note
-    assert OPEC_PLUS_MEETINGS == [date(2026, 11, 1)]
+    assert [r.at_utc.date() for r in releases] == [date(2026, 11, 1), date(2026, 11, 29)]
+    assert all("ASSUMPTION" in r.note for r in releases)
+    # Nov 29: the full ministerial + JMMC (opec.org 617-4-october-2026, checked 2026-11-05)
+    assert OPEC_PLUS_MEETINGS == [date(2026, 11, 1), date(2026, 11, 29)]
 
 
 def test_opec_plus_releases_outside_window_is_empty():

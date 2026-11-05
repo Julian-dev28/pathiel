@@ -92,3 +92,13 @@ def test_eval_fails_when_the_rule_would_cost_money():
 def test_eval_keeps_the_last_revision_of_a_trade():
     lines = [json.dumps(_row(1, -0.2, -3.0)), json.dumps(_row(1, -0.2, -4.0)), ""]
     assert [r["net_usd"] for r in E.latest_rows(lines)] == [-4.0]
+
+
+def test_the_target_offset_is_read_at_call_time(monkeypatch):
+    """A default bound at import froze a test fixture's 0.0 offset into
+    next_trade, so test_trigger_watch failed after test_bracket (2026-11-05)."""
+    from pathiel.agents import bracket
+    base = next_trade("long", 112.04, 112.00, 114.23, thesis_entry=112.20, **KW)
+    monkeypatch.setattr(bracket, "TARGET_OFFSET_FRAC", 0.0)
+    flat = next_trade("long", 112.04, 112.00, 114.23, thesis_entry=112.20, **KW)
+    assert flat["tp_px"] == 114.23 and base["tp_px"] == pytest.approx(114.23 * 0.995)

@@ -70,4 +70,28 @@ def next_eia_blackout(coin: str, at_ms: Optional[int] = None) -> Optional[Dict[s
     return None
 
 
-__all__ = ["AFTER_H", "BEFORE_H", "OIL_COINS", "eia_blackout", "next_eia_blackout", "now_ms"]
+def event_blackout(coin: str, at_ms: Optional[int] = None) -> Optional[Dict[str, Any]]:
+    """The active blackout for `coin`: the EIA window first, else an impact-3
+    scheduled event (FOMC, CPI, OPEC+, an election; services/intel/
+    scheduled_events.py), else None. What place_bracket, the brief and the
+    price watcher check (operator, 2026-11-05: "AUDIT THE EVENT CALENDAR AND
+    TAKE THEM INTO ACCOUNT"). Never touches an open position."""
+    t = now_ms() if at_ms is None else int(at_ms)
+    eia = eia_blackout(coin, t)
+    if eia:
+        return eia
+    from services.intel import scheduled_events
+    return scheduled_events.blackout(coin, t)
+
+
+def upcoming_events(coin: str, hours: float = 72.0, at_ms: Optional[int] = None) -> list:
+    """Scheduled events for `coin` in the next `hours` (EIA weekly not
+    included: its window shows on the live-rule line)."""
+    from services.intel import scheduled_events
+    t = now_ms() if at_ms is None else int(at_ms)
+    return [r for r in scheduled_events.market_events(t, t + int(hours * HOUR_MS), coin) if r["at_ms"] >= t
+            or (r["window"] and r["window"]["end_ms"] > t)]
+
+
+__all__ = ["AFTER_H", "BEFORE_H", "OIL_COINS", "eia_blackout", "event_blackout", "next_eia_blackout",
+           "now_ms", "upcoming_events"]

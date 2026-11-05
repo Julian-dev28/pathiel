@@ -25,7 +25,8 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-from pathiel.agents.bracket import (DEFAULT_MIN_R, TARGET_OFFSET_FRAC, check_leverage,
+from pathiel.agents import bracket as _bracket
+from pathiel.agents.bracket import (DEFAULT_MIN_R, check_leverage,
                                     check_levels, offset_target)
 
 # Stop distance beyond the 24h edge on Brent (operator, 2026-10-29); the
@@ -137,11 +138,13 @@ def breakout_levels(closed_1h: Sequence[Dict[str, Any]], lookback_h: int = BREAK
 
 def breakout_trade(side: str, mid: float, bo: Optional[Dict[str, float]], *, leverage: float,
                    coin_max_leverage: Optional[float], stop_buffer: float, min_r: float = DEFAULT_MIN_R,
-                   offset_frac: float = TARGET_OFFSET_FRAC) -> Dict[str, Any]:
+                   offset_frac: Optional[float] = None) -> Dict[str, Any]:
     """The breakout entry at `mid` from `breakout_levels()`: `ok` with the
     stop, target and R, or `ok: False` with the reason. Mirrors
     desk_tick_sim.pullback_setup mode a5 with pb_target="measured" and no
     pb_fit_leverage (a parity test keeps them equal). Pure."""
+    if offset_frac is None:
+        offset_frac = _bracket.TARGET_OFFSET_FRAC
     if side not in ("long", "short"):
         return {"ok": False, "reason": f"the thesis is {side}"}
     if not bo:
@@ -197,7 +200,7 @@ def fit_leverage(entry: float, stop: float, leverage: float, coin_max_leverage: 
 def next_trade(side: str, mid: float, low_24h: float, high_24h: float, *,
                thesis_entry: Optional[float], leverage: float, coin_max_leverage: Optional[float],
                stop_buffer: float, min_r: float = DEFAULT_MIN_R,
-               offset_frac: float = TARGET_OFFSET_FRAC,
+               offset_frac: Optional[float] = None,
                leverage_fit: Sequence[float] = (),
                breakout: Optional[Dict[str, float]] = None,
                no_break: bool = NO_BREAK_ENTRY) -> Dict[str, Any]:
@@ -210,6 +213,11 @@ def next_trade(side: str, mid: float, low_24h: float, high_24h: float, *,
     leverage line, then R), the breakout is tried; `source: "breakout"`
     when it trades. `no_break` (NO_BREAK_ENTRY, live): no entry while the
     mid is past the 24h range's own edge."""
+    # Read the live offset at CALL time: a default bound at import froze
+    # whatever bracket.TARGET_OFFSET_FRAC was when this module first loaded
+    # (a test fixture's 0.0 leaked into test_trigger_watch that way).
+    if offset_frac is None:
+        offset_frac = _bracket.TARGET_OFFSET_FRAC
     out = _main_rule(side, mid, low_24h, high_24h, thesis_entry=thesis_entry, leverage=leverage,
                      coin_max_leverage=coin_max_leverage, stop_buffer=stop_buffer, min_r=min_r,
                      offset_frac=offset_frac, leverage_fit=leverage_fit, no_break=no_break)

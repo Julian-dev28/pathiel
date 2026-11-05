@@ -94,6 +94,29 @@ def calendar_catalysts(spec: DeskSpec, now: datetime) -> List[Catalyst]:
                 kind=kind, title=title, at=rel.at_utc, importance=importance,
                 source=source, expected=expected,
             ))
+    out += scheduled_catalysts(spec, now)
+    return out
+
+
+def scheduled_catalysts(spec: DeskSpec, now: datetime) -> List[Catalyst]:
+    """Rows of services/intel/data/scheduled_events.json (elections, jobs,
+    PCE, OPEC/IEA monthly reports, funding deadlines, holidays...) for the
+    desk's coins, in its window. Operator, 2026-11-05: the 11-03 midterms
+    were not on the calendar and Brent fell 9% on the result. Pure."""
+    from services.intel import scheduled_events
+    coins = {i.coin for i in spec.instruments}
+    start, end = desk_window(spec, now)
+    t0 = int(now.timestamp() * 1000)
+    t1 = int(datetime(end.year, end.month, end.day, tzinfo=timezone.utc).timestamp() * 1000)
+    out: List[Catalyst] = []
+    for r in scheduled_events.market_events(t0, t1):
+        if r["origin"] != "scheduled_events.json" or not (r["coins"] & coins) or r["at_ms"] < t0:
+            continue
+        at = datetime.fromtimestamp(r["at_ms"] / 1000, tz=timezone.utc)
+        title = r["title"] + ("" if r["verified"] else " (unverified date)") + (" (all day)" if r["all_day"] else "")
+        out.append(Catalyst(id=stable_id("catalyst", r["kind"], at.isoformat()), kind=r["kind"], title=title,
+                            at=at, importance=max(1, min(3, r["impact"])), source=r["source"][:200] or "calendar",
+                            expected=r.get("note")))
     return out
 
 

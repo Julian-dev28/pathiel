@@ -1012,8 +1012,11 @@ def test_handler_refuses_new_oil_entries_inside_the_eia_blackout(monkeypatch):
     order; a dry run still sizes; silver is never blocked."""
     mcp = _mcp()
     from pathiel.agents import bracket as br
+    from services.intel import scheduled_events
     from services.strategies import event_blackout
     monkeypatch.setattr(event_blackout, "now_ms", lambda: 1793714400000 + 24 * 3_600_000)  # Wed 11-04 14:00Z
+    # 11-04 14:00Z is also inside the midterm window; this test pins EIA alone.
+    monkeypatch.setattr(scheduled_events, "blackout", lambda coin, t, path=None: None)
     called = []
     monkeypatch.setattr(br, "place_bracket", lambda coin, **k: called.append(coin) or {"ok": True})
     monkeypatch.setattr(mcp, "_risk_inputs", lambda: called.append("sized") or (_ for _ in ()).throw(RuntimeError("stop")))
@@ -1025,6 +1028,26 @@ def test_handler_refuses_new_oil_entries_inside_the_eia_blackout(monkeypatch):
     called.clear()
     out = json.loads(mcp.handle_place_bracket({"coin": "xyz:SILVER", "stop_px": 48.0, "tp_px": 52.0}))
     assert called == ["sized"] and "EIA blackout" not in json.dumps(out)
+
+
+def test_handler_refuses_new_entries_on_both_desks_inside_an_event_blackout(monkeypatch):
+    """Operator 2026-11-05: the 11-03 13:53Z Brent long (-$23.67) opened 10h
+    before the midterm polls closed. Inside that window place_bracket now
+    refuses oil AND silver; a dry run still sizes."""
+    mcp = _mcp()
+    from pathiel.agents import bracket as br
+    from services.strategies import event_blackout
+    monkeypatch.setattr(event_blackout, "now_ms", lambda: 1793714400000 - 7 * 60_000)  # 11-03 13:53Z
+    called = []
+    monkeypatch.setattr(br, "place_bracket", lambda coin, **k: called.append(coin) or {"ok": True})
+    monkeypatch.setattr(mcp, "_risk_inputs", lambda: called.append("sized") or (_ for _ in ()).throw(RuntimeError("stop")))
+    for coin, stop, tp in ((COIN, 100.0, 110.0), ("xyz:SILVER", 48.0, 52.0)):
+        out = json.loads(mcp.handle_place_bracket({"coin": coin, "stop_px": stop, "tp_px": tp}))
+        assert out["ok"] is False and out["placed"] is False and "Event blackout" in out["error"], coin
+        assert "midterm" in out["error"] and out["blackout"]["until_utc"] == "2026-11-04 18:00Z"
+    assert called == []
+    json.loads(mcp.handle_place_bracket({"coin": COIN, "stop_px": 100.0, "tp_px": 110.0, "dry_run": True}))
+    assert called == ["sized"]
 
 
 def test_handler_fits_brent_and_silver_leverage_to_the_stop(monkeypatch):

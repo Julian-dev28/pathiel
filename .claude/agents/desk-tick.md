@@ -165,6 +165,17 @@ ToolSearch call: `select:mcp__pathiel__desk_brief,mcp__pathiel__bracket_sweep,mc
   "EIA blackout: ..." then. That refusal is not an error: log
   `action=NONE EIA blackout until <utc>` and stop. Open positions, stops,
   targets and closes are unaffected.
+- Event blackout (every desk, since 2026-11-05; operator: "AUDIT THE EVENT
+  CALENDAR AND TAKE THEM INTO ACCOUNT"): the same for impact-3 scheduled
+  events: FOMC, CPI, OPEC+ meetings (their whole day), elections (the
+  midterms: 24h before the polls closed to 18h after). `place_bracket`
+  refuses with "Event blackout: ..."; log `action=NONE event blackout until
+  <utc>` and stop.
+- **Events next 72h** (the brief's line under the live rule): read it every
+  tick. When you hold a position and an impact-3 event or a `[blackout]`
+  row lands before your next tick, say so in your operator sentence (event,
+  time, distance to stop). Do not close for it: the stop and target rest on
+  the venue. The thesis already sees every event (intel catalysts).
 
 ## What you return
 

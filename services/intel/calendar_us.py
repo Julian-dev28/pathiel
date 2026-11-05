@@ -282,6 +282,10 @@ FOMC_DECISION_DATES_2026: List[date] = [
     date(2026, 1, 28), date(2026, 3, 18), date(2026, 4, 29), date(2026, 6, 17),
     date(2026, 7, 29), date(2026, 9, 16), date(2026, 10, 28), date(2026, 12, 9),
 ]
+# 2027: federalreserve.gov/monetarypolicy/fomccalendars.htm, checked
+# 2026-11-05 (the Fed labels 2027 dates tentative until the prior meeting
+# confirms them). Jan 26-27.
+FOMC_DECISION_DATES_2027: List[date] = [date(2027, 1, 27)]
 
 # CPI release dates, 08:30 ET, "Reference Month -> Release Date" from the
 # live bls.gov/schedule/news_release/cpi.htm table. Direct fetch of that
@@ -304,12 +308,14 @@ CPI_RELEASE_DATES: List[date] = [
 # Per the intel brief: "next known: Nov 1 2026." Time of day is not fixed
 # publicly in advance for these ministerial calls; 12:00 UTC is a labeled
 # placeholder, not a sourced time.
-OPEC_PLUS_MEETINGS: List[date] = [date(2026, 11, 1)]
+# Nov 29 2026: full ministerial + JMMC that sets 2027 baselines, announced in
+# opec.org/pr-detail/617-4-october-2026.html (checked 2026-11-05).
+OPEC_PLUS_MEETINGS: List[date] = [date(2026, 11, 1), date(2026, 11, 29)]
 
 
 def fomc_releases(start: date, end: date) -> List[Release]:
     return [Release(_et_datetime(d, 14, 0).astimezone(UTC), "FOMC decision + press conference")
-            for d in FOMC_DECISION_DATES_2026 if start <= d <= end]
+            for d in FOMC_DECISION_DATES_2026 + FOMC_DECISION_DATES_2027 if start <= d <= end]
 
 
 def cpi_releases(start: date, end: date) -> List[Release]:
