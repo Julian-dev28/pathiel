@@ -96,15 +96,20 @@ def test_upcoming_events_and_the_brief_line():
     from services.strategies.event_blackout import upcoming_events
     evs = upcoming_events(SILVER, 72.0, at_ms=ms(2026, 11, 5, 11, 0))
     lines = [S.short_line(r) for r in evs]
-    assert lines == ["Fri 11-06 13:30Z US jobs report (Oct NFP)"]
+    assert lines[0] == "Fri 11-06 13:30Z US jobs report (Oct NFP)"
+    # 2026-11-05 research: Tehran's reply to the Qatar draft deal is expected Saturday.
+    assert lines[1].startswith("Sat 11-07 Iran's reply") and lines[1].endswith("[blackout] (unverified)")
     cpi = upcoming_events(BRENT, 24.0, at_ms=ms(2026, 11, 10, 0, 0))
     assert any(S.short_line(r).endswith("US CPI release [blackout]") for r in cpi)
 
 
-def test_unverified_rows_say_so():
-    rows = S.market_events(ms(2026, 11, 11), ms(2026, 11, 12), "xyz:BRENTOIL")
+def test_unverified_rows_say_so_and_verified_ones_do_not():
+    rows = S.market_events(ms(2026, 11, 11), ms(2026, 11, 20), "xyz:BRENTOIL")
+    iaea = [r for r in rows if r["kind"] == "iaea"]
     momr = [r for r in rows if r["kind"] == "opec_momr"]
-    assert momr and S.short_line(momr[0]).endswith("(unverified)")
+    assert iaea and S.short_line(iaea[0]).endswith("(unverified)")
+    # OPEC's own 2026 release-date list (read 2026-11-05): Wednesday 11 November
+    assert momr and not S.short_line(momr[0]).endswith("(unverified)")
 
 
 def test_calendar_warning_two_weeks_before_it_runs_out():
