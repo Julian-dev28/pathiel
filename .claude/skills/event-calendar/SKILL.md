@@ -33,7 +33,7 @@ What uses the calendar:
      Iran/Hormuz talks, sanctions deadlines and IAEA board dates.
 
    Every row needs: date, at_utc (or null for all day or unknown), event,
-   kind, coins (oil and/or silver), impact (1 to 3), verified, source.
+   kind, coins (oil and/or metals; "silver" is the old name of the metals group and still accepted), impact (1 to 3), verified, source.
    Unverified dates stay `verified: false`. Never guess a time.
 3. **Impact 3 is for events that can move price 2% or more within hours.**
    Those block entries. Keep it to:

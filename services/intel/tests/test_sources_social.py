@@ -31,7 +31,7 @@ NOW = datetime(2026, 11, 2, 21, 0, tzinfo=timezone.utc)        # 14 min after th
 NOW_MS = int(NOW.timestamp() * 1000)
 IRAN_POST_ID = "117548803071800973"
 IRAN_REPOST_ID = "117549834242650471"
-TARGETS = [("oil", "xyz:BRENTOIL", "oil"), ("metals", "xyz:SILVER", "silver")]
+TARGETS = [("oil", "xyz:BRENTOIL", "oil"), ("metals", "xyz:SILVER", "metals")]
 
 
 def _posts():
@@ -97,18 +97,20 @@ def test_the_new_sources_are_trusted_and_old_junk_still_is_not():
 
 # ── post patterns, real posts first ─────────────────────────────────────────
 
-def test_the_real_iran_oil_post_and_its_repost_match_for_oil_only():
+def test_the_real_iran_oil_post_and_its_repost_match_for_both_desks():
+    """Since gold (2026-11-05) an Iran post is the metals desk's safe-haven
+    headline too (trump:iran), not only oil's."""
     by_id = {p["id"]: p for p in _posts()}
     assert HW.match_post("oil", by_id[IRAN_POST_ID]["text"]) == "trump:iran"
     assert HW.match_post("oil", by_id[IRAN_REPOST_ID]["text"]) == "trump:iran"
-    assert HW.match_post("silver", by_id[IRAN_POST_ID]["text"]) is None
+    assert HW.match_post("metals", by_id[IRAN_POST_ID]["text"]) == "trump:iran"
 
 
 def test_every_other_real_post_in_the_fixture_is_a_miss():
     for p in _posts():
         if p["id"] in (IRAN_POST_ID, IRAN_REPOST_ID):
             continue
-        for g in ("oil", "silver"):
+        for g in ("oil", "metals"):
             assert HW.match_post(g, p["text"]) is None, (g, p["text"][:80])
 
 
@@ -133,7 +135,7 @@ def test_oil_posts_that_matter_match(text, label):
     ("50% tariff on all copper imports, effective August 1st.", "trump:tariff/metals"),
 ])
 def test_silver_posts_that_matter_match(text, label):
-    assert HW.match_post("silver", text) == label
+    assert HW.match_post("metals", text) == label
 
 
 @pytest.mark.parametrize("text", [
@@ -153,7 +155,7 @@ def test_silver_posts_that_matter_match(text, label):
     "",
 ])
 def test_routine_posts_never_match(text):
-    assert HW.match_post("oil", text) is None and HW.match_post("silver", text) is None
+    assert HW.match_post("oil", text) is None and HW.match_post("metals", text) is None
 
 
 # ── post_alerts: dedup by id, stale skip, the alert row ─────────────────────
@@ -174,9 +176,11 @@ def test_post_alerts_dedup_by_id_skip_stale_and_undated_and_build_the_row():
     assert a["title"] == "Great talks with Iran today!" and a["url"].endswith("/a1")
     assert a["at_ms"] == NOW_MS and a["published_ms"] == NOW_MS - 10 * 60_000 and a["post_type"] == "original"
     assert seen == {"oil:post:a1", "oil:post:a2", "oil:post:a3", "oil:post:a4"}
-    # the second poll sees nothing new; the silver desk judges the same posts on its own key
+    # the second poll sees nothing new; the metals desk judges the same posts on its own key
+    # (an Iran post is gold's safe-haven headline too, since 2026-11-05)
     assert HW.post_alerts("oil", posts, seen, NOW_MS + 60_000) == []
-    assert HW.post_alerts("silver", posts, seen, NOW_MS) == [] and "silver:post:a1" in seen
+    assert [(a["label"], a["post_id"]) for a in HW.post_alerts("metals", posts, seen, NOW_MS)] == [("trump:iran", "a1")]
+    assert "metals:post:a1" in seen and HW.post_alerts("metals", posts, seen, NOW_MS + 60_000) == []
 
 
 def test_post_alerts_on_the_real_fixture_fourteen_minutes_after_the_post():
@@ -209,14 +213,14 @@ def test_shared_items_are_judged_by_every_group_and_keyed_by_url():
             "source": "whitehouse.gov", "published_at": NOW - timedelta(minutes=3)}
     out = HW.news_alerts("oil", [item], seen, NOW_MS, shared=True)
     assert [a["label"] for a in out] == ["trump/oil"] and out[0]["source"] == "whitehouse.gov"
-    assert HW.news_alerts("silver", [item], seen, NOW_MS, shared=True) == []     # judged, no silver pattern
+    assert HW.news_alerts("metals", [item], seen, NOW_MS, shared=True) == []     # judged, no silver pattern
     assert len(seen) == 2
     edited = dict(item, title="President Trump Orders a Release From the Strategic Petroleum Reserve")
     assert HW.news_alerts("oil", [edited], seen, NOW_MS, shared=True) == []       # same URL: once
     # the unshared path is unchanged: one key per title, so the second group never sees it
     seen2: set = set()
     HW.news_alerts("oil", [item], seen2, NOW_MS)
-    assert len(seen2) == 1 and HW.news_alerts("silver", [item], seen2, NOW_MS) == [] and len(seen2) == 1
+    assert len(seen2) == 1 and HW.news_alerts("metals", [item], seen2, NOW_MS) == [] and len(seen2) == 1
 
 
 def test_official_fixture_items_pass_the_source_gate_and_match_only_events():
@@ -298,7 +302,7 @@ def test_headline_pass_primes_the_new_sources_then_alerts_on_a_new_post_for_the_
     out = W.headline_pass(TARGETS, t0, state, {}, {}, fetch_posts_fn=lambda: posts,
                           fetch_official_fn=lambda: official, prime=True, **_quiet())
     assert out == [] and state["primed_sources"] == ["official", "posts"]
-    assert {"oil:post:p1", "silver:post:p1"} <= set(state["seen"]) and state["last_posts_s"] == t0
+    assert {"oil:post:p1", "metals:post:p1"} <= set(state["seen"]) and state["last_posts_s"] == t0
     # 30 s later: the post poll has not come round; nothing fetched
     calls = []
     out = W.headline_pass(TARGETS, t0 + 30, state, {}, {}, fetch_posts_fn=lambda: calls.append(1) or [],
@@ -316,7 +320,8 @@ def test_headline_pass_primes_the_new_sources_then_alerts_on_a_new_post_for_the_
                      "source": "whitehouse.gov", "published_at": NOW - timedelta(minutes=1)})
     out = W.headline_pass(TARGETS, t0 + HW.NEWS_POLL_S, state, {}, {}, fetch_posts_fn=lambda: posts,
                           fetch_official_fn=lambda: official, **_quiet())
-    assert [(d, a["kind"], a["label"], a["source"]) for d, a in out] == [("oil", "news", "iran/hormuz", "whitehouse.gov")]
+    assert [(d, a["kind"], a["label"], a["source"]) for d, a in out] == [
+        ("oil", "news", "iran/hormuz", "whitehouse.gov"), ("metals", "news", "iran/hormuz", "whitehouse.gov")]
 
 
 def test_an_old_state_file_learns_the_new_sources_first_and_still_alerts_on_news():
@@ -340,7 +345,9 @@ def test_an_old_state_file_learns_the_new_sources_first_and_still_alerts_on_news
                      "source": "state.gov", "published_at": NOW - timedelta(minutes=1)})
     out = W.headline_pass(TARGETS, t0 + HW.NEWS_POLL_S, state, {}, {}, fetch_news=lambda g: wire if g == "oil" else [],
                           fetch_odds_fn=lambda d: [], fetch_posts_fn=lambda: posts, fetch_official_fn=lambda: official)
-    assert sorted((d, a["kind"], a["label"]) for d, a in out) == [("oil", "news", "iran/hormuz"),
+    assert sorted((d, a["kind"], a["label"]) for d, a in out) == [("metals", "news", "iran/hormuz"),
+                                                                   ("metals", "post", "trump:iran"),
+                                                                   ("oil", "news", "iran/hormuz"),
                                                                    ("oil", "post", "trump:iran")]
 
 

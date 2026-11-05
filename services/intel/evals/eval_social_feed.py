@@ -31,7 +31,7 @@ from services.intel.sources import social  # noqa: E402
 
 STALE_H = 48
 MAX_POST_HIT_RATE = 0.25
-GROUPS = ("oil", "silver")
+GROUPS = ("oil", "metals")
 
 
 def _age(now: datetime, items: List[Dict[str, Any]]) -> str:

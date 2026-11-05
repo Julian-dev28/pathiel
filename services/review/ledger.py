@@ -182,9 +182,15 @@ def theses_by_desk(bundle: Dict[str, Any]) -> Dict[str, List[Any]]:
     dirs = bundle.get("theses_dirs") or {}
     oil = I.thesis_directions(dirs.get("oil", ""))
     metals = I.thesis_directions(dirs.get("metals", ""))
-    silver_1h = (bundle.get("bars1h") or {}).get("xyz:SILVER") or []
-    if metals and silver_1h:
-        metals = same_market(metals, silver_1h)    # the gold-era thesis is not a silver call
+    # The metals desk has traded silver (2026-10-31 to 11-05) and gold (one
+    # thesis before that, the primary since 11-05): keep every thesis whose
+    # entry sits at one of its coins' prices, so a gold call is never judged
+    # as a silver one or dropped.
+    bars = [(bundle.get("bars1h") or {}).get(c) or [] for c in ("xyz:SILVER", "xyz:GOLD")]
+    bars = [b for b in bars if b]
+    if metals and bars:
+        keep = {th.thesis_id for b in bars for th in same_market(metals, b)}
+        metals = [th for th in metals if th.thesis_id in keep]
     return {"oil": oil, "metals": metals}
 
 

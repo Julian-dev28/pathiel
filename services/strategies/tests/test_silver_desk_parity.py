@@ -85,8 +85,8 @@ def test_active_desks_with_oil_and_silver_both_live(client, monkeypatch):
     body = r.json()
     assert body["active_desks"] == ["oil", "metals"]
     by_id = {d["id"]: d for d in body["desks"]}
-    assert by_id["metals"]["name"] == "Silver"
-    assert by_id["metals"]["primary_coin"] == "xyz:SILVER"
+    assert by_id["metals"]["name"] == "Gold"                  # gold primary since 2026-11-05
+    assert by_id["metals"]["primary_coin"] == "xyz:GOLD"
     assert by_id["metals"]["equity_share"] == pytest.approx(0.05)
     assert by_id["oil"]["equity_share"] == pytest.approx(0.95)
 

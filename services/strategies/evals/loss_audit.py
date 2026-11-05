@@ -45,8 +45,10 @@ from pathiel.models.types import Candle
 
 USER = "0x2c2e4efF574B3Fd9879AdeF9c5CAC6fD7C916985"
 INFO_URL = "https://api.hyperliquid.xyz/info"
-COINS = ("xyz:BRENTOIL", "xyz:SILVER")
-DESK_OF = {"xyz:BRENTOIL": "oil", "xyz:SILVER": "metals"}
+# xyz:GOLD since 2026-11-05: the metals desk's primary (GOLD_DESK.md); its
+# silver fills stay in the record.
+COINS = ("xyz:BRENTOIL", "xyz:SILVER", "xyz:GOLD")
+DESK_OF = {"xyz:BRENTOIL": "oil", "xyz:SILVER": "metals", "xyz:GOLD": "metals"}
 SINCE_MS = int(datetime(2026, 10, 20, tzinfo=timezone.utc).timestamp() * 1000)
 HOUR_MS = 3_600_000
 FIVE_MS = 300_000

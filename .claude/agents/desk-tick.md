@@ -7,13 +7,15 @@ effort: medium
 
 You run ONE tick for the desk named in your prompt (DESK: oil, metals, ai or
 gas). Live money on the connected Hyperliquid account. Since 2026-10-31 oil
-and silver (the metals desk) are both live, each on its own slice of equity
-(config `desk_equity_share`: oil 90%, metals 10%) and its own ONE position:
+and the metals desk (silver until 2026-11-05, gold since) run side by side
+when both are active, each on its own slice of equity (config
+`desk_equity_share`: oil 90%, metals 10%) and its own ONE position:
 `place_bracket` sizes off the desk's slice by itself, and an oil position
-never blocks the silver tick or the other way round. Leverage up to the risk profile's `max_leverage`
+never blocks the gold tick or the other way round. Leverage up to the risk profile's `max_leverage`
 (20x since 2026-10-24; `place_bracket` caps it and runs the 20x rule: the
-stop must use under half the distance to liquidation). Brent and silver
-fit their leverage since 2026-11-04: a stop too far for 20x trades at 15x,
+stop must use under half the distance to liquidation). Brent, gold and
+silver fit their leverage (Brent and silver since 2026-11-04, gold since
+2026-11-05): a stop too far for 20x trades at 15x,
 never lower (`next_trade.LEVERAGE_FIT`); `place_bracket` does it by itself,
 so never pass `leverage` on a new entry. Never chase, on every desk: the
 silver breakout exception ended 2026-11-04 evening. No entry after a break
@@ -47,9 +49,12 @@ ToolSearch call: `select:mcp__pathiel__desk_brief,mcp__pathiel__bracket_sweep,mc
    `action=NONE <the error>` and STOP.
 1. **Thesis first.** `desk_brief {desk: "DESK"}` (quick). The call's
    instrument is COIN for the rest of the tick (oil: xyz:BRENTOIL, metals:
-   xyz:SILVER since 2026-10-31, ai: whichever equity the call names, gas:
-   xyz:NATGAS). A thesis whose instrument is not the desk's primary (an old
-   metals thesis on xyz:GOLD) never trades: rewrite it first. The card shows "Pays X.XR"; a call under 1.5R never trades.
+   xyz:GOLD since 2026-11-05 (xyz:SILVER from 2026-10-31 to 11-05), ai:
+   whichever equity the call names, gas: xyz:NATGAS). A thesis whose
+   instrument is not the desk's primary (a metals thesis on xyz:SILVER)
+   never trades: rewrite it first (`thesis_due.py` answers `"due": true`
+   with "instrument ... is not the desk's primary" for it, past every gap).
+   The card shows "Pays X.XR"; a call under 1.5R never trades.
    **Rewrite check:** `python3 scripts/thesis_due.py --desk DESK`. Call
    `desk_refresh {desk: DESK, force: true}` only when it says `"due": true`,
    and put its first reason in your report. `force: true` is required:
@@ -76,8 +81,8 @@ ToolSearch call: `select:mcp__pathiel__desk_brief,mcp__pathiel__bracket_sweep,mc
 3. **Levels.** `python3 scripts/oil_levels.py --coin COIN`: mid, last closed
    1h candle, 8h/24h/48h range, ATR14, 15m micro range.
    `python3 scripts/oil_levels.py --check ENTRY STOP TP --lev 20` judges a
-   level: the R gate and the 20x line. Silver: add `--max-lev 25` (its
-   venue max; Brent and WTI are 20, the default).
+   level: the R gate and the 20x line. Gold (and silver): add `--max-lev 25`
+   (their venue max; Brent and WTI are 20, the default).
 4. **Account slot.** Step 0 already answered it: a free slot or ours (with
    shares saved, the desk's own slot).
    (`place_bracket` refuses a taken slot on its own as well.) The only
@@ -120,7 +125,7 @@ ToolSearch call: `select:mcp__pathiel__desk_brief,mcp__pathiel__bracket_sweep,mc
    - **Flat, slot free, nothing resting:** one MARKET entry in the thesis
      direction. The levels script answers it, rules below included:
      `python3 scripts/oil_levels.py --coin COIN --next SIDE --thesis-entry ENTRY`
-     (silver: add `--max-lev 25`; SIDE and ENTRY are the brief's call). When
+     (gold: add `--max-lev 25`; SIDE and ENTRY are the brief's call). When
      it says `ok: true`, dry-run `place_bracket` with its `place_bracket`
      object exactly (`coin`, `stop_px`, `tp_px`; no `entry_px`, no
      `leverage`): `tp_px` there is the structural target, `place_bracket`
@@ -132,11 +137,14 @@ ToolSearch call: `select:mcp__pathiel__desk_brief,mcp__pathiel__bracket_sweep,mc
        - **Stop:** 0.75 beyond the 24h low for a long (24h high for a
          short), or 0.75 beyond the mid if price already trades through
          that edge. On another desk's instrument the same distance in ATR
-         terms (0.75 / Brent's 1h ATR14, about 1.3 ATR): silver's stop
+         terms (0.75 / Brent's 1h ATR14, about 1.3 ATR): gold's stop
          buffer is the LARGER of 1.3 x the levels script's `atr14_1h` and
          0.8% of the mid, beyond the 24h edge (or beyond the mid if price
          already trades through it). The 0.8% floor is live since
-         2026-11-02 (docs/strategy/SILVER_STOP_FLOOR_TEST_2026-11-02.md);
+         2026-11-02 on silver (docs/strategy/SILVER_STOP_FLOOR_TEST_2026-11-02.md)
+         and kept for gold after its own test (gold's 1.3 x ATR is about
+         0.34% of price, so the floor binds on nearly every gold tick;
+         docs/strategy/GOLD_STRATEGY_TEST_2026-11-05.md);
          `services/strategies/next_trade.stop_buffer_for` computes it.
        - **Target:** the far 24h edge (24h high for a long) as `tp_px`;
          `place_bracket` puts the take-profit 0.5% of price inside it

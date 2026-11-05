@@ -240,7 +240,7 @@ def test_active_desks_carries_each_desks_equity_share(client, monkeypatch):
     body = r.json()
     assert body["desks"] == [
         {"id": "oil", "name": "Oil", "primary_coin": "xyz:BRENTOIL", "equity_share": 0.95},
-        {"id": "metals", "name": "Silver", "primary_coin": "xyz:SILVER", "equity_share": 0.05},
+        {"id": "metals", "name": "Gold", "primary_coin": "xyz:GOLD", "equity_share": 0.05},
     ]
     assert "share_error" not in body
 
@@ -256,6 +256,6 @@ def test_active_desks_reports_a_bad_desk_equity_share_without_500ing(client, mon
     body = r.json()
     assert body["desks"] == [
         {"id": "oil", "name": "Oil", "primary_coin": "xyz:BRENTOIL", "equity_share": None},
-        {"id": "metals", "name": "Silver", "primary_coin": "xyz:SILVER", "equity_share": None},
+        {"id": "metals", "name": "Gold", "primary_coin": "xyz:GOLD", "equity_share": None},
     ]
     assert "metals" in body["share_error"] and "desk_equity_share" in body["share_error"]

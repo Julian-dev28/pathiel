@@ -131,10 +131,13 @@ def test_metals_desk_is_gold_and_silver_only():
     assert {i.coin for i in spec.instruments} == {"xyz:GOLD", "xyz:SILVER"}
 
 
-def test_metals_desk_trades_silver_since_2026_10_31():
+def test_metals_desk_trades_gold_since_2026_11_05():
+    """Silver was the primary 2026-10-31 to 11-05 (0 for 5 live); the operator
+    moved the desk to gold, silver stays listed for the ratio only."""
     spec = desks.require_spec("metals")
-    assert [i.coin for i in spec.instruments if i.role == "primary"] == ["xyz:SILVER"]
-    assert spec.name == "Silver"
+    assert [i.coin for i in spec.instruments if i.role == "primary"] == ["xyz:GOLD"]
+    assert [i.coin for i in spec.instruments if i.role == "secondary"] == ["xyz:SILVER"]
+    assert spec.name == "Gold"
 
 
 def test_indices_desk_includes_xyz100():

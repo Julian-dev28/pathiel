@@ -108,12 +108,15 @@ def test_trusted_sources():
     assert [a["title"] for a in out] == ["US strikes Iran's Qeshm Island"] and len(seen) == 2
 
 
-def test_silver_patterns():
-    assert HW.match_headline("silver", "Powell announces emergency rate cut") == "fed"
-    assert HW.match_headline("silver", "Trump says he will fire Powell") == "trump/fed"
-    assert HW.match_headline("silver", "China export controls hit silver and copper") == "tariff/metals"
-    assert HW.match_headline("silver", "Silver jewelry demand rises in India") is None
-    assert HW.match_headline("silver", "Iran, US reach deal to reopen Strait of Hormuz") is None
+def test_metals_patterns():
+    """The metals group (silver until 2026-11-05, gold since): the Fed and
+    tariff patterns carry over; an Iran/Hormuz headline is gold's safe-haven
+    bid, so since gold it alerts the metals desk too."""
+    assert HW.match_headline("metals", "Powell announces emergency rate cut") == "fed"
+    assert HW.match_headline("metals", "Trump says he will fire Powell") == "trump/fed"
+    assert HW.match_headline("metals", "China export controls hit silver and copper") == "tariff/metals"
+    assert HW.match_headline("metals", "Silver jewelry demand rises in India") is None
+    assert HW.match_headline("metals", "Iran, US reach deal to reopen Strait of Hormuz") == "iran/hormuz"
     assert HW.match_headline("gas", "anything") is None
 
 
@@ -170,9 +173,11 @@ def test_price_shock_both_directions_and_under_threshold():
     assert down and down["label"] == "price shock" and down["group"] == "oil" and "-1.10%" in down["title"]
     assert up and "+1.05%" in up["title"]
     assert HW.price_shock("xyz:BRENTOIL", h, NOW_MS, 99.1) is None            # -0.9%
-    assert HW.price_shock("xyz:SILVER", h, NOW_MS, 98.9) is None              # silver needs 1.2%
-    assert HW.price_shock("xyz:SILVER", h, NOW_MS, 98.7)["group"] == "silver"
-    assert HW.price_shock("xyz:GOLD", h, NOW_MS, 90.0) is None                # no threshold: never
+    assert HW.price_shock("xyz:SILVER", h, NOW_MS, 98.9) is None              # silver needs 1.2%, its group is metals
+    assert HW.price_shock("xyz:SILVER", h, NOW_MS, 98.7)["group"] == "metals"
+    assert HW.price_shock("xyz:GOLD", h, NOW_MS, 99.4) is None                # gold needs 0.7% (since 2026-11-05)
+    assert HW.price_shock("xyz:GOLD", h, NOW_MS, 99.25)["group"] == "metals"
+    assert HW.price_shock("BTC", h, NOW_MS, 90.0) is None                     # no threshold: never
     assert HW.price_shock("xyz:BRENTOIL", [], NOW_MS, 90.0) is None            # no history yet
 
 
@@ -194,7 +199,7 @@ def test_record_caps_per_group_per_day_and_keeps_the_file_small(alerts_file):
     day = [_alert(NOW_MS + i * MIN, title=f"oil {i}") for i in range(8)]
     kept = HW.record(day)
     assert [a["title"] for a in kept] == [f"oil {i}" for i in range(HW.MAX_ALERTS_PER_DAY)]
-    assert HW.record([_alert(NOW_MS + 9 * MIN, group="silver", title="silver 1")])    # another group: fine
+    assert HW.record([_alert(NOW_MS + 9 * MIN, group="metals", title="silver 1")])    # another group: fine
     assert HW.record([_alert(NOW_MS + 10 * MIN, title="oil late")]) == []              # oil is capped today
     tomorrow = NOW_MS + 24 * 60 * MIN
     assert HW.record([_alert(tomorrow, title="oil tomorrow")])                          # a new UTC day
@@ -202,7 +207,7 @@ def test_record_caps_per_group_per_day_and_keeps_the_file_small(alerts_file):
     assert len(rows) == HW.MAX_ALERTS_PER_DAY + 2 and rows[-1]["title"] == "oil tomorrow"
     assert json.loads(alerts_file.read_text()) == rows
     # five a day for forty days (under the cap): the file keeps the newest KEEP_ALERTS
-    HW.record([_alert(tomorrow + d * 24 * 60 * MIN + i * MIN, group="silver", title=f"s{d}.{i}")
+    HW.record([_alert(tomorrow + d * 24 * 60 * MIN + i * MIN, group="metals", title=f"s{d}.{i}")
                for d in range(40) for i in range(5)])
     rows = HW.read_alerts()
     assert len(rows) == HW.KEEP_ALERTS and rows[-1]["title"] == "s39.4"
@@ -219,11 +224,12 @@ def test_read_alerts_tolerates_a_missing_or_broken_file(tmp_path):
 
 def test_latest_for_and_alerts_for_match_by_coin_or_group(alerts_file):
     HW.record([_alert(NOW_MS, title="oil news"),
-               _alert(NOW_MS + MIN, group="silver", label="fed", title="fed news"),
+               _alert(NOW_MS + MIN, group="metals", label="fed", title="fed news"),
                dict(_alert(NOW_MS + 2 * MIN, group="oil", label="price shock", title="shock"), coin="xyz:CL")])
     assert HW.latest_for("xyz:BRENTOIL")["title"] == "shock"     # CL's shock is an oil-group alert
     assert HW.latest_for("xyz:SILVER")["title"] == "fed news"
-    assert HW.latest_for("xyz:GOLD") is None
+    assert HW.latest_for("xyz:GOLD")["title"] == "fed news"      # gold is in the metals group too
+    assert HW.latest_for("BTC") is None
     rows = HW.read_alerts()
     assert [a["title"] for a in HW.alerts_for(["xyz:BRENTOIL", "xyz:CL"], rows)] == ["oil news", "shock"]
     assert [a["title"] for a in HW.alerts_for(["xyz:SILVER"], rows)] == ["fed news"]
@@ -252,13 +258,13 @@ def test_state_round_trip_trims_seen(tmp_path):
 
 # ── trigger_watch.headline_pass with injected fetchers ──────────────────────
 
-TARGETS = [("oil", "xyz:BRENTOIL", "oil"), ("metals", "xyz:SILVER", "silver")]
+TARGETS = [("oil", "xyz:BRENTOIL", "oil"), ("metals", "xyz:SILVER", "metals")]
 
 
 def test_headline_pass_primes_then_alerts_on_a_new_headline_only():
     state: dict = {}
     hist: dict = {}
-    feed = {"oil": [_item("Iran, US reach deal to reopen Strait of Hormuz")], "silver": []}
+    feed = {"oil": [_item("Iran, US reach deal to reopen Strait of Hormuz")], "metals": []}
     now_s = NOW_MS / 1000
     out = W.headline_pass(TARGETS, now_s, state, hist, {"xyz:BRENTOIL": 100.0, "xyz:SILVER": 50.0},
                           fetch_news=lambda g: feed[g], fetch_odds_fn=lambda d: [], prime=True)
@@ -270,7 +276,7 @@ def test_headline_pass_primes_then_alerts_on_a_new_headline_only():
     assert out == [] and calls == []
     # at the poll: the old headline is known, the new one alerts for the oil desk only
     feed["oil"].append(_item("US strikes Iran's Qeshm Island"))
-    feed["silver"] = [_item("Silver jewelry demand rises in India")]
+    feed["metals"] = [_item("Silver jewelry demand rises in India")]
     out = W.headline_pass(TARGETS, now_s + HW.NEWS_POLL_S, state, hist, {"xyz:BRENTOIL": 100.2},
                           fetch_news=lambda g: feed[g], fetch_odds_fn=lambda d: [])
     assert [(d, a["label"], a["title"]) for d, a in out] == [("oil", "iran/hormuz", "US strikes Iran's Qeshm Island")]

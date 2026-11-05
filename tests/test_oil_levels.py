@@ -90,3 +90,30 @@ def test_check_with_leverage_prints_the_20x_line(capsys):
     CLI.main(["--check", "107", "101.65", "115", "--lev", "20"])
     out = json.loads(capsys.readouterr().out)
     assert not out["ok"] and out["verdict"] == "no 20x: max 8x for this stop"
+
+
+# ── gold (the metals desk's primary since 2026-11-05) ──────────────────────
+
+def _gold_levels(mid, low, high, atr=12.0):
+    return {"mid": mid, "range_24h": {"low": low, "high": high}, "atr14_1h": atr}
+
+
+def test_next_on_gold_uses_the_0_8pct_floor_and_trades_at_the_24h_low():
+    from services.strategies.next_trade import stop_buffer_for
+    out = CLI.next_order("xyz:GOLD", "long", _gold_levels(4065.0, 4060.0, 4180.0), 4100.0, 20.0, 25.0)
+    buf = stop_buffer_for("xyz:GOLD", 12.0, 4065.0)
+    assert buf == pytest.approx(32.52) and buf > 1.3 * 12.0           # the floor binds on a normal gold tick
+    assert out["ok"] is True and out["coin"] == "xyz:GOLD" and out["leverage"] == 20.0
+    assert out["stop_buffer"] == pytest.approx(buf) and out["stop_px"] == pytest.approx(4060.0 - buf)
+    assert out["place_bracket"] == {"coin": "xyz:GOLD", "stop_px": out["stop_px"], "tp_px": 4180.0}
+    assert out["tp_px"] == pytest.approx(4180.0 * 0.995)             # the offset target the R gate judged
+
+
+def test_next_on_gold_fits_15x_on_a_wide_range_and_refuses_mid_range():
+    wide = CLI.next_order("xyz:GOLD", "long", _gold_levels(4010.0, 3960.0, 4200.0), 4100.0, 20.0, 25.0)
+    assert wide["ok"] is True and wide["leverage"] == 15.0
+    mid_range = CLI.next_order("xyz:GOLD", "long", _gold_levels(4120.0, 4060.0, 4180.0), 4150.0, 20.0, 25.0)
+    assert mid_range["ok"] is False and any("needs 2R" in b for b in mid_range["blockers"])
+    assert "place_bracket" not in mid_range
+    no_atr = CLI.next_order("xyz:GOLD", "long", _gold_levels(4065.0, 4060.0, 4180.0, atr=None), 4100.0, 20.0, 25.0)
+    assert no_atr == {"ok": False, "reason": "no ATR for the stop buffer", "coin": "xyz:GOLD"}

@@ -6,11 +6,11 @@ the model never eyeballs ranges or does R arithmetic in its head:
   python3 scripts/oil_levels.py                       # xyz:BRENTOIL
   python3 scripts/oil_levels.py --coin xyz:CL
   python3 scripts/oil_levels.py --check 107.20 106.70 108.45   # entry stop tp -> R
-  python3 scripts/oil_levels.py --coin xyz:SILVER --next short --thesis-entry 48.9 --max-lev 25
+  python3 scripts/oil_levels.py --coin xyz:GOLD --next long --thesis-entry 4100 --max-lev 25
 
 `--next SIDE` prints the live entry rule's answer at the mid
 (services/strategies/next_trade.next_trade: the 24h-range rule, leverage
-fit, and on silver the breakout entry) plus, when it trades now, the exact
+fit, and the breakout entry where a coin has one) plus, when it trades now, the exact
 `place_bracket` arguments: `tp_px` is the STRUCTURAL target, because
 place_bracket applies the 0.5% offset itself.
 
@@ -71,10 +71,10 @@ def next_order(coin: str, side: str, levels: Dict[str, Any], thesis_entry: Optio
     r24 = levels.get("range_24h") or {}
     mid = levels.get("mid")
     if mid is None or r24.get("low") is None or r24.get("high") is None:
-        return {"ok": False, "reason": "no mid or 24h range"}
+        return {"ok": False, "reason": "no mid or 24h range", "coin": coin}
     buf = stop_buffer_for(coin, levels.get("atr14_1h"), mid)
     if buf is None:
-        return {"ok": False, "reason": "no ATR for the stop buffer"}
+        return {"ok": False, "reason": "no ATR for the stop buffer", "coin": coin}
     out = next_trade(side, float(mid), float(r24["low"]), float(r24["high"]), thesis_entry=thesis_entry,
                      leverage=leverage, coin_max_leverage=max_leverage, stop_buffer=buf,
                      leverage_fit=leverage_fit_for(coin),

@@ -175,3 +175,21 @@ def test_the_eval_counts_hours_a_broken_thesis_stayed_live():
     assert res[0]["invalidated"].startswith("invalidated: 1h close 110.17 at 03:00Z")
     assert res[0]["live_hours_after_break"] == 0.8      # 03:00Z break to the 03:48Z rewrite
     assert res[1]["invalidated"] is None
+
+
+# ── wrong instrument (2026-11-05: the metals desk moved from silver to gold) ──
+
+def test_a_thesis_on_the_old_primary_is_due_at_once_past_every_gap():
+    now = datetime(2026, 11, 5, 12, tzinfo=timezone.utc)
+    th = {"id": "metals-s", "created_at": (now - timedelta(minutes=3)).isoformat(),
+          "call": {"side": "short", "instrument": "xyz:SILVER", "entry_px": 52.0, "stop_px": 52.6}}
+    out = M.refresh_due(th, now, 52.1, primary_coin="xyz:GOLD")
+    assert out["due"] is True
+    assert out["reasons"] == ["instrument xyz:SILVER is not the desk's primary xyz:GOLD: rewrite first"]
+    # the same call on the primary is held back by the 30-minute gap like any other
+    ok = dict(th, call=dict(th["call"], instrument="xyz:GOLD", entry_px=4100.0, stop_px=4140.0))
+    assert M.refresh_due(ok, now, 4105.0, primary_coin="xyz:GOLD")["due"] is False
+    # no primary given (the old callers), a flat call, or a matching coin: no such reason
+    assert M.wrong_instrument(th, None) is None
+    assert M.wrong_instrument(dict(th, call={"side": "flat", "instrument": "xyz:SILVER"}), "xyz:GOLD") is None
+    assert M.wrong_instrument(ok, "xyz:GOLD") is None

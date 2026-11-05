@@ -1,4 +1,15 @@
-# Silver desk (live from 2026-10-31)
+# Silver desk (live 2026-10-31 to 2026-11-05, stopped)
+
+**Stopped 2026-11-05.** Operator: "stop the silver tick, and silver market,
+add gold tick and gold market, same formula". Silver went 0 for 5 live:
+every trade a short sold past the 24h edge, every one stopped, -$14.41
+(`learning/REVIEW_2026-11-04.md`, the range=past own edge leak). The metals
+desk's primary is xyz:GOLD since then (`GOLD_DESK.md`,
+`GOLD_STRATEGY_TEST_2026-11-05.md`); silver stays listed as the secondary
+for the gold-silver ratio and the tick never trades it. Live config as of
+the stop: `active_desks ["oil"]`, `desk_equity_share {"oil": 0.9}`,
+`coin_allowlist` Brent and WTI only. The rest of this file is the record of
+the silver desk as it ran.
 
 Operator, 2026-10-31, after the 30-day test (`SILVER_THESIS_TEST_2026-10-31.md`):
 "add it to the desks, backend frontend and ai, keep the use only 10% of our
@@ -68,3 +79,4 @@ margin, about $2,180 of Brent at 20x.
 | 2026-11-04 | Strategy test, prompted by "silver seems mad quiet, any strategies we can test there?": missed-opportunity rate, `lev_fit`, `ai_levels`, `entry_lookback_8h`, `pullback_8h`, a new breakdown/breakout continuation entry (`pullback_entry="a5"`, measured-move or fixed-R target), `min_r_1.5`, and the best-2 combo, on one pinned candle snapshot across the live metals journal (silver-only) and the 30-day silver replay | **Do not adopt yet.** The thesis was right 7-9/11 times (journal) and 19-23/28 times (replay) over 24h/72h while the live rule took no trade -- the size of the prize. `combo_best2` (breakout + lev_fit) ties live on the journal and beats it by +106% net on the replay, clearing every adopt check except "beats live on both thesis datasets" (a tie, not a loss, on a 1-trade journal window). Watch `combo_best2` / `breakout_24h_measured` as the journal grows; `pullback_8h` and `min_r_1.5` are rejected (lose on both thesis datasets) | `SILVER_STRATEGY_TEST_2026-11-04.md` |
 | 2026-11-04 | **Live:** breakout entry + leverage fit 20/15 on silver (operator: "turn on silver breakout, chase OK on silver"). The exact live config, rerun on the same data: replay $273.91 vs live $132.92 (16 vs 12 trades, max DD 26.9% both), journal tie (-$9.92, 1 trade), controls equal except always_long -$60.83 vs -$60.25 | **Adopted on the operator's call** with the adopt bar unmet on one check (journal tie). Brent keeps never-chase. Live = backtest is enforced by a parity test over 6000 random markets (`test_silver_breakout.py`) | `SILVER_STRATEGY_TEST_2026-11-04.md` "Live config"; `evals/silver_breakout_live_check.py` |
 | 2026-11-04 evening | **Breakout entry off; no entry after a break** (`next_trade.BREAKOUT_COINS` empty, `NO_BREAK_ENTRY`). Operator: "go", "DO WHAT U THINK IS MORE PROFITABLE" | **Live.** Silver is 0 for 5, all shorts sold past the 24h edge, all stopped (-$14.41). The breakout sells exactly that break. Never-chase now holds on silver too | `OIL_STRATEGY.md` decision log; `REVIEW_2026-11-04.md` |
+| 2026-11-05 | **Silver stopped, gold in** (operator: "stop the silver tick, and silver market, add gold tick and gold market, same formula ... allocate 10% of our equity") | Silver 0 for 5, -$14.41, all shorts past the 24h edge. The metals desk's primary is xyz:GOLD; `coin_allowlist` dropped xyz:SILVER; the desk ships inactive until the gold test's gate (a thesis replay) is met or the operator flips it | `GOLD_DESK.md`, `GOLD_STRATEGY_TEST_2026-11-05.md` |

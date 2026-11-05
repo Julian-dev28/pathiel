@@ -54,7 +54,8 @@ def refresh_due(thesis: Dict[str, Any], now: datetime, mid: Optional[float],
                 closes_since: Iterable[Dict[str, Any]] = (),
                 px_at_writing: Optional[float] = None,
                 hour_closes: Iterable[Dict[str, Any]] = (),
-                headline_alerts: Iterable[Dict[str, Any]] = ()) -> Dict[str, Any]:
+                headline_alerts: Iterable[Dict[str, Any]] = (),
+                primary_coin: Optional[str] = None) -> Dict[str, Any]:
     """Pure. `thesis` = the journal's thesis as a dict (created_at, expires_at,
     call, catalysts); `closes_since` = closing fills on this desk's coins after
     the thesis was written; `px_at_writing` = the price when it was written;
@@ -63,7 +64,10 @@ def refresh_due(thesis: Dict[str, Any], now: datetime, mid: Optional[float],
     a long, above for a short) invalidates the thesis and makes it due.
     `headline_alerts` = headline_watch alerts ({"at_ms", "label", "title"})
     on this desk's coins; one newer than the thesis makes it due past the
-    hourly gap (HEADLINE_MIN_GAP_MINUTES still holds).
+    hourly gap (HEADLINE_MIN_GAP_MINUTES still holds). `primary_coin` = the
+    desk's primary instrument: a thesis with a side on another coin (the
+    metals desk's silver theses after gold became its primary, 2026-11-05)
+    can never trade, so it is due at once, past every gap.
 
     The 1.5% move is measured from `px_at_writing`, not from the call's entry:
     a WAIT thesis puts its entry away from price on purpose (2026-10-28: a
@@ -72,6 +76,10 @@ def refresh_due(thesis: Dict[str, Any], now: datetime, mid: Optional[float],
     created = _ts(thesis["created_at"])
     age_h = (now - created).total_seconds() / 3600.0
     out: Dict[str, Any] = {"thesis_id": thesis.get("id"), "age_h": round(age_h, 2), "reasons": []}
+    wrong = wrong_instrument(thesis, primary_coin)
+    if wrong:
+        out.update(due=True, reasons=[wrong])
+        return out
     headline = headline_reason(created, headline_alerts, now)
     if age_h * 60.0 < HEADLINE_MIN_GAP_MINUTES:
         out.update(due=False, held_back=f"last thesis is {age_h * 60:.0f} min old; "
@@ -110,6 +118,18 @@ def refresh_due(thesis: Dict[str, Any], now: datetime, mid: Optional[float],
             reasons.append(f"price moved {move:.1%} since the thesis was written ({ref:g} -> {mid:g})")
     out.update(due=bool(reasons), reasons=reasons)
     return out
+
+
+def wrong_instrument(thesis: Dict[str, Any], primary_coin: Optional[str]) -> Optional[str]:
+    """Pure. A reason when the call has a side on a coin that is not the
+    desk's primary (2026-11-05: the metals desk moved from silver to gold;
+    its silver theses never trade and must be rewritten first). None when no
+    primary is given, the call is flat, or the instrument matches."""
+    call = thesis.get("call") or {}
+    coin = call.get("instrument")
+    if not primary_coin or not coin or coin == primary_coin or call.get("side") not in ("long", "short"):
+        return None
+    return f"instrument {coin} is not the desk's primary {primary_coin}: rewrite first"
 
 
 def headline_reason(created: datetime, alerts: Iterable[Dict[str, Any]], now: datetime) -> Optional[str]:
@@ -198,8 +218,15 @@ def main(argv: Optional[List[str]] = None) -> int:
         print(json.dumps({"due": True, "reasons": ["no thesis yet"]}))
         return 0
     thesis = json.loads(t.model_dump_json())
-    coin = thesis["call"].get("instrument") or get_spec(a.desk).instruments[0].coin
-    coins = [i.coin for i in get_spec(a.desk).instruments]
+    spec = get_spec(a.desk)
+    primary = next((i.coin for i in spec.instruments if i.role == "primary"), spec.instruments[0].coin)
+    coin = thesis["call"].get("instrument") or primary
+    coins = [i.coin for i in spec.instruments]
+    wrong = wrong_instrument(thesis, primary)
+    if wrong:
+        print(json.dumps({"due": True, "reasons": [wrong], "thesis_id": thesis.get("id"), "desk": a.desk,
+                          "coin": coin, "primary": primary}))
+        return 0
     mid = None
     try:
         from pathiel.client.exchange import get_hl_price
@@ -231,7 +258,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     except Exception as e:  # noqa: BLE001 - a missing alert file only drops the headline reason
         print(f"[thesis_due] headline alerts unavailable: {e}", file=sys.stderr)
     out = refresh_due(thesis, datetime.now(timezone.utc), mid, closes, px_at_writing=px0,
-                      hour_closes=bars, headline_alerts=alerts)
+                      hour_closes=bars, headline_alerts=alerts, primary_coin=primary)
     out.update(desk=a.desk, coin=coin, mid=mid, px_at_writing=px0, headline_alerts=len(alerts))
     print(json.dumps(out, default=str))
     return 0

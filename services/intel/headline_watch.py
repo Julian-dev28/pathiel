@@ -47,7 +47,11 @@ POSTS_POLL_S = 60                  # Trump's posts (the trumpstruth.org archive)
 MAX_AGE_MIN = 45
 ODDS_JUMP = 0.08
 PRICE_WINDOW_MIN = 15
-PRICE_SHOCK = {"xyz:BRENTOIL": 0.010, "xyz:CL": 0.010, "xyz:SILVER": 0.012}
+# Gold 0.7% (2026-11-05, the metals desk's primary): on xyz:GOLD's 15m bars
+# of 2026-10-06..11-05 a 0.7% close-to-open move printed 4 times (1.0%: once),
+# about the rate silver's 1.2% (6) and Brent's 1.0% (12) alert at; p99.5 of
+# gold's 15m moves is 0.47%, so 0.7% is a real outlier, not noise.
+PRICE_SHOCK = {"xyz:BRENTOIL": 0.010, "xyz:CL": 0.010, "xyz:SILVER": 0.012, "xyz:GOLD": 0.007}
 HEADLINE_BLACKOUT_MIN = 30
 HEADLINE_MIN_GAP_MIN = 30          # a headline rewrite still waits this long after the last thesis
 MAX_ALERTS_PER_DAY = 6             # per group; caps rewrite cost (~$1 each)
@@ -55,11 +59,18 @@ PRICE_REARM_MIN = PRICE_WINDOW_MIN  # one price-shock alert per coin per window,
 KEEP_ALERTS = 100
 MIN_MS = 60_000
 
-# Google News queries per group (when:1h keeps them fresh).
+# Google News queries per group (when:1h keeps them fresh). The groups are
+# scheduled_events.COIN_GROUPS: "oil" (Brent, WTI) and "metals" (gold, the
+# desk's primary since 2026-11-05, and silver). The metals group was called
+# "silver" until then; its Fed and tariff patterns carry over to gold, which
+# trades the same rate risk, plus gold's own: central bank buying, the
+# safe-haven bid on an Iran/Hormuz escalation, a yields or dollar shock.
 NEWS_QUERIES = {
     "oil": ["Iran OR Hormuz OR Tehran oil when:1h", "OPEC OR \"crude oil\" OR Brent when:1h",
             "Trump Iran OR Trump oil OR \"strategic petroleum reserve\" when:1h"],
-    "silver": ["Powell OR \"Federal Reserve\" OR \"rate cut\" when:1h", "silver price OR precious metals when:1h"],
+    "metals": ["Powell OR \"Federal Reserve\" OR \"rate cut\" when:1h",
+               "gold price OR bullion OR \"central bank\" gold when:1h",
+               "silver price OR precious metals OR tariff metals when:1h"],
 }
 
 _IRAN = r"(iran|iranian|tehran|hormuz|persian gulf|khamenei|araghchi|pezeshkian)"
@@ -78,14 +89,28 @@ PATTERNS: Dict[str, List[Tuple[str, re.Pattern]]] = {
         ("spr", re.compile(r"\b(strategic petroleum reserve|spr release)\b", re.I)),
         ("supply shock", re.compile(rf"\b{_SITE}s?\b.*\b{_DAMAGE}\w*|\b{_DAMAGE}\w*\b.*\b{_SITE}s?\b", re.I)),
     ],
-    "silver": [
-        ("fed", re.compile(r"\b(powell|federal reserve|fomc|the fed)\b.*\b(emergency|cut|hike|surprise|resign|fire)\w*", re.I)),
-        ("tariff/metals", re.compile(r"\b(tariff|export ban|export control)\w*\b.*\b(silver|metals?|copper)\b", re.I)),
+    "metals": [
+        ("fed", re.compile(r"\b(powell|federal reserve|fomc|the fed|fed)\b.*\b(emergency|cut|hike|surprise|resign|fire)\w*",
+                            re.I)),
+        ("tariff/metals", re.compile(r"\b(tariff|export ban|export control)\w*\b.*\b(gold|bullion|silver|metals?|copper)\b",
+                                     re.I)),
         ("trump/fed", re.compile(r"\btrump\b.*\b(fed|powell|rates?)\b", re.I)),
+        # gold since 2026-11-05: a central bank buying or selling bullion
+        # (PBOC's monthly reserve print, a Polish or Turkish purchase), the
+        # safe-haven bid when Iran/Hormuz escalates (the oil pattern, since
+        # gold moves on the same headline), and a yields or dollar shock
+        # (a wrap headline that opens with "Dollar ..." is still filtered by
+        # PRICE_WRAP; the price shock catches gold's own reaction).
+        ("central bank gold", re.compile(r"\b(central banks?|pboc|people's bank|reserve bank|bundesbank|national bank)\b"
+                                         r".*\b(gold|bullion)\b|\b(gold|bullion)\b.*\b(reserves?|purchases?|buying|"
+                                         r"bought|sold|selling)\b.*\b(central banks?|pboc)\b", re.I)),
+        ("iran/hormuz", re.compile(rf"\b{_IRAN}\w*\b.*\b{_ACT}\w*|\b{_ACT}\w*\b.*\b{_IRAN}\w*", re.I)),
+        ("yields/dollar shock", re.compile(r"\b(treasury yields?|real yields?|dollar|dxy|greenback)\b.*"
+                                           r"\b(spike|surge|soar|plunge|tumble|crash|jump)\w*", re.I)),
     ],
 }
 ODDS_TERMS = {"oil": re.compile(r"(iran|hormuz|ceasefire|opec|oil)", re.I),
-              "silver": re.compile(r"(fed|rate cut|powell|recession)", re.I)}
+              "metals": re.compile(r"(fed|rate cut|powell|recession|gold|iran|ceasefire)", re.I)}
 
 # Trump's own posts (operator, 2026-11-05: "A Truth Social / X feed for the
 # headline watcher"). A post is short and not headline-shaped: "Oil Prices
@@ -119,13 +144,16 @@ POST_PATTERNS: Dict[str, List[Tuple[str, re.Pattern]]] = {
         ("trump:tariff", re.compile(rf"\btariff\w*\b.*\b{_POST_TARIFF_WHO}\b|\b{_POST_TARIFF_WHO}\b.*\btariff\w*\b",
                                     re.I | re.S)),
     ],
-    "silver": [
+    "metals": [
         ("trump:fed", re.compile(rf"\b{_POST_FED}\b", re.I)),
         # a Fed name only with Fed context: "Tracey Powell for State Senate" is a candidate
         ("trump:fed", re.compile(rf"\b{_POST_FED_NAME}\b.*\b{_POST_FED_CTX}\b|\b{_POST_FED_CTX}\b.*\b{_POST_FED_NAME}\b",
                                  re.I | re.S)),
-        ("trump:tariff/metals", re.compile(r"\btariff\w*\b.*\b(silver|gold|copper|metals?)\b|"
-                                           r"\b(silver|gold|copper|metals?)\b.*\btariff\w*\b", re.I | re.S)),
+        ("trump:tariff/metals", re.compile(r"\btariff\w*\b.*\b(silver|gold|bullion|copper|metals?)\b|"
+                                           r"\b(silver|gold|bullion|copper|metals?)\b.*\btariff\w*\b", re.I | re.S)),
+        # gold since 2026-11-05: a post on Iran is the safe-haven headline
+        # (the 11-02 "there will not be a War with Iran" post moved gold too).
+        ("trump:iran", re.compile(rf"\b{_IRAN}\w*\b", re.I)),
     ],
 }
 # An archived image/video post with no words, or a bare link: nothing to read.
@@ -355,8 +383,8 @@ def record(alerts: Sequence[Dict[str, Any]], path: Optional[str] = None) -> List
 
 
 def _group_of(coin: str) -> Optional[str]:
-    from services.intel.scheduled_events import COIN_GROUPS
-    return next((g for g, coins in COIN_GROUPS.items() if coin in coins), None)
+    from services.intel.scheduled_events import group_of
+    return group_of(coin)
 
 
 def latest_for(coin: str, path: Optional[str] = None) -> Optional[Dict[str, Any]]:

@@ -220,3 +220,22 @@ def test_affected_harnesses_list_is_exhaustive_over_known_live_baseline_builders
             f"HARNESSES_WITH_LIVE_BASELINE and route it through live_params.py, add it to "
             f"KNOWN_INTENTIONAL_HAND_BUILDERS with a reason, or set risk_cap_frac explicitly "
             f"if the hand-built baseline is otherwise intentional")
+
+
+# ── gold (2026-11-05) ────────────────────────────────────────────────────────
+
+def test_live_gold_params_is_live_silver_params_plus_golds_floor_and_fit():
+    """The gold rule is silver's shape with gold's own floor (0.8%, the
+    GOLD_STRATEGY_TEST_2026-11-05.md plateau) and the 20/15 leverage fit the
+    live tick applies on gold; the cap rides along."""
+    gold = LP.live_gold_params(25.0, 12.0)
+    silver = LP.live_silver_params(25.0, 12.0)
+    assert dataclasses.replace(gold, entry_fit_leverage=None) == silver
+    assert gold.entry_fit_leverage == (20.0, 15.0)
+    assert gold.stop_buffer_floor_frac == pytest.approx(0.008) and gold.risk_cap_frac == pytest.approx(0.15)
+    assert gold.max_leverage == pytest.approx(25.0) and gold.leverage == pytest.approx(20.0)
+
+
+def test_live_gold_params_overrides_apply_last():
+    p = LP.live_gold_params(25.0, 12.0, starting_equity=225.0, tick_minutes=60)
+    assert (p.starting_equity, p.tick_minutes, p.risk_cap_frac, p.entry_fit_leverage) == (225.0, 60, 0.15, (20.0, 15.0))

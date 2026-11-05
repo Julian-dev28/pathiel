@@ -225,11 +225,13 @@ def test_fit_leverage_never_exceeds_the_configured_or_venue_cap():
     assert fit_leverage(100.0, 99.5, 20.0, 15.0, (20.0, 15.0))[0] == 15.0
 
 
-def test_brent_and_silver_fit_their_leverage():
-    # silver since 2026-11-04 with the breakout (SILVER_STRATEGY_TEST_2026-11-04.md, "Live config")
+def test_brent_silver_and_gold_fit_their_leverage():
+    # silver since 2026-11-04 with the breakout (SILVER_STRATEGY_TEST_2026-11-04.md, "Live config"),
+    # gold since 2026-11-05 (GOLD_STRATEGY_TEST_2026-11-05.md)
     from services.strategies.next_trade import LEVERAGE_FIT, leverage_fit_for
     assert leverage_fit_for("xyz:BRENTOIL") == LEVERAGE_FIT == leverage_fit_for("xyz:SILVER")
-    for coin in ("xyz:CL", "xyz:GOLD", "BTC"):
+    assert leverage_fit_for("xyz:GOLD") == LEVERAGE_FIT
+    for coin in ("xyz:CL", "xyz:NATGAS", "BTC"):
         assert leverage_fit_for(coin) == ()
 
 

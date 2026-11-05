@@ -201,18 +201,24 @@ def hit_24h(created_ms: int, side: str, bars1h: Sequence[Candle], as_of_ms: int)
 
 
 def thesis_outcomes(theses_by_desk: Dict[str, Sequence[Any]], raw_by_id: Dict[str, Dict[str, Any]],
-                    bars1h_by_desk: Dict[str, Sequence[Candle]], as_of_ms: int) -> Dict[str, Dict[str, Any]]:
+                    bars1h_by_desk: Dict[str, Sequence[Candle]], as_of_ms: int,
+                    bars1h_by_coin: Optional[Dict[str, Sequence[Candle]]] = None) -> Dict[str, Dict[str, Any]]:
     """Per thesis id: desk, side, the grader's 7-day `direction_hit` (None if
-    ungraded) and the 24h check."""
+    ungraded) and the 24h check. The 24h check reads the bars of the call's
+    OWN instrument when `bars1h_by_coin` has them (the metals desk has
+    written silver and gold calls), else the desk's bars."""
     out = {}
     for desk, theses in theses_by_desk.items():
         for th in theses:
             raw = raw_by_id.get(th.thesis_id) or {}
             g = raw.get("grade") if isinstance(raw.get("grade"), dict) else {}
+            coin = (raw.get("call") or {}).get("instrument") if isinstance(raw.get("call"), dict) else None
+            bars = (bars1h_by_coin or {}).get(coin) if coin else None
+            if not bars:
+                bars = bars1h_by_desk.get(desk, [])
             out[th.thesis_id] = {"desk": desk, "side": th.side, "created_ms": th.created_at_ms,
                                  "hit_7d": g.get("direction_hit") if th.side in ("long", "short") else None,
-                                 "hit_24h": hit_24h(th.created_at_ms, th.side, bars1h_by_desk.get(desk, []),
-                                                    as_of_ms)}
+                                 "hit_24h": hit_24h(th.created_at_ms, th.side, bars, as_of_ms)}
     return out
 
 

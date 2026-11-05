@@ -94,7 +94,7 @@ runs the pure functions here every minute, no LLM: `news_alerts` (targeted
 Google News RSS and oilprice.com, `PATTERNS` per group, trusted sources
 only, price wraps skipped, dedup by title), `odds_alerts` (a Polymarket
 move of 0.08 or more) and `price_shock` (the mid 1% off any mid of the last
-15 minutes on Brent, 1.2% on silver). An alert is recorded in
+15 minutes on Brent, 1.2% on silver, 0.7% on gold). An alert is recorded in
 `/tmp/trigger-watch/headline_alerts.json` (6 a day per group) and then:
 the watcher wakes the desk's tick at once (`"reason": "headline"`),
 `scripts/thesis_due.py` makes the thesis due past the hourly gap (30
@@ -128,7 +128,7 @@ feed with the news poll (120 s). Trump posts go through
 `headline_watch.match_post` / `post_alerts` (`POST_PATTERNS`: Iran/Hormuz,
 oil prices/OPEC/Saudi/SPR, a deal/ceasefire/strike/attack/sanctions/war
 word next to a counterparty, tariffs next to a trade partner, for oil; the
-Fed/Powell/interest rates and metal tariffs, for silver). Tuned on 503 real
+Fed/Powell/interest rates, metal tariffs and Iran, for the metals desk: gold since 2026-11-05, silver). Tuned on 503 real
 posts of 2026-11-01..05: 2 hits, both the 11-02 "Oil Prices are DROPPING
 LIKE A ROCK ... War with Iran" post and its repost; the 414 endorsement and
 get-out-the-vote posts are excluded as a class (`_POST_ROUTINE`), an image,

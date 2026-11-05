@@ -184,7 +184,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--at-utc", dest="at_utc", help="YYYY-MM-DDTHH:MMZ; omit for all day or unknown")
     p.add_argument("--event")
     p.add_argument("--kind")
-    p.add_argument("--coins", help="comma list from oil,silver")
+    p.add_argument("--coins", help="comma list from oil,metals (silver = the metals group, the old name)")
     p.add_argument("--impact", type=int)
     p.add_argument("--verified", action="store_true", help="an official page states the date")
     p.add_argument("--source")

@@ -42,11 +42,31 @@ FILE_ORIGINS = frozenset({CURATED_ORIGIN, SCAN_ORIGIN})
 HOUR_MS = 3_600_000
 DAY_MS = 24 * HOUR_MS
 
-# Which pathiel coins an event's "coins" group covers.
+# Which pathiel coins an event's "coins" group covers. "metals" is the metals
+# desk (gold primary since 2026-11-05, silver alongside): every macro row
+# (jobs, CPI, PCE, FOMC minutes, China data, summits, Iran talks) reaches
+# xyz:GOLD through it. The data file's rows were written as "silver" before
+# the switch; GROUP_ALIASES keeps that name valid as the same group, so no
+# row and no scan output had to change (scripts/event_scan.py still writes
+# "silver"). New rows may use either; "metals" is the name to prefer.
+METALS_COINS = frozenset({"xyz:SILVER", "xyz:GOLD"})
 COIN_GROUPS: Dict[str, frozenset] = {
     "oil": frozenset({"xyz:BRENTOIL", "xyz:CL"}),
-    "silver": frozenset({"xyz:SILVER"}),
+    "metals": METALS_COINS,
 }
+GROUP_ALIASES: Dict[str, str] = {"silver": "metals"}
+
+
+def canonical_group(name: str) -> str:
+    """The group a data-file name means: an alias resolves to its group,
+    anything else comes back unchanged."""
+    return GROUP_ALIASES.get(name, name)
+
+
+def group_of(coin: str) -> Optional[str]:
+    """The canonical group that covers `coin`, or None (what the headline
+    watcher and the price watcher key their per-desk state on)."""
+    return next((g for g, coins in COIN_GROUPS.items() if coin in coins), None)
 
 # An impact-3 event blocks new entries from BEFORE_H before to AFTER_H after
 # it: the window the EIA test adopted (OIL_EVENT_TIMING_TEST_2026-11-03.md,
@@ -59,8 +79,8 @@ AFTER_H = 2.0
 
 # Rule-generated events that block too (calendar_us.py): kind -> (title, coins).
 GENERATED_BLOCKING = {
-    "fomc": ("FOMC decision", ("oil", "silver")),
-    "cpi": ("US CPI release", ("oil", "silver")),
+    "fomc": ("FOMC decision", ("oil", "metals")),
+    "cpi": ("US CPI release", ("oil", "metals")),
     "opec_meeting": ("OPEC+ meeting", ("oil",)),
 }
 
@@ -119,8 +139,9 @@ def validate_event(e: Any) -> Dict[str, Any]:
     if not (isinstance(e["kind"], str) and _KIND_RE.fullmatch(e["kind"])):
         raise ValueError(f"kind must match [a-z][a-z0-9_]*, got {e['kind']!r}")
     coins = e["coins"]
-    if not (isinstance(coins, list) and coins and set(coins) <= set(COIN_GROUPS)):
-        raise ValueError(f"coins must be a non-empty list from {sorted(COIN_GROUPS)}, got {coins!r}")
+    allowed = set(COIN_GROUPS) | set(GROUP_ALIASES)
+    if not (isinstance(coins, list) and coins and set(coins) <= allowed):
+        raise ValueError(f"coins must be a non-empty list from {sorted(allowed)}, got {coins!r}")
     if type(e["impact"]) is not int or e["impact"] not in IMPACTS:
         raise ValueError(f"impact must be 1, 2 or 3, got {e['impact']!r}")
     if not isinstance(e["verified"], bool):
@@ -227,9 +248,11 @@ def load(path: str = DATA_PATH, overlay: Optional[str] = None) -> Dict[str, Any]
 
 
 def coins_for(groups: List[str]) -> frozenset:
+    """The coins a row's `coins` list covers; an alias ("silver") counts as
+    its group ("metals": silver and gold)."""
     out: set = set()
     for g in groups:
-        out |= COIN_GROUPS.get(g, frozenset())
+        out |= COIN_GROUPS.get(canonical_group(g), frozenset())
     return frozenset(out)
 
 
@@ -334,6 +357,7 @@ def short_line(r: Dict[str, Any]) -> str:
     return f"{t} {r['title']}{tag}{unv}{scan}"
 
 
-__all__ = ["BLACKOUT_IMPACT", "COIN_GROUPS", "CURATED_ORIGIN", "DATA_PATH", "FILE_ORIGINS", "SCAN_ORIGIN",
-           "blackout", "calendar_warning", "coins_for", "event_key", "load", "market_events", "merge",
-           "normalize_title", "overlay_path", "read_overlay", "short_line", "validate_event"]
+__all__ = ["BLACKOUT_IMPACT", "COIN_GROUPS", "CURATED_ORIGIN", "DATA_PATH", "FILE_ORIGINS", "GROUP_ALIASES",
+           "METALS_COINS", "SCAN_ORIGIN", "blackout", "calendar_warning", "canonical_group", "coins_for",
+           "event_key", "group_of", "load", "market_events", "merge", "normalize_title", "overlay_path",
+           "read_overlay", "short_line", "validate_event"]

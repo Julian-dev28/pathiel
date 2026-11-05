@@ -32,7 +32,8 @@ from typing import Any
 from services.strategies.backtest.desk_tick_sim import Params
 from services.strategies.backtest.desk_tick_sim import live_params as desk_live_params
 from services.strategies.evals.market_scout import scouting_params
-from services.strategies.next_trade import ATR_BUFFER_MULT, STOP_BUFFER_FLOOR_FRAC
+from services.strategies.next_trade import (ATR_BUFFER_MULT, GOLD, STOP_BUFFER_FLOOR_FRAC, leverage_fit_for,
+                                            stop_buffer_floor_frac_for)
 
 # The live oil rule's risk cap since 2026-11-02 (LOSS_AUDIT_2026-11-02.md,
 # OIL_STRATEGY.md): a stop at the fill may cost at most this share of the
@@ -66,3 +67,18 @@ def live_silver_params(venue_max_leverage: float, atr_price_mean: float, **overr
     base = scouting_params(venue_max_leverage, atr_price_mean, base=live_brent_params())
     return dataclasses.replace(base, stop_buffer_atr=ATR_BUFFER_MULT,
                                stop_buffer_floor_frac=STOP_BUFFER_FLOOR_FRAC, **overrides)
+
+
+def live_gold_params(venue_max_leverage: float, atr_price_mean: float, **overrides: Any) -> Params:
+    """The live gold rule (the metals desk's primary since 2026-11-05,
+    GOLD_STRATEGY_TEST_2026-11-05.md): `live_silver_params`' shape with
+    gold's own floor (`next_trade.stop_buffer_floor_frac_for(GOLD)`, 0.8%
+    of the mid, the test's plateau) and the leverage fit the live tick
+    applies on gold (`next_trade.leverage_fit_for(GOLD)`, 20/15; None here
+    when the coin has none). The one place an eval builds gold's live
+    baseline; `test_gold_desk.py` pins it to the test's chosen variant.
+    `**overrides` applies last."""
+    fit = leverage_fit_for(GOLD)
+    base = live_silver_params(venue_max_leverage, atr_price_mean)
+    return dataclasses.replace(base, stop_buffer_floor_frac=stop_buffer_floor_frac_for(GOLD),
+                               entry_fit_leverage=tuple(fit) if fit else None, **overrides)

@@ -46,10 +46,13 @@ def test_war_odds_eval_flags_a_prompt_without_the_ceasefire_row():
     assert r["ok"] is True and r["odds_rows"] and r["strike_headlines"]
 
 
-def test_metals_searches_the_fed_meeting_odds_and_silver_supply_news():
+def test_metals_searches_the_fed_meeting_odds_and_gold_drivers():
+    """Gold is the metals primary since 2026-11-05: the Fed meeting odds stay
+    (gold trades the same rate risk silver did), the silver supply phrases
+    gave way to gold's drivers (central bank buying, ETF flows, the dollar)."""
     m = require_spec("metals")
-    assert "Fed December" in m.prediction_market_queries
-    assert {"China silver export", "COMEX silver inventories"} <= set(m.news_queries)
+    assert {"Fed December", "gold price"} <= set(m.prediction_market_queries)
+    assert {"gold price", "central bank gold buying", "gold ETF flows", "dollar index"} <= set(m.news_queries)
     assert len(m.news_queries) <= 8   # GNEWS_MAX_QUERIES
 
 

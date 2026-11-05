@@ -15,7 +15,10 @@ from services.review import report as R
 from services.review import stats as S
 from services.strategies.evals import loss_audit as LA
 
-DESK_COIN = {"oil": "xyz:BRENTOIL", "metals": "xyz:SILVER"}
+# Each desk's primary (metals: gold since 2026-11-05). A thesis's 24h check
+# reads its own instrument's bars first (analysis.thesis_outcomes), so the
+# desk's silver-era calls are still judged on silver.
+DESK_COIN = {"oil": "xyz:BRENTOIL", "metals": "xyz:GOLD"}
 
 
 def _load_json(path: str) -> Dict[str, Any]:
@@ -43,7 +46,7 @@ def run(bundle: Dict[str, Any], since_ms: int = LA.SINCE_MS, ledger_path: Option
     theses = {d: [t for t in ts if t.created_at_ms >= since_ms] for d, ts in theses.items()}
     raw_by_id = {str(t.get("id")): t for ts in (bundle.get("theses_raw") or {}).values() for t in ts}
     bars1h = {d: bundle["bars1h"].get(c, []) for d, c in DESK_COIN.items()}
-    outcomes = A.thesis_outcomes(theses, raw_by_id, bars1h, bundle["as_of_ms"])
+    outcomes = A.thesis_outcomes(theses, raw_by_id, bars1h, bundle["as_of_ms"], bars1h_by_coin=bundle["bars1h"])
     A.join_thesis_outcomes(recs, outcomes)
 
     rows = A.slice_table(recs, seed)

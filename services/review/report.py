@@ -165,7 +165,7 @@ def render(res: Dict[str, Any]) -> str:
     L += ["", "## Luck check, per trade", "",
           "| Trade | Net $ | R | Walked R | Day median R | Luck pct | Read |", "|---|---|---|---|---|---|---|"]
     for r in recs:
-        name = f"{'Brent' if 'BRENT' in r['coin'] else 'Silver' if 'SILVER' in r['coin'] else r['coin']} " \
+        name = f"{'Brent' if 'BRENT' in r['coin'] else 'Silver' if 'SILVER' in r['coin'] else 'Gold' if 'GOLD' in r['coin'] else r['coin']} " \
                f"{r['side'][0].upper()} {r['entry'][5:16].replace('T', ' ')}"
         tags = f" ({'+'.join(r['tags'])})" if r.get("tags") else ""
         L.append(f"| {name}{tags} | {r['net_usd']:+.2f} | {_f(r.get('r_mult'), 2, True)} | "

@@ -43,19 +43,39 @@ ATR_BUFFER_MULT = 1.3
 # and leaves Brent trade-for-trade unchanged
 # (docs/strategy/SILVER_STOP_FLOOR_TEST_2026-11-02.md).
 STOP_BUFFER_FLOOR_FRAC = 0.008
+GOLD = "xyz:GOLD"
+# Gold (the metals desk's primary since 2026-11-05, operator: "add gold tick
+# and gold market, same formula"). Gold's 1.3 x ATR14 is about 0.34% of
+# price (silver 0.63%, Brent 0.79%), so the floor binds on nearly every gold
+# tick and the stop is in effect "0.8% beyond the 24h edge". Tested floors
+# 0 / 0.3 / 0.4 / 0.5 / 0.6 / 0.8 / 1.0% on xyz:GOLD's own candles (nine
+# no-thesis control windows, 2026-05-06..11-05): the sum of net over the
+# controls peaks at 0.8% (-$160 from 9 x $64) with 0.6% next (-$184), 0.5%
+# (-$202) and 1.0% (-$247) falling away, and the 0.8% floor had the lowest
+# drawdowns (48% worst on the 15m windows vs 81% at 0.6%) on half the trades.
+# A tighter floor (0.3%, about the bare ATR) was the worst row everywhere:
+# more entries, more noise stops (docs/strategy/GOLD_STRATEGY_TEST_2026-11-05.md).
+GOLD_STOP_BUFFER_FLOOR_FRAC = 0.008
+STOP_BUFFER_FLOOR_FRAC_BY_COIN = {GOLD: GOLD_STOP_BUFFER_FLOOR_FRAC}
+
+
+def stop_buffer_floor_frac_for(coin: str) -> float:
+    """The stop buffer floor, as a fraction of the mid, for a non-Brent coin:
+    the coin's own (STOP_BUFFER_FLOOR_FRAC_BY_COIN) or the 0.8% default."""
+    return STOP_BUFFER_FLOOR_FRAC_BY_COIN.get(coin, STOP_BUFFER_FLOOR_FRAC)
 
 
 def stop_buffer_for(coin: str, atr14: Optional[float],
                     mid: Optional[float] = None) -> Optional[float]:
     """0.75 on Brent; on any other desk's coin the larger of 1.3 x the 1h
-    ATR14 and 0.8% of `mid` (when a mid is given)."""
+    ATR14 and the coin's floor (0.8% of `mid`, when a mid is given)."""
     if coin == BRENT:
         return BRENT_STOP_BUFFER
     if not atr14:
         return None
     buf = ATR_BUFFER_MULT * atr14
     if mid:
-        buf = max(buf, STOP_BUFFER_FLOOR_FRAC * float(mid))
+        buf = max(buf, stop_buffer_floor_frac_for(coin) * float(mid))
     return round(buf, 6)
 
 
@@ -72,7 +92,12 @@ SILVER = "xyz:SILVER"
 # same as the tested combo_best2 on every thesis dataset ($273.91 vs live
 # $132.92 on the 30-theses replay, journal tie) and tied live on the controls
 # (docs/strategy/SILVER_STRATEGY_TEST_2026-11-04.md, "Live config").
-LEVERAGE_FIT_COINS = frozenset({BRENT, SILVER})
+# Gold joined 2026-11-05 (GOLD_STRATEGY_TEST_2026-11-05.md): 20/15 vs fixed
+# 20x changed no trade on the six 15m control windows (gold's 24h range plus
+# the 0.8% floor fits 20x at the venue's 25x max) and on the hourly 183-day
+# controls kept the worst stop at 0.433 of the way to liquidation where the
+# fixed rule's realized fills reached 0.506; same formula as Brent and silver.
+LEVERAGE_FIT_COINS = frozenset({BRENT, SILVER, GOLD})
 
 # Breakout entry (silver only, since 2026-11-04). The backtest's
 # `pullback_entry="a5"` (desk_tick_sim.pullback_setup), as tested in
@@ -353,7 +378,7 @@ def live_rule_line(nt: Dict[str, Any]) -> str:
     return head + "."
 
 
-__all__ = ["next_trade", "stop_buffer_for", "live_rule_line", "fit_leverage", "leverage_fit_for",
-           "breakout_for", "breakout_levels", "breakout_trade",
-           "BRENT_STOP_BUFFER", "LEVERAGE_FIT", "BREAKOUT_COINS", "BREAKOUT_LOOKBACK_H", "BREAKOUT_STOP_H",
-           "NO_BREAK_ENTRY"]
+__all__ = ["next_trade", "stop_buffer_for", "stop_buffer_floor_frac_for", "live_rule_line", "fit_leverage",
+           "leverage_fit_for", "breakout_for", "breakout_levels", "breakout_trade",
+           "BRENT_STOP_BUFFER", "GOLD", "GOLD_STOP_BUFFER_FLOOR_FRAC", "LEVERAGE_FIT", "BREAKOUT_COINS",
+           "BREAKOUT_LOOKBACK_H", "BREAKOUT_STOP_H", "NO_BREAK_ENTRY"]
