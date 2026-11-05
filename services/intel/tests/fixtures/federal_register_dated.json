@@ -1,0 +1,19 @@
+{
+ "count": 3, "description": "Documents matching 'Iran sanctions'",
+ "results": [
+  {"title": "Iran-Related Designations; Publication of Amended Iranian Transactions and Sanctions Regulations",
+   "type": "Rule", "publication_date": "2026-11-04", "effective_on": "2026-11-12", "comments_close_on": null,
+   "html_url": "https://www.federalregister.gov/documents/2026/11/04/2026-24001/iran-related-designations",
+   "document_number": "2026-24001",
+   "agencies": [{"name": "Treasury Department"}, {"name": "Foreign Assets Control Office"}],
+   "abstract": "OFAC amends the Iranian Transactions and Sanctions Regulations."},
+  {"title": "Energy Conservation Program: Test Procedures for Commercial Water Heaters",
+   "type": "Proposed Rule", "publication_date": "2026-10-21", "effective_on": null, "comments_close_on": "2026-11-20",
+   "html_url": "https://www.federalregister.gov/documents/2026/10/21/2026-23002/energy-conservation-program",
+   "document_number": "2026-23002", "agencies": [{"name": "Energy Department"}], "abstract": null},
+  {"title": "Publication of an Iran-Related Determination",
+   "type": "Rule", "publication_date": "2026-09-30", "effective_on": "2026-10-01", "comments_close_on": null,
+   "html_url": "https://www.federalregister.gov/documents/2026/09/30/2026-21001/publication-of-an-iran-related-determination",
+   "document_number": "2026-21001", "agencies": [{"name": "Treasury Department"}], "abstract": null}
+ ]
+}

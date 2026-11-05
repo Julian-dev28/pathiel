@@ -1,0 +1,64 @@
+{
+ "_note": "Shaped from live api.congress.gov v3 committee-meeting detail responses captured 2026-11-05 (Senate types read 'Open Hearing' / 'Open Business Meeting'; relatedItems is an object; a nominations-only Senate meeting has no committees list). Titles edited for the tests.",
+ "338805": {
+  "committeeMeeting": {
+   "chamber": "Senate", "congress": 119, "date": "2026-11-10T15:00:00Z", "eventId": "338805",
+   "committees": [{"name": "Senate Foreign Relations", "systemCode": "ssfr00",
+                   "url": "https://api.congress.gov/v3/committee/senate/ssfr00?format=json"}],
+   "location": {"building": "Dirksen Senate Office Building", "room": "419"},
+   "meetingStatus": "Scheduled",
+   "title": "Hearings to examine pending nominations.",
+   "type": "Open Hearing", "updateDate": "2026-11-05T13:19:28Z"
+  },
+  "request": {"chamber": "senate", "congress": "119", "contentType": "application/json", "eventId": "338805", "format": "json"}
+ },
+ "338810": {
+  "committeeMeeting": {
+   "chamber": "Senate", "congress": 119, "date": "2026-11-09T22:30:00Z", "eventId": "338810",
+   "committees": [{"name": "Senate Veterans' Affairs", "systemCode": "ssva00",
+                   "url": "https://api.congress.gov/v3/committee/senate/ssva00?format=json"}],
+   "location": {"building": "Russell Senate Office Building", "room": "418"},
+   "meetingStatus": "Scheduled",
+   "title": "Business meeting to consider pending nominations and Fiscal Year 2027 legislative priorities.",
+   "type": "Open Business Meeting", "updateDate": "2026-11-05T13:19:28Z"
+  }
+ },
+ "338820": {
+  "committeeMeeting": {
+   "chamber": "Senate", "congress": 119, "date": "2026-11-12T14:30:00Z", "eventId": "338820",
+   "committees": [{"name": "Senate Foreign Relations", "systemCode": "ssfr00",
+                   "url": "https://api.congress.gov/v3/committee/senate/ssfr00?format=json"}],
+   "location": {"building": "Dirksen Senate Office Building", "room": "419"},
+   "meetingStatus": "Scheduled",
+   "relatedItems": {
+    "bills": [{"congress": 119, "number": 1422, "type": "HR",
+               "url": "https://api.congress.gov/v3/bill/119/hr/1422?format=json"},
+              {"congress": 119, "number": 4830, "type": "S",
+               "url": "https://api.congress.gov/v3/bill/119/s/4830?format=json"}]
+   },
+   "title": "Business meeting to consider H.R. 1422, Enhanced Iran Sanctions Act of 2025, and S. 4830.",
+   "type": "Open Business Meeting", "updateDate": "2026-11-05T13:19:27Z"
+  }
+ },
+ "338830": {
+  "committeeMeeting": {
+   "chamber": "Senate", "congress": 119, "date": "2026-11-17T15:00:00Z", "eventId": "338830",
+   "committees": [{"name": "Senate Energy and Natural Resources", "systemCode": "sseg00",
+                   "url": "https://api.congress.gov/v3/committee/senate/sseg00?format=json"}],
+   "location": {"building": "Dirksen Senate Office Building", "room": "366"},
+   "meetingStatus": "Canceled",
+   "title": "Hearings to examine the state of the Strategic Petroleum Reserve.",
+   "type": "Open Hearing", "updateDate": "2026-11-05T13:19:27Z"
+  }
+ },
+ "338840": {
+  "committeeMeeting": {
+   "chamber": "Senate", "congress": 119, "date": "2026-10-28T14:00:00Z", "eventId": "338840",
+   "committees": [{"name": "Senate Foreign Relations", "systemCode": "ssfr00",
+                   "url": "https://api.congress.gov/v3/committee/senate/ssfr00?format=json"}],
+   "meetingStatus": "Scheduled",
+   "title": "Hearings to examine Iran policy after the Qatar talks.",
+   "type": "Open Hearing", "updateDate": "2026-11-04T09:00:00Z"
+  }
+ }
+}

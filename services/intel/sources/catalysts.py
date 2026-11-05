@@ -110,7 +110,9 @@ def scheduled_catalysts(spec: DeskSpec, now: datetime) -> List[Catalyst]:
     t1 = int(datetime(end.year, end.month, end.day, tzinfo=timezone.utc).timestamp() * 1000)
     out: List[Catalyst] = []
     for r in scheduled_events.market_events(t0, t1):
-        if r["origin"] != "scheduled_events.json" or not (r["coins"] & coins) or r["at_ms"] < t0:
+        # Curated rows and the 12-hour scan's overlay rows; the generated
+        # FOMC/CPI/OPEC+ rows already come from _CALENDAR_GENERATORS above.
+        if r["origin"] not in scheduled_events.FILE_ORIGINS or not (r["coins"] & coins) or r["at_ms"] < t0:
             continue
         at = datetime.fromtimestamp(r["at_ms"] / 1000, tz=timezone.utc)
         title = r["title"] + ("" if r["verified"] else " (unverified date)") + (" (all day)" if r["all_day"] else "")

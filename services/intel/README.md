@@ -69,6 +69,23 @@ named in `IntelPacket.sources_failed` as `<source>:<fn>:<KEY>_missing`;
 too, so it is visible wherever a human reads the brief, not just in the
 packet's own JSON.
 
+### Scheduled events and the 12-hour scan (`scheduled_events.py`, since 2026-11-05)
+
+`data/scheduled_events.json` is the curated calendar (elections, jobs,
+PCE, OPEC/IEA reports, Congress, holidays, expiries). `load()` merges it
+with a scan overlay at `$PATHIEL_STATE_DIR/intel/scanned_events.json`,
+cached on both files' mtimes so a running MCP server sees a scan on its next
+call; a curated row wins on a (date, kind, title) conflict. The overlay has
+one writer, `scripts/event_add.py` (validates with `validate_event`, dedups,
+refuses impact 3 without `--allow-impact-3`). `scripts/event_scan.py` fills
+it every 12 hours from congress.gov committee meetings, the watched
+Iran-oil sanctions bills' actions and dated Federal Register documents
+(no LLM; `--dry-run` prints without writing); the event-calendar skill's
+"Scan" section adds one research agent for what the APIs cannot see. The
+brief tags scanned rows `(scan)`. Tests: `tests/test_scheduled_events.py`,
+`tests/test_event_add.py`, `tests/test_event_scan.py`. Eval:
+`python3 -m services.intel.evals.eval_event_scan` (dry run, merge check).
+
 ### Surprise headlines (`headline_watch.py`, since 2026-11-05)
 
 Operator: "FIX THEM". A US-Iran deal, a strike or a Trump post has no date,

@@ -1,0 +1,16 @@
+{
+ "committeeMeetings": [
+  {"chamber": "Senate", "congress": 119, "eventId": "338805", "updateDate": "2026-11-05T13:19:28Z",
+   "url": "https://api.congress.gov/v3/committee-meeting/119/senate/338805?format=json"},
+  {"chamber": "Senate", "congress": 119, "eventId": "338810", "updateDate": "2026-11-05T13:19:28Z",
+   "url": "https://api.congress.gov/v3/committee-meeting/119/senate/338810?format=json"},
+  {"chamber": "Senate", "congress": 119, "eventId": "338820", "updateDate": "2026-11-05T13:19:27Z",
+   "url": "https://api.congress.gov/v3/committee-meeting/119/senate/338820?format=json"},
+  {"chamber": "Senate", "congress": 119, "eventId": "338830", "updateDate": "2026-11-05T13:19:27Z",
+   "url": "https://api.congress.gov/v3/committee-meeting/119/senate/338830?format=json"},
+  {"chamber": "Senate", "congress": 119, "eventId": "338840", "updateDate": "2026-11-04T09:00:00Z",
+   "url": "https://api.congress.gov/v3/committee-meeting/119/senate/338840?format=json"}
+ ],
+ "pagination": {"count": 5},
+ "request": {"chamber": "senate", "congress": "119", "contentType": "application/json", "format": "json"}
+}

@@ -1,0 +1,9 @@
+{
+ "bill": {
+  "congress": 119, "number": "1422", "type": "HR", "originChamber": "House",
+  "title": "Enhanced Iran Sanctions Act of 2025",
+  "latestAction": {"actionDate": "2026-11-04", "text": "Committee on Foreign Relations. Ordered to be reported with an amendment in the nature of a substitute favorably."},
+  "introducedDate": "2025-02-18", "updateDate": "2026-11-05T08:12:00Z"
+ },
+ "request": {"billNumber": "1422", "billType": "hr", "congress": "119", "contentType": "application/json", "format": "json"}
+}

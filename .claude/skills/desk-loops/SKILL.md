@@ -19,8 +19,16 @@ window"). Start it from the repo root:
    - `CronCreate` cron `10,25,40,55 * * * *`, prompt `/desk-tick metals`, recurring.
    - `CronCreate` cron `7 0 * * *`, prompt `/review-trades`, recurring
      (the daily trade review: read only, see `.claude/skills/review-trades`).
+   - `CronCreate` cron `17 */12 * * *`, prompt `/event-calendar scan`,
+     recurring (the 12-hour event scan: congress.gov, the Federal Register
+     and one research agent, written to the scan overlay; see the "Scan"
+     section of `.claude/skills/event-calendar`).
    They are session-only and expire after 7 days; re-run `/desk-loops`
    then.
+   Then run the deterministic scan once so the brief has today's events
+   before the first tick: `python3 scripts/event_scan.py` (one
+   `EVENT-SCAN ...` line; without `CONGRESS_API_KEY` it says so and
+   still runs the Federal Register part).
 2. **Price watcher.** `pgrep -f scripts/trigger_watch.py`. If one is
    already running (another window owns it), do not start a second one.
    Otherwise run in the background (Bash, `run_in_background: true`):

@@ -1,0 +1,21 @@
+{
+ "_note": "Shaped from the live /v3/bill/119/hr/1422/actions response of 2026-11-05 (the 2026-03-16/17 rows are real). The 2026-11-04 committee action is the test's 'new action'; the floor text names a coming date.",
+ "actions": [
+  {"actionDate": "2026-11-04",
+   "committees": [{"name": "Foreign Relations Committee", "systemCode": "ssfr00", "url": "https://api.congress.gov/v3/committee/senate/ssfr00?format=json"}],
+   "sourceSystem": {"name": "Senate"},
+   "text": "Committee on Foreign Relations. Ordered to be reported with an amendment in the nature of a substitute favorably. Floor consideration expected Thursday, November 12, 2026.",
+   "type": "Committee"},
+  {"actionDate": "2026-03-17",
+   "committees": [{"name": "Foreign Relations Committee", "systemCode": "ssfr00", "url": "https://api.congress.gov/v3/committee/senate/ssfr00?format=json"}],
+   "sourceSystem": {"name": "Senate"},
+   "text": "Received in the Senate and Read twice and referred to the Committee on Foreign Relations.",
+   "type": "IntroReferral"},
+  {"actionCode": "8000", "actionDate": "2026-03-16", "actionTime": "15:57:45",
+   "sourceSystem": {"code": 9, "name": "Library of Congress"},
+   "text": "Passed/agreed to in House: On motion to suspend the rules and pass the bill, as amended Agreed to by voice vote. (text: CR H2500-2501)",
+   "type": "Floor"}
+ ],
+ "pagination": {"count": 3},
+ "request": {"billNumber": "1422", "billType": "hr", "congress": "119", "contentType": "application/json", "format": "json"}
+}

@@ -83,30 +83,48 @@ def _fr_item_to_policy(doc: Dict[str, Any], desk_id: str) -> PolicyItem:
     )
 
 
-def fetch_federal_register(spec: DeskSpec, *, per_topic: int = 8
-                            ) -> Tuple[List[PolicyItem], Optional[str]]:
-    if not spec.policy_topics:
-        return [], None
-    items: List[PolicyItem] = []
+FR_FIELDS = ("title", "publication_date", "type", "html_url", "agencies", "document_number", "abstract")
+# What scripts/event_scan.py asks for on top: the dated things a document
+# carries (both are documented Federal Register API fields).
+FR_DATE_FIELDS = ("effective_on", "comments_close_on")
+
+
+def fetch_federal_register_docs(terms: List[str], *, per_topic: int = 8,
+                                fields: Tuple[str, ...] = FR_FIELDS,
+                                fetch_json=None) -> Tuple[List[Dict[str, Any]], List[str]]:
+    """The raw documents for each search term (newest first, the energy,
+    Treasury/OFAC, EPA, Commerce, SEC and CFTC agencies). Shared by the
+    policy packet below and by scripts/event_scan.py, which needs the
+    effective and comment-deadline dates. `fetch_json` is injectable for
+    tests and the scan; errors come back as a list, never raised."""
+    fetch = fetch_json or http_client.fetch_json
+    docs: List[Dict[str, Any]] = []
     errors: List[str] = []
     agency_slugs = list(AGENCY_SLUGS.values())
-    for term in spec.policy_topics:
+    for term in terms:
         params = [("per_page", str(per_topic)), ("order", "newest"),
                   ("conditions[term]", term)]
         for slug in agency_slugs:
             params.append(("conditions[agencies][]", slug))
-        for field in ("title", "publication_date", "type", "html_url", "agencies",
-                      "document_number", "abstract"):
+        for field in fields:
             params.append(("fields[]", field))
-        data, err = http_client.fetch_json(FEDERAL_REGISTER_URL, params=params)
+        data, err = fetch(FEDERAL_REGISTER_URL, params=params)
         if err:
             errors.append(f"policy:federal_register:{term[:20]}:{err}")
             continue
         if not isinstance(data, dict):
             errors.append(f"policy:federal_register:{term[:20]}:bad_shape")
             continue
-        for doc in (data.get("results") or [])[:per_topic]:
-            items.append(_fr_item_to_policy(doc, spec.id))
+        docs.extend((data.get("results") or [])[:per_topic])
+    return docs, errors
+
+
+def fetch_federal_register(spec: DeskSpec, *, per_topic: int = 8
+                            ) -> Tuple[List[PolicyItem], Optional[str]]:
+    if not spec.policy_topics:
+        return [], None
+    docs, errors = fetch_federal_register_docs(list(spec.policy_topics), per_topic=per_topic)
+    items = [_fr_item_to_policy(doc, spec.id) for doc in docs]
     return items, ("; ".join(errors) if errors else None)
 
 

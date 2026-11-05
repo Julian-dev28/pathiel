@@ -6,6 +6,7 @@ windows (the real 11-03 entry included), the thesis feed and the brief line.
 """
 from __future__ import annotations
 
+import json
 import re
 from datetime import datetime, timezone
 from pathlib import Path
@@ -25,15 +26,15 @@ def ms(*a) -> int:
 # ── the file ────────────────────────────────────────────────────────────────
 
 def test_every_row_is_complete_and_well_formed():
+    """The curated file passes the same validator scripts/event_add.py runs
+    on every scanned row (test_event_add.py pins what it rejects)."""
     data = S.load()
     assert re.fullmatch(r"\d{4}-\d{2}-\d{2}", data["valid_through"])
     assert data["events"], "empty calendar"
+    assert data["scanned"] == 0, "the test state dir has no overlay"
     for e in data["events"]:
-        assert re.fullmatch(r"\d{4}-\d{2}-\d{2}", e["date"]), e
-        assert e["at_utc"] is None or re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}Z", e["at_utc"]), e
-        assert re.fullmatch(r"[a-z][a-z0-9_]*", e["kind"]), e
-        assert e["coins"] and set(e["coins"]) <= set(S.COIN_GROUPS), e
-        assert e["impact"] in (1, 2, 3) and isinstance(e["verified"], bool) and e["source"], e
+        S.validate_event(e)
+        assert "origin" not in e, f"origin is the overlay's field, not the curated file's: {e}"
 
 
 def test_generated_kinds_are_not_duplicated_in_the_file():
@@ -45,6 +46,89 @@ def test_generated_kinds_are_not_duplicated_in_the_file():
 def test_the_midterms_are_on_the_record():
     mid = [e for e in S.load()["events"] if e["kind"] == "election" and e["date"] == "2026-11-03"]
     assert len(mid) == 1 and mid[0]["impact"] == 3 and set(mid[0]["coins"]) == {"oil", "silver"}
+
+
+# ── the scan overlay ────────────────────────────────────────────────────────
+
+def _curated(tmp_path, rows):
+    p = tmp_path / "curated.json"
+    p.write_text(json.dumps({"refreshed": "2026-11-05", "valid_through": "2027-01-31", "events": rows}))
+    return str(p)
+
+
+def _overlay(tmp_path, rows, state=None, name="scanned_events.json"):
+    p = tmp_path / name
+    p.write_text(json.dumps({"version": 1, "events": rows, "state": state or {}}))
+    return str(p)
+
+
+ROW = {"date": "2026-11-10", "at_utc": "2026-11-10T15:00Z", "event": "Senate Foreign Relations hearing: Iran",
+       "kind": "congress_hearing", "coins": ["oil"], "impact": 1, "verified": True, "source": "https://congress.gov/x"}
+
+
+def test_overlay_path_follows_the_state_dir(isolated_state_dir, monkeypatch):
+    assert S.overlay_path() == str(isolated_state_dir / "intel" / "scanned_events.json")
+    monkeypatch.setenv("PATHIEL_STATE_DIR", str(isolated_state_dir / "other"))
+    assert S.overlay_path() == str(isolated_state_dir / "other" / "intel" / "scanned_events.json")
+
+
+def test_load_merges_the_overlay_and_a_curated_row_wins(tmp_path):
+    curated = _curated(tmp_path, [dict(ROW, impact=2, note="curated")])
+    overlay = _overlay(tmp_path, [
+        dict(ROW, event="SENATE foreign relations hearing: Iran!", impact=1, origin="scan", scanned_at="s"),  # conflict
+        dict(ROW, date="2026-11-12", event="Senate Foreign Relations markup: H.R. 1422", kind="congress_markup"),
+        {"date": "bad"},                                                                                 # invalid: skipped
+    ])
+    data = S.load(curated, overlay)
+    assert data["valid_through"] == "2027-01-31" and data["scanned"] == 1 and len(data["events"]) == 2
+    assert data["events"][0]["impact"] == 2 and data["events"][0]["note"] == "curated" and "origin" not in data["events"][0]
+    assert data["events"][1]["origin"] == "scan" and data["events"][1]["kind"] == "congress_markup"
+
+
+def test_a_missing_overlay_is_no_overlay(tmp_path):
+    curated = _curated(tmp_path, [ROW])
+    data = S.load(curated, str(tmp_path / "nope" / "scanned_events.json"))
+    assert len(data["events"]) == 1 and data["scanned"] == 0
+    assert S.read_overlay(str(tmp_path / "nope.json")) == {"version": 1, "events": [], "state": {}}
+
+
+def test_load_sees_a_rewritten_overlay_in_the_same_process(tmp_path):
+    """The old lru_cache meant a running MCP server never saw a scan; the
+    mtime/size key means it does on the very next call."""
+    curated = _curated(tmp_path, [ROW])
+    overlay = _overlay(tmp_path, [])
+    first = S.load(curated, overlay)
+    assert first["scanned"] == 0 and S.load(curated, overlay) is first          # cached while nothing changed
+    _overlay(tmp_path, [dict(ROW, date="2026-11-12", event="Second")])
+    second = S.load(curated, overlay)
+    assert second is not first and second["scanned"] == 1 and second["events"][1]["event"] == "Second"
+    _overlay(tmp_path, [dict(ROW, date="2026-11-13", event="Third"), dict(ROW, date="2026-11-14", event="Fourth")])
+    third = S.load(curated, overlay)
+    assert third["scanned"] == 2 and [e["event"] for e in third["events"][1:]] == ["Third", "Fourth"]
+    (tmp_path / "scanned_events.json").unlink()
+    assert S.load(curated, overlay)["scanned"] == 0                              # removed: back to the file alone
+
+
+def test_scanned_rows_carry_the_scan_tag_and_curated_ones_do_not(tmp_path):
+    curated = _curated(tmp_path, [ROW])
+    overlay = _overlay(tmp_path, [dict(ROW, date="2026-11-12", at_utc="2026-11-12T15:00Z", event="Scanned hearing",
+                                       verified=False)])
+    data = S.load(curated, overlay)
+    lines = [S.short_line(S._row(e)) for e in data["events"]]
+    assert lines == ["Tue 11-10 15:00Z Senate Foreign Relations hearing: Iran",
+                     "Thu 11-12 15:00Z Scanned hearing (unverified) (scan)"]
+
+
+def test_an_impact_3_scan_row_blocks_entries_like_a_curated_one(tmp_path, isolated_state_dir):
+    import json as _json
+    p = isolated_state_dir / "intel" / "scanned_events.json"
+    p.parent.mkdir(parents=True)
+    p.write_text(_json.dumps({"version": 1, "state": {}, "events": [
+        dict(ROW, date="2026-11-18", at_utc=None, event="Iran sanctions snapback deadline", kind="sanctions_deadline",
+             coins=["oil", "silver"], impact=3, origin="scan", scanned_at="x")]}))
+    b = S.blackout(BRENT, ms(2026, 11, 18, 9, 0))
+    assert b and b["kind"] == "sanctions_deadline" and b["until_utc"] == "2026-11-19 00:00Z"
+    assert S.blackout(SILVER, ms(2026, 11, 17, 23, 59)) is None
 
 
 # ── blackout windows ────────────────────────────────────────────────────────
