@@ -167,7 +167,7 @@ WINDOW_START_MS = 1793998800000
 def _quiet_calendar(monkeypatch):
     from services.intel import headline_watch, scheduled_events
     monkeypatch.setattr(scheduled_events, "blackout", lambda coin, t, path=None: None)
-    monkeypatch.setattr(headline_watch, "headline_blackout", lambda coin, t, path=None: None)
+    monkeypatch.setattr(headline_watch, "headline_blackout", lambda coin, t, side=None, path=None: None)
 
 
 def test_weekend_open_wakes_a_desk_that_holds_a_position_once(monkeypatch, tmp_path, capsys):
@@ -207,3 +207,34 @@ def test_weekend_fire_is_pure_and_keyed_on_the_window():
     def boom():
         raise RuntimeError("venue")
     assert W.weekend_fire("oil", "xyz:BRENTOIL", bo, {}, SAT_S, boom) is None   # a bad read waits a minute
+
+
+# ── the one-sided headline hold (operator, 2026-11-05: "we SHOULDNT PAUSE FOR BULLISH HEADLINES") ──
+
+def _record(tmp_path, direction, title):
+    from services.intel import headline_watch as HW
+    HW.save_state({"seen": [], "last_news_s": 1000.0, "odds": {}}, str(tmp_path / "headline_state.json"))
+    (tmp_path / "headline_alerts.json").write_text(json.dumps([
+        {"group": "oil", "kind": "news", "label": "iran/hormuz", "title": title, "at_ms": 1_000_000 - 5 * 60_000,
+         "direction": direction}]))
+
+
+def test_a_headline_that_supports_the_long_thesis_does_not_stop_the_watcher_firing(monkeypatch, tmp_path, capsys):
+    _record(tmp_path, 1, "US strikes Iran's Qeshm Island")
+    _stub(monkeypatch, tmp_path, [112.04])                   # the entry rule passes
+    assert W.watch(once=False, cooldown_min=30, clock=lambda: 1000.0) == 0
+    line = json.loads(capsys.readouterr().out.strip())
+    assert line["fire"] == "oil" and line["mid"] == 112.04 and "reason" not in line
+
+
+def test_a_headline_against_or_unknown_still_holds_the_long_thesis(monkeypatch, tmp_path, capsys):
+    _record(tmp_path, -1, "U.S., Iran edge closer to deal")
+    _stub(monkeypatch, tmp_path, [112.04])
+    W.watch(once=True, cooldown_min=30, clock=lambda: 1000.0)
+    out = capsys.readouterr().out
+    assert '"fire"' not in out and "Headline blackout: no new long entries until" in out and "against the long" in out
+    _record(tmp_path, 0, "Trump's Iran Strategy Reaches a Critical Crossroads")
+    _stub(monkeypatch, tmp_path, [112.04])
+    W.watch(once=True, cooldown_min=30, clock=lambda: 1000.0)
+    out = capsys.readouterr().out
+    assert '"fire"' not in out and "direction unknown" in out

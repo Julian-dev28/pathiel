@@ -1099,7 +1099,7 @@ def test_handler_refuses_new_oil_entries_inside_the_weekend(monkeypatch):
     sat = 1793635200000 + 5 * 86_400_000 - 4 * 3_600_000       # Sat 11-07 12:00Z
     monkeypatch.setattr(event_blackout, "now_ms", lambda: sat)
     monkeypatch.setattr(scheduled_events, "blackout", lambda coin, t, path=None: None)   # the Iran row that day
-    monkeypatch.setattr(headline_watch, "headline_blackout", lambda coin, t, path=None: None)
+    monkeypatch.setattr(headline_watch, "headline_blackout", lambda coin, t, side=None, path=None: None)
     called = []
     monkeypatch.setattr(br, "place_bracket", lambda coin, **k: called.append(coin) or {"ok": True})
     monkeypatch.setattr(mcp, "_risk_inputs", lambda: called.append("sized") or (_ for _ in ()).throw(RuntimeError("stop")))
@@ -1121,3 +1121,54 @@ def test_handler_refuses_new_oil_entries_inside_the_weekend(monkeypatch):
     monkeypatch.setattr(event_blackout, "now_ms", lambda: 1793635200000 + 4 * 86_400_000 + 4 * 3_600_000 + 59 * 60_000)  # Fri 20:59Z
     json.loads(mcp.handle_place_bracket({"coin": COIN, "stop_px": 100.0, "tp_px": 110.0}))
     assert called == ["sized"]
+
+
+def test_handler_holds_only_against_an_opposed_or_unknown_headline(monkeypatch, tmp_path):
+    """Operator 2026-11-05 "we SHOULDNT PAUSE FOR BULLISH HEADLINES": inside
+    a headline window a bullish alert (+1) lets a long through (stop below
+    entry, or below the target on a market order) and holds a short; a
+    bearish alert holds the long; an unknown one holds both; a top-up is
+    judged by the same side."""
+    mcp = _mcp()
+    from pathiel.agents import bracket as br
+    from services.intel import headline_watch as HW
+    from services.strategies import event_blackout
+    now = 1793635200000                                  # Mon 2026-11-02 16:00Z (conftest's clock)
+    monkeypatch.setattr(event_blackout, "now_ms", lambda: now)
+    monkeypatch.setattr(HW, "ALERTS_PATH", str(tmp_path / "headline_alerts.json"))
+    called = []
+    monkeypatch.setattr(br, "place_bracket", lambda coin, **k: called.append(coin) or {"ok": True})
+    monkeypatch.setattr(mcp, "_risk_inputs", lambda: called.append("sized") or (_ for _ in ()).throw(RuntimeError("stop")))
+
+    def place(**p):
+        """(reached sizing, error). The sizing stub raises 'stop' so the
+        error of a trade that passed the hold is 'sizing failed: stop'."""
+        called.clear()
+        out = json.loads(mcp.handle_place_bracket(dict({"coin": COIN}, **p)))
+        return ("sized" in called, out.get("error") or "")
+
+    PASSED = (True, "sizing failed: stop")
+
+    def alert(direction, title):
+        (tmp_path / "headline_alerts.json").write_text(json.dumps([
+            {"group": "oil", "kind": "news", "label": "iran/hormuz", "title": title, "at_ms": now - 5 * 60_000,
+             "direction": direction}]))
+
+    alert(1, "US strikes Iran's Qeshm Island")
+    assert place(entry_px=105.0, stop_px=100.0, tp_px=115.0) == PASSED                      # long, aligned
+    assert place(stop_px=100.0, tp_px=115.0) == PASSED                                       # market long
+    assert place(stop_px=100.0, tp_px=115.0, add=True) == PASSED                             # top-up, same side
+    sized, err = place(entry_px=105.0, stop_px=110.0, tp_px=95.0)                           # short: held
+    assert not sized and err.startswith("Headline blackout: no new short entries until 2026-11-02 16:25Z")
+    assert "against the short" in err
+    alert(-1, "U.S., Iran edge closer to deal")
+    sized, err = place(entry_px=105.0, stop_px=100.0, tp_px=115.0)
+    assert not sized and "no new long entries" in err and "against the long" in err
+    assert place(entry_px=105.0, stop_px=110.0, tp_px=95.0) == PASSED                       # short rides it
+    alert(0, "Trump's Iran Strategy Reaches a Critical Crossroads After Midterm Defeat")
+    for p in ({"entry_px": 105.0, "stop_px": 100.0, "tp_px": 115.0}, {"stop_px": 110.0, "tp_px": 95.0}):
+        sized, err = place(**p)
+        assert not sized and "direction unknown" in err
+    assert place(entry_px=105.0, stop_px=100.0, tp_px=115.0, dry_run=True)[0]              # a dry run never blocks
+    assert mcp._bracket_side(105.0, 100.0, 115.0) == "long" and mcp._bracket_side(None, 110.0, 95.0) == "short"
+    assert mcp._bracket_side(100.0, 100.0, 115.0) is None

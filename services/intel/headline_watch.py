@@ -24,9 +24,18 @@ An alert is recorded in ALERTS_PATH and then:
      one-an-hour gap (HEADLINE_MIN_GAP_MIN instead);
   3. services/strategies/event_blackout.event_blackout refuses NEW entries on
      the desk's coins for HEADLINE_BLACKOUT_MIN, so nothing opens on a stale
-     thesis while the rewrite runs.
-Interpreting the headline (bullish? does it break the thesis?) stays latent:
-the rewrite and the tick agent judge it. This module only notices.
+     thesis while the rewrite runs. Since 2026-11-06 (operator, 2026-11-05:
+     "we SHOULDNT PAUSE FOR BULLISH HEADLINES") the hold is one-sided: every
+     alert carries a "direction" (+1 bullish for the group's coins, -1
+     bearish, 0 unknown; the word lists under DIRECTION below), and an alert
+     whose direction supports the trade side does not hold that side's
+     entries (headline_blackout(coin, at_ms, side=...)). An alert against the
+     side, or of unknown direction, still holds. Steps 1 and 2 ignore the
+     direction: every alert wakes the tick and makes the thesis due.
+What the headline means for the thesis (does it break it?) stays latent: the
+rewrite and the tick agent judge it. This module notices, and reads the
+headline's sign off fixed word lists; a title the lists cannot read is 0 and
+holds, the safe default.
 
 Pure functions plus a small JSON file; the fetching lives in trigger_watch.
 """
@@ -214,6 +223,193 @@ TRUSTED_SOURCES = (
     "whitehouse.gov", "state.gov", "truthsocial:realdonaldtrump",
 )
 
+# ── DIRECTION: the one place the sign of a headline is read ─────────────────
+# Operator, 2026-11-05: "we SHOULDNT PAUSE FOR BULLISH HEADLINES" (the oil
+# thesis is long). Every alert gets "direction" for the GROUP'S COINS: +1 the
+# headline is bullish for them, -1 bearish, 0 unknown or conflicting.
+#   price shock / drift: the sign of the move.
+#   news / posts / official: count the bullish and the bearish phrases below
+#     in the title; one side only decides, both or neither is 0. A negated
+#     phrase ("no deal", "rejects deal", "talks collapse", "ceasefire
+#     collapses", "will not be a war") is rewritten FIRST into a token on the
+#     opposite list (deal fails = more risk = bullish oil; war averted =
+#     bearish oil), so the negation flips instead of matching the bare word.
+#   odds: sign(change) x the market's polarity (+1 when a rising YES is
+#     bullish for the coin: "Will Iran target an Arab country" up = bullish
+#     oil; "US x Iran diplomatic meeting", "ceasefire", "Hormuz reopens" up =
+#     bearish oil). Unknown polarity = 0.
+# Polarity is per group: for OIL, less supply or more risk is bullish (an
+# attack, a seizure, a closure, a tightened blockade, an OPEC cut); a deal, a
+# reopening, an SPR release or an OPEC hike is bearish. The feed that tagged
+# "Iran Opens Strait of Hormuz to China and India as U.S. Blockade Continues"
+# as "bull" was reading risk, not supply: for oil it is -1 (more supply). For
+# METALS (gold) risk-off and a Fed cut are bullish; a Fed hike, hawkish talk,
+# a strong dollar, surging yields and risk-on (a deal, a ceasefire) bearish.
+# A bare "blockade", "war" or "sanctions" carries no sign: with a war on
+# every wrap says "Iran war", and "blockade continues" is the status quo.
+_W = r"\w*"
+# negations: (pattern, replacement token); the token sits on the flipped list
+_OIL_NEGATIONS = [
+    (re.compile(r"\b(no|not?\s+\w*\s*|without (a |an )?|rejects?\w*\s+(a |the |any )?|rules? out (a |the |any )?|"
+                r"collapse of (the )?|end of (the )?|scraps?\w*\s+(a |the )?|abandons?\w*\s+(a |the )?|"
+                r"walks? (away|out) (of|from) (the )?)(?:[\w']+\s+){0,2}"
+                r"(peace |nuclear |ceasefire |cease-fire )?(deal|ceasefire|cease-fire|truce|agreement|accord|"
+                r"peace talks|talks|negotiations?)\b", re.I), " dealfails "),
+    (re.compile(r"\b(deal|ceasefire|cease-fire|truce|agreement|accord|talks|negotiations?|peace)\s+(?:[\w']+\s+){0,3}"
+                r"(collaps\w*|fail\w*|fall\w* (through|apart)|break\w* down|stall\w*|unravel\w*|"
+                r"off the table|dead|over)\b", re.I), " dealfails "),
+    (re.compile(r"\b(no|not be a|won't be a|will not be a|avoid\w*|avert\w*|rul\w* out|calls? off|"
+                r"cancel\w*|halt\w*|suspend\w*)\s+(a |an |the |any |further |more )?(war|strikes?|attacks?|"
+                r"escalation|retaliation|blockade)\b", re.I), " waraverted "),
+]
+_OIL_BULL = [
+    r"\bdealfails\b", r"\battack\w*", r"\bstrikes?\b(?! (a |the )?(deal|agreement|accord|truce))",
+    r"\bstruck\b(?! (a |the )?(deal|agreement|accord|truce))",
+    r"\bseiz\w*", r"\bhijack\w*", r"\bboard(ed|s|ing)\b.*\b(tanker|vessel|ship)", r"\bexplo(sion|des?)\b",
+    r"\bblast\b", r"\b(sea |naval )?mines?\b", r"\bmissiles?\b", r"\bdrones?\b", r"\bclos(ed|ure|es|ing)\b",
+    r"\bshuts?( down)?\b", r"\bshutdown\b", r"\bhalts?\b", r"\boutage", r"\bdisrupt\w*", r"\bsabotag\w*",
+    r"\b(impos|tighten|expand|enforc|new|launch|begin|start)\w*\W+(a |the |its |naval )?blockade\b",
+    r"\bblockade\W+(tighten|impos|expand|begin|start)\w*", r"\bsanctions?\b.*\b(impos|tighten|new|fresh|slap)\w*",
+    r"\b(impos|tighten|new|fresh|slap)\w*\b.*\bsanctions?\b", r"(?<!de-)(?<!de)\bescalat\w*", r"\bretaliat\w*",
+    r"\bopec\+?\b.*\b(cut|curb|reduc|trim)\w*", r"\b(output|production|supply) cuts?\b", r"\bcuts? (output|production)\b",
+    r"\bsupply (shock|shortage|disruption)", r"\bshortage",
+]
+_OIL_BEAR = [
+    r"\bwaraverted\b", r"\bdeal\b", r"\bceasefire\b", r"\bcease-fire\b", r"\btruce\b", r"\bagreement\b", r"\baccord\b",
+    r"\bpeace\b", r"\bde-?escalat\w*", r"\bre-?open\w*", r"\bresum\w*", r"\brestor\w*", r"\bnormaliz\w*",
+    r"\bopens?\b.*\b(strait|hormuz|port|pipeline|terminal|flows?|exports?|transit|shipping|waterway)",
+    r"\b(strait|hormuz|port|pipeline|terminal|flows?|exports?|transit|shipping|waterway)\w*\b.*\bopens?\b",
+    r"\bsanctions?\b.*\b(lift|eas|waiv|relief|suspend|remov)\w*", r"\b(lift|eas|waiv|suspend|remov)\w*\b.*\bsanctions?\b",
+    r"\btalks\b.*\b(progress|going well|advanc|productive|constructive|positive)\w*",
+    r"\b(progress|productive|constructive|positive|good|great)\w*\b.*\btalks\b",
+    r"\bopec\+?\b.*\b(hike|boost|increase|raise|rais|add)\w*", r"\b(output|production|supply) (hike|boost|increase)s?\b",
+    r"\b(boost|raise|hike|increase)\w* (oil |crude )?(output|production|supply)\b",
+    r"\b(spr|strategic petroleum reserve)\b.*\b(releas|offer|sell|sale|draw|tap)\w*",
+    r"\b(releas|offer|sell|sale|draw|tap)\w*\b.*\b(spr|strategic petroleum reserve)\b",
+    r"\bsurplus\b", r"\bglut\b", r"\bdemand (slump|drop|fall|slow|destruction)\w*",
+]
+_METALS_NEGATIONS = [
+    (re.compile(r"\b(no|not?\s+\w*\s*|rules? out (a |the |any )?|rejects?\w*\s+(a |the |any )?|delays?\w*\s+(a |the )?|"
+                r"pauses?\w*\s+(the )?|holds? off (on )?(a |the )?)(rate |interest rate |emergency )?cuts?\b", re.I),
+     " hawkishhold "),
+    (re.compile(r"\b(no|not be a|won't be a|will not be a|avoid\w*|avert\w*|rul\w* out)\s+(a |an |the |any )?"
+                r"(war|strikes?|attacks?|escalation|retaliation)\b", re.I), " riskon "),
+]
+_METALS_BULL = [
+    r"\bemergency\b.*\bcut", r"\b(rate|interest rate) cuts?\b", r"\bcuts? (interest )?rates?\b", r"\bcut by \d+", r"\bdovish\b",
+    r"\bcuts?\b(?! (output|production|supply|tariff|off))",
+    r"\bsafe[- ]haven\b", r"\brecession\b", r"\bwar\b(?! (veteran|hero|college))", r"\binva(de|sion)\w*", r"\battack\w*",
+    r"\bstrikes?\b(?! (a |the )?(deal|agreement|accord|truce))", r"\bmissiles?\b", r"(?<!de-)(?<!de)\bescalat\w*",
+    r"\bretaliat\w*", r"\bseiz\w*", r"\bblockade\W+(tighten|impos|expand)\w*", r"\brisk[- ]off\b",
+    r"\b(central banks?|pboc|people's bank|reserve bank|bundesbank|national bank)\b.*\b(buy|bought|purchas|add|rais)\w*",
+    r"\b(buy|bought|purchas|add|rais)\w*\b.*\b(central banks?|pboc)\b",
+    r"\bdollar\b.*\b(plunge|tumble|slide|slump|fall|weak|drop)\w*", r"\byields?\b.*\b(plunge|tumble|slide|fall|drop)\w*",
+]
+_METALS_BEAR = [
+    r"\bhawkishhold\b", r"\briskon\b", r"\b(rate|interest rate) hikes?\b", r"\bhikes? (interest )?rates?\b", r"\bhawkish\b",
+    r"\bhikes?\b(?! (output|production|tariff))",
+    r"\bhigher for longer\b", r"\bstrong(er)? dollar\b", r"\bdollar\b.*\b(surge|spike|soar|jump|rall|strengthen|climb)\w*",
+    r"\byields?\b.*\b(surge|spike|soar|jump|climb)\w*", r"\bceasefire\b", r"\bcease-fire\b", r"\btruce\b",
+    r"\bpeace (deal|agreement|talks|accord)\b", r"\b(peace |nuclear )?deal\b", r"\bde-?escalat\w*", r"\brisk[- ]on\b",
+    r"\b(central banks?|pboc|people's bank|reserve bank)\b.*\b(sell|sold|dump|cut|reduc)\w*",
+]
+DIRECTION_WORDS: Dict[str, Dict[str, Any]] = {
+    "oil": {"negations": _OIL_NEGATIONS, "bull": [re.compile(p, re.I | re.S) for p in _OIL_BULL],
+            "bear": [re.compile(p, re.I | re.S) for p in _OIL_BEAR]},
+    "metals": {"negations": _METALS_NEGATIONS, "bull": [re.compile(p, re.I | re.S) for p in _METALS_BULL],
+               "bear": [re.compile(p, re.I | re.S) for p in _METALS_BEAR]},
+}
+# Polymarket questions: +1 when a rising YES is bullish for the group's coins.
+ODDS_POLARITY: Dict[str, List[Tuple[int, re.Pattern]]] = {
+    "oil": [
+        (-1, re.compile(r"\b(diplomatic|meeting|talks|negotiat\w*|ceasefire|cease-fire|truce|deal|agreement|accord|peace|"
+                        r"re-?open\w*|normal\w*|resum\w*|lift\w* sanctions|sanctions (relief|lifted|eased)|"
+                        r"(below|under) \$|opec\+? (hike|boost|increase|raise)\w*|increase (oil )?(output|production))\b",
+                        re.I)),
+        (+1, re.compile(r"\b(target\w*|attack\w*|strikes?|strike\b|seiz\w*|clos\w*|blockade|escalat\w*|invade\w*|invasion|"
+                        r"mines?|missiles?|retaliat\w*|(above|over|reach|hit) \$|opec\+? (cut|curb)\w*|"
+                        r"cut (oil )?(output|production)|nuclear (test|weapon))\b", re.I)),
+    ],
+    "metals": [
+        (-1, re.compile(r"\b(rate hike|hikes? rates?|raise rates?|hold rates?|no (rate )?cut|ceasefire|cease-fire|truce|"
+                        r"peace|deal|agreement|(below|under) \$)\b", re.I)),
+        (+1, re.compile(r"\b(rate cut|cuts? (interest )?rates?|lower rates?|emergency cut|recession|war|strikes?|attack\w*|"
+                        r"invade\w*|invasion|escalat\w*|(above|over|reach|hit) \$)\b", re.I)),
+    ],
+}
+_ODDS_TITLE = re.compile(r"(\d+)%\s*->\s*(\d+)%\s*$")
+_PCT_IN_TITLE = re.compile(r"([+-]\d+(?:\.\d+)?)%")
+
+
+def _sign(x: float) -> int:
+    return 1 if x > 0 else -1 if x < 0 else 0
+
+
+def text_direction(group: str, text: str) -> int:
+    """+1 / -1 / 0 for a headline or post `text`, by DIRECTION_WORDS[group].
+    Negations are rewritten first; one side alone decides; both or neither
+    is 0 (unknown: holds). Pure."""
+    words = DIRECTION_WORDS.get(group)
+    if not words or not text:
+        return 0
+    t = str(text)
+    for rx, token in words["negations"]:
+        t = rx.sub(token, t)
+    bull = any(rx.search(t) for rx in words["bull"])
+    bear = any(rx.search(t) for rx in words["bear"])
+    return 1 if bull and not bear else -1 if bear and not bull else 0
+
+
+def odds_polarity(group: str, question: str) -> int:
+    """+1 when a rising YES on `question` is bullish for the group's coins,
+    -1 when bearish, 0 unknown or both. Negations ("Will the ceasefire
+    collapse") are rewritten the same way text_direction does. Pure."""
+    words = DIRECTION_WORDS.get(group)
+    q = str(question or "")
+    for rx, token in (words["negations"] if words else []):
+        q = rx.sub(token, q)
+    if "dealfails" in q or "waraverted" in q or "hawkishhold" in q or "riskon" in q:
+        return text_direction(group, q)
+    hits = {pol for pol, rx in ODDS_POLARITY.get(group, []) if rx.search(q)}
+    return next(iter(hits)) if len(hits) == 1 else 0
+
+
+def odds_direction(group: str, question: str, change: float) -> int:
+    """sign(change) x odds_polarity. Pure."""
+    return _sign(change) * odds_polarity(group, question)
+
+
+def alert_direction(alert: Dict[str, Any]) -> int:
+    """The alert's "direction", or the same rule applied to a row recorded
+    before the field existed (the live file of 2026-11-05: a price row
+    carries "move", an odds row's title ends "50% -> 60%", a news or post
+    row has its title). Anything unreadable is 0. Pure."""
+    d = alert.get("direction")
+    if d in (1, -1, 0):
+        return int(d)
+    group = alert.get("group") or _group_of(alert.get("coin") or "") or ""
+    kind = alert.get("kind")
+    title = str(alert.get("title") or "")
+    if kind == "price":
+        mv = alert.get("move")
+        if isinstance(mv, (int, float)):
+            return _sign(float(mv))
+        m = _PCT_IN_TITLE.search(title)
+        return _sign(float(m.group(1))) if m else 0
+    if kind == "odds":
+        m = _ODDS_TITLE.search(title)
+        if not m:
+            return 0
+        return odds_direction(group, _ODDS_TITLE.sub("", title).rstrip(": "), int(m.group(2)) - int(m.group(1)))
+    return text_direction(group, title)
+
+
+def supports(alert: Dict[str, Any], side: Optional[str]) -> bool:
+    """True when the alert's direction is the trade side's (long & +1,
+    short & -1). False for side None, an unknown direction, or against."""
+    want = 1 if side == "long" else -1 if side == "short" else 0
+    return bool(want) and alert_direction(alert) == want
+
 
 def _utc(ms: int) -> str:
     return datetime.fromtimestamp(ms / 1000, tz=timezone.utc).strftime("%Y-%m-%d %H:%MZ")
@@ -289,7 +485,7 @@ def news_alerts(group: str, items: Iterable[Dict[str, Any]], seen: set, now_ms: 
         if label:
             out.append({"group": group, "kind": "news", "label": label, "title": title[:200],
                         "source": it.get("source"), "url": it.get("url"), "at_ms": now_ms,
-                        "published_ms": pub_ms})
+                        "published_ms": pub_ms, "direction": text_direction(group, title)})
     return out
 
 
@@ -318,7 +514,8 @@ def post_alerts(group: str, posts: Iterable[Dict[str, Any]], seen: set, now_ms: 
         if label:
             out.append({"group": group, "kind": "post", "label": label, "title": text[:200],
                         "source": p.get("source"), "url": p.get("url"), "at_ms": now_ms,
-                        "published_ms": pub_ms, "post_id": pid, "post_type": p.get("post_type")})
+                        "published_ms": pub_ms, "post_id": pid, "post_type": p.get("post_type"),
+                        "direction": text_direction(group, text)})
     return out
 
 
@@ -340,7 +537,8 @@ def odds_alerts(group: str, odds: Iterable[Dict[str, Any]], prev: Dict[str, floa
         prev[mid] = p
         if old is not None and abs(p - old) >= ODDS_JUMP:
             out.append({"group": group, "kind": "odds", "label": "odds jump",
-                        "title": f"{q[:150]}: {old:.0%} -> {p:.0%}", "url": o.get("url"), "at_ms": now_ms})
+                        "title": f"{q[:150]}: {old:.0%} -> {p:.0%}", "url": o.get("url"), "at_ms": now_ms,
+                        "change": round(p - old, 4), "direction": odds_direction(group, q, p - old)})
     return out
 
 
@@ -359,7 +557,7 @@ def price_drift(coin: str, history: Sequence[Tuple[int, float]], now_ms: int, mi
     if abs(move) >= thr:
         return {"coin": coin, "group": _group_of(coin), "kind": "price", "label": "price drift",
                 "title": f"{coin} {move:+.2%} within {DRIFT_WINDOW_MIN // 60}h ({ref:g} -> {mid:g})",
-                "at_ms": now_ms, "move": round(move, 5)}
+                "at_ms": now_ms, "move": round(move, 5), "direction": _sign(move)}
     return None
 
 
@@ -377,7 +575,7 @@ def price_shock(coin: str, history: Sequence[Tuple[int, float]], now_ms: int, mi
     if abs(move) >= thr:
         return {"coin": coin, "group": _group_of(coin), "kind": "price", "label": "price shock",
                 "title": f"{coin} {move:+.2%} in {PRICE_WINDOW_MIN} min ({ref:g} -> {mid:g})", "at_ms": now_ms,
-                "move": round(move, 5)}
+                "move": round(move, 5), "direction": _sign(move)}
     return None
 
 
@@ -434,18 +632,55 @@ def alerts_for(coins: Iterable[str], alerts: Iterable[Dict[str, Any]]) -> List[D
     return sorted(hits, key=lambda a: int(a.get("at_ms") or 0))
 
 
-def headline_blackout(coin: str, at_ms: int, path: Optional[str] = None) -> Optional[Dict[str, Any]]:
-    """Active for HEADLINE_BLACKOUT_MIN after the newest alert on `coin`."""
-    a = latest_for(coin, path)
-    if not a:
+def _in_window(coin: str, at_ms: int, path: Optional[str]) -> List[Dict[str, Any]]:
+    """The alerts on `coin` whose HEADLINE_BLACKOUT_MIN window covers `at_ms`, newest first."""
+    g = _group_of(coin)
+    hits = [a for a in read_alerts(path) if (a.get("coin") == coin or (g and a.get("group") == g))
+            and int(a["at_ms"]) <= at_ms < int(a["at_ms"]) + HEADLINE_BLACKOUT_MIN * MIN_MS]
+    return sorted(hits, key=lambda a: -int(a["at_ms"]))
+
+
+def headline_blackout(coin: str, at_ms: int, path: Optional[str] = None, *,
+                      side: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """Active for HEADLINE_BLACKOUT_MIN after the newest alert on `coin` that
+    does not support `side`. side None (the old rule): any alert holds. side
+    "long"/"short" (operator, 2026-11-05: "we SHOULDNT PAUSE FOR BULLISH
+    HEADLINES"): an alert whose direction is the side's own (long & +1,
+    short & -1) is skipped and listed under "skipped"; an alert against the
+    side or of unknown direction (0) still holds. Rows recorded before the
+    direction field existed are read by alert_direction. `path` keeps its
+    old position; `side` is keyword-only (event_blackout passes side=)."""
+    live = _in_window(coin, at_ms, path)
+    skipped = [a for a in live if supports(a, side)] if side in ("long", "short") else []
+    held = [a for a in live if a not in skipped]
+    if not held:
         return None
+    a = held[0]
     end = int(a["at_ms"]) + HEADLINE_BLACKOUT_MIN * MIN_MS
-    if int(a["at_ms"]) <= at_ms < end:
-        return {"coin": coin, "event": a["title"], "kind": "headline", "start_ms": int(a["at_ms"]),
-                "end_ms": end, "until_utc": _utc(end), "alert": a,
-                "reason": f"Headline blackout: no new entries until {_utc(end)} "
-                          f"({a['label']}: {a['title'][:90]}); the thesis rewrites first"}
-    return None
+    d = alert_direction(a)
+    if side in ("long", "short"):
+        why = f"against the {side}" if d else "direction unknown"
+        reason = (f"Headline blackout: no new {side} entries until {_utc(end)} "
+                  f"({a['label']}: {a['title'][:90]}; {why}); the thesis rewrites first")
+    else:
+        reason = (f"Headline blackout: no new entries until {_utc(end)} "
+                  f"({a['label']}: {a['title'][:90]}); the thesis rewrites first")
+    return {"coin": coin, "event": a["title"], "kind": "headline", "start_ms": int(a["at_ms"]),
+            "end_ms": end, "until_utc": _utc(end), "alert": a, "direction": d, "side": side,
+            "skipped": skipped, "reason": reason}
+
+
+def skipped_aligned(coin: str, at_ms: int, side: Optional[str],
+                    path: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """The newest alert on `coin` still inside its window that supports
+    `side`, when NO other in-window alert holds that side (so the brief can
+    say "Headline alert (supports the long): ..., no hold"). None otherwise."""
+    if side not in ("long", "short"):
+        return None
+    live = _in_window(coin, at_ms, path)
+    if any(not supports(a, side) for a in live):
+        return None
+    return next((a for a in live if supports(a, side)), None)
 
 
 def load_state(path: Optional[str] = None) -> Optional[Dict[str, Any]]:
@@ -469,6 +704,7 @@ def save_state(state: Dict[str, Any], path: Optional[str] = None) -> None:
 __all__ = ["ALERTS_PATH", "HEADLINE_BLACKOUT_MIN", "HEADLINE_MIN_GAP_MIN", "NEWS_POLL_S", "NEWS_QUERIES",
            "PATTERNS", "POSTS_POLL_S", "POST_PATTERNS", "PRICE_REARM_MIN", "PRICE_SHOCK", "PRICE_WINDOW_MIN",
            "DRIFT_WINDOW_MIN", "DRIFT_REARM_MIN", "PRICE_DRIFT", "HISTORY_KEEP_MIN", "price_drift",
-           "PRICE_WRAP", "TRUSTED_SOURCES", "alerts_for", "headline_blackout", "latest_for", "load_state",
-           "match_headline", "match_post", "news_alerts", "odds_alerts", "post_alerts", "price_shock",
-           "read_alerts", "record", "save_state", "trusted_source"]
+           "PRICE_WRAP", "TRUSTED_SOURCES", "DIRECTION_WORDS", "ODDS_POLARITY", "alert_direction", "alerts_for",
+           "headline_blackout", "latest_for", "load_state", "match_headline", "match_post", "news_alerts",
+           "odds_alerts", "odds_direction", "odds_polarity", "post_alerts", "price_shock", "read_alerts", "record",
+           "save_state", "skipped_aligned", "supports", "text_direction", "trusted_source"]

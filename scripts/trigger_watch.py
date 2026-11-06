@@ -42,6 +42,14 @@ entry, as {"fire": desk, "reason": "weekend_flat", ...}: the tick closes it
 for the cron. The cooldown key `<desk>:weekend_flat` remembers the window
 it fired for, so it never fires twice for one weekend. A flat desk inside
 the window is skipped like any other blackout (place_bracket refuses).
+
+Since 2026-11-06 (operator, 2026-11-05: "we SHOULDNT PAUSE FOR BULLISH
+HEADLINES") the blackout check carries the thesis side: a headline alert
+whose direction supports it (a bullish headline, odds move or price move
+for a long) does not hold that side's entries, so the watcher still wakes
+the tick on the entry rule; an alert against the side or of unknown
+direction holds as before. The headline step itself is unchanged: every
+alert wakes the tick and makes the thesis due, whatever its direction.
 """
 from __future__ import annotations
 
@@ -359,7 +367,9 @@ def watch(*, once: bool, cooldown_min: float, sleep: Callable[[float], None] = t
             if coin != primary:
                 parts.append(f"{desk}: thesis on {coin}, not {primary}")
                 continue
-            blackout = event_blackout(coin, int(now * 1000))
+            # the thesis side: a headline alert that supports it does not hold its entries (2026-11-06)
+            side = t.call.side if t is not None and t.call.side in ("long", "short") else None
+            blackout = event_blackout(coin, int(now * 1000), side=side)
             if blackout and blackout.get("flatten"):
                 # weekend flat: a held position or resting entry is closed by the tick, once per window
                 line = weekend_fire(desk, coin, blackout, fired, now, lambda: _slot(desk_slot, desk))

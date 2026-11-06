@@ -133,7 +133,9 @@ def test_news_alerts_match_dedup_and_stale():
                                          "US strikes Iran's Qeshm Island"]
     assert out[0] == {"group": "oil", "kind": "news", "label": "iran/hormuz",
                       "title": "Iran, US reach deal to reopen Strait of Hormuz", "source": "Reuters",
-                      "url": out[0]["url"], "at_ms": NOW_MS, "published_ms": NOW_MS - 5 * MIN}
+                      "url": out[0]["url"], "at_ms": NOW_MS, "published_ms": NOW_MS - 5 * MIN,
+                      "direction": -1}                      # a deal is bearish oil (2026-11-06)
+    assert out[1]["direction"] == 1                        # a strike is bullish oil
     assert len(seen) == 4                       # every title learned, matching or not
     # the same titles again (even re-cased, re-punctuated) alert nothing
     again = [_item("IRAN, US REACH DEAL TO REOPEN STRAIT OF HORMUZ!"), _item("US strikes Iran's Qeshm Island")]
@@ -428,7 +430,14 @@ def test_the_brief_shows_a_recent_alert_for_two_hours(alerts_file):
         " Last headline alert 2026-11-05 20:00Z: iran/hormuz: Iran, US reach deal to reopen Strait of Hormuz.")
     assert line("xyz:BRENTOIL", NOW_MS / 1000 + 2 * 3600 + 1) == ""
     assert line("xyz:SILVER", NOW_MS / 1000 + 60) == ""
-    assert "_headline_alert_line(coin)" in src and "the tick does not enter until then" in src
+    assert "_headline_alert_line(coin, side=side)" in src and "the tick does not enter until then" in src
+    # 2026-11-06: with the thesis side, an alert the hold skipped is named as "no hold"
+    assert line("xyz:BRENTOIL", NOW_MS / 1000 + 60, side="long") == (
+        " Last headline alert 2026-11-05 20:00Z: iran/hormuz: Iran, US reach deal to reopen Strait of Hormuz.")
+    assert line("xyz:BRENTOIL", NOW_MS / 1000 + 60, side="short") == (
+        " Last headline alert 2026-11-05 20:00Z: iran/hormuz: Iran, US reach deal to reopen Strait of Hormuz."
+        " Headline alert (supports the short): Iran, US reach deal to reopen Strait of Hormuz, no hold.")
+    assert line("xyz:BRENTOIL", NOW_MS / 1000 + 31 * 60, side="short").endswith("Hormuz.")   # window over
 
 
 # ── the agent and the loops skill carry the rules ───────────────────────────

@@ -3095,7 +3095,10 @@ def _live_rule(desk_id: str, brief: Any) -> Dict[str, Any]:
         from services.strategies.event_blackout import event_blackout, next_eia_blackout, upcoming_events
         spec = get_spec(desk_id)
         coin = next((i.coin for i in spec.instruments if i.role == "primary"), spec.instruments[0].coin) if spec else ""
-        active = event_blackout(coin)
+        # the thesis side: a headline alert that supports it does not hold (2026-11-06)
+        side = getattr(getattr(getattr(brief, "thesis", None), "call", None), "side", None)
+        side = side if side in ("long", "short") else None
+        active = event_blackout(coin, side=side)
         if active:
             line += f" {active['reason']}: the tick does not enter until then."
             if active.get("flatten"):
@@ -3110,7 +3113,8 @@ def _live_rule(desk_id: str, brief: Any) -> Dict[str, Any]:
         # Operator 2026-11-05 "FIX THEM": a surprise headline the watcher caught
         # in the last 2h stays on the brief after its 30-min blackout ended, so
         # the tick runs the rewrite check and judges a position on the NEW thesis.
-        line += _headline_alert_line(coin)
+        # With the side, an alert the hold skipped is named as "no hold".
+        line += _headline_alert_line(coin, side=side)
         # Operator 2026-11-05: the midterms were missing from the calendar.
         from services.intel.scheduled_events import calendar_warning, short_line
         evs = upcoming_events(coin, 72.0)
@@ -3147,10 +3151,13 @@ def _weekend_line(coin: str, now_ms: Optional[int] = None) -> str:
         return ""
 
 
-def _headline_alert_line(coin: str, now_s: Optional[float] = None) -> str:
+def _headline_alert_line(coin: str, now_s: Optional[float] = None, side: Optional[str] = None) -> str:
     """' Last headline alert <utc>: <label>: <title>.' when the newest
     headline_watch alert on `coin` is under HEADLINE_ALERT_SHOW_S old, else
-    ''. Never raises: the brief answers without it."""
+    ''. With `side` (the thesis side, since 2026-11-06), when an alert inside
+    its 30-minute window supports that side and nothing else holds it, adds
+    ' Headline alert (supports the <side>): <title>, no hold.' so the tick
+    knows the entry rule still runs. Never raises: the brief answers without it."""
     try:
         from datetime import datetime, timezone
         from services.intel import headline_watch
@@ -3162,7 +3169,11 @@ def _headline_alert_line(coin: str, now_s: Optional[float] = None) -> str:
         if now_s * 1000 - at_ms > HEADLINE_ALERT_SHOW_S * 1000:
             return ""
         when = datetime.fromtimestamp(at_ms / 1000, tz=timezone.utc).strftime("%Y-%m-%d %H:%MZ")
-        return f" Last headline alert {when}: {a.get('label')}: {str(a.get('title') or '')[:120]}."
+        line = f" Last headline alert {when}: {a.get('label')}: {str(a.get('title') or '')[:120]}."
+        aligned = headline_watch.skipped_aligned(coin, int(now_s * 1000), side)
+        if aligned:
+            line += f" Headline alert (supports the {side}): {str(aligned.get('title') or '')[:120]}, no hold."
+        return line
     except Exception:  # noqa: BLE001
         return ""
 
@@ -3425,6 +3436,15 @@ def handle_risk_limits(params: Dict[str, Any]) -> str:
     }, default=str)
 
 
+def _bracket_side(entry: Optional[float], stop: float, tp: float) -> Optional[str]:
+    """"long" when the stop sits below the entry (below the target on a
+    market order, where the entry is the live mid: the same answer for any
+    bracket check_levels accepts, read without a venue call), "short" when
+    above, None when it sits on it (check_levels refuses that anyway)."""
+    ref = entry if entry is not None else tp
+    return "long" if stop < ref else "short" if stop > ref else None
+
+
 def handle_place_bracket(params: Dict[str, Any]) -> str:
     """Size with services.risk.size.size_trade, then pathiel.agents.bracket.place_bracket."""
     from pathiel.agents import bracket
@@ -3446,9 +3466,13 @@ def handle_place_bracket(params: Dict[str, Any]) -> str:
         # "weekend flat", the oil futures weekend (Fri 16:00 to Sun 18:00 New
         # York, oil coins only; services/strategies/weekend.py). This handler
         # never touches an open position, a stop, a target or a close; the
-        # weekend close itself is the desk-tick agent's call.
+        # weekend close itself is the desk-tick agent's call. Since
+        # 2026-11-06 (operator 2026-11-05: "we SHOULDNT PAUSE FOR BULLISH
+        # HEADLINES") the check knows the side: a headline alert whose
+        # direction supports it does not hold; EIA, weekend and the
+        # calendar stay side-blind.
         from services.strategies.event_blackout import event_blackout
-        blackout = event_blackout(coin)
+        blackout = event_blackout(coin, side=_bracket_side(entry, stop, tp))
         if blackout:
             return json.dumps({"ok": False, "coin": coin, "placed": False, "blackout": blackout,
                                "error": blackout["reason"]})

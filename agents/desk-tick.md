@@ -215,6 +215,14 @@ ToolSearch call: `select:mcp__pathiel__desk_brief,mcp__pathiel__bracket_sweep,mc
   `place_bracket` refuses with "Headline blackout: ...". That refusal is
   not an error: log `action=NONE headline blackout until <utc>` and stop.
   Open positions, stops, targets and closes are unaffected.
+  Since 2026-11-06 (operator, 2026-11-05: "we SHOULDNT PAUSE FOR BULLISH
+  HEADLINES") an alert whose direction supports the thesis side (a bullish
+  headline, odds move or price move for a long) does not hold that side's
+  entries: the brief says "Headline alert (supports the long): ..., no
+  hold" and `place_bracket` takes the trade; never chase and no entry
+  after a break still apply to it like any other entry. An alert against
+  the side or of unknown direction holds as before; the alert still wakes
+  the tick and still makes the thesis due either way.
 - **Events next 72h** (the brief's line under the live rule): read it every
   tick. When you hold a position and an impact-3 event or a `[blackout]`
   row lands before your next tick, say so in your operator sentence (event,

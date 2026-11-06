@@ -214,8 +214,10 @@ def test_the_thesis_gets_the_scheduled_events():
 
 def test_every_entry_path_uses_the_event_blackout():
     mcp = (ROOT / "scripts" / "pathiel-mcp-server.py").read_text()
-    assert "blackout = event_blackout(coin)" in mcp and "active = event_blackout(coin)" in mcp
-    assert "blackout = event_blackout(coin, int(now * 1000))" in (ROOT / "scripts" / "trigger_watch.py").read_text()
+    # since 2026-11-06 every call carries the trade side (a supporting headline alert does not hold)
+    assert "blackout = event_blackout(coin, side=_bracket_side(entry, stop, tp))" in mcp
+    assert "active = event_blackout(coin, side=side)" in mcp
+    assert "blackout = event_blackout(coin, int(now * 1000), side=side)" in (ROOT / "scripts" / "trigger_watch.py").read_text()
     for rel in (".claude/agents/desk-tick.md", "agents/desk-tick.md"):
         text = (ROOT / rel).read_text()
         assert "Event blackout (every desk" in text and "Events next 72h" in text, rel

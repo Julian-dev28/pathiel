@@ -123,7 +123,7 @@ def test_event_blackout_order(monkeypatch):
     sched = {"kind": "fomc", "reason": "Event blackout: fomc"}
     head = {"kind": "headline", "reason": "Headline blackout"}
     monkeypatch.setattr(scheduled_events, "blackout", lambda coin, t, path=None: sched)
-    monkeypatch.setattr(headline_watch, "headline_blackout", lambda coin, t, path=None: head)
+    monkeypatch.setattr(headline_watch, "headline_blackout", lambda coin, t, side=None, path=None: head)
     # Saturday: the weekend outranks a scheduled event and a headline on oil; gold sees the event
     assert EB.event_blackout(BRENT, SAT)["kind"] == "weekend"
     assert EB.event_blackout("xyz:GOLD", SAT) is sched
@@ -138,7 +138,7 @@ def test_event_blackout_order(monkeypatch):
 def test_event_blackout_is_none_on_a_quiet_weekday(monkeypatch):
     from services.intel import headline_watch, scheduled_events
     monkeypatch.setattr(scheduled_events, "blackout", lambda coin, t, path=None: None)
-    monkeypatch.setattr(headline_watch, "headline_blackout", lambda coin, t, path=None: None)
+    monkeypatch.setattr(headline_watch, "headline_blackout", lambda coin, t, side=None, path=None: None)
     assert EB.event_blackout(BRENT, ms(2026, 11, 5, 16)) is None
     assert EB.event_blackout(BRENT, ms(2026, 11, 6, 20, 59)) is None
     assert EB.event_blackout(BRENT, ms(2026, 11, 6, 21))["flatten"] is True

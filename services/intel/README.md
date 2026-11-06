@@ -106,6 +106,26 @@ state file only learns the current headlines. Eval:
 midterm drop on public 1h candles (first shock by 02:00Z, the desk's first
 reaction 10:25Z). Tests: `tests/test_headline_watch.py`.
 
+Since 2026-11-06 (operator, 2026-11-05: "we SHOULDNT PAUSE FOR BULLISH
+HEADLINES") every alert carries `direction` for the group's coins (+1
+bullish, -1 bearish, 0 unknown): a price shock or drift takes the sign of
+the move; a headline or post is read against the word lists in
+`headline_watch.DIRECTION_WORDS` (negations such as "no deal", "rejects
+deal", "talks collapse" flip first; one side alone decides, both or
+neither is 0); a Polymarket move is sign(change) x `ODDS_POLARITY` (rising
+"Iran target an Arab country" is bullish oil, rising "US x Iran diplomatic
+meeting" bearish). `headline_blackout(coin, at_ms, side=...)` skips the
+alerts that support the trade side and holds on the newest one that does
+not (or whose direction is unknown); `event_blackout` passes the side
+through from `place_bracket`, the brief and the price watcher. Every alert
+still wakes the tick and makes the thesis due, whatever its direction.
+Polarity is per group: "Iran Opens Strait of Hormuz to China and India" is
+-1 for oil (more supply). Eval:
+`python -m services.intel.evals.eval_headline_direction` classifies the
+live alerts file and the fixture headlines and posts, then replays 60 days
+of 1h Brent candles for the hold-minutes the one-sided rule removes for a
+long thesis.
+
 ### Trump posts and official feeds (`sources/social.py`, since 2026-11-05)
 
 Operator: "A Truth Social / X feed for the headline watcher. BUILD IT THEN,

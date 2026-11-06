@@ -17,7 +17,8 @@ Enforced in place_bracket (scripts/pathiel-mcp-server.py), shown in the
 desk brief's live-rule line, and honored by scripts/trigger_watch.py.
 event_blackout() stacks the oil weekend (services/strategies/weekend.py,
 operator 2026-11-05 "weekend flat"), the scheduled-event and the headline
-blackouts behind it, in that order.
+blackouts behind it, in that order. The headline blackout alone takes the
+trade `side`: an alert that supports it does not hold (2026-11-06).
 """
 from __future__ import annotations
 
@@ -73,7 +74,7 @@ def next_eia_blackout(coin: str, at_ms: Optional[int] = None) -> Optional[Dict[s
     return None
 
 
-def event_blackout(coin: str, at_ms: Optional[int] = None) -> Optional[Dict[str, Any]]:
+def event_blackout(coin: str, at_ms: Optional[int] = None, side: Optional[str] = None) -> Optional[Dict[str, Any]]:
     """The active blackout for `coin`, first match wins: the EIA window; the
     oil futures weekend (oil coins only, Fri 16:00 to Sun 18:00 New York;
     services/strategies/weekend.py, operator 2026-11-05 "weekend flat"; the
@@ -86,7 +87,13 @@ def event_blackout(coin: str, at_ms: Optional[int] = None) -> Optional[Dict[str,
     refusal names the rule the operator set, not whichever event overlaps
     it. What place_bracket, the brief and the price watcher check (operator,
     2026-11-05: "AUDIT THE EVENT CALENDAR AND TAKE THEM INTO ACCOUNT"). Never
-    touches an open position's stop, its target or a close by itself."""
+    touches an open position's stop, its target or a close by itself.
+
+    `side` ("long"/"short", since 2026-11-06; operator 2026-11-05: "we
+    SHOULDNT PAUSE FOR BULLISH HEADLINES") reaches the headline blackout
+    only: a headline alert whose direction supports the side does not hold
+    it. EIA, the weekend and the scheduled events are side-blind. side None
+    is the old rule (any alert holds)."""
     t = now_ms() if at_ms is None else int(at_ms)
     eia = eia_blackout(coin, t)
     if eia:
@@ -99,7 +106,7 @@ def event_blackout(coin: str, at_ms: Optional[int] = None) -> Optional[Dict[str,
     if sched:
         return sched
     from services.intel import headline_watch
-    return headline_watch.headline_blackout(coin, t)
+    return headline_watch.headline_blackout(coin, t, side=side)
 
 
 def upcoming_events(coin: str, hours: float = 72.0, at_ms: Optional[int] = None) -> list:
