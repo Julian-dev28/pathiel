@@ -96,5 +96,34 @@ def oil_weekend(coin: str, at_ms: int) -> Optional[Dict[str, Any]]:
             "reason": f"Weekend flat: no new oil entries until {nxt['until_utc']} (oil futures weekend)"}
 
 
-__all__ = ["DAY", "NEW_YORK", "OIL_COINS", "WEEKEND_CLOSE_NY", "WEEKEND_OPEN_NY", "next_oil_weekend",
+# One-weekend override (operator, 2026-11-06: "hold the long for this
+# weekend if opened, close if up 65%"). Saved in the live agent config by the
+# MCP `config` tool, never in code:
+#   "weekend_override": {"window_start_utc": "2026-11-06 21:00Z", "hold": true,
+#                        "take_profit_roe": 0.65}
+# It only applies to the window that starts at window_start_utc; the next
+# weekend is flat again with no edit. New entries stay refused in the window.
+OVERRIDE_KEY = "weekend_override"
+
+
+def hold_override(window_start_ms: int, config: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """The override for the window starting at `window_start_ms`, or None. Pure."""
+    ov = (config or {}).get(OVERRIDE_KEY)
+    if not isinstance(ov, dict) or not ov.get("hold"):
+        return None
+    if ov.get("window_start_utc") != _utc(int(window_start_ms)):
+        return None
+    roe = ov.get("take_profit_roe")
+    return {"hold": True, "window_start_utc": ov["window_start_utc"],
+            "take_profit_roe": float(roe) if roe is not None else None}
+
+
+def roe_take_profit(entry_px: float, leverage: float, roe: float, side: str = "long") -> float:
+    """The price where an isolated position at `leverage` is up `roe` on its
+    margin (fees ignored): entry x (1 + roe / leverage) for a long. Pure."""
+    move = float(roe) / float(leverage)
+    return round(entry_px * (1 + move) if side == "long" else entry_px * (1 - move), 6)
+
+
+__all__ = ["DAY", "OVERRIDE_KEY", "hold_override", "roe_take_profit", "NEW_YORK", "OIL_COINS", "WEEKEND_CLOSE_NY", "WEEKEND_OPEN_NY", "next_oil_weekend",
            "oil_weekend", "weekend_closed", "weekend_window"]

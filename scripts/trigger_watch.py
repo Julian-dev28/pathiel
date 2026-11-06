@@ -246,6 +246,13 @@ def weekend_fire(desk: str, coin: str, blackout: Dict[str, Any], fired: Dict[str
     start = int(blackout.get("start_ms") or 0)
     if int(fired.get(key) or 0) == start:
         return None
+    try:   # the operator's one-weekend hold (services/strategies/weekend.hold_override)
+        from pathiel.agents.config_store import read_agent_config
+        from services.strategies.weekend import hold_override
+        if hold_override(start, read_agent_config() or {}):
+            return None
+    except Exception:  # noqa: BLE001 - unreadable config: the default (flat) holds
+        pass
     try:
         held = slot()
     except Exception:  # noqa: BLE001 - one bad read; the next minute tries again

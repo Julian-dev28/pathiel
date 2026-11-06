@@ -57,6 +57,9 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "coin_blocklist": ["TON", "TRX"],
     "hip3_dex_allowlist": ["xyz"],
     "hip3_dex_blocklist": [],
+    # One-weekend hold (services/strategies/weekend.hold_override; operator,
+    # 2026-11-06). Empty = every oil weekend is flat.
+    "weekend_override": {},
 }
 
 # 2026-10-23 (wave 2): every key the retired autonomous engine (scan/

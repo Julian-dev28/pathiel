@@ -28,9 +28,14 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 HOUR_MS = 3_600_000
 
 
-def answer(coin: str, at_ms: int, warn_hours: float = 24.0) -> Dict[str, Any]:
-    """Pure: the agent's one answer for `coin` at `at_ms`."""
-    from services.strategies.weekend import OIL_COINS, next_oil_weekend, oil_weekend
+def answer(coin: str, at_ms: int, warn_hours: float = 24.0, config: Optional[Dict[str, Any]] = None,
+           entry_px: Optional[float] = None, leverage: Optional[float] = None) -> Dict[str, Any]:
+    """Pure: the agent's one answer for `coin` at `at_ms`. `config`: the live
+    agent config (its `weekend_override`, if any, turns this window's flatten
+    into a hold); `entry_px`/`leverage`: the open position's, for the
+    override's take-profit price."""
+    from services.strategies.weekend import (OIL_COINS, hold_override, next_oil_weekend, oil_weekend,
+                                             roe_take_profit)
     utc = datetime.fromtimestamp(at_ms / 1000, tz=timezone.utc).strftime("%Y-%m-%d %H:%MZ")
     out: Dict[str, Any] = {"coin": coin, "oil": coin in OIL_COINS, "flatten": False, "window": None,
                            "next": None, "utc": utc}
@@ -40,6 +45,18 @@ def answer(coin: str, at_ms: int, warn_hours: float = 24.0) -> Dict[str, Any]:
         out["window"] = {k: active[k] for k in ("start_ms", "end_ms", "start_utc", "until_utc", "reason")}
         out["what"] = ("close an open position with close_position, cancel a resting entry, "
                        "then bracket_sweep; no new entry or top-up until " + active["until_utc"])
+        ov = hold_override(active["start_ms"], config)
+        if ov:
+            out["flatten"] = False
+            out["hold_override"] = ov
+            out["what"] = ("operator override for this weekend: HOLD an open long (do not close it); "
+                           "no new entry or top-up until " + active["until_utc"])
+            if ov.get("take_profit_roe") and entry_px and leverage:
+                tp = roe_take_profit(entry_px, leverage, ov["take_profit_roe"])
+                out["take_profit_px"] = tp
+                out["what"] += (f"; the take-profit must sit at or below {tp:g} (+{ov['take_profit_roe']:.0%} on "
+                                f"margin at {leverage:g}x): if the resting target is higher, move it there "
+                                f"with set_target")
         return out
     nxt = next_oil_weekend(coin, at_ms)
     if nxt and nxt["start_ms"] - at_ms <= warn_hours * HOUR_MS:
@@ -53,12 +70,19 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--coin", required=True, help="xyz:BRENTOIL, xyz:CL, xyz:GOLD, ...")
     ap.add_argument("--at", default=None, help="ISO UTC time instead of now (tests, what-ifs): 2026-11-07T12:00Z")
     ap.add_argument("--warn-hours", type=float, default=24.0)
+    ap.add_argument("--entry", type=float, default=None, help="open position's entry (override take-profit)")
+    ap.add_argument("--lev", type=float, default=None, help="open position's leverage (override take-profit)")
     a = ap.parse_args(argv)
     if a.at:
         at_ms = int(datetime.strptime(a.at, "%Y-%m-%dT%H:%MZ").replace(tzinfo=timezone.utc).timestamp() * 1000)
     else:
         at_ms = int(time.time() * 1000)
-    print(json.dumps(answer(a.coin, at_ms, a.warn_hours)))
+    try:
+        from pathiel.agents.config_store import read_agent_config
+        config = read_agent_config() or {}
+    except Exception:  # noqa: BLE001 - no config means no override: the default (flat) holds
+        config = {}
+    print(json.dumps(answer(a.coin, at_ms, a.warn_hours, config, a.entry, a.lev)))
     return 0
 
 

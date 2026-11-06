@@ -209,6 +209,15 @@ ToolSearch call: `select:mcp__pathiel__desk_brief,mcp__pathiel__bracket_sweep,mc
   silver are never flattened for it (the backtest lost on silver). The
   position's stop and target are never moved for the weekend: the only
   weekend action is this close.
+  **Operator hold override** (2026-11-06: "hold the long for this weekend
+  if opened, close if up 65%"): when the script answers `"hold_override"`,
+  `"flatten"` is false: do NOT close the position. Run the same script again
+  with the open position's numbers added (`--entry <entryPx> --lev
+  <leverage>`); when it returns `take_profit_px` and the
+  resting take-profit sits above it (a long), move the target there with
+  `set_target {coin: COIN, tp_px: <take_profit_px>}` once, and log
+  `action=HOLD weekend override, target <px>`. The stop is never moved.
+  New entries stay refused in the window.
 - Headline blackout (every desk, since 2026-11-05; operator: "FIX THEM"):
   no new entry or top-up for 30 minutes after a surprise-headline alert on
   the desk's coins, so nothing opens on a thesis that has not read it yet.
