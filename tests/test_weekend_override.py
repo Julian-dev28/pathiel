@@ -64,3 +64,13 @@ def test_agent_text_has_the_override_rule():
     for rel in (".claude/agents/desk-tick.md", "agents/desk-tick.md"):
         text = (ROOT / rel).read_text()
         assert "Operator hold override" in text and "set_target" in text, rel
+
+
+def test_a_tick_older_than_20_minutes_is_presumed_dead():
+    """2026-11-06 and 2026-11-09: a tick cut off by sleep or the network left
+    every later tick skipping 'previous tick still running' for hours."""
+    for rel in (".claude/skills/desk-tick/SKILL.md", "skills/desk-tick/SKILL.md"):
+        text = (ROOT / rel).read_text()
+        assert "Dead-tick rule" in text and "under 20 minutes" in text and "presumed dead" in text, rel
+    loops = (ROOT / ".claude/skills/desk-loops/SKILL.md").read_text()
+    assert "older than 20 minutes is\npresumed dead" in loops

@@ -27,6 +27,13 @@ same night, see docs/overhaul/BACKTEST_RESULTS_2026-10-25.md).
    launch more than one agent per tick. The agent file
    (`.claude/agents/desk-tick.md`) carries the whole procedure and its hard
    rules.
+   **Dead-tick rule** (operator, 2026-11-09, after three stalls): a previous
+   tick for this desk counts as running only if it started under 20 minutes
+   ago. One older than that died with the network or a sleeping Mac and
+   never reported back: do NOT skip for it. Append
+   `DESK-TICK <desk> <utc> action=NONE previous tick presumed dead after <N> min`
+   to `/tmp/oil-loop/progress.log` and launch the agent now. This overrides
+   the desk-loops overlap rule.
 3. **Relay, quietly.** The agent already wrote its line to
    `/tmp/oil-loop/progress.log`. Say NOTHING in the chat for a HOLD, a
    SKIP, or a NONE whose reason repeats that desk's previous log line

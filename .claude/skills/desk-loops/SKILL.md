@@ -64,9 +64,10 @@ review only reads: it never changes a stop, a size or the config.
 
 ## Overlap rule
 
-If a tick for the same desk is still running, or one started in the last
-minute (a cron and a watcher fire landing together), do not launch a
-second agent. Append
+If a tick for the same desk is still running (started under 20 minutes
+ago), or one started in the last minute (a cron and a watcher fire landing
+together), do not launch a second agent. A tick older than 20 minutes is
+presumed dead (the desk-tick skill's dead-tick rule): launch a new one. Append
 `DESK-TICK <desk> <utc> action=SKIP previous tick still running` to
 `/tmp/oil-loop/progress.log` instead.
 
