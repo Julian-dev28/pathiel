@@ -181,6 +181,10 @@ ToolSearch call: `select:mcp__pathiel__desk_brief,mcp__pathiel__bracket_sweep,mc
 - If `place_bracket` or `bracket_sweep` is missing from the tool list, do
   nothing on the exchange and log `action=NONE reconnect pathiel MCP (/mcp)`.
 - Any tool error on a live-money call: stop the tick and report it verbatim.
+  An error saying `API wallet ... does not exist` (2026-11-09: 11 hours of
+  refused orders) means the signing key is no longer approved: run
+  `python3 scripts/signer_check.py` and log
+  `action=NONE SIGNER REFUSED approve <signer address> on Hyperliquid`.
 - EIA blackout (oil coins only, since 2026-11-03): no new entry or top-up
   from 2h before to 2h after the weekly EIA report. The brief's live-rule
   line says when one is active; `place_bracket` refuses with

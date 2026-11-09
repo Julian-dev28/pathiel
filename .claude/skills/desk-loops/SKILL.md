@@ -51,6 +51,13 @@ window"). Start it from the repo root:
   holds a position or a resting entry): run `/desk-tick oil`; the tick's
   weekend step closes it. Then start the watcher again. It fires once per
   weekend; the 15-minute cron covers a tick that fails.
+- The fire line says `"reason": "signer"` (2026-11-09: the API wallet that
+  signs our orders dropped off the account and every order failed for 11
+  hours): do NOT run a tick, it can only fail. Send the operator one
+  PushNotification and one chat line with the `"detail"` text (it names the
+  address to approve again on the Hyperliquid API page), then start the
+  watcher again. It repeats at most every 6 hours while the key stays
+  refused. Check by hand any time: `python3 scripts/signer_check.py`.
 - It exited without a fire line (error, crash): print the last lines of
   `/tmp/trigger-watch/stderr.log` in one line, then start it again. If it
   crashes 3 times within 10 minutes, stop restarting and say so.

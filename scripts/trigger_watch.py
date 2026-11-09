@@ -43,6 +43,13 @@ for the cron. The cooldown key `<desk>:weekend_flat` remembers the window
 it fired for, so it never fires twice for one weekend. A flat desk inside
 the window is skipped like any other blackout (place_bracket refuses).
 
+Since 2026-11-09 the watcher also asks Hyperliquid, at start and then once
+an hour, whether the API wallet that signs our orders is still approved
+(services/accounts/signer_status.py). When it is not, every order would be
+refused, so it exits with {"fire": desk, "reason": "signer", "detail": ...}
+at most once per 6 hours; the loops window tells the operator instead of
+running a tick.
+
 Since 2026-11-06 (operator, 2026-11-05: "we SHOULDNT PAUSE FOR BULLISH
 HEADLINES") the blackout check carries the thesis side: a headline alert
 whose direction supports it (a bullish headline, odds move or price move
@@ -68,6 +75,8 @@ sys.path.insert(0, _SCRIPTS)
 STATE_DIR = "/tmp/trigger-watch"
 LEVELS_REFRESH_S = 600      # the 24h range and ATR barely move inside 10 minutes
 SLOT_REFRESH_S = 300        # positions/resting entries: the tick owns those anyway
+SIGNER_REFRESH_S = 3600     # is the signing API wallet still approved? (2026-11-09)
+SIGNER_REPEAT_S = 6 * 3600  # say it again this often while it stays broken
 
 
 def evaluate(side: Optional[str], thesis_entry: Optional[float], mid: Optional[float],
@@ -264,6 +273,25 @@ def weekend_fire(desk: str, coin: str, blackout: Dict[str, Any], fired: Dict[str
             "until_utc": blackout.get("until_utc"), "note": blackout.get("reason")}
 
 
+def signer_fire(status: Dict[str, Any], fired: Dict[str, Any], now_s: float,
+                desk: str) -> Optional[Dict[str, Any]]:
+    """The fire line for a signing key Hyperliquid no longer accepts, or None.
+
+    2026-11-09: the signing API wallet dropped off the account and every
+    place_bracket failed for 11 hours while the ticks logged NONE. ok=False
+    only (ok=None is a failed read, not a revoked key); once per
+    SIGNER_REPEAT_S, remembered in `fired["signer"]`. Mutates `fired`. Pure
+    otherwise."""
+    if status.get("ok") is not False:
+        return None
+    last = fired.get("signer")
+    if last is not None and now_s - float(last) < SIGNER_REPEAT_S:
+        return None
+    fired["signer"] = now_s
+    return {"fire": desk, "reason": "signer", "utc": _utc(),
+            "signer": status.get("signer"), "detail": status.get("reason")}
+
+
 def cooled_down(fired: Dict[str, float], desk: str, now_s: float, cooldown_s: float) -> bool:
     """True when `desk` never fired or fired at least `cooldown_s` ago."""
     if desk not in fired:
@@ -320,11 +348,23 @@ def watch(*, once: bool, cooldown_min: float, sleep: Callable[[float], None] = t
     price_hist: Dict[str, List[Tuple[int, float]]] = {
         c: [(int(t), float(m)) for t, m in v] for c, v in (hl_state.get("hist") or {}).items()}
 
+    from services.accounts import signer_status
+    signer_checked = 0.0
+
     while True:
         now = clock()
         cfg = read_agent_config()
         shares = desk_share.desk_shares(cfg)
         desks: List[str] = list(shares) or desk_share.active_desks(cfg)
+        if desks and now - signer_checked >= SIGNER_REFRESH_S:
+            signer_checked = now
+            fired = _read_json(fired_path)
+            line = signer_fire(signer_status.live(max_age_s=0), fired, now, desks[0])
+            if line:
+                _write_json(fired_path, fired)
+                _log(f"{_utc()} FIRE {json.dumps(line)}")
+                print(json.dumps(line), flush=True)
+                return 0
         lev = float((cfg.get("risk_profile") or {}).get("max_leverage") or 20)
         fired = _read_json(fired_path)
         parts = []

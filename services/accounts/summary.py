@@ -27,7 +27,24 @@ def _blockers_for(account, state_ok: bool) -> List[str]:
         blockers.append("Agent not yet approved by Hyperliquid — finish connecting this account.")
     if not state_ok:
         blockers.append("Could not read this account's live state from Hyperliquid right now.")
+    if account.mode == "trade" and account.source == "env":
+        # the env account is stamped verified at load; re-ask Hyperliquid
+        # whether its signing key is still approved (2026-11-09 outage)
+        reason = _signer_blocker()
+        if reason:
+            blockers.append(reason)
     return blockers
+
+
+def _signer_blocker() -> Optional[str]:
+    """The signer_status reason when the signing API wallet is no longer
+    approved, else None. Unknown (network) is not a blocker. Never raises."""
+    try:
+        from services.accounts import signer_status
+        v = signer_status.live()
+    except Exception:  # noqa: BLE001
+        return None
+    return v.get("reason") if v.get("ok") is False else None
 
 
 def get_active_summary(max_age_s: Optional[float] = None) -> ActiveSummary:
