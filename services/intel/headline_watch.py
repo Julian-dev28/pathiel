@@ -360,10 +360,34 @@ def text_direction(group: str, text: str) -> int:
     return 1 if bull and not bear else -1 if bear and not bull else 0
 
 
+# Hormuz transit-count markets (2026-11-09: "Will there be between 0 and 4
+# average daily transits of the Strait of Hormuz on November 30?" rose
+# 51% -> 61% and read as unknown, holding the long). A LOW bucket rising =
+# fewer tankers through the strait = bullish oil; a HIGH bucket = bearish.
+TRANSITS_RX = re.compile(r"between\s+(\d+)\s+and\s+(\d+)\s+(?:average\s+)?(?:daily\s+)?transits?.*hormuz", re.I)
+TRANSITS_LOW_MAX = 20     # a bucket whose top is at or under this = the strait mostly shut
+TRANSITS_HIGH_MIN = 60    # a bucket whose bottom is at or over this = flows near normal
+
+
+def transit_polarity(question: str) -> int:
+    """Oil polarity of a Hormuz transit-count bucket market, 0 if not one. Pure."""
+    m = TRANSITS_RX.search(str(question or ""))
+    if not m:
+        return 0
+    lo, hi = int(m.group(1)), int(m.group(2))
+    if hi <= TRANSITS_LOW_MAX:
+        return 1
+    if lo >= TRANSITS_HIGH_MIN:
+        return -1
+    return 0
+
+
 def odds_polarity(group: str, question: str) -> int:
     """+1 when a rising YES on `question` is bullish for the group's coins,
     -1 when bearish, 0 unknown or both. Negations ("Will the ceasefire
     collapse") are rewritten the same way text_direction does. Pure."""
+    if group == "oil" and transit_polarity(question):
+        return transit_polarity(question)
     words = DIRECTION_WORDS.get(group)
     q = str(question or "")
     for rx, token in (words["negations"] if words else []):
