@@ -121,6 +121,22 @@ tick to that many x the tick's ATR14, the live non-Brent rule (1.3 x
 ATR14), instead of the fixed `stop_buffer`. Added with the cap so the
 2026-11-02 silver desk's tighter stops can be replayed.
 
+Stop-reclaim rule (2026-11-10)
+------------------------------
+`Params.reclaim_after_stops` (None = off). Operator, 2026-11-10, after
+four Brent longs in a row were stopped while the thesis kept moving the
+buy lower (96.10, 95.60, 93.90, 92.60 on 11-09/10): after that many
+"stop" exits on ONE side whose exit time falls inside the last
+`reclaim_window_h` hours, the sim takes no new entry (and no flip) on that
+side until a CLOSED 1h bar closes back beyond the most recent stopped
+trade's stop price (long: 1h close > that stop; short: 1h close < it). A
+reclaim clears the block; the other side is never touched; an open
+position is never touched. Only bars that CLOSE after the stop count (the
+stop's own 1h bar counts if it finishes back beyond the stop). Each
+skipped setup is kept in `Run.reclaim_blocked` (time, side, entry, stop,
+target, the price to reclaim). `reclaim_blocks()` is the pure rule;
+services/strategies/stop_reclaim.py applies the same rule live.
+
 Stop buffer floor (2026-11-02)
 ------------------------------
 `Params.stop_buffer_floor` (dollars) and `stop_buffer_floor_frac` (a
@@ -439,6 +455,11 @@ class Params:
     # keeps every existing result byte-identical (test_stop_cap.py).
     daily_stop_cap: Optional[int] = None    # after this many stop exits in one UTC day, no new entries that day
     cap_per_side: bool = False              # count and block per side instead of per desk
+    # ── stop-reclaim rule (2026-11-10, operator "yes" after four stopped
+    # Brent longs in a row on 11-09/10). See "Stop-reclaim rule" above. Off
+    # (None) keeps every existing result byte-identical (test_stop_reclaim.py).
+    reclaim_after_stops: Optional[int] = None   # after this many same-side stops in the window, wait for a 1h reclaim
+    reclaim_window_h: float = 24.0              # the window those stops must fall in
     # The live non-Brent stop rule, per tick (2026-11-02): the stop sits this
     # many x the tick's own 1h ATR14 beyond the entry structure
     # (next_trade.stop_buffer_for: 1.3 x ATR14), instead of the fixed
@@ -673,6 +694,11 @@ class Run:
     # {"time", "kind" ("entry"|"flip"), "side", "entry_px", "stop_px",
     #  "target_px", "is_market", "stops_today"}. Empty when the cap is off.
     cap_blocked: List[Dict[str, Any]] = field(default_factory=list)
+    # Setups the stop-reclaim rule skipped (Params.reclaim_after_stops),
+    # oldest first: {"time", "kind" ("entry"|"flip"), "side", "entry_px",
+    # "stop_px", "target_px", "is_market", "reclaim_px" (the stopped trade's
+    # stop a 1h close must get back beyond), "stops_in_window"}. Empty when off.
+    reclaim_blocked: List[Dict[str, Any]] = field(default_factory=list)
     # Stop buffer floor (Params.stop_buffer_floor / _frac). floor_blocked:
     # gate ("leverage"|"min_r") -> ticks the floored stop failed that gate
     # while the bare ATR stop passed both. floor_blocked_rows: those ticks,
@@ -1107,6 +1133,42 @@ def _cap_row(kind: str, setup: Dict[str, Any], t: int, is_market: bool, stops: C
     return {"time": t, "kind": kind, "side": side, "entry_px": setup["entry_px"],
             "stop_px": setup["stop_px"], "target_px": setup["target_px"], "is_market": is_market,
             "stops_today": stops[(t // DAY_MS, side if params.cap_per_side else None)]}
+
+
+def reclaim_blocks(trades: Sequence[Trade], closed_1h: Sequence[Candle], t: int, side: str,
+                   params: Params) -> Optional[Dict[str, Any]]:
+    """The stop-reclaim rule at tick `t` for a new `side` entry (see "Stop-
+    reclaim rule"). `closed_1h`: the 1h bars already CLOSED at `t` (close
+    time <= t), oldest first. Returns None when the entry may go: the rule
+    is off, fewer than `reclaim_after_stops` "stop" exits on `side` closed
+    inside the last `reclaim_window_h` hours, or a 1h bar that closed after
+    the most recent of those stops closed back beyond its stop price (long:
+    close > stop; short: close < stop). Else {"reclaim_px", "stops_in_window",
+    "last_stop_time"}: the block and what clears it. Pure."""
+    n_need = params.reclaim_after_stops
+    if n_need is None:
+        return None
+    since = t - int(params.reclaim_window_h * HOUR_MS)
+    recent = [tr for tr in trades
+              if tr.side == side and tr.exit_reason == "stop" and tr.exit_time is not None
+              and since < tr.exit_time <= t]
+    if len(recent) < n_need:
+        return None
+    last = max(recent, key=lambda tr: tr.exit_time)
+    px = last.stop_px
+    for bar in reversed(closed_1h):
+        if bar.t + HOUR_MS <= last.exit_time:
+            break               # closed before (or at) the stop: proves nothing about price coming back
+        if (bar.c > px) if side == "long" else (bar.c < px):
+            return None
+    return {"reclaim_px": px, "stops_in_window": len(recent), "last_stop_time": last.exit_time}
+
+
+def _reclaim_row(kind: str, setup: Dict[str, Any], t: int, is_market: bool, block: Dict[str, Any]
+                 ) -> Dict[str, Any]:
+    return {"time": t, "kind": kind, "side": setup["side"], "entry_px": setup["entry_px"],
+            "stop_px": setup["stop_px"], "target_px": setup["target_px"], "is_market": is_market,
+            "reclaim_px": block["reclaim_px"], "stops_in_window": block["stops_in_window"]}
 
 
 def _close_trade(pos: _Position, exit_px: float, t: int, reason: str, fee_rate: float,
@@ -1584,6 +1646,10 @@ def simulate_steps(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], 
         raise ValueError(f"lock_r {params.lock_r} must sit below lock_trigger_r {params.lock_trigger_r}")
     if params.daily_stop_cap is not None and params.daily_stop_cap < 1:
         raise ValueError(f"daily_stop_cap {params.daily_stop_cap} must be 1 or more (None turns it off)")
+    if params.reclaim_after_stops is not None and params.reclaim_after_stops < 1:
+        raise ValueError(f"reclaim_after_stops {params.reclaim_after_stops} must be 1 or more (None turns it off)")
+    if params.reclaim_after_stops is not None and not (params.reclaim_window_h > 0):
+        raise ValueError(f"reclaim_window_h {params.reclaim_window_h} must be positive")
     if params.stop_buffer_floor is not None and params.stop_buffer_floor < 0:
         raise ValueError(f"stop_buffer_floor {params.stop_buffer_floor} must be 0 or more (None turns it off)")
     if params.stop_buffer_floor_frac is not None and not (0 <= params.stop_buffer_floor_frac < 1):
@@ -1652,6 +1718,7 @@ def simulate_steps(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], 
     reclaim_wait: Optional[Dict[str, Any]] = None
     seen_1h_close: set = set()
     cap_on = params.daily_stop_cap is not None
+    reclaim_on = params.reclaim_after_stops is not None
     stops_by_day: Counter = Counter()  # (UTC day, None|side) -> stop exits (Params.daily_stop_cap)
     n_tallied = 0
     filt_on = filters_on(params)
@@ -1957,6 +2024,9 @@ def simulate_steps(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], 
             elif cap_on and stop_cap_blocks(stops_by_day, t, fs["side"], params):
                 run.refused["stop_cap"] += 1
                 run.cap_blocked.append(_cap_row("flip", fs, t, True, stops_by_day, params))
+            elif reclaim_on and (rb := reclaim_blocks(run.trades, c1h[:n_closed], t, fs["side"], params)):
+                run.refused["reclaim"] += 1
+                run.reclaim_blocked.append(_reclaim_row("flip", fs, t, True, rb))
             elif entry_guard is not None and entry_guard(t, fs["side"]) <= 0.0:
                 run.refused["guard"] += 1
             else:
@@ -2064,6 +2134,10 @@ def simulate_steps(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], 
                     # the daily stop cap: skip this entry, keep it for the eval
                     run.refused["stop_cap"] += 1
                     run.cap_blocked.append(_cap_row("entry", setup, t, open_now, stops_by_day, params))
+                elif reclaim_on and (rb := reclaim_blocks(run.trades, c1h[:n_closed], t, setup["side"], params)):
+                    # the stop-reclaim rule: skip this entry, keep it for the eval
+                    run.refused["reclaim"] += 1
+                    run.reclaim_blocked.append(_reclaim_row("entry", setup, t, open_now, rb))
                 elif open_now and entry_guard is not None and entry_guard(t, setup["side"]) <= 0.0:
                     run.refused["guard"] += 1     # the portfolio's correlation guard
                 elif open_now:
@@ -2159,7 +2233,7 @@ def simulate_steps(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], 
 __all__ = ["Direction", "DirectionAt", "Params", "Trade", "Run", "simulate", "simulate_steps", "tick_bars",
           "SizeEquity", "offset_target", "cap_target", "regime_key",
           "trade_leverage", "CONVICTION_LEVERAGE_FLOOR", "live_params", "live_params_before_weekend_flat",
-          "live_params_before_no_break", "profit_lock_stop", "stop_cap_blocks",
+          "live_params_before_no_break", "profit_lock_stop", "stop_cap_blocks", "reclaim_blocks",
           "tally_stops", "floored_buffer", "weekend_closed", "lock_on", "risk_capped_notional", "filters_on",
           "call_start", "entry_filter", "EntryGuard", "PULLBACK_MODES", "PB_TARGETS", "PB_TRIGGERS",
           "pullback_setup", "retest_level", "pb_cancel", "in_event_blackout"]
