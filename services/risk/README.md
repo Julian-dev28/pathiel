@@ -177,6 +177,9 @@ Precedence, enforced by `pathiel.agents.config_store.read_risk_profile`:
 3. `RiskProfile()` (`preset="auto"`) — migration's own fallback when the
    config carries none of the old keys either.
 
+On a public install, step 3 and an invalid key in step 1 give
+`public_default_profile()` instead (see "Public install default" below).
+
 `"risk_profile"` is deliberately **absent** from `DEFAULT_CONFIG` itself —
 if it were a template value there, `merge_agent_config` would inject a
 syntactically-valid v2 profile into every config read through
@@ -342,3 +345,48 @@ starts (`prewarm_coin_specs`, called from `pathiel/server.py`; skip with
 `PATHIEL_META_PREWARM=0`): cold, the first size after a restart built the SDK
 client inside the request, 2.8 s.
 
+
+## Public install default (`PUBLIC_DEFAULT_PROFILE`, 2026-11-12)
+
+A public install (the Claude Code plugin, `scripts/pathiel-mcp`, the
+container; `PATHIEL_INSTALL=public` in `contracts/runtime`) does not get the
+operator's profile. It gets `presets.PUBLIC_DEFAULT_PROFILE`: the existing
+`custom` preset with every field set, so nothing falls back to a tier.
+
+| field | value | why |
+|---|---:|---|
+| `risk_per_trade_pct` | 1.0 | a stop-out costs 1% of the equity sized against |
+| `allow_min_order_bump` | true | a small account can still reach the venue minimum |
+| `max_bumped_risk_pct` | 2.0 | that bump may cost at most 2%, and only when the $10.50 minimum (`MIN_ORDER_USD`) forces it |
+| `max_leverage` | 3.0 | the ceiling on every trade, whatever the coin allows |
+| `max_open_positions` | 1 | one position at a time |
+| `daily_loss_limit_pct` | 3.0 | shown in `risk_limits`; nothing enforces it |
+
+Where it lands:
+
+- `config/public/agent-config.json` holds the same numbers. `scripts/_plugin_env.sh`
+  copies it to `~/.pathiel/.agent-config.json` on first start
+  (`scripts/config_preset.py seed-public`), never over an existing file and
+  never to the repo's `.agent-config.json`. `seed-public` refuses a template
+  that drifted from the Python profile.
+- `pathiel.agents.config_store.read_risk_profile` returns
+  `public_default_profile()` on a public install when the config has no
+  `risk_profile` and no legacy sizing keys, or when its `risk_profile` fails
+  to validate. So a failed seed or a hand-broken file still sizes at 3x, 1%.
+  A config with legacy keys still migrates. The operator path is unchanged.
+
+What a user sees:
+
+- Accounts under about $30 are refused on wide stops. The bump puts the
+  floor at `10.50 x stop / 2%`: a 5% stop needs $26.25, a 6% stop $31.50.
+  Tighter stops trade from a few dollars of equity.
+- With a stop under 0.33%, 1% of equity would need more than 3x; the leverage
+  cap wins and the trade risks less than 1%.
+- Coarse size steps can push a bumped trade a few cents past 2%:
+  `size.py` rounds up one step when rounding down would fall under the venue
+  minimum. `tests/test_eval_public_install.py` allows exactly one size step
+  of tolerance for that and nothing more.
+
+Tests: `services/risk/tests/test_public_profile.py`, `tests/test_public_defaults.py`,
+and the eval `tests/test_eval_public_install.py` (equity 25 to 100k x stops
+0.5% to 5% x size steps: leverage <= 3 and risk within the cap on every row).

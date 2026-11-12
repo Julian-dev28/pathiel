@@ -179,3 +179,38 @@ def positions_cap_for(preset_name: str) -> int:
     if preset_name == "custom":
         return _CUSTOM_FALLBACK.max_positions_cap
     return PRESETS[preset_name].max_positions_cap
+
+
+# ── Public install default (pathiel 0.4.0 public plugin, 2026-11-12) ─────────
+#
+# A fresh public install (PATHIEL_INSTALL=public, contracts/runtime) gets this
+# profile instead of the operator's 20x whole-equity one. Explicit fields on
+# the existing "custom" preset, not a new preset name: every field is set, so
+# _CUSTOM_FALLBACK never fills anything in, and derive_limits() takes
+# max_open_positions as given (1) instead of deriving it.
+#
+#   risk_per_trade_pct    1.0   a stop-out costs 1% of the equity sized against
+#   daily_loss_limit_pct  3.0   displayed in risk_limits; nothing enforces it
+#   max_leverage          3.0   the leverage ceiling for every trade
+#   max_open_positions    1     one position at a time
+#   allow_min_order_bump  True  a small account may size UP to the venue
+#   max_bumped_risk_pct   2.0   minimum order, risking at most 2% to do it
+#
+# config/public/agent-config.json carries the same numbers (the file
+# /pathiel:setup seeds); services/risk/tests/test_public_profile.py and
+# scripts/config_preset.py seed-public refuse a template that drifts from it.
+# Why these numbers: services/risk/README.md, "Public install default".
+PUBLIC_DEFAULT_PROFILE = RiskProfile(
+    preset="custom",
+    risk_per_trade_pct=1.0,
+    daily_loss_limit_pct=3.0,
+    max_leverage=3.0,
+    max_open_positions=1,
+    allow_min_order_bump=True,
+    max_bumped_risk_pct=2.0,
+)
+
+
+def public_default_profile() -> RiskProfile:
+    """A copy of PUBLIC_DEFAULT_PROFILE, safe for the caller to change."""
+    return PUBLIC_DEFAULT_PROFILE.model_copy(deep=True)
