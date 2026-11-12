@@ -36,11 +36,24 @@ if _env.exists():
             k, _, v = line.partition("=")
             os.environ.setdefault(k.strip(), v.strip())
 
-from pathiel.client.hl_client import _http_post, fetch_account_state, resolve_user_address
+from contracts import runtime  # noqa: E402
+from pathiel.client.hl_client import _http_post, fetch_account_state, resolve_user_address  # noqa: E402
 
 # HL spot pair indices (verified live from /info spotMeta on 2026-05-28).
 SPOT_PAIR_USDH_USDC = "@230"   # USDH/USDC
 SPOT_PAIR_USDT_USDC = "@166"   # USDT0/USDC
+
+
+def _refuse_unless_operator_mainnet() -> None:
+    """Exit 2 before any read or signature unless this is the operator's
+    install on mainnet. The signer below always targets mainnet, and on any
+    other network hl_client would read one venue while this signs on another.
+    A public install never gets this tool."""
+    kind, net = runtime.install_kind(), runtime.network()
+    if runtime.is_public() or net != "mainnet":
+        print(f"treasury.py is a maintainer tool for mainnet only "
+              f"(install={kind}, network={net}); nothing was sent.")
+        sys.exit(2)
 
 
 def _exchange():
@@ -53,6 +66,7 @@ def _exchange():
     trading loop continues using HYPERLIQUID_PRIVATE_KEY (the agent key);
     only this CLI touches the master.
     """
+    _refuse_unless_operator_mainnet()
     pk = os.environ.get("HYPERLIQUID_MASTER_PRIVATE_KEY", "").strip()
     if not pk:
         print("error: HYPERLIQUID_MASTER_PRIVATE_KEY missing from .env.local")
@@ -260,6 +274,7 @@ def cmd_fund_cash(args) -> int:
 
 
 def main() -> int:
+    _refuse_unless_operator_mainnet()
     ap = argparse.ArgumentParser()
     sub = ap.add_subparsers(dest="cmd", required=True)
 

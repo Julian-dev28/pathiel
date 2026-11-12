@@ -117,3 +117,45 @@ def test_next_on_gold_fits_15x_on_a_wide_range_and_refuses_mid_range():
     assert "place_bracket" not in mid_range
     no_atr = CLI.next_order("xyz:GOLD", "long", _gold_levels(4065.0, 4060.0, 4180.0, atr=None), 4100.0, 20.0, 25.0)
     assert no_atr == {"ok": False, "reason": "no ATR for the stop buffer", "coin": "xyz:GOLD"}
+
+
+# ── network (contracts/runtime, 2026-11-12) ────────────────────────────────
+
+def _load_cli(name: str):
+    spec = importlib.util.spec_from_file_location(name, ROOT / "scripts" / "oil_levels.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def _posted_url(mod, monkeypatch) -> str:
+    """The URL _post hands curl, with subprocess.run faked (no network)."""
+    seen = []
+
+    class _Done:
+        stdout = "[]"
+
+    def fake_run(argv, **kwargs):
+        seen.append(argv)
+        return _Done()
+
+    monkeypatch.setattr(mod.subprocess, "run", fake_run)
+    assert mod._post({"type": "allMids"}) == []
+    assert len(seen) == 1 and seen[0][0] == "curl"
+    return [a for a in seen[0] if a.startswith("https://")][0]
+
+
+@pytest.mark.parametrize("env, want", [
+    ({}, "https://api.hyperliquid.xyz/info"),
+    ({"PATHIEL_NETWORK": "testnet"}, "https://api.hyperliquid-testnet.xyz/info"),
+    ({"PATHIEL_INSTALL": "public"}, "https://api.hyperliquid-testnet.xyz/info"),
+    ({"PATHIEL_INSTALL": "public", "PATHIEL_NETWORK": "mainnet"}, "https://api.hyperliquid.xyz/info"),
+])
+def test_info_url_follows_the_runtime_network(monkeypatch, env, want):
+    for key in ("PATHIEL_INSTALL", "PATHIEL_NETWORK"):
+        monkeypatch.delenv(key, raising=False)
+    for key, value in env.items():
+        monkeypatch.setenv(key, value)
+    mod = _load_cli("oil_levels_network_probe")
+    assert mod.INFO_URL == want
+    assert _posted_url(mod, monkeypatch) == want

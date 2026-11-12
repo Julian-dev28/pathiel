@@ -36,11 +36,13 @@ from typing import Any, Dict, List, Optional
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from contracts import runtime  # noqa: E402
 from services.strategies.levels import HOUR_MS, check, summarize  # noqa: E402
 from services.strategies.next_trade import (breakout_for, leverage_fit_for, next_trade,  # noqa: E402
                                             stop_buffer_for)
 
-INFO_URL = "https://api.hyperliquid.xyz/info"
+# The resolved network's /info URL (contracts/runtime). Unset: mainnet, as before.
+INFO_URL = runtime.info_url()
 
 
 def _post(body: Dict[str, Any]) -> Any:
