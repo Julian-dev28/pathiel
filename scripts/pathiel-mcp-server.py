@@ -3717,7 +3717,16 @@ def _live_rule(desk_id: str, brief: Any) -> Dict[str, Any]:
         from pathiel.agents.config_store import read_agent_config
         from services.strategies.api import desk_next_trade
         from services.strategies.next_trade import live_rule_line
-        lev = float(((read_agent_config() or {}).get("risk_profile") or {}).get("max_leverage") or 20)
+        if runtime.is_public():
+            # A public profile with no saved max_leverage must not fall back
+            # to the maintainer's 20x in the brief's live-rule line.
+            from services.risk.presets import PUBLIC_DEFAULT_PROFILE
+            try:
+                lev = _profile_leverage_cap() or PUBLIC_DEFAULT_PROFILE.max_leverage
+            except Exception:  # noqa: BLE001 - an unreadable profile gets the public cap
+                lev = PUBLIC_DEFAULT_PROFILE.max_leverage
+        else:
+            lev = float(((read_agent_config() or {}).get("risk_profile") or {}).get("max_leverage") or 20)
         nt = _bounded(desk_next_trade, desk_id, lev, brief=brief)
         line = live_rule_line(nt)
         from services.strategies.desks import get_spec
