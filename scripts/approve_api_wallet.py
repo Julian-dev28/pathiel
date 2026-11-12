@@ -8,6 +8,11 @@ Operator, 2026-11-10: "a" (re-approve it with the master key by script).
     python3 scripts/approve_api_wallet.py --address 0x...            # dry run: prints the action
     python3 scripts/approve_api_wallet.py --address 0x... --send     # signs and sends it
 
+Signs for the resolved network (contracts.runtime): mainnet on the operator's
+install unless PATHIEL_NETWORK says otherwise. Refuses on a public install
+(approve in the Hyperliquid app there) and refuses to send when the venue URL
+this process posts to is not the resolved network's.
+
 An API wallet can trade the account, not withdraw. The key comes from
 HYPERLIQUID_MASTER_PRIVATE_KEY in the env file and is never printed. The
 signing is the installed SDK's own (hyperliquid.utils.signing.sign_agent),
@@ -21,7 +26,7 @@ import json
 import os
 import sys
 import time
-from typing import Any, Callable, Dict
+from typing import Any, Callable, Dict, Optional
 
 _SCRIPTS = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(_SCRIPTS))
@@ -33,19 +38,20 @@ def build_action(agent_address: str, name: str, nonce_ms: int) -> Dict[str, Any]
 
 
 def approve(master_key: str, agent_address: str, name: str, nonce_ms: int,
-            post: Callable[[str, Dict[str, Any]], Any]) -> Any:
-    """Sign approveAgent with `master_key` and post it. Returns the venue's reply."""
+            post: Callable[[str, Dict[str, Any]], Any], is_mainnet: bool = True) -> Any:
+    """Sign approveAgent with `master_key` and post it. Returns the venue's reply.
+    `is_mainnet` sets hyperliquidChain; main() passes the resolved network."""
     from eth_account import Account
     from hyperliquid.utils.signing import sign_agent
     wallet = Account.from_key(master_key)
     action = build_action(agent_address, name, nonce_ms)
-    signature = sign_agent(wallet, action, True)      # mainnet; adds signatureChainId/hyperliquidChain
+    signature = sign_agent(wallet, action, bool(is_mainnet))   # adds signatureChainId/hyperliquidChain
     payload = {"action": action, "nonce": nonce_ms, "signature": signature,
                "vaultAddress": None, "expiresAfter": None}
     return post("/exchange", payload)
 
 
-def main(argv=None) -> int:
+def main(argv=None, *, post: Optional[Callable[[str, Dict[str, Any]], Any]] = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--address", required=True)
     ap.add_argument("--name", default="pathiel")
@@ -53,6 +59,14 @@ def main(argv=None) -> int:
     a = ap.parse_args(argv)
     import _state_env
     _state_env.load_env_local(os.path.dirname(_SCRIPTS))
+    import contracts.runtime as runtime
+    if runtime.is_public():
+        # A stranger's install: the master wallet lives in their browser
+        # wallet, so the Hyperliquid app is the place to approve.
+        print(json.dumps({"ok": False, "error": "approve the API wallet in the Hyperliquid app; "
+                          "on testnet use app.hyperliquid-testnet.xyz"}))
+        return 1
+    is_mainnet = runtime.is_mainnet()
     from eth_account import Account
     key = os.environ.get("HYPERLIQUID_MASTER_PRIVATE_KEY", "").strip()
     if not key:
@@ -64,8 +78,14 @@ def main(argv=None) -> int:
     if not a.send:
         print(json.dumps({"dry_run": True, **plan, "action": build_action(a.address, a.name, nonce)}))
         return 0
-    from pathiel.client.hl_client import _http_post_strict
-    reply = approve(key, a.address, a.name, nonce, _http_post_strict)
+    from pathiel.client import hl_client
+    if hl_client.HL_API != runtime.api_url():
+        # Signed for one network, posted to another: refuse before sending.
+        print(json.dumps({"ok": False, **plan,
+                          "error": f"network drift: would post to {hl_client.HL_API} but the "
+                                   f"resolved network is {runtime.network()}; nothing sent"}))
+        return 1
+    reply = approve(key, a.address, a.name, nonce, post or hl_client._http_post_strict, is_mainnet)
     ok = isinstance(reply, dict) and reply.get("status") == "ok"
     print(json.dumps({"ok": ok, **plan, "reply": reply}))
     return 0 if ok else 1

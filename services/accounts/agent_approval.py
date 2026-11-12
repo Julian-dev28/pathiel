@@ -4,9 +4,10 @@ Typed-data construction mirrors `hyperliquid.utils.signing.sign_agent` /
 `sign_user_signed_action` / `user_signed_payload` from the installed SDK
 (`.venv/lib/python3.13/site-packages/hyperliquid/utils/signing.py`) exactly —
 same domain, same `HyperliquidTransaction:ApproveAgent` type, same
-`signatureChainId`, same mainnet `hyperliquidChain`. Mainnet only: this
-product trades mainnet, never testnet, so there is no network switch to get
-wrong here.
+`signatureChainId`, same mainnet `hyperliquidChain`. Mainnet only:
+`submit_approve_agent` refuses before posting when contracts.runtime resolves
+any other network (a public install defaults to testnet; approve the API
+wallet in the Hyperliquid testnet app there).
 
 Two things never happen outside a mocked test, per
 docs/overhaul/SWARM_RULES.md section 10 (this wave's extra live-money rule):
@@ -24,6 +25,7 @@ from eth_account import Account
 from eth_account.messages import encode_typed_data
 from eth_utils import to_hex
 
+import contracts.runtime as _runtime
 from pathiel.client.hl_client import _http_post_strict
 
 AGENT_NAME = "pathiel"
@@ -153,7 +155,13 @@ def submit_approve_agent(agent_address: str, agent_name: str, nonce_ms: int,
     docs/overhaul/SWARM_RULES.md section 10 bans ever submitting an
     `/exchange` action this wave; every test mocks this function (or the HTTP
     layer beneath it via `pathiel.client.hl_client._http_post_strict`).
+
+    Mainnet only (2026-11-12): the action says hyperliquidChain 'Mainnet', so
+    on another network it would post a mainnet-signed action to that
+    network's venue. Refused before anything is built or sent.
     """
+    if _runtime.network() != "mainnet":
+        raise RuntimeError("wallet approval through the dashboard is mainnet only")
     action = {
         "type": "approveAgent",
         "agentAddress": agent_address,
