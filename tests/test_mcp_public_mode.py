@@ -218,8 +218,22 @@ def test_set_leverage_above_profile_cap_is_refused(keyed, monkeypatch):
     assert keyed.sdk.other == ["update_leverage BTC 3"]
 
 
-def test_auto_profile_cap_is_the_highest_auto_tier(keyed):
+def test_auto_profile_cap_is_the_highest_auto_tier(keyed, monkeypatch):
+    # An auto preset saved on purpose (max_leverage unset): the cap is the
+    # highest auto tier, so the gate never refuses what the profile allows.
+    from contracts.risk.models import RiskProfile
+    from pathiel.agents import config_store
+    monkeypatch.setattr(config_store, "read_risk_profile", lambda config=None: RiskProfile())
     assert M._profile_leverage_cap() == 10.0
+
+
+def test_public_install_without_a_profile_caps_at_the_public_default(keyed):
+    # No saved profile on a public install: config_store falls back to the
+    # public default profile (3x), not to auto. Cross-unit check after merge.
+    assert M._profile_leverage_cap() == 3.0
+    err, body = keyed.call("set_leverage", {"coin": "BTC", "leverage": 5})
+    assert err is True and body["max_leverage"] == 3
+    assert keyed.sdk.other == []
 
 
 def test_delisted_coin_is_refused_for_entries_not_for_closes(keyed):
