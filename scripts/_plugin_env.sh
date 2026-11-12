@@ -147,12 +147,16 @@ pathiel_prepare() {
 # Paste-ready commands for the user's own terminal, where CLAUDE_PLUGIN_ROOT
 # and CLAUDE_PLUGIN_DATA do not exist. Every path is absolute and quoted with
 # printf %q, and CLAUDE_PLUGIN_DATA is set inline so pathiel-py finds the same
-# venv instead of building a second one. One 'label<TAB>command' line each.
+# venv instead of building a second one. PATHIEL_PYTHON pins that venv's
+# own interpreter: a plain terminal's python3 can be another one than Claude
+# Code saw (macOS /usr/bin/python3 is 3.9), and pathiel_build_venv checks the
+# version of PATHIEL_PYTHON even when the venv is ready. One
+# 'label<TAB>command' line each.
 # Writes to STDOUT on purpose: only `scripts/pathiel-mcp --commands` calls it.
 pathiel_print_commands() {
   local prefix status_cmd dry_cmd
   prefix="$(printf '%q ' env "CLAUDE_PLUGIN_DATA=$PATHIEL_DATA" "PATHIEL_HOME=$PATHIEL_HOME" \
-            "$PATHIEL_ROOT/scripts/pathiel-py")"
+            "PATHIEL_PYTHON=$PATHIEL_VENV/bin/python" "$PATHIEL_ROOT/scripts/pathiel-py")"
   status_cmd="$prefix$(printf '%q' "$PATHIEL_ROOT/scripts/public_status.py")"
   dry_cmd="$prefix$(printf '%q' "$PATHIEL_ROOT/scripts/approve_builder_fee.py")"
   printf '%s\t%s\n' "status" "$status_cmd" "approve-dry" "$dry_cmd" "approve-sign" "$dry_cmd --yes"

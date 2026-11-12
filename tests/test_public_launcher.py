@@ -69,8 +69,12 @@ def make_fake_data_dir(base: Path, exit_code: int = 0) -> Tuple[Path, Path]:
     (venv / "bin").mkdir(parents=True)
     log = base / "calls.log"
     stub = venv / "bin" / "python"
+    # `-c` calls are pathiel_build_venv's version check and lock hash (the
+    # printed commands pin PATHIEL_PYTHON to this stub): run them on the real
+    # interpreter, unlogged.
     stub.write_text(
         "#!/bin/sh\n"
+        f'if [ "${{1:-}}" = "-c" ]; then exec {shlex.quote(sys.executable)} "$@"; fi\n'
         "{ printf 'CALL\\n'; printf 'VENV=%s\\n' \"$PATHIEL_VENV\"; "
         "printf 'INSTALL=%s\\n' \"$PATHIEL_INSTALL\"; "
         "for a in \"$@\"; do printf 'ARG=%s\\n' \"$a\"; done; } >> " + shlex.quote(str(log)) + "\n"
@@ -328,15 +332,38 @@ def test_commands_prints_three_absolute_lines(public_env, tmp_path):
         assert words[0] == "env", command
         assert words[1] == f"CLAUDE_PLUGIN_DATA={data}"
         assert words[2] == f"PATHIEL_HOME={tmp_path / 'my home' / '.pathiel'}"
-        assert words[3] == str(ROOT / "scripts" / "pathiel-py")
+        assert words[3] == f"PATHIEL_PYTHON={data / 'venv' / 'bin' / 'python'}"
+        assert words[4] == str(ROOT / "scripts" / "pathiel-py")
         for word in words[1:]:
             path = word.split("=", 1)[1] if "=" in word else word
             if path != "--yes":
                 assert path.startswith("/"), f"{label}: {word} is not absolute"
         assert "${" not in command and "CLAUDE_PLUGIN_ROOT" not in command
     by_label = dict(lines)
-    assert shlex.split(by_label["status"])[4] == str(ROOT / "scripts" / "public_status.py")
-    assert shlex.split(by_label["approve-dry"])[4:] == [str(ROOT / "scripts" / "approve_builder_fee.py")]
+    assert shlex.split(by_label["status"])[5] == str(ROOT / "scripts" / "public_status.py")
+    assert shlex.split(by_label["approve-dry"])[5:] == [str(ROOT / "scripts" / "approve_builder_fee.py")]
+
+
+def old_python3_dir(base: Path) -> Path:
+    """A directory whose python3 is a stand-in for macOS /usr/bin/python3
+    (3.9): it fails the 3.11 check. First on PATH, it is what a plain
+    terminal resolves `python3` to."""
+    bin_dir = base / "old-python-bin"
+    bin_dir.mkdir(parents=True)
+    py = bin_dir / "python3"
+    py.write_text('#!/bin/sh\n[ "${1:-}" = "--version" ] && { echo "Python 3.9.6"; exit 0; }\nexit 1\n')
+    py.chmod(py.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+    return bin_dir
+
+
+def plain_terminal_env(public_env, tmp_path: Path) -> Dict[str, str]:
+    """A plain terminal: no Claude Code variables, no launcher variables, no
+    PATHIEL_PYTHON, and an old python3 first on PATH."""
+    path = f"{old_python3_dir(tmp_path)}:{public_env()['PATH']}"
+    env = fresh_env(public_env, HOME=str(tmp_path / "my home"), PATHIEL_PYTHON=None, PATH=path)
+    assert "CLAUDE_PLUGIN_ROOT" not in env and "CLAUDE_PLUGIN_DATA" not in env
+    assert "PATHIEL_PYTHON" not in env
+    return env
 
 
 def test_printed_approve_command_runs_without_plugin_env(public_env, tmp_path):
@@ -344,12 +371,11 @@ def test_printed_approve_command_runs_without_plugin_env(public_env, tmp_path):
     dry = dict(lines)["approve-dry"]
     before = len(calls(log))
 
-    # A plain terminal: no Claude Code variables, no launcher variables.
-    plain = fresh_env(public_env, HOME=str(tmp_path / "my home"), PATHIEL_PYTHON=sys.executable)
-    assert "CLAUDE_PLUGIN_ROOT" not in plain and "CLAUDE_PLUGIN_DATA" not in plain
+    plain = plain_terminal_env(public_env, tmp_path)
     proc = subprocess.run(["bash", "-c", dry], env=plain, capture_output=True, text=True,
                           timeout=60, cwd=str(tmp_path))
     assert proc.returncode == 0, proc.stderr
+    assert "too old" not in proc.stderr
     assert "building the Python environment" not in proc.stderr
 
     seen = calls(log)[before:]
@@ -359,6 +385,17 @@ def test_printed_approve_command_runs_without_plugin_env(public_env, tmp_path):
     assert approve[0]["venv"] == str(data / "venv"), "a second venv would be built"
     assert approve[0]["install"] == "public"
     assert not (tmp_path / "my home" / ".pathiel" / "data").exists()
+
+
+def test_without_the_pinned_python_an_old_python3_breaks_the_line(public_env, tmp_path):
+    """The regression the PATHIEL_PYTHON pin fixes: the same line with the
+    pin dropped fails in a terminal whose python3 is 3.9, venv or not."""
+    lines, _data, _log, _env = run_commands(public_env, tmp_path)
+    words = shlex.split(dict(lines)["approve-dry"])
+    unpinned = shlex.join([w for w in words if not w.startswith("PATHIEL_PYTHON=")])
+    proc = subprocess.run(["bash", "-c", unpinned], env=plain_terminal_env(public_env, tmp_path),
+                          capture_output=True, text=True, timeout=60, cwd=str(tmp_path))
+    assert proc.returncode != 0 and "Python 3.9.6 is too old" in proc.stderr
 
 
 def test_sign_line_is_the_dry_line_plus_yes(public_env, tmp_path):

@@ -245,11 +245,56 @@ def test_setup_shows_the_disclosure_before_any_key_and_never_runs_the_sign_line(
     # One line of prose: line breaks and blockquote markers folded to spaces.
     text = re.sub(r"\s*\n\s*(>\s*)?", " ", (ROOT / "commands" / "setup.md").read_text())
     first_key = text.index("HYPERLIQUID_PRIVATE_KEY")
-    for needle in ("testnet", "0.01% of notional per fill", "not financial advice", "US persons",
-                   "approve"):
+    for needle in ("testnet", _per_fill(), "not financial advice", "US persons", "approve"):
         assert needle in text and text.index(needle) < first_key, needle
     assert "Never run the `approve-sign` command yourself" in text
     assert "never ask for" in text.lower()
+
+
+def _per_fill() -> str:
+    """The disclosure needle, from the one config point (contracts.runtime)."""
+    import contracts.runtime as runtime
+    return f"{runtime.fee_rate_str(runtime.DEFAULT_BUILDER_FEE_TENTHS_BP)} of notional per fill"
+
+
+def test_setup_fee_figures_follow_the_default_fee():
+    """Every fee figure in setup.md comes from DEFAULT_BUILDER_FEE_TENTHS_BP:
+    a change to the default with stale copy fails here, not in front of a
+    user who is about to approve."""
+    import contracts.runtime as runtime
+    fee = runtime.DEFAULT_BUILDER_FEE_TENTHS_BP
+    text = re.sub(r"\s*\n\s*(>\s*)?", " ", (ROOT / "commands" / "setup.md").read_text())
+    per_fill = re.findall(r"([0-9.]+%) of notional per fill", text)
+    assert per_fill and set(per_fill) == {runtime.fee_rate_str(fee)}, per_fill
+    round_trip = re.findall(r"([0-9.]+%) for a round trip", text)
+    assert round_trip == [runtime.fee_rate_str(2 * fee)], round_trip
+    bps = re.findall(r"\(([0-9.]+) basis points?", text)
+    assert bps and all(float(b) == fee / 10 for b in bps), bps
+
+
+def test_setup_says_to_reconnect_after_the_env_file_changes():
+    """The MCP server reads keys and the network once at start, before setup
+    writes the env file. Setup must send the user to /mcp to reconnect, and
+    must check `state` against the status lines before calling it done."""
+    text = re.sub(r"\s+", " ", (ROOT / "commands" / "setup.md").read_text())
+    step6 = text[text.index("6. **Connect the tools.**"):text.index("7. **Prove it.**")]
+    assert "reconnect pathiel in `/mcp`" in step6 and "restart Claude Code" in step6
+    assert "~/.pathiel/.env.local" in step6
+    assert step6.index("reconnect") < step6.index("60 tools")
+    step7 = text[text.index("7. **Prove it.**"):text.index("8. **Say what is next.**")]
+    assert "match the `network` and `trading` lines" in step7
+    assert "reconnect pathiel in `/mcp`" in step7
+
+
+def test_setup_says_the_fee_approval_is_per_network():
+    """An approval signed on the testnet default does not cover mainnet;
+    without this line a user who switches later pays no fee and never knows."""
+    text = re.sub(r"\s+", " ", (ROOT / "commands" / "setup.md").read_text())
+    step2 = text[text.index("2. **Choose a mode"):text.index("3. **The env file.**")]
+    step5 = text[text.index("5. **Builder fee approval"):text.index("6. **Connect the tools.**")]
+    assert "does not carry over" in step2 and "`approve-sign`" in step2
+    assert "The approval is per network" in step5
+    assert "testnet does not cover mainnet" in step5
 
 
 def test_setup_copy_has_no_claims_or_banned_style(copy_lint):

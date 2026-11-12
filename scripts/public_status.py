@@ -299,8 +299,15 @@ def check_builder(env: Mapping[str, str], online: bool) -> Check:
     approved = status.get("approved_tenths_bp")
     approved_txt = (f"approved up to {runtime.fee_rate_str(approved)}"
                     if isinstance(approved, int) else "approval unknown")
-    level = "PASS" if status.get("attaches") else "WARN"
-    return Check(level, "builder fee", f"{head}. {approved_txt}: {status.get('reason')}")
+    net = status.get("network") or runtime.network(env)
+    message = f"{head}. On {net}: {approved_txt}: {status.get('reason')}"
+    if status.get("attaches"):
+        return Check("PASS", "builder fee", message)
+    if status.get("reason_code") == "not_approved":
+        # An approval signed on testnet does not carry over to mainnet.
+        message += (f". The approval is per network: to approve it on {net}, rerun "
+                    "pathiel-mcp --commands and run the approve-sign line")
+    return Check("WARN", "builder fee", message)
 
 
 def check_claude_cli() -> Check:

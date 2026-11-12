@@ -48,6 +48,8 @@ the chat; the user types keys into files and prompts on their own machine.
      app. Test funds only.
    - **Mainnet trading**: real money. The user adds `PATHIEL_NETWORK=mainnet`
      to the env file themselves, and an API wallet key from the mainnet app.
+     A builder fee approval signed on testnet does not carry over: after the
+     switch, rerun `--commands` and the `approve-sign` line (step 5).
 
    Upgrading from pathiel 0.3.0: it ran on mainnet, and 0.4.0 starts on
    testnet. To keep trading on mainnet, the user adds
@@ -100,17 +102,29 @@ the chat; the user types keys into files and prompts on their own machine.
    nowhere. Never run the `approve-sign` command yourself and never ask for
    that key in the chat.
 
+   The approval is per network: it is signed on the network the env file
+   names when the line runs. Tell the user that an approval signed on
+   testnet does not cover mainnet; after switching to mainnet, rerun
+   `--commands` and the `approve-sign` line once more.
+
    Skipping this step is fine: orders then carry no builder fee and
    everything else works. The printed paths change after a plugin update;
    rerun `--commands` for fresh ones instead of reusing an old line.
 
-6. **Connect the tools.** Tell the user to run `/mcp` and confirm the
-   `pathiel` server shows as connected with 60 tools. If it does not, the
-   error is in the MCP panel; the usual cause is step 1 not having finished.
+6. **Connect the tools.** The pathiel server reads the keys and the network
+   once, when it starts, and it started with this Claude Code session,
+   before the env file existed. After creating or editing
+   `~/.pathiel/.env.local`, tell the user to reconnect pathiel in `/mcp`
+   (or restart Claude Code). Then confirm in `/mcp` that the `pathiel`
+   server shows as connected with 60 tools. If it does not, the error is in
+   the MCP panel; the usual cause is step 1 not having finished.
 
 7. **Prove it.** Call `get_price` with `{coin: "BTC"}`, then `state`. The
    `state` output names the network, whether a key is set, and the builder
-   fee status.
+   fee status. Check that the network and key it shows match the `network`
+   and `trading` lines from step 4. If they differ, the server still runs
+   with the old env file: tell the user to reconnect pathiel in `/mcp`, then
+   call `state` again.
 
 8. **Say what is next.** `desk_list` then `desk_brief {desk: "oil"}` reads
    the current call. `/pathiel:desk-tick oil` runs one tick of the loop;

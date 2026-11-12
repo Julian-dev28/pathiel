@@ -215,6 +215,48 @@ def test_builder_line_for_unset_and_set_address(public_env):
     assert by_name(out, "builder fee")[0][1].startswith("operator install")
 
 
+_FAKE_STATUS_DRIVER = """
+import runpy, sys
+sys.path.insert(0, sys.argv[1])
+import pathiel.client.builder as builder
+code, approved = sys.argv[3], int(sys.argv[4])
+def fake(account, *, refresh=False):
+    return {"network": "mainnet", "approved_tenths_bp": approved, "attaches": code == "approved",
+            "reason_code": code, "reason": builder.REASONS[code]}
+builder.builder_status = fake
+sys.argv = [sys.argv[2], "--online"]
+runpy.run_path(sys.argv[0], run_name="__main__")
+"""
+
+
+def run_online_with(env, reason_code: str, approved: int) -> Tuple[int, str, str]:
+    """public_status.py --online with builder_status replaced by a fake: no
+    network call, the approval read is whatever the scenario says."""
+    proc = subprocess.run([sys.executable, "-c", _FAKE_STATUS_DRIVER, str(ROOT), str(STATUS),
+                           reason_code, str(approved)],
+                          env=env, capture_output=True, text=True, timeout=60)
+    return proc.returncode, proc.stdout, proc.stderr
+
+
+def test_online_names_the_network_and_says_the_approval_is_per_network(public_env):
+    """A testnet approval reads as 0 on mainnet. The --online line names the
+    network it read and says to sign again there, so a user who switched
+    networks learns why orders carry no fee."""
+    env = public_env(PATHIEL_BUILDER_ADDRESS=BUILDER, PATHIEL_NETWORK="mainnet",
+                     HYPERLIQUID_WALLET_ADDRESS=other_address())
+    code, out, err = run_online_with(env, "not_approved", 0)
+    assert code == 0, out + err
+    status, msg = by_name(out, "builder fee")[0]
+    assert status == "WARN"
+    assert "On mainnet: approved up to 0%" in msg
+    assert "The approval is per network" in msg and "approve-sign" in msg
+
+    code, out, err = run_online_with(env, "approved", 10)
+    status, msg = by_name(out, "builder fee")[0]
+    assert status == "PASS" and "On mainnet: approved up to 0.01%" in msg
+    assert "per network" not in msg
+
+
 def test_config_line_flags_a_profile_looser_than_the_public_default(public_env, tmp_path):
     cfg = tmp_path / "home" / ".pathiel" / ".agent-config.json"
     cfg.write_text(json.dumps({"risk_profile": {"preset": "auto", "max_leverage": 20}}))

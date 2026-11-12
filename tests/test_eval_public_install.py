@@ -14,7 +14,8 @@ Four parts, one scorecard (threshold: every row passes):
   2. size_trade grid: equity {25 .. 100k} x stop {0.5, 1, 2, 5}% x size step
      {none, 5, 2, 0 decimals} x requested leverage {none, 20x}
   3. operator scenario
-  4. the printed approve-dry command with the plugin variables unset
+  4. the printed approve-dry command with the plugin variables and
+     PATHIEL_PYTHON unset and a too-old python3 first on PATH
 
 Offline. Every subprocess gets env=public_env(...). The launcher never builds
 a venv here: the fake data dir's venv/bin/python is a stub (part 4) or a
@@ -202,7 +203,11 @@ def part_operator(make, tmp: Path) -> List[Dict[str, Any]]:
 
 def part_approve_command(make, tmp: Path) -> List[Dict[str, Any]]:
     log = tmp / "calls.log"
+    # `-c` calls are pathiel_build_venv's version check and lock hash: the
+    # printed line pins PATHIEL_PYTHON to this stub, so they run on the real
+    # interpreter, unlogged.
     data = _venv(tmp / "plugin data",
+                 f'if [ "${{1:-}}" = "-c" ]; then exec {shlex.quote(sys.executable)} "$@"; fi\n'
                  "{ printf 'CALL VENV=%s\\n' \"$PATHIEL_VENV\"; "
                  "for a in \"$@\"; do printf 'ARG=%s\\n' \"$a\"; done; } >> "
                  + shlex.quote(str(log)) + "\n")
@@ -212,7 +217,15 @@ def part_approve_command(make, tmp: Path) -> List[Dict[str, Any]]:
                           text=True, timeout=60)
     lines = dict(line.split("\t", 1) for line in proc.stdout.splitlines() if "\t" in line)
     dry = lines.get("approve-dry", "")
-    plain = _fresh(make, HOME=str(tmp / "a home"), PATHIEL_PYTHON=sys.executable)
+    # A plain terminal: no plugin variables, no PATHIEL_PYTHON, and a python3
+    # first on PATH that is too old (macOS /usr/bin/python3 is 3.9).
+    old_bin = tmp / "old-python-bin"
+    old_bin.mkdir()
+    old_py = old_bin / "python3"
+    old_py.write_text('#!/bin/sh\n[ "${1:-}" = "--version" ] && { echo "Python 3.9.6"; exit 0; }\nexit 1\n')
+    old_py.chmod(old_py.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+    plain = _fresh(make, HOME=str(tmp / "a home"), PATHIEL_PYTHON=None,
+                   PATH=f"{old_bin}:{make()['PATH']}")
     log.write_text("")
     ran = subprocess.run(["bash", "-c", dry], env=plain, capture_output=True, text=True,
                          timeout=60, cwd=str(tmp)) if dry else None
@@ -223,7 +236,10 @@ def part_approve_command(make, tmp: Path) -> List[Dict[str, Any]]:
         _row("approve: three lines", sorted(lines), ["approve-dry", "approve-sign", "status"]),
         _row("approve: sign line is dry plus --yes", bool(dry) and lines.get("approve-sign") == dry + " --yes",
              True),
-        _row("approve: dry line runs without plugin vars", ran.returncode if ran else None, 0),
+        _row("approve: dry line pins the venv python",
+             f"PATHIEL_PYTHON={data / 'venv' / 'bin' / 'python'}" in shlex.split(dry), True),
+        _row("approve: dry line runs without plugin vars, old python3 on PATH",
+             ran.returncode if ran else None, 0),
         _row("approve: runs approve_builder_fee.py once", len(approve), 1),
         _row("approve: same venv",
              bool(approve) and approve[0].splitlines()[0] == f"VENV={data / 'venv'}", True),
@@ -242,5 +258,5 @@ def run(make: Callable[..., Dict[str, str]], tmp: Path) -> List[Dict[str, Any]]:
 
 def test_public_install_eval(public_env, tmp_path, scorecard):
     card = scorecard(NAME, run(public_env, tmp_path))
-    assert card["total"] == 9 + 5 + 5 + 7 + 1
+    assert card["total"] == 9 + 5 + 5 + 8 + 1
     assert card["passed"] == card["total"], [r for r in card["rows"] if not r["ok"]]
