@@ -1,9 +1,10 @@
 # Pathiel
 
-> A headless trading desk on live Hyperliquid. Claude places every trade
+> A headless trading desk on Hyperliquid. Claude places every trade
 > through an MCP server (`scripts/pathiel-mcp-server.py`, 60 tools over
 > stdio); there is no autonomous bot and no standing process that trades on
-> its own. Pure Python, FastAPI dashboard, real money.
+> its own. Pure Python, FastAPI dashboard. A public install starts on
+> testnet; the maintainer's own checkout trades real money.
 
 ## Read this first
 
@@ -29,6 +30,77 @@
   calls (`place_bracket`, `bracket_sweep`, `close_position`, `set_leverage`,
   `cancel_order`) are marked destructive in the MCP tool list, so an MCP
   client asks before each call.
+
+## Public install: read this before you trade
+
+**What it does.** pathiel lets Claude read Hyperliquid perps markets
+(prices, candles, order books, funding, a written desk brief) and place
+bracket orders with an exact stop and target on your own account. It runs
+on your machine with your own key; nothing trades unless you ask Claude to.
+
+**Three modes.** The mode follows from what is in `~/.pathiel/.env.local`:
+
+| you have | mode | what works |
+|---|---|---|
+| no key | read-only | every read tool; write tools answer that no key is configured |
+| an API wallet key | testnet (the default) | everything, with test funds on Hyperliquid testnet |
+| a key and `PATHIEL_NETWORK=mainnet` | mainnet | everything, with real money |
+
+State (theses, journals, caches) is kept per network, so testnet and
+mainnet never share it. Testnet needs its own API wallet, created and
+approved in the Hyperliquid testnet app.
+
+**Builder fee.** pathiel adds a Hyperliquid builder fee of 0.01% of
+notional per fill, 0.02% a round trip (in and out), on every fill pathiel
+routes for a public install. That is 1 basis point, on top of Hyperliquid's
+own trading fee. It goes to the project's builder address. If no builder
+address is configured, no fee is attached. The maintainer's own checkout
+never attaches one.
+
+**Approving the fee.** The fee applies only after you approve it once with
+your master wallet. Run `/pathiel:setup`, or follow
+[docs/BUILDER_FEE.md](docs/BUILDER_FEE.md). Declining is fine: orders are
+then placed with no builder fee, and everything else works the same.
+
+**How the fee is enforced.** Hyperliquid itself rejects any order whose
+builder fee is above the max you approved. pathiel asks you to approve
+exactly the rate it charges, 0.01%, so a higher rate would need a new
+signature from you. Hyperliquid caps a perp builder fee at 0.1%. pathiel
+never blocks an order over the fee: with no approval, or one below the
+rate, the order goes out without it and the tool output says so.
+
+**Risk.** Leveraged perps can lose the whole account, fast. A public
+install starts at most 3x leverage, risking 1% of equity at the stop, one
+position at a time. The profile's daily loss figure is shown, not
+enforced. There is no demonstrated edge and no return is promised: the
+live audit of 2026-11-12 graded 36 thesis calls with the direction right
+32% of the time, and 19 closed trades whose average result cannot be told
+apart from zero. This is software, not financial advice. You decide every
+trade and carry its result.
+
+**Restricted jurisdictions.** Hyperliquid's terms bar use from restricted
+jurisdictions, including by US persons. The current list is in
+Hyperliquid's terms. pathiel does not check where you are; that is on you.
+
+### Other MCP clients
+
+Claude Code users install the plugin (see "Install as a Claude Code
+plugin" below). Any other MCP client takes the same public path in one of
+two ways: from a clone of this repo, register the launcher
+`scripts/pathiel-mcp` as the server command, or run the container:
+
+```bash
+docker run -i --rm --user "$(id -u):$(id -g)" -v "$HOME/.pathiel:/data" ghcr.io/julian-dev28/pathiel-mcp:0.4.0
+```
+
+Both read keys and config from `~/.pathiel` and start on testnet.
+
+### What changed in 0.4.0
+
+Plugin installs now default to testnet. If you traded mainnet through the
+plugin before 0.4.0, add `PATHIEL_NETWORK=mainnet` to
+`~/.pathiel/.env.local` to keep trading mainnet. A fresh install gets the
+public risk profile above, and the builder fee applies once approved.
 
 ## Desks: one market, one thesis, one decision
 
@@ -89,6 +161,13 @@ python -m services.strategies grade
 
 ## Risk: the live profile and the rules place_bracket enforces
 
+> Maintainer path: this runs mainnet with the tracked repo config (20x, whole-equity sizing). It is not the public install.
+
+This section describes the maintainer's own live profile. A public install
+starts on the public profile instead: at most 3x, 1% of equity at the stop,
+one position (see "Public install" above). The rules `place_bracket`
+enforces below hold for both.
+
 `contracts/risk/models.py` is contract `1.1.0`. `RiskProfile.risk_per_trade_pct`
 and `.daily_loss_limit_pct` go up to 100 (100 = no cap), widened 2026-10-23
 so the operator can opt all the way out of the per-trade and daily caps. The
@@ -114,7 +193,7 @@ the rest:
 - `check_leverage` is the 20x rule: the stop must sit inside half the
   distance to liquidation at the requested leverage, or the tool refuses.
 - `check_levels` refuses any bracket paying under 2R to its target (1.5R
-  until 2026-10-30; `bracket.DEFAULT_MIN_R`, see `docs/strategy/OIL_STRATEGY.md`).
+  until 2026-10-30; `bracket.DEFAULT_MIN_R`, see `docs/strategy/OIL_RULES.md`).
 - **The whole equity, every position** (operator, 2026-10-27). Sizing holds
   nothing back but the opening taker fee: margin + fee = equity
   (`services/risk/derive.py::margin_after_open_fee`, 4.5 bps, the account's
@@ -133,24 +212,22 @@ the rest:
   Targets at different prices are a scale-out and stay. `bracket_sweep`
   runs it on every covered position, a market top-up right after its fill.
 - **Targets rest as limits, stops fire at market.** A take-profit triggers a
-  limit at the target itself, so a winner never sells below it and pays no
-  slippage; the stop stays a market order so it always fills. Backtested
-  2026-10-28 before switching: the limit never missed across 26 target
-  exits and beat the market target at every account size. The sweep
-  re-places any older market target as a limit.
-- **Stops never move.** No breakeven, no trail: backtested 2026-10-28, the
-  fixed stop made +6.03R against +1.97R for the best moving rule
-  (`docs/overhaul/BACKTEST_RESULTS_2026-10-25.md`, "moving the stop").
+  limit at the target itself, so a winning exit never sells below it; the
+  stop stays a market order so it always fills. The sweep re-places any
+  older market target as a limit.
+- **Stops never move.** No breakeven, no trail. Once placed, a stop stays
+  where it is until it fills or the position closes.
 
 ## The trading loop
 
 `.claude/skills/desk-tick/SKILL.md` is the loop, run on a 15-minute cron
 (`/loop 15m /desk-tick oil`). Oil is the only active desk since 2026-10-26
-(`active_desks: ["oil"]`); the other desks' ticks and trading are off. The
-edge is the thesis, not the market: run without theses, the same entry
-rules lost on Brent, gold, BTC and the S&P 500 at any leverage
-(`docs/overhaul/BACKTEST_RESULTS_2026-10-25.md`, "other markets"). Each
-tick, in order:
+(`active_desks: ["oil"]`); the other desks' ticks and trading are off. No
+edge is demonstrated: the live audit of 2026-11-12 graded 36 thesis calls
+with the direction right 32% of the time, and 19 closed trades whose
+average result cannot be told apart from zero. The rules alone are in
+[docs/strategy/OIL_RULES.md](docs/strategy/OIL_RULES.md). Each tick, in
+order:
 
 1. **Slot check** (`scripts/desk_slot.py`): if another desk's coin holds the
    account's one slot, log and stop. No brief, no levels, no MCP calls.
@@ -172,8 +249,9 @@ tick, in order:
 
 ## Install as a Claude Code plugin
 
-The second way to run pathiel, with no checkout and no local web server:
+The public way to run pathiel, with no checkout and no local web server:
 Claude in the terminal is the trader, Hyperliquid's own app is the dashboard.
+Read "Public install" above first.
 
 ```
 /plugin install pathiel --marketplace Julian-dev28/pathiel
@@ -183,11 +261,25 @@ Claude in the terminal is the trader, Hyperliquid's own app is the dashboard.
 Or from a shell: `claude plugin marketplace add Julian-dev28/pathiel` then
 `claude plugin install pathiel@pathiel`.
 
-`/pathiel:setup` builds a private Python environment (under the plugin data
-dir, kept across updates), creates `~/.pathiel/.env.local` from
-`.env.local.example` for you to fill in, checks the keys with
-`scripts/preflight_secrets.py` without printing them, connects the MCP
-server and runs the read-only smoke. After that:
+`/pathiel:setup` (the steps are in `commands/setup.md`):
+
+1. builds a private Python environment under the plugin data dir, kept
+   across updates;
+2. creates `~/.pathiel/.env.local` from the public env template for you to
+   fill in, and seeds `~/.pathiel/.agent-config.json` from the public config
+   template (3x, 1% at the stop, one position). Both templates are named in
+   `commands/setup.md`; the maintainer's tracked `.agent-config.json` is
+   never copied;
+3. checks the keys without printing them, then runs a status check that
+   says which network you are on, whether a key is set, and the builder
+   fee with its approval state;
+4. shows the fee and the one command that approves it, which you run in
+   your own terminal;
+5. connects the MCP server.
+
+With no key, pathiel runs read-only, which is enough for reading
+markets. With a key it trades testnet until you add
+`PATHIEL_NETWORK=mainnet` to `~/.pathiel/.env.local`. After that:
 
 | you type | what happens |
 |---|---|
@@ -201,12 +293,13 @@ Where things live for a plugin install:
 | what | where | why |
 |---|---|---|
 | keys | `~/.pathiel/.env.local` (0600) | the plugin root is a cache Claude Code replaces on update; keys never go there and never leave your machine |
-| state (theses, journals, intel cache) | `~/.pathiel/state` | same reason |
-| config (`mode`, risk profile, active desks) | `~/.pathiel/.agent-config.json` | starts in mode OFF |
+| network switch | `PATHIEL_NETWORK` in `~/.pathiel/.env.local` | next to the key, so the `config` tool cannot flip it; unset means testnet |
+| state (theses, journals, intel cache) | under `~/.pathiel`, one state folder per network | same reason; testnet and mainnet never share state |
+| config (risk profile, active desks) | `~/.pathiel/.agent-config.json` | seeded from the public template |
 | Python environment | `$CLAUDE_PLUGIN_DATA/venv` | rebuilt only when `requirements.lock` changes |
 
 The web Desk page (`python -m pathiel.server`) is not part of the plugin.
-It needs a checkout: see "Running it" above.
+It needs a checkout: see "Running it" below.
 
 For maintainers: `skills/desk-tick/SKILL.md` and `agents/desk-tick.md` are
 generated from the project copies under `.claude/` by
@@ -221,10 +314,18 @@ validate .` checks the manifests.
 
 `scripts/pathiel-mcp-server.py` exposes **60 tools over stdio**. The full
 table, regenerated by `scripts/mcp_tool_table.py` from the server's own
-`TOOLS` list, lives in `docs/overhaul/MCP.md`. Claude Code registers it via
-`.mcp.json`; enable it once with `/mcp`. Any MCP client, Claude Code,
-Pathiel Agent, Cursor, Claude Desktop, can register the same server and
-read the same tools.
+`TOOLS` list, lives in `docs/overhaul/MCP.md`.
+
+The plugin starts it through the launcher `scripts/pathiel-mcp`. Other
+clients (Cursor, Claude Desktop, Pathiel Agent) register
+`scripts/pathiel-mcp` or the container (see "Other MCP clients" above);
+both are the public path. The repo `.mcp.json` and a direct
+`scripts/pathiel-mcp-server.py` launch are the maintainer path:
+
+> Maintainer path: this runs mainnet with the tracked repo config (20x, whole-equity sizing). It is not the public install.
+
+Opening a clone of this repo in Claude Code offers the repo `.mcp.json`
+server; accepting it is the maintainer path, not the public install.
 
 | Tool | Description |
 |---|---|
@@ -236,9 +337,9 @@ read the same tools.
 | `desk_grade` | Grade expired theses, then accounts' trades against each call |
 | `account_overview` | Active account's equity, where it sits (every dex), positions, can-trade |
 | `accounts` | Registered accounts, which is active |
-| `risk_limits` | Positions at once, $ per stop-out, daily pause, max leverage |
+| `risk_limits` | Positions at once, $ per stop-out, the daily loss figure (shown, not enforced), max leverage |
 | `risk_size_trade` | Size one trade for this account: size, margin, $ at risk, payoff, liquidation |
-| `place_bracket` | **Live money.** One entry with exact stop and target, sized to the whole equity less the opening fee, refuses under 2R or a taken slot; `add: true` tops an open position up to full size |
+| `place_bracket` | **Live money.** One entry with exact stop and target, sized by the risk profile (the maintainer's: the whole equity less the opening fee), refuses under 2R or a taken slot; `add: true` tops an open position up to full size |
 | `bracket_sweep` | **Live money.** Cancel a stranded sibling order, confirm stop coverage, fold one-per-fill stops/targets at one price into a single pair |
 | `close_position` | **Live money.** Close a coin through the reduce-only close helper |
 | `set_leverage` | **Live money.** Set leverage, keeping the position's own margin type |
@@ -325,7 +426,13 @@ property-tested from $5 to $100k (`services/risk/tests/test_derive.py`):
 3. Max positions times the worst stop-out fits inside the daily pause.
 
 Old configs migrate automatically into a custom profile, shown as "Custom
-(from your old settings)" on `/account`. Fresh installs start on "auto".
+(from your old settings)" on `/account`. A checkout with no saved profile
+starts on "auto". A public install starts on the public profile instead:
+custom, 1% risk per trade, 3% daily figure, at most 3x, one position.
+
+The daily pause is a sizing input: the guarantees above use it to bound
+what one trade can plan to lose. Nothing stops trading for the day when
+losses reach it.
 
 ## Configuration
 
@@ -389,6 +496,8 @@ with every finding, its fix and what is still open, is
 `docs/security/SUPPLY_CHAIN_2026-10-25.md`.
 
 ## Running it
+
+> Maintainer path: this runs mainnet with the tracked repo config (20x, whole-equity sizing). It is not the public install.
 
 ```bash
 scripts/restart.sh          # stop + start the FastAPI server and the log rotator
