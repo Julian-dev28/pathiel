@@ -1,0 +1,122 @@
+{
+ "request": {
+  "type": "spotMetaAndAssetCtxs"
+ },
+ "response": [
+  {
+   "universe": [
+    {
+     "tokens": [
+      1,
+      0
+     ],
+     "name": "PURR/USDC",
+     "index": 0,
+     "isCanonical": true
+    },
+    {
+     "tokens": [
+      2,
+      0
+     ],
+     "name": "@1",
+     "index": 1,
+     "isCanonical": false
+    },
+    {
+     "tokens": [
+      3,
+      0
+     ],
+     "name": "@2",
+     "index": 2,
+     "isCanonical": false
+    }
+   ],
+   "tokens": [
+    {
+     "name": "USDC",
+     "szDecimals": 8,
+     "weiDecimals": 8,
+     "index": 0,
+     "tokenId": "0xeb62eee3685fc4c43992febcd9e75443",
+     "isCanonical": true,
+     "evmContract": {
+      "address": "0x0b80659a4076e9e93c7dbe0f10675a16a3e5c206",
+      "evm_extra_wei_decimals": -2
+     },
+     "fullName": null,
+     "deployerTradingFeeShare": "0.0"
+    },
+    {
+     "name": "PURR",
+     "szDecimals": 0,
+     "weiDecimals": 5,
+     "index": 1,
+     "tokenId": "0xc4bf3f870c0e9465323c0b6ed28096c2",
+     "isCanonical": true,
+     "evmContract": {
+      "address": "0xa9056c15938f9aff34cd497c722ce33db0c2fd57",
+      "evm_extra_wei_decimals": 13
+     },
+     "fullName": "Hypurr",
+     "deployerTradingFeeShare": "0.0"
+    },
+    {
+     "name": "TEST",
+     "szDecimals": 1,
+     "weiDecimals": 8,
+     "index": 2,
+     "tokenId": "0x98b101daf4ff26697646131261c100bf",
+     "isCanonical": false,
+     "evmContract": null,
+     "fullName": null,
+     "deployerTradingFeeShare": "0.0"
+    },
+    {
+     "name": "JPL ",
+     "szDecimals": 3,
+     "weiDecimals": 5,
+     "index": 3,
+     "tokenId": "0x68046c075c2c34873fd465c76804ef90",
+     "isCanonical": false,
+     "evmContract": null,
+     "fullName": null,
+     "deployerTradingFeeShare": "0.0"
+    }
+   ]
+  },
+  [
+   {
+    "prevDayPx": "4.5795",
+    "dayNtlVlm": "8197.3554",
+    "markPx": "4.5342",
+    "midPx": "4.55685",
+    "circulatingSupply": "198728481.9907599986",
+    "coin": "PURR/USDC",
+    "totalSupply": "198731380.0317099988",
+    "dayBaseVlm": "1802.0"
+   },
+   {
+    "prevDayPx": "0.0",
+    "dayNtlVlm": "0.0",
+    "markPx": "1.0936",
+    "midPx": null,
+    "circulatingSupply": "999.81880382",
+    "coin": "@1",
+    "totalSupply": "999.81880382",
+    "dayBaseVlm": "0.0"
+   },
+   {
+    "prevDayPx": "0.0",
+    "dayNtlVlm": "0.0",
+    "markPx": "12.363",
+    "midPx": null,
+    "circulatingSupply": "222.97108",
+    "coin": "@2",
+    "totalSupply": "222.97108",
+    "dayBaseVlm": "0.0"
+   }
+  ]
+ ]
+}

@@ -1,0 +1,91 @@
+{
+ "request": {
+  "type": "perpDexs"
+ },
+ "response": [
+  null,
+  {
+   "name": "test",
+   "fullName": "test dex",
+   "deployer": "0x5e89b26d8d66da9888c835c9bfcc2aa51813e152",
+   "oracleUpdater": null,
+   "feeRecipient": null,
+   "assetToStreamingOiCap": [],
+   "subDeployers": [],
+   "assetToFundingMultiplier": [],
+   "assetToFundingInterestRate": [],
+   "assetToFundingClamp": []
+  },
+  {
+   "name": "xyz",
+   "fullName": "XYZ",
+   "deployer": "0x7770132f86dd4002d018edd7d348f4a0e4340777",
+   "oracleUpdater": null,
+   "feeRecipient": "0x23955d36db94d0f25216045f2bcc34dc5e0f326a",
+   "assetToStreamingOiCap": [
+    [
+     "xyz:AAPL",
+     "50000000.0"
+    ],
+    [
+     "xyz:ALUMINIUM",
+     "25000000.0"
+    ],
+    [
+     "xyz:AMD",
+     "50000000.0"
+    ]
+   ],
+   "subDeployers": [
+    [
+     "registerAsset",
+     [
+      "0x9193f17e31212ffc03e1fc13cbdaa6d3555aafd3",
+      "0xa98b0314e17c436ffc3a27df28b85dae333ac792"
+     ]
+    ],
+    [
+     "setOracle",
+     [
+      "0x0000000000c7153b8c085618fb91cb1214092201"
+     ]
+    ],
+    [
+     "haltTrading",
+     [
+      "0xa98b0314e17c436ffc3a27df28b85dae333ac792"
+     ]
+    ]
+   ],
+   "assetToFundingMultiplier": [
+    [
+     "xyz:AAPL",
+     "0.5"
+    ],
+    [
+     "xyz:ALUMINIUM",
+     "0.5"
+    ],
+    [
+     "xyz:AMD",
+     "0.5"
+    ]
+   ],
+   "assetToFundingInterestRate": [
+    [
+     "xyz:EUR",
+     "0.0"
+    ],
+    [
+     "xyz:JPY",
+     "0.0"
+    ],
+    [
+     "xyz:VIX",
+     "0.0"
+    ]
+   ],
+   "assetToFundingClamp": []
+  }
+ ]
+}

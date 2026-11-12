@@ -1,0 +1,9 @@
+{
+ "request": {
+  "type": "userRole",
+  "user": "0x0000000000000000000000000000000000000001"
+ },
+ "response": {
+  "role": "user"
+ }
+}

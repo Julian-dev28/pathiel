@@ -1,0 +1,25 @@
+{
+ "request": {
+  "type": "userFills",
+  "user": "0x0000000000000000000000000000000000000001"
+ },
+ "response": [
+  {
+   "coin": "PURR/USDC",
+   "px": "5.1085",
+   "sz": "0.5",
+   "side": "A",
+   "time": 1756569840003,
+   "startPosition": "0.5",
+   "dir": "Spot Dust Conversion",
+   "closedPnl": "0.0",
+   "hash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+   "oid": 38297058873,
+   "crossed": true,
+   "fee": "0.0",
+   "tid": 0,
+   "feeToken": "USDC",
+   "twapId": null
+  }
+ ]
+}

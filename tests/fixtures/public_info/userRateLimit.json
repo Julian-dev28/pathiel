@@ -1,0 +1,12 @@
+{
+ "request": {
+  "type": "userRateLimit",
+  "user": "0x0000000000000000000000000000000000000001"
+ },
+ "response": {
+  "cumVlm": "0.0",
+  "nRequestsUsed": 0,
+  "nRequestsCap": 10000,
+  "nRequestsSurplus": 0
+ }
+}

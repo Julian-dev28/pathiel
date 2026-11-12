@@ -1,0 +1,45 @@
+{
+ "request": {
+  "type": "spotClearinghouseState",
+  "user": "0x0000000000000000000000000000000000000001"
+ },
+ "response": {
+  "balances": [
+   {
+    "coin": "USDC",
+    "token": 0,
+    "total": "1337.59246354",
+    "hold": "0.0",
+    "entryNtl": "0.0"
+   },
+   {
+    "coin": "YQLFWW",
+    "token": 802,
+    "total": "6250000.0",
+    "hold": "0.0",
+    "entryNtl": "625.0"
+   },
+   {
+    "coin": "HYPE",
+    "token": 1105,
+    "total": "0.52210001",
+    "hold": "0.0",
+    "entryNtl": "46.03393535"
+   },
+   {
+    "coin": "XYZT",
+    "token": 1486,
+    "total": "1000000.0",
+    "hold": "0.0",
+    "entryNtl": "3333.0"
+   },
+   {
+    "coin": "RIVERT",
+    "token": 1831,
+    "total": "1.0",
+    "hold": "0.0",
+    "entryNtl": "0.000005"
+   }
+  ]
+ }
+}

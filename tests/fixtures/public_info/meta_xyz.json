@@ -1,0 +1,49 @@
+{
+ "request": {
+  "type": "meta",
+  "dex": "xyz"
+ },
+ "response": {
+  "universe": [
+   {
+    "szDecimals": 3,
+    "name": "xyz:NVDA",
+    "maxLeverage": 20,
+    "marginTableId": 20,
+    "growthMode": "enabled",
+    "lastFeeScaleChangeTime": "2025-11-23T17:21:40.390706535",
+    "deployerFeeScale": "1.0"
+   },
+   {
+    "szDecimals": 4,
+    "name": "xyz:GOLD",
+    "maxLeverage": 25,
+    "marginTableId": 25,
+    "lastFeeScaleChangeTime": "1970-01-01T00:00:00",
+    "deployerFeeScale": "1.0"
+   },
+   {
+    "szDecimals": 3,
+    "name": "xyz:CL",
+    "maxLeverage": 20,
+    "marginTableId": 20,
+    "onlyIsolated": true,
+    "marginMode": "noCross",
+    "growthMode": "enabled",
+    "lastFeeScaleChangeTime": "2026-02-23T17:48:35.325041558",
+    "deployerFeeScale": "1.0"
+   },
+   {
+    "szDecimals": 2,
+    "name": "xyz:BRENTOIL",
+    "maxLeverage": 20,
+    "marginTableId": 20,
+    "isDelisted": true,
+    "growthMode": "enabled",
+    "lastFeeScaleChangeTime": "2026-04-24T01:08:17.758717816",
+    "deployerFeeScale": "1.0"
+   }
+  ],
+  "collateralToken": 0
+ }
+}

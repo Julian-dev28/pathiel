@@ -1,0 +1,11 @@
+{
+ "request": {
+  "type": "allMids"
+ },
+ "response": {
+  "BTC": "73400.5",
+  "ETH": "1979.75",
+  "MATIC": "0.37035",
+  "SOL": "89.676"
+ }
+}
