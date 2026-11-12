@@ -1,13 +1,16 @@
 # Getting started with pathiel
 
-pathiel is a headless trading desk on live Hyperliquid. Real money. There is
-no autonomous bot and no standing process that trades on its own: Claude is
-the only trader on the wallet, and it trades by calling the pathiel MCP
-server from inside Claude Code.
+pathiel is a headless trading desk on Hyperliquid. There is no autonomous
+bot and no standing process that trades on its own: Claude is the only
+trader on the wallet, and it trades by calling the pathiel MCP server from
+inside Claude Code. A plugin install starts on testnet; mainnet is real
+money and an explicit opt-in.
 
-This walkthrough gets you from a clean checkout to reading the oil desk's
+This walkthrough gets you from a fresh install to reading the oil desk's
 call, sizing a trade, placing one bracket order, and shutting the whole
-thing back down.
+thing back down. Read the "Public install" section of the
+[README](../README.md) first: it covers the builder fee, the risks and
+the restricted jurisdictions.
 
 ## 1. The problem this solves
 
@@ -41,22 +44,40 @@ page reads the same state without a trading path of its own.
 
 ## 3. Setup
 
-There are two ways to run pathiel. Pick one.
-
-**Plugin install** (no checkout, no local web server; Hyperliquid's own app
-is your dashboard):
+**Plugin install** (the public path: no checkout, no local web server;
+Hyperliquid's own app is your dashboard):
 
 ```
 /plugin install pathiel --marketplace Julian-dev28/pathiel
 /pathiel:setup
 ```
 
-`/pathiel:setup` builds a private Python environment, creates
-`~/.pathiel/.env.local` from `.env.local.example` for you to fill in, checks
-the keys with `scripts/preflight_secrets.py` without printing them, and
-walks you through connecting the MCP server (`commands/setup.md`).
+Run `/pathiel:setup` and follow it; the steps are in `commands/setup.md`.
+It builds a private Python environment, creates `~/.pathiel/.env.local`
+and a safe starting config (at most 3x, 1% of equity at the stop, one
+position), checks the keys without printing them, shows the builder fee,
+and connects the MCP server.
 
-**Repo checkout** (adds the Desk page):
+- **Testnet by default.** With a key, pathiel trades Hyperliquid testnet.
+  Testnet needs its own API wallet, created and approved in the testnet
+  app (app.hyperliquid-testnet.xyz), with test funds.
+- **Mainnet is an opt-in.** Add `PATHIEL_NETWORK=mainnet` to
+  `~/.pathiel/.env.local` and restart the MCP server. From then on every
+  order is real money.
+- **No key, read-only.** Without a key every read tool works and every
+  write tool answers that no key is configured.
+- **Builder fee.** Orders carry a 0.01% builder fee per fill once you
+  approve it; declining is fine and orders go out with no fee. The rate,
+  how to approve and how Hyperliquid enforces it are in the
+  [README](../README.md), section "Public install".
+
+Other MCP clients use the launcher `scripts/pathiel-mcp` or the container,
+both described in the README.
+
+**Maintainer checkout** (adds the Desk page; this is the maintainer's own
+setup, not the public one):
+
+> Maintainer path: this runs mainnet with the tracked repo config (20x, whole-equity sizing). It is not the public install.
 
 ```bash
 git clone https://github.com/Julian-dev28/pathiel
@@ -66,9 +87,10 @@ cp .env.local.example .env.local
 
 ### Connect your Hyperliquid account
 
-pathiel trades on your real Hyperliquid account. Before it can read or
-trade anything, you need an account with funds on it and a separate key
-pathiel is allowed to sign orders with. Five steps, done once.
+pathiel trades on your own Hyperliquid account. Reading markets needs no
+account at all. Before it can trade, you need an account with funds on it
+and a separate key pathiel is allowed to sign orders with. Five steps, done
+once per network: on testnet, do each step in the testnet app instead.
 
 1. **Connect your Hyperliquid account.** Go to app.hyperliquid.xyz and
    connect a wallet; this becomes your master account, the one that holds
@@ -193,7 +215,7 @@ max leverage.
 ```
 Explain the oil desk's entry rules in plain English.
 ```
-No tool call. Claude reads [docs/strategy/OIL_STRATEGY.md](strategy/OIL_STRATEGY.md)
+No tool call. Claude reads [docs/strategy/OIL_RULES.md](strategy/OIL_RULES.md)
 and the current call from `desk_brief`.
 
 **Why the last tick held**
@@ -210,7 +232,7 @@ Claude reads the tick's own log line in `/tmp/oil-loop/progress.log`, then
 What does 2R mean for the trade on the table right now?
 ```
 No tool call. Claude explains `desk_brief`'s R number against the 2R gate
-described in [docs/strategy/OIL_STRATEGY.md](strategy/OIL_STRATEGY.md).
+described in [docs/strategy/OIL_RULES.md](strategy/OIL_RULES.md).
 
 ### Plan a trade (read-only)
 
@@ -301,16 +323,18 @@ states them:
 - **One position per account.** `.agent-config.json`'s `max_open_positions`
   is 1; `place_bracket` refuses to stack a second position or resting order
   on the same coin.
-- **The whole equity, every position.** Sizing holds back nothing but the
-  opening taker fee (`services/risk/derive.py::margin_after_open_fee`).
-- **The stop never widens.** No breakeven, no trail: backtested
-  2026-10-28, the fixed stop beat every moving-stop rule tried
-  (`docs/strategy/OIL_STRATEGY.md`).
+- **Size comes from your risk profile.** A public install risks 1% of
+  equity at the stop. The maintainer's tracked config sizes with the whole
+  equity, holding back nothing but the opening taker fee
+  (`services/risk/derive.py::margin_after_open_fee`).
+- **The stop never moves.** No breakeven, no trail: once placed, a stop
+  stays where it is until it fills or the position closes
+  (`docs/strategy/OIL_RULES.md`).
 - **The 2R gate.** `place_bracket` refuses any bracket paying under 2R to
   its target (`bracket.DEFAULT_MIN_R`).
-- **The 20x rule.** Leverage up to the risk profile's `max_leverage` (20x);
-  the stop must sit inside half the distance to liquidation, or the tool
-  refuses.
+- **The 20x rule.** Leverage up to the risk profile's `max_leverage` (3x
+  on a public install, 20x in the maintainer's config); the stop must sit
+  inside half the distance to liquidation, or the tool refuses.
 - **Never chase.** No entry above a long thesis's entry (below it for a
   short).
 
@@ -458,8 +482,8 @@ scripts/restart.sh stop
 
 ## 9. Where to go next
 
-- [`docs/strategy/OIL_STRATEGY.md`](strategy/OIL_STRATEGY.md): the oil
-  desk's entry, stop and target rules, and the backtests behind them.
+- [`docs/strategy/OIL_RULES.md`](strategy/OIL_RULES.md): the oil desk's
+  entry, stop and target rules, and what is not known about them.
 - [`docs/overhaul/MCP.md`](overhaul/MCP.md): the full 60-tool table,
   regenerated from the server's own tool list.
 - [`README.md`](../README.md): desks, risk profile, dashboard, security,
