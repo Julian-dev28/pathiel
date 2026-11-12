@@ -270,17 +270,17 @@ def test_eval_missing_curated():
 
 # ── the skills ──────────────────────────────────────────────────────────────
 
-def test_desk_loops_runs_the_scan_every_12_hours():
+def test_desk_loops_runs_the_scan_every_30_minutes():
     text = (ROOT / ".claude" / "skills" / "desk-loops" / "SKILL.md").read_text()
-    assert "`17 */12 * * *`" in text and "`/event-calendar scan`" in text
+    assert "`17,47 * * * *`" in text and "`/event-calendar scan`" in text
     assert "python3 scripts/event_scan.py" in text
     assert text.index("python3 scripts/event_scan.py") < text.index("Price watcher")
 
 
 def test_event_calendar_skill_has_the_scan_section():
     text = (ROOT / ".claude" / "skills" / "event-calendar" / "SKILL.md").read_text()
-    assert "## Scan (every 12 hours)" in text
-    scan = text.split("## Scan (every 12 hours)", 1)[1]
+    assert "## Scan (every 30 minutes)" in text
+    scan = text.split("## Scan (every 30 minutes)", 1)[1]
     assert "python3 scripts/event_scan.py" in scan and "scripts/event_add.py" in scan
     assert "one general-purpose agent" in scan.lower() or "one general-purpose research agent" in scan.lower()
     assert "never edits `services/intel/data/scheduled_events.json`" in " ".join(scan.split())

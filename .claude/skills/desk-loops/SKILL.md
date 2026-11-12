@@ -19,8 +19,9 @@ window"). Start it from the repo root:
    - `CronCreate` cron `10,25,40,55 * * * *`, prompt `/desk-tick metals`, recurring.
    - `CronCreate` cron `7 0 * * *`, prompt `/review-trades`, recurring
      (the daily trade review: read only, see `.claude/skills/review-trades`).
-   - `CronCreate` cron `17 */12 * * *`, prompt `/event-calendar scan`,
-     recurring (the 12-hour event scan: congress.gov, the Federal Register
+   - `CronCreate` cron `17,47 * * * *`, prompt `/event-calendar scan`,
+     recurring (the event scan every 30 minutes, operator 2026-11-13
+     "every 30 mins"; was every 12 hours: congress.gov, the Federal Register
      and one research agent, written to the scan overlay; see the "Scan"
      section of `.claude/skills/event-calendar`).
    They are session-only and expire after 7 days; re-run `/desk-loops`

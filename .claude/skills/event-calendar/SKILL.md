@@ -55,11 +55,12 @@ What uses the calendar:
 6. **Commit and push.** Say "reconnect pathiel MCP (/mcp) in the desk loops
    window" so place_bracket and the brief reload the file.
 
-## Scan (every 12 hours)
+## Scan (every 30 minutes)
 
-`/event-calendar scan`. The desk-loops cron runs it at 17 past, every 12
-hours (operator, 2026-11-05: "a scan every 12 hours to get new events and
-wire them into our trading decision"). It adds to the overlay at
+`/event-calendar scan`. The desk-loops cron runs it at 17 and 47 past the
+hour (operator, 2026-11-13: "every 30 mins"; it started at every 12
+hours on 2026-11-05: "a scan every 12 hours to get new events and wire
+them into our trading decision"). It adds to the overlay at
 `$PATHIEL_STATE_DIR/intel/scanned_events.json`; it never edits
 `services/intel/data/scheduled_events.json`. A curated row wins on a
 (date, kind, title) conflict; the brief shows scanned rows with a `(scan)`
