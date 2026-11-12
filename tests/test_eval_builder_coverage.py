@@ -5,8 +5,12 @@ the user approved it, every order reaches the venue whatever the builder state,
 no order waits on an approval read, and the operator's orders never carry a
 builder. Offline: fake SDKs, a stub approval read, no thread started.
 
-Matrix: 12 builder states x 4 order paths (48 rows) + 4 operator rows, plus
+Matrix: 13 builder states x 4 order paths (52 rows) + 4 operator rows, plus
 summary rows. Threshold: every row passes.
+
+venue_refuses_known (final review, 2026-11-12): Hyperliquid refuses the
+builder order for a reason of its own (margin here; an IOC no-match in the
+field). One send, no resend, no cooldown, nothing charged.
 
     .venv/bin/python -m pytest -q -s tests/test_eval_builder_coverage.py
 
@@ -33,13 +37,17 @@ BULK_OK = {"status": "ok", "response": {"type": "order", "data": {"statuses": [
     {"resting": {"oid": 13}}, "waitingForFill", "waitingForFill"]}}}
 BUILDER_ERR = {"status": "err", "response": "Builder fee has not been approved."}
 MARGIN_ERR = {"status": "err", "response": "Insufficient margin to place order."}
+UNKNOWN_ERR = {"status": "err", "response": "Some wording the venue never used before."}
 
 STATES = ["approved_warm", "approved_stale", "cold", "unapproved", "approval_below_fee",
           "read_error", "address_unset", "fee_zero", "account_equals_builder",
           "venue_rejects_naming_builder", "venue_rejects_unrelated_then_accepts",
-          "venue_rejects_both"]
+          "venue_rejects_both", "venue_refuses_known"]
 ATTACHING = {"approved_warm", "approved_stale", "venue_rejects_naming_builder",
-             "venue_rejects_unrelated_then_accepts", "venue_rejects_both"}
+             "venue_rejects_unrelated_then_accepts", "venue_rejects_both", "venue_refuses_known"}
+# a cooldown is wanted after these (the venue named the builder, or the bare
+# resend placed what the builder order could not)
+COOLING = {"venue_rejects_naming_builder", "venue_rejects_unrelated_then_accepts"}
 REJECTING = {"venue_rejects_naming_builder", "venue_rejects_unrelated_then_accepts",
              "venue_rejects_both"}
 PATH_NAMES = ["ioc", "trigger", "limit", "bracket"]
@@ -142,7 +150,7 @@ def _one_public_row(state: str, path: str, ex, builder, p: _Patch) -> Dict[str, 
     account = ACCT
     now = builder._clock()
     key = (NET, ACCT, ADDR)
-    if state in ("approved_warm",) or state in REJECTING:
+    if state in ("approved_warm", "venue_refuses_known") or state in REJECTING:
         builder._cache[key] = _entry(10, 0.0, now=now)
     elif state == "approved_stale":
         builder._cache[key] = _entry(10, builder.REFRESH_APPROVED_S + 100, now=now)
@@ -161,9 +169,11 @@ def _one_public_row(state: str, path: str, ex, builder, p: _Patch) -> Dict[str, 
     if state == "venue_rejects_naming_builder":
         reply = (lambda k, b: BUILDER_ERR if b is not None else _ok_reply(k))
     elif state == "venue_rejects_unrelated_then_accepts":
-        reply = (lambda k, b: MARGIN_ERR if b is not None else _ok_reply(k))
+        reply = (lambda k, b: UNKNOWN_ERR if b is not None else _ok_reply(k))
     elif state == "venue_rejects_both":
-        reply = (lambda k, b: MARGIN_ERR)
+        reply = (lambda k, b: UNKNOWN_ERR)
+    elif state == "venue_refuses_known":
+        reply = (lambda k, b: MARGIN_ERR if b is not None else _ok_reply(k))
     else:
         reply = (lambda k, b: _ok_reply(k))
     sdk = PublicSdk(reply)
@@ -180,6 +190,7 @@ def _one_public_row(state: str, path: str, ex, builder, p: _Patch) -> Dict[str, 
         "inline_reads": sum(1 for on_main in inline if on_main),
         "placed": bool(out.get("ok")),
         "note_attached": note.get("attached"),
+        "cooldown": (builder.builder_for_order(account) is None) if state in ATTACHING else None,
     }
     attaching = state in ATTACHING
     rejecting = state in REJECTING
@@ -190,8 +201,9 @@ def _one_public_row(state: str, path: str, ex, builder, p: _Patch) -> Dict[str, 
         "first_builder_ok": True if attaching else None,
         "last_send_bare": True if rejecting else None,
         "inline_reads": 0,
-        "placed": state != "venue_rejects_both",
-        "note_attached": attaching and not rejecting,
+        "placed": state not in ("venue_rejects_both", "venue_refuses_known"),
+        "note_attached": attaching and not rejecting and state != "venue_refuses_known",
+        "cooldown": (state in COOLING) if attaching else None,
     }
     p.undo()
     builder.reset()
@@ -261,6 +273,10 @@ def run() -> Dict[str, Any]:
         {"check": "inline approval reads", "got": sum(r["got"]["inline_reads"] for r in public), "want": 0},
         {"check": "max SDK calls per order <= 2",
          "got": max(r["got"]["sdk_calls"] for r in public) <= 2, "want": True},
+        {"check": "known venue refusals sent once, no cooldown",
+         "got": sum(1 for r in public if r["check"].startswith("venue_refuses_known/")
+                    and r["got"]["sdk_calls"] == 1 and r["got"]["cooldown"] is False),
+         "want": len(PATH_NAMES)},
         {"check": "operator rows clean", "got": sum(r["ok"] for r in rows if r["check"].startswith("operator/")),
          "want": len(PATH_NAMES)},
     ]
@@ -290,5 +306,5 @@ def test_builder_coverage_eval():
     card = run()
     _print(card)
     _write(card)
-    assert card["total"] == 12 * 4 + 4 + 6
+    assert card["total"] == 13 * 4 + 4 + 7
     assert card["passed"] == card["total"], [r for r in card["rows"] if not r["ok"]]

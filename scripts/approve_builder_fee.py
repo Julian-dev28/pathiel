@@ -101,6 +101,34 @@ def approve(master_key: str, builder: str, max_fee_rate: str, nonce_ms: int,
     return post("/exchange", payload)
 
 
+POST_CONNECT_TIMEOUT_S = 3.0
+POST_READ_TIMEOUT_S = 10.0
+
+
+def post_once(path: str, payload: Dict[str, Any]) -> Any:
+    """POST a signed action exactly once: a plain requests.post, not the
+    shared hl_client session. That session's adapter retries POST on 502, 503
+    and 504, and a retry replays the same nonce: the venue then rejects the
+    replay and its error would be reported while the first post had landed.
+    A non-200 reply comes back as an error reply; a network error raises."""
+    import requests
+
+    from pathiel.client import hl_client
+    resp = requests.post(f"{hl_client.HL_API}{path}", json=payload,
+                         timeout=(POST_CONNECT_TIMEOUT_S, POST_READ_TIMEOUT_S))
+    if resp.status_code != 200:
+        return {"status": "err", "response": f"HTTP {resp.status_code}: {(resp.text or '')[:200]}"}
+    return resp.json()
+
+
+def approval_in_place(approved: Optional[int], tenths: int) -> bool:
+    """True when the venue's stored approval already gives what was asked:
+    at least `tenths`, or exactly 0 for a revoke."""
+    if approved is None:
+        return False
+    return approved == 0 if tenths == 0 else approved >= tenths
+
+
 # ── output ────────────────────────────────────────────────────────────────────
 
 _LABELS = (("network", "network"), ("account", "account"), ("builder", "builder"),
@@ -260,7 +288,7 @@ def main(argv: Optional[List[str]] = None, *,
                        "Use the master key of the account that holds your funds, not the "
                        "API wallet key. Nothing sent.", base, as_json)
 
-    send = post if post is not None else hl_client._http_post_strict
+    send = post if post is not None else post_once
     try:
         reply = approve(key, builder, rate, nonce, runtime.is_mainnet(), send)
     except Exception as e:   # noqa: BLE001 - a failed post is a result, not a crash
@@ -269,18 +297,32 @@ def main(argv: Optional[List[str]] = None, *,
         key = None
     ok = isinstance(reply, dict) and reply.get("status") == "ok"
     out: Dict[str, Any] = {"ok": ok, **base, "example": fee_example(tenths), "reply": reply}
+    if fetch_max_fee is None:
+        from pathiel.client.builder import fetch_max_builder_fee as fetch_max_fee
+    # Read the approval back, also after an error: the reply can be an error
+    # while the approval landed (a dropped connection after the venue stored
+    # it). The read decides before a failure is reported.
+    read_error: Optional[str] = None
+    try:
+        out["approved_tenths_bp"] = fetch_max_fee(account, builder)
+    except Exception as e:   # noqa: BLE001
+        out["approved_tenths_bp"] = None
+        read_error = type(e).__name__
     if ok:
-        if fetch_max_fee is None:
-            from pathiel.client.builder import fetch_max_builder_fee as fetch_max_fee
-        try:
-            out["approved_tenths_bp"] = fetch_max_fee(account, builder)
-        except Exception as e:   # noqa: BLE001
-            out["approved_tenths_bp"] = None
-            out["note"] = f"sent, but the confirming read failed ({type(e).__name__}); check `state` later"
+        if read_error:
+            out["note"] = f"sent, but the confirming read failed ({read_error}); check `state` later"
+    elif approval_in_place(out["approved_tenths_bp"], tenths):
+        ok = out["ok"] = True
+        out["note"] = ("the reply was an error, but Hyperliquid now holds an approval of "
+                       f"{runtime.fee_rate_str(out['approved_tenths_bp'])} for this builder: "
+                       "nothing more to do. Do not sign again.")
     else:
         out["note"] = ("the venue did not accept it; the reply says why. One known cause: the "
                        "builder address holds under 100 USDC of perps account value on this "
                        "network. Orders keep going out without the fee.")
+        if read_error:
+            out["note"] += (f" The read-back also failed ({read_error}): run "
+                            "scripts/public_status.py --online before signing again.")
     _emit(out, as_json)
     return 0 if ok else 1
 

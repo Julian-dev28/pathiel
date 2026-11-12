@@ -29,6 +29,9 @@ TESTNET_API_URL = "https://api.hyperliquid-testnet.xyz"
 
 ENV_INSTALL = "PATHIEL_INSTALL"
 ENV_NETWORK = "PATHIEL_NETWORK"
+# Set by the public launcher (scripts/_plugin_env.sh), which always exports
+# PATHIEL_NETWORK: "default" means nobody chose the network.
+ENV_NETWORK_SOURCE = "PATHIEL_NETWORK_SOURCE"
 ENV_BUILDER_ADDRESS = "PATHIEL_BUILDER_ADDRESS"
 ENV_BUILDER_FEE = "PATHIEL_BUILDER_FEE_TENTHS_BP"
 
@@ -89,6 +92,10 @@ def network(env: Optional[Mapping[str, str]] = None) -> str:
 
 
 def network_is_explicit(env: Optional[Mapping[str, str]] = None) -> bool:
+    """True when someone chose the network: PATHIEL_NETWORK holds a valid value
+    and the launcher did not mark it as its own default."""
+    if str(_env(env).get(ENV_NETWORK_SOURCE) or "").strip().lower() == "default":
+        return False
     return _explicit_network(env) is not None
 
 
@@ -154,7 +161,7 @@ def describe(env: Optional[Mapping[str, str]] = None) -> Dict[str, Any]:
 
 __all__ = [
     "CONTRACT_VERSION", "MAINNET_API_URL", "TESTNET_API_URL",
-    "ENV_INSTALL", "ENV_NETWORK", "ENV_BUILDER_ADDRESS", "ENV_BUILDER_FEE", "RUNTIME_ENV_VARS",
+    "ENV_INSTALL", "ENV_NETWORK", "ENV_NETWORK_SOURCE", "ENV_BUILDER_ADDRESS", "ENV_BUILDER_FEE", "RUNTIME_ENV_VARS",
     "DEFAULT_BUILDER_ADDRESS", "DEFAULT_BUILDER_FEE_TENTHS_BP", "MAX_PERP_BUILDER_FEE_TENTHS_BP",
     "install_kind", "is_public", "network", "network_is_explicit", "api_url", "info_url",
     "is_mainnet", "builder_address", "builder_fee_tenths_bp", "fee_rate_str", "describe",

@@ -291,12 +291,69 @@ def test_venue_error_reply_exits_1(master, monkeypatch, capsys):
     _net(monkeypatch, public=True)
     post = Post(reply={"status": "err", "response": "Builder has insufficient balance to be approved."})
     code, out, text, _ = _run(capsys, ["--yes"], post=post, getpass_fn=Prompt(master.key.hex()),
-                              fetch_max_fee=_never)
+                              fetch_max_fee=lambda u, b: 0)
     assert code == 1 and out["ok"] is False and len(post.calls) == 1
-    assert "insufficient balance" in text
+    assert "insufficient balance" in text and out["approved_tenths_bp"] == 0
     post2 = Post(raises=RuntimeError("HTTP POST /exchange failed: timeout"))
-    code, out, _t, _ = _run(capsys, ["--yes"], post=post2, getpass_fn=Prompt(master.key.hex()))
+
+    def read_fails(u, b):
+        raise TimeoutError("slow")
+
+    code, out, _t, _ = _run(capsys, ["--yes"], post=post2, getpass_fn=Prompt(master.key.hex()),
+                            fetch_max_fee=read_fails)
     assert code == 1 and out["ok"] is False and len(post2.calls) == 1
+    assert "public_status.py --online" in out["note"]
+
+
+def test_error_reply_with_the_approval_stored_reports_success(master, monkeypatch, capsys):
+    """Final review: a 502 after the venue stored the approval used to be
+    retried by the shared session's adapter; the replayed nonce was refused
+    and the script printed FAILED. Now one post, then the read-back decides."""
+    _net(monkeypatch, public=True)
+    post = Post(reply={"status": "err", "response": "Invalid nonce: duplicate nonce"})
+    reads = []
+    code, out, _t, _ = _run(capsys, ["--yes"], post=post, getpass_fn=Prompt(master.key.hex()),
+                            fetch_max_fee=lambda u, b: reads.append(1) or 10)
+    assert code == 0 and out["ok"] is True and out["approved_tenths_bp"] == 10
+    assert len(post.calls) == 1 and reads == [1]
+    assert "Do not sign again" in out["note"]
+
+
+@pytest.mark.parametrize("approved,tenths,want", [
+    (None, 10, False), (0, 10, False), (5, 10, False), (10, 10, True), (25, 10, True),
+    (0, 0, True), (10, 0, False),
+])
+def test_approval_in_place_table(approved, tenths, want):
+    assert ab.approval_in_place(approved, tenths) is want
+
+
+def test_default_post_is_one_plain_post_not_the_retrying_session(master, monkeypatch, capsys):
+    import requests
+
+    _net(monkeypatch, public=True)
+    monkeypatch.setattr(hl_client, "_get_session", _never)
+    monkeypatch.setattr(hl_client, "_http_post_strict", _never)
+    sent = []
+
+    class Resp:
+        status_code = 502
+        text = "Bad Gateway"
+
+        def json(self):
+            raise ValueError("not json")
+
+    def fake_post(url, json=None, timeout=None):
+        sent.append((url, timeout))
+        return Resp()
+
+    monkeypatch.setattr(requests, "post", fake_post)
+    code = ab.main(["--json", "--yes"], getpass_fn=Prompt(master.key.hex()),
+                   isatty=lambda: True, fetch_max_fee=lambda u, b: 0)
+    assert code == 1
+    assert sent == [(f"{runtime.TESTNET_API_URL}/exchange",
+                     (ab.POST_CONNECT_TIMEOUT_S, ab.POST_READ_TIMEOUT_S))]
+    last = json.loads([ln for ln in capsys.readouterr().out.splitlines() if ln.strip()][-1])
+    assert last["reply"]["response"].startswith("HTTP 502")
 
 
 def test_revoke_rate_zero_builds_a_zero_action(master, monkeypatch, capsys):

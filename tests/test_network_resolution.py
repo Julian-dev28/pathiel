@@ -207,6 +207,32 @@ def test_registered_list_is_todays_list_hip3_dexes(monkeypatch, tmp_path):
     assert uni.list_hip3_dexes() == ["xyz", "km"]
 
 
+@pytest.mark.parametrize("reply,registry,registered", [
+    ([None], [], []),                                   # read OK, no HIP-3 dex here
+    (None, None, []),                                   # read failed, nothing cached
+    ([None, {"name": "xyz"}], ["xyz"], ["xyz"]),
+])
+def test_hip3_dex_registry_tells_empty_from_failed(monkeypatch, tmp_path, reply, registry,
+                                                   registered):
+    """Final review: perpDexs=[null] (a network with no HIP-3 dex) and a
+    failed read both gave [], so coin_listing said 'unknown' and the public
+    gate let xyz:CL through without the network note."""
+    monkeypatch.setattr(uni, "_PERP_DEXS_CACHE_PATH", tmp_path / "perp_dexs.json")
+    monkeypatch.setattr(uni, "_http_post", lambda path, payload: reply)
+    assert uni.hip3_dex_registry(force_refresh=True) == registry
+    assert uni.registered_hip3_dexes(force_refresh=True) == registered, "operator answer unchanged"
+
+
+def test_coin_listing_on_a_network_without_hip3_dexes(monkeypatch, tmp_path):
+    monkeypatch.setattr(uni, "_PERP_DEXS_CACHE_PATH", tmp_path / "perp_dexs.json")
+    monkeypatch.setattr(uni, "_http_post", lambda path, payload: [None])
+    monkeypatch.setattr(ex, "_cached_universe", lambda dex=None, force_refresh=False: [{"name": "BTC"}])
+    assert ex.coin_listing("xyz:CL") == "not_listed"
+    assert ex.coin_listing("BTC") == "listed"
+    monkeypatch.setattr(uni, "_http_post", lambda path, payload: None)
+    assert ex.coin_listing("xyz:CL") == "unknown"
+
+
 def test_universe_cache_dir_scoped_by_network(tmp_path):
     assert uni._cache_dir_for(tmp_path, "mainnet") == tmp_path
     assert uni._cache_dir_for(tmp_path, "testnet") == tmp_path / "testnet"
@@ -253,7 +279,7 @@ def listing(monkeypatch):
         return state["main"] if dex is None else state.get(dex, [])
 
     monkeypatch.setattr(ex, "_cached_universe", _uni)
-    monkeypatch.setattr(uni, "registered_hip3_dexes", lambda force_refresh=False: state["registered"])
+    monkeypatch.setattr(uni, "hip3_dex_registry", lambda force_refresh=False: state["registered"])
     return state
 
 
@@ -265,8 +291,10 @@ def test_coin_listing_states(listing):
     assert ex.coin_listing("xyz:BRENTOIL") == "delisted"
     assert ex.coin_listing("xyz:GOLD") == "not_listed"
     assert ex.coin_listing("zzz:ANY") == "not_listed", "dex not registered on this network"
-    listing["registered"] = []
+    listing["registered"] = None
     assert ex.coin_listing("xyz:CL") == "unknown", "dex list unreadable"
+    listing["registered"] = []
+    assert ex.coin_listing("xyz:CL") == "not_listed", "read fine, no HIP-3 dex on this network"
     listing["registered"] = ["xyz"]
     listing["fail"] = True
     assert ex.coin_listing("BTC") == "unknown"

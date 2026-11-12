@@ -1503,9 +1503,15 @@ _ACCOUNT_READ_WHAT_IF: Dict[str, Tuple[str, ...]] = {
 }
 
 
-def _check_tool_classes() -> None:
+def _check_tool_classes() -> List[str]:
     """Every tool in exactly one class, every alias onto a listed tool. Runs at
-    import: a tool added without a class would reach a public user ungated."""
+    import: a tool added without a class would reach a public user ungated.
+
+    Raises only on a public install. The operator's install (.mcp.json) logs
+    the problems to stderr and keeps starting: the classes gate public users
+    only, so a missed class must never cost the operator his close_position
+    and bracket_sweep while a position is open. The gate tests still fail on
+    any problem (tests/test_mcp_public_mode.py)."""
     names = [t["name"] for t in TOOLS]
     problems = []
     for name in names:
@@ -1522,7 +1528,12 @@ def _check_tool_classes() -> None:
         if alias in listed:
             problems.append(f"alias {alias} is also a TOOLS name")
     if problems:
-        raise RuntimeError("pathiel-mcp-server tool classes are wrong: " + "; ".join(problems))
+        message = "pathiel-mcp-server tool classes are wrong: " + "; ".join(problems)
+        if runtime.is_public():
+            raise RuntimeError(message)
+        print(f"[pathiel-mcp] WARNING (public installs would refuse to start): {message}",
+              file=sys.stderr)
+    return problems
 
 
 _check_tool_classes()
@@ -1745,12 +1756,14 @@ _FEE_DETAIL = {
     "resent_without_builder": ("Hyperliquid placed nothing for the order with the builder fee, "
                                "so it was sent again without it"),
     "not_an_order": "this action places no order, so it carries no builder fee",
+    "venue_refused": ("Hyperliquid refused the order for a reason of its own (not the builder "
+                      "fee) and placed nothing, so no fee was charged"),
 }
 
 
 def builder_counters() -> Dict[str, int]:
     """pathiel.client.builder's order counters (with_builder, without_builder,
-    retried), read from the cache view. {} when unreadable. No I/O."""
+    retried, refused), read from the cache view. {} when unreadable. No I/O."""
     try:
         from pathiel.client import builder
         return dict(builder.builder_status(_trading_account() or None, refresh=False)
@@ -1779,7 +1792,7 @@ def _builder_fee_block(canon: str, obj: Dict[str, Any],
     if not notes and counters_before is not None:
         after = builder_counters()
         delta = {k: int(after.get(k, 0)) - int(counters_before.get(k, 0))
-                 for k in ("with_builder", "without_builder", "retried")}
+                 for k in ("with_builder", "without_builder", "retried", "refused")}
     if notes:
         charged = any(bool(n.get("attached")) for n in notes)
         codes = [str(n.get("reason_code") or "none") for n in notes]
@@ -1794,6 +1807,8 @@ def _builder_fee_block(canon: str, obj: Dict[str, Any],
             reason = "approved"
         elif delta["retried"] > 0:
             reason = "resent_without_builder"
+        elif delta["refused"] > 0 and delta["without_builder"] == 0:
+            reason = "venue_refused"
         else:
             reason = str(builder.last_decision(_trading_account()).get("reason_code") or "none")
         block["charged"] = charged
@@ -1813,12 +1828,25 @@ def _builder_fee_block(canon: str, obj: Dict[str, Any],
     return block
 
 
+# Cache views after which `state` reads the approval once more itself, so a
+# user who just signed approve-sign sees it at once.
+_STATE_REREAD = frozenset({"cache_cold", "not_approved", "approval_read_failed"})
+
+
 def _install_block() -> Dict[str, Any]:
-    """Who is running, on which network, whether trading is on, the fee."""
+    """Who is running, on which network, whether trading is on, the fee.
+
+    The fee comes from the cache view. When that view shows the fee enabled
+    but no approval yet, state reads the approval once (builder_status
+    refresh=True: one bounded read, at most builder.HARD_DEADLINE_S). Only
+    state does this; order paths never read."""
     from pathiel.client import builder
     from pathiel.client.exchange import trading_block_reason
     reason = trading_block_reason()
-    status = builder.builder_status(_trading_account() or None, refresh=False)
+    account = _trading_account() or None
+    status = builder.builder_status(account, refresh=False)
+    if account and status.get("enabled") and status.get("reason_code") in _STATE_REREAD:
+        status = builder.builder_status(account, refresh=True)
     return {
         "kind": runtime.install_kind(),
         "network": runtime.network(),
@@ -1900,6 +1928,18 @@ def _public_decorate(name: str, args: Dict[str, Any], text: str,
         note = _desk_network_note(str(args.get("desk") or "").strip())
         if note:
             obj["network_note"] = note
+    elif canon in MARKET_READ_TOOLS and obj.get("error"):
+        # A HIP-3 coin whose dex or market this network does not list: say
+        # so instead of the raw venue error (a 422 on allMids, "unknown coin").
+        coin = _norm_coin(str(args.get("coin") or ""))
+        if ":" in coin:
+            from pathiel.client.exchange import coin_listing
+            status = coin_listing(coin)
+            if status in ("delisted", "not_listed"):
+                note = _network_note(coin, status)
+                obj["venue_error"] = obj["error"]
+                obj["error"] = note
+                obj["network_note"] = note
     if canon == "risk_limits":
         notes = obj.get("notes")
         if isinstance(notes, list):

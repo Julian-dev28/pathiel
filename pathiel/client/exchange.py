@@ -516,15 +516,16 @@ def trading_block_reason() -> Optional[str]:
 
 def coin_listing(coin: str) -> str:
     """'listed', 'delisted' (on this network's meta with isDelisted), 'not_listed'
-    (no such coin, or its HIP-3 dex is not registered here) or 'unknown' (the
-    read failed). Testnet has a different universe: xyz:BRENTOIL is delisted
-    there. Never raises."""
+    (no such coin, or its HIP-3 dex is not registered here, including a
+    network that lists no HIP-3 dex at all) or 'unknown' (the read failed).
+    Testnet has a different universe: xyz:BRENTOIL is delisted there. Never
+    raises."""
     try:
         if ":" in coin:
             dex = coin.split(":", 1)[0]
-            from pathiel.client.universe import registered_hip3_dexes
-            registered = registered_hip3_dexes()
-            if not registered:
+            from pathiel.client.universe import hip3_dex_registry
+            registered = hip3_dex_registry()
+            if registered is None:
                 return "unknown"
             if dex not in registered:
                 return "not_listed"
@@ -580,6 +581,31 @@ def _nothing_placed(result: Any) -> bool:
             and all(isinstance(st, dict) and "error" in st for st in statuses))
 
 
+def _error_texts(result: Any) -> List[str]:
+    """The venue's error strings in a nothing-placed reply: the action-level
+    response, or every leg's error. [] when there is none to read."""
+    if not isinstance(result, dict):
+        return []
+    if result.get("status") != "ok":
+        resp = result.get("response")
+        return [str(resp)] if resp not in (None, "") else []
+    statuses = _statuses(result)
+    if not isinstance(statuses, list):
+        return []
+    return [str(st.get("error")) for st in statuses if isinstance(st, dict) and "error" in st]
+
+
+def _worth_resending(first: Any) -> bool:
+    """A nothing-placed builder order is resent unless every error in it is a
+    known Hyperliquid refusal unrelated to the builder (an IOC that did not
+    match, margin, price, size, ...). Builder wording or anything unknown is
+    resent: the venue's builder text is not pinned, and a stop must never be
+    lost to builder state."""
+    from pathiel.client import builder as _builder
+    texts = _error_texts(first)
+    return not texts or not all(_builder.is_known_venue_error(t) for t in texts)
+
+
 def _builder_note(decision: Optional[Dict[str, Any]], attached: bool,
                   retried: bool = False, reason_code: Optional[str] = None) -> Dict[str, Any]:
     fee = _runtime.builder_fee_tenths_bp()
@@ -601,11 +627,16 @@ def _send_order(send: Callable[[Optional[Dict[str, Any]]], Any]) -> Tuple[Any, O
 
     Builder attached: an exception propagates and is never retried (a timeout
     is ambiguous: the order may have landed). If the venue placed nothing,
-    send once more without the builder, whatever the wording: the builder is
-    on the signed action, so nothing rested or filled and a resend cannot
-    double place. The cooldown (builder.note_rejection) starts only when the
-    resend placed something or the first reply names the builder. At most two
-    SDK calls."""
+    send once more without the builder, unless every error is a known
+    Hyperliquid refusal that has nothing to do with the builder (an IOC that
+    did not match, margin, price, size; builder.KNOWN_VENUE_ERRORS). That
+    reply is returned as is after one SDK call, with no cooldown: a second
+    IOC would be a market order nobody asked for, and the fee was not the
+    cause. Builder wording or an unknown error is resent: the builder is on
+    the signed action, so nothing rested or filled and a resend cannot double
+    place. The cooldown (builder.note_rejection) starts only when the resend
+    placed something or the first reply names the builder. At most two SDK
+    calls."""
     public = _runtime.is_public()
     if not public:
         return send(None), None
@@ -629,6 +660,11 @@ def _send_order(send: Callable[[Optional[Dict[str, Any]]], Any]) -> Tuple[Any, O
     if not _nothing_placed(first):
         _builder.count("with_builder")
         return first, _builder_note(decision, attached=True)
+    if not _worth_resending(first):
+        # The venue's own refusal (no match, margin, price...): nothing was
+        # placed, so nothing is charged; no resend, no cooldown.
+        _builder.count("refused")
+        return first, _builder_note(decision, attached=False, reason_code="venue_refused")
     second = send(None)
     _builder.count("retried")
     _builder.count("without_builder")

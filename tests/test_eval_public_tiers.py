@@ -140,13 +140,19 @@ class FakeVenue:
         self.positions: Dict[str, List[Dict[str, Any]]] = {}
         self.open_orders: Dict[str, List[Dict[str, Any]]] = {}
         self.max_builder_fee = 0
+        # dexes this venue serves; perp_dexs, when set, replaces the recorded
+        # perpDexs reply (scenario D: a network with no HIP-3 dex)
+        self.dexes = ("", "xyz")
+        self.perp_dexs: Optional[List[Any]] = None
 
     def answer(self, payload: Dict[str, Any]) -> Any:
         typ = payload.get("type")
         dex = payload.get("dex") or ""
         self.types.append(typ)
+        if typ == "perpDexs" and self.perp_dexs is not None:
+            return copy.deepcopy(self.perp_dexs)
         if typ in ("meta", "metaAndAssetCtxs", "allMids"):
-            if dex in ("", "xyz"):
+            if dex in self.dexes:
                 return fixture(f"{typ}_{dex or 'main'}")
             return {"universe": []} if typ == "meta" else ([{"universe": []}, []]
                                                             if typ == "metaAndAssetCtxs" else {})
@@ -544,6 +550,44 @@ def scenario_b(h: Harness) -> List[Dict[str, Any]]:
     return rows
 
 
+def scenario_d(h: Harness, monkeypatch) -> List[Dict[str, Any]]:
+    """Final review, 2026-11-12: a testnet with no HIP-3 dex, an approval
+    signed while the server runs, and the launcher's default network."""
+    from pathiel.client import builder
+    rows: List[Dict[str, Any]] = []
+    h.venue.perp_dexs = [None]
+    h.venue.dexes = ("",)
+    _err, body = h.call("get_price", {"coin": "xyz:CL"})
+    named = isinstance(body, dict) and "not tradable on testnet (not_listed)" in str(body.get("error"))
+    rows.append({"check": "D get_price on a dex this network lacks names the network",
+                 "got": named, "want": True, "ok": named})
+    _err, body = h.call("place_bracket", {"coin": "xyz:CL", "stop_px": 58, "tp_px": 66,
+                                          "dry_run": True})
+    refused = isinstance(body, dict) and "not_listed" in str(body.get("network_note"))
+    rows.append({"check": "D place_bracket on it is refused with the network note",
+                 "got": refused, "want": True, "ok": refused})
+    h.venue.max_builder_fee = 0
+    h.warm_builder()
+    before = builder.builder_status(ACCT)["reason_code"]
+    h.jobs.clear()
+    h.venue.max_builder_fee = 10           # the user ran approve-sign
+    _err, body = h.call("state")
+    fee = ((body or {}).get("install") or {}).get("builder_fee") or {}
+    seen = (before, fee.get("attaches"))
+    rows.append({"check": "D state sees a new approval at once", "got": seen,
+                 "want": ("not_approved", True), "ok": seen == ("not_approved", True)})
+    monkeypatch.setenv("PATHIEL_NETWORK_SOURCE", "default")
+    _err, body = h.call("state")
+    explicit = ((body or {}).get("install") or {}).get("network_explicit")
+    rows.append({"check": "D state: launcher default network is not a choice", "got": explicit,
+                 "want": False, "ok": explicit is False})
+    rows.append({"check": "D unknown venue requests", "got": len(h.venue.unknown), "want": 0,
+                 "ok": not h.venue.unknown})
+    rows.append({"check": "D mainnet requests", "got": h.venue.mainnet_requests(), "want": 0,
+                 "ok": h.venue.mainnet_requests() == 0})
+    return rows
+
+
 def scenario_c(h: Harness) -> List[Dict[str, Any]]:
     rows: List[Dict[str, Any]] = []
     init = h.rpc("initialize", {})["result"]["instructions"]
@@ -593,6 +637,11 @@ def test_eval_public_tiers(monkeypatch, tmp_path, builder_jobs, scorecard):
         h = install(m, tmp_path / "b", s, builder_jobs, key=True, builder_address=BUILDER,
                     max_builder_fee=10)
         rows += scenario_b(h)
+    builder_jobs.clear()
+    builder.reset()
+    with monkeypatch.context() as m:
+        h = install(m, tmp_path / "d", s, builder_jobs, key=True, builder_address=BUILDER)
+        rows += scenario_d(h, m)
     builder_jobs.clear()
     builder.reset()
     with monkeypatch.context() as m:

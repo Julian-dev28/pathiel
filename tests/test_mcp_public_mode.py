@@ -68,6 +68,7 @@ def test_every_alias_target_is_classified():
 
 
 def test_an_unclassified_tool_fails_the_import_check(monkeypatch):
+    monkeypatch.setenv("PATHIEL_INSTALL", "public")
     monkeypatch.setattr(M, "TOOLS", M.TOOLS + [{"name": "brand_new_tool", "description": "x",
                                                  "inputSchema": {"type": "object"}}])
     with pytest.raises(RuntimeError, match="brand_new_tool"):
@@ -76,6 +77,25 @@ def test_an_unclassified_tool_fails_the_import_check(monkeypatch):
     monkeypatch.setattr(M, "ALIASES", {**M.ALIASES, "old_name": "no_such_tool"})
     with pytest.raises(RuntimeError, match="old_name"):
         M._check_tool_classes()
+
+
+def test_operator_install_never_fails_startup_on_a_class_problem(monkeypatch, capsys):
+    """Final review: the class check is a public-only rule. On the operator's
+    .mcp.json launch (no PATHIEL_INSTALL) an unclassified tool or a stale alias
+    is logged to stderr and the server keeps starting with every tool."""
+    monkeypatch.delenv("PATHIEL_INSTALL", raising=False)
+    monkeypatch.setattr(M, "TOOLS", M.TOOLS + [{"name": "brand_new_tool", "description": "x",
+                                                 "inputSchema": {"type": "object"}}])
+    monkeypatch.setattr(M, "ALIASES", {**M.ALIASES, "old_name": "no_such_tool"})
+    problems = M._check_tool_classes()
+    assert any("brand_new_tool" in p for p in problems)
+    assert any("old_name" in p for p in problems)
+    err = capsys.readouterr()
+    assert "brand_new_tool" in err.err and err.out == "", "stdout is the MCP stream"
+
+
+def test_the_shipped_classes_have_no_problems():
+    assert M._check_tool_classes() == []
 
 
 # ── tools/list and instructions ───────────────────────────────────────────────
@@ -398,6 +418,70 @@ def test_state_install_block_without_a_key(no_key, monkeypatch):
     assert body["install"]["trading"] == "read_only"
     assert body["install"]["network"] == "testnet" and body["install"]["network_explicit"] is False
     assert body["install"]["builder_fee"]["reason_code"] == "no_builder_address"
+
+
+def test_state_reads_a_new_approval_at_once(keyed):
+    """Final review: docs/BUILDER_FEE.md says state sees a new approval at
+    once. The cache said not_approved 20 s ago; the user signs; state must
+    re-read and say the fee attaches now, not wait for the 60 s refresh."""
+    keyed.venue.max_builder_fee = 0
+    keyed.warm_builder()
+    from pathiel.client import builder
+    assert builder.builder_status(E.ACCT)["reason_code"] == "not_approved"
+    keyed.jobs.clear()
+    keyed.venue.max_builder_fee = 10        # the user ran approve-sign
+    _err, body = keyed.call("state")
+    fee = body["install"]["builder_fee"]
+    assert fee["attaches"] is True and fee["reason_code"] == "approved", fee
+    assert fee["approved_tenths_bp"] == 10
+
+
+def test_state_does_not_reread_an_approved_cache(keyed, monkeypatch):
+    keyed.warm_builder()
+    from pathiel.client import builder
+    calls = []
+    real = builder.builder_status
+    monkeypatch.setattr(builder, "builder_status",
+                        lambda acct, refresh=False: calls.append(refresh) or real(acct, refresh=refresh))
+    _err, body = keyed.call("state")
+    assert body["install"]["builder_fee"]["attaches"] is True
+    assert True not in calls, "an approved cache needs no read"
+
+
+def test_state_network_explicit_follows_the_launcher_source(keyed, monkeypatch):
+    """Final review: the launcher always exports PATHIEL_NETWORK; with
+    PATHIEL_NETWORK_SOURCE=default nobody chose testnet."""
+    monkeypatch.setenv("PATHIEL_NETWORK_SOURCE", "default")
+    _err, body = keyed.call("state")
+    assert body["install"]["network"] == "testnet"
+    assert body["install"]["network_explicit"] is False
+    monkeypatch.setenv("PATHIEL_NETWORK_SOURCE", "env file")
+    _err, body = keyed.call("state")
+    assert body["install"]["network_explicit"] is True
+
+
+@pytest.mark.parametrize("tool", ["get_price", "get_asset_context"])
+def test_market_read_error_on_an_unlisted_hip3_coin_names_the_network(tool, monkeypatch):
+    """Final review: on a network without the coin's HIP-3 dex, get_price
+    answered 'HTTP POST /info allMids failed: 422 ...'. Now the error says the
+    market is not listed on this network; the venue text is kept aside."""
+    from pathiel.client import exchange as ex
+    monkeypatch.setenv("PATHIEL_INSTALL", "public")
+    monkeypatch.setenv("PATHIEL_NETWORK", "testnet")
+    status = {"v": "not_listed"}
+    monkeypatch.setattr(ex, "coin_listing", lambda coin: status["v"])
+    raw = json.dumps({"coin": "xyz:BRENTOIL", "error": "HTTP POST /info allMids failed: 422"})
+    body = json.loads(M._public_decorate(tool, {"coin": "xyz:BRENTOIL"}, raw))
+    assert body["error"].startswith("xyz:BRENTOIL is not tradable on testnet (not_listed)")
+    assert body["network_note"] == body["error"]
+    assert body["venue_error"] == "HTTP POST /info allMids failed: 422"
+    status["v"] = "unknown"          # a failed read: the venue error stays as it was
+    assert json.loads(M._public_decorate(tool, {"coin": "xyz:BRENTOIL"}, raw)) == json.loads(raw)
+    status["v"] = "not_listed"       # a main-dex coin or a good answer is never touched
+    raw_btc = json.dumps({"coin": "BTC", "error": "x"})
+    assert json.loads(M._public_decorate(tool, {"coin": "BTC"}, raw_btc)) == json.loads(raw_btc)
+    ok = json.dumps({"coin": "xyz:CL", "price": 60.1})
+    assert json.loads(M._public_decorate(tool, {"coin": "xyz:CL"}, ok)) == json.loads(ok)
 
 
 def test_risk_limits_replaces_the_daily_pause_note(no_key):

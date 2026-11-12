@@ -122,7 +122,7 @@ def test_no_builder_kwarg_no_job_one_sdk_call_on_any_order_path(path, operator_w
     assert "builder" not in out, "operator result shape unchanged"
     assert builder_jobs == [] and reads == [], "no identity read, no approval read, no job"
     assert builder.builder_status(ACCT)["counters"] == {"with_builder": 0, "without_builder": 0,
-                                                        "retried": 0}
+                                                        "retried": 0, "refused": 0}
 
 
 def test_operator_sdk_call_arguments_are_the_old_ones(operator_with_a_warm_approval):

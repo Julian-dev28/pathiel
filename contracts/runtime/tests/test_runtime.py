@@ -48,6 +48,21 @@ def test_network_is_explicit(net, explicit):
     assert rt.network_is_explicit({rt.ENV_INSTALL: "public", **env}) is explicit
 
 
+@pytest.mark.parametrize("source,explicit", [
+    ("default", False), (" Default ", False), ("env file", True), ("environment", True),
+    ("", True), (None, True),
+])
+def test_launcher_default_is_not_a_choice(source, explicit):
+    """Final review: the launcher always exports PATHIEL_NETWORK, so its
+    PATHIEL_NETWORK_SOURCE decides whether the user chose the network."""
+    env = {rt.ENV_INSTALL: "public", rt.ENV_NETWORK: "testnet"}
+    if source is not None:
+        env[rt.ENV_NETWORK_SOURCE] = source
+    assert rt.network_is_explicit(env) is explicit
+    assert rt.describe(env)["network_explicit"] is explicit
+    assert rt.network(env) == "testnet"
+
+
 def test_api_and_info_url():
     assert rt.MAINNET_API_URL == "https://api.hyperliquid.xyz"
     assert rt.TESTNET_API_URL == "https://api.hyperliquid-testnet.xyz"

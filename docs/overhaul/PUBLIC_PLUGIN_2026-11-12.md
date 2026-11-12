@@ -49,7 +49,7 @@ Testnet (read-only info calls, 2026-11-12):
 | # | Outcome | Proven by |
 |---|---|---|
 | 1 | Public, approved, warm cache: 4/4 order paths carry `{b, f: 10}` | `tests/test_eval_builder_coverage.py` |
-| 2 | 12 builder states x 4 paths: 48/48 orders sent, 0 reads on the calling thread, at most 2 SDK calls | same scorecard |
+| 2 | 13 builder states x 4 paths: 52/52 orders sent, 0 reads on the calling thread, at most 2 SDK calls, a known venue refusal sent once | same scorecard |
 | 3 | A stop is never lost to builder state, whatever the venue's wording | `tests/test_exchange_builder_paths.py` |
 | 4 | Operator: 0 builder fields, 0 jobs, 1 SDK call per order, mainnet, 20x, instructions, tools/list and thesis prompt hashes equal to base | `tests/test_operator_path_unchanged.py`, `tests/test_mcp_operator_unchanged.py`, `services/thesis/tests/test_prompt.py` |
 | 5 | Fresh public install: leverage at most 3, risk at most 1% (2% only on a minimum-order bump), 1 position | `tests/test_eval_public_install.py` |
@@ -104,7 +104,8 @@ The read is one plain `requests.post` to `/info` with timeout (1 s connect, 2 s 
 
 Resend rule, only when a builder was attached:
 
-- The reply is an action-level error, or status "ok" with every leg an error: nothing was placed, so send the same order once more without the builder. No text match is needed.
+- The reply is an action-level error, or status "ok" with every leg an error: nothing was placed, so send the same order once more without the builder. No builder wording is needed.
+- Except: every error is one of Hyperliquid's own refusals that has nothing to do with the fee (`builder.KNOWN_VENUE_ERRORS`: an IOC that did not match, margin, price, size, minimum value, reduce only, post only, rate limit, open interest cap). That reply is returned after one send, with no cooldown and `reason_code` `venue_refused`. A second IOC there would be a market order nobody asked for. Any unknown wording still gets the resend, so a stop is never lost to a builder refusal worded in a new way.
 - Start the 10 minute cooldown only if the resend then placed something, or the first error names the builder.
 - Any leg resting or filled, an "ok" reply with no statuses, or any raised exception: never resend.
 - With no builder attached, which is always the case for the operator, the SDK is called exactly once and the reply is returned unchanged.
@@ -136,13 +137,25 @@ Surfaces: the initialize instructions, the `install` block in `state`, a `builde
 | Subprocess tests can load the live env file | minor | One `public_env` fixture: existing env file, empty key values, dead proxies |
 | Master key read from the env file | minor | Prompt only on public installs; `public_status.py` fails when the variable is set |
 
+## What the final review changed
+
+| Finding | Resolution | Proof |
+|---|---|---|
+| The tool class check could stop the operator's server at import | Raises only on a public install; the operator's launch logs the problem to stderr and starts | `test_operator_install_never_fails_startup_on_a_class_problem` |
+| Any nothing-placed builder order was resent: a second IOC after a no-match, the fee blamed, a 10 minute cooldown | Known venue refusals (`builder.KNOWN_VENUE_ERRORS`) get one send, no cooldown, `reason_code` `venue_refused`; builder or unknown wording keeps the resend | `test_ioc_no_match_is_one_send_and_no_cooldown`, `venue_refuses_known` rows in the builder scorecard |
+| `state` did not see a new approval at once | `state` reads the approval again (at most 4 s) when the cache has none yet; order paths never read | `test_state_reads_a_new_approval_at_once`, scenario D |
+| The approval post went through the retrying session; a replayed nonce read as a failure | One plain `requests.post`; after an error the approval is read back before a failure is reported | `test_error_reply_with_the_approval_stored_reports_success` |
+| The thesis offered 5x to 20x rungs over the 3x public cap | On a public install `desks.get_spec` cuts the ladder to the profile cap (2x and 3x at the default); the prompt, validator, analytics and brief follow | `services/strategies/tests/test_public_ladder.py`, `fresh: desk ladders` rows |
+| An empty perpDexs read and a failed one looked the same | `universe.hip3_dex_registry()` returns None on failure; `coin_listing` says `not_listed` on a network with no HIP-3 dex; market read errors on such a coin carry the network note | `test_hip3_dex_registry_tells_empty_from_failed`, scenario D |
+| `state` said `network_explicit: true` on the launcher's default | `runtime.network_is_explicit` reads `PATHIEL_NETWORK_SOURCE` | `test_launcher_default_is_not_a_choice` |
+
 ## Decisions
 
 1. `PATHIEL_INSTALL`, set only by the launcher, decides public or operator.
 2. One network per process, resolved once by the launcher, state split by network.
 3. Fee 0.01%, approval for exactly that.
 4. Order path is cache only for builder state. Zero reads on the calling thread.
-5. Resend once without the builder on any nothing-placed reply. Never on exceptions.
+5. Resend once without the builder on a nothing-placed reply, unless every error is a known venue refusal unrelated to the fee. Never on exceptions.
 6. No builder attached means exactly one SDK call.
 7. Public gates sit in `_call_tool`, on canonical names. `exchange.py` keeps its error strings.
 8. No new MCP tool. 60 stays. Public installs get reworded descriptions through `server_tools()`.
@@ -241,7 +254,7 @@ Fixtures in `tests/conftest.py`:
 |---|---|---|
 | I1 operator unchanged | every new behavior is behind `is_public()` or a testnet check; SDK calls get no new kwarg and are made once; outputs get no new key | instructions sha256 `8d82a135a7ac6113ae0a44c444d19dd1873f0a830cf0763f971b7eccffda5c1c`, tools/list hash pinned at base, `.mcp.json` sha256 `8edb54198025f4c1a99bbbf6907e5ef0d1e19d225e7fccb6eabd1f3b282c8ffc`, thesis prompt sha256 `fc6794201c10e43d5214bd268fa4d4edd950f0c25e095c897e6a5584b72eca8c`, fake SDKs without a builder parameter |
 | I1 no builder to self | attach rule step 4 | `test_account_equal_to_builder_never_attaches` |
-| I2 never block | cache-only decision; one resend on a nothing-placed reply; exceptions untouched | 48/48 scorecard, `inline_reads 0`, `test_stop_after_market_entry_survives_a_builder_rejection` |
+| I2 never block | cache-only decision; one resend on a nothing-placed reply unless it is a known venue refusal; exceptions untouched | 52/52 scorecard, `inline_reads 0`, `test_stop_after_market_entry_survives_a_builder_rejection` |
 | I3 tracked config untouched | no unit owns `.agent-config.json`; seed-public refuses the repo path | `git diff --stat 2816df7 HEAD -- .agent-config.json` is empty |
 | I4 agent safety | tests run under pytest with temp HOME and state, keys pinned empty, sockets refused in process, dead proxies in subprocesses; signing only with an injected fake post; the signing line from `--commands` is compared as text, never run | conftest guard, `tests/test_eval_public_kit.py`, eval harness URL log |
 | I5 tests and evals | each unit names both | seven scorecards |
@@ -264,8 +277,8 @@ The env file must exist. A missing one makes the loader fall back to the checkou
 ## Where it breaks
 
 - The first order after a cold start carries no fee if the background read has not landed.
-- The resend repeats an order the venue refused for its own reasons: one extra request, same refusal. An IOC that did not match can fill on the resend.
-- A transient venue error followed by a clean resend starts a 10 minute cooldown that was not needed. Fees are lost for that window; orders are not.
+- A refusal in wording that is not in `KNOWN_VENUE_ERRORS` is resent: one extra request, usually the same refusal. An IOC refused that way can fill on the resend.
+- A transient venue error in unknown wording followed by a clean resend starts a 10 minute cooldown that was not needed. Fees are lost for that window; orders are not.
 - The network is fixed at process start. Changing the env file needs an MCP reconnect. A drift guard refuses to sign for the wrong chain.
 - The oil desk cannot be practised on testnet because Brent is delisted there. Tools say so. `xyz:CL` and the main-dex perps work.
 - A stranger who ignores the maintainer warning and runs the server from a clone with his own key trades mainnet on the tracked 20x config. No code check can tell his clone from the operator's checkout without risking the operator's live stack.

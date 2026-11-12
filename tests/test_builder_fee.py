@@ -388,14 +388,14 @@ def test_status_shape_and_counters(public, builder_jobs, fetch, clock):
     assert st["enabled"] is True and st["address"] == ADDR
     assert st["fee_tenths_bp"] == 10 and st["fee_rate"] == "0.01%"
     assert st["network"] == "testnet" and st["reason_code"] == "cache_cold"
-    assert st["counters"] == {"with_builder": 0, "without_builder": 0, "retried": 0}
+    assert st["counters"] == {"with_builder": 0, "without_builder": 0, "retried": 0, "refused": 0}
     assert len(builder_jobs) == 1, "a cache view warms the cache"
     _run(builder_jobs)
     builder.count("with_builder")
     builder.count("retried")
     st = builder.builder_status(ACCT)
     assert st["attaches"] is True and st["approved_tenths_bp"] == 10
-    assert st["counters"] == {"with_builder": 1, "without_builder": 0, "retried": 1}
+    assert st["counters"] == {"with_builder": 1, "without_builder": 0, "retried": 1, "refused": 0}
     assert st["reason"] == builder.REASONS["approved"]
 
 

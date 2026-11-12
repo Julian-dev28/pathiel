@@ -90,9 +90,11 @@ def part_fresh_install(make, tmp: Path) -> List[Dict[str, Any]]:
     env = _fresh(make, HOME=str(home), CLAUDE_PLUGIN_DATA=str(data))
     out = tmp / "fresh.json"
     code = ("import json, sys; from pathiel.agents.config_store import CONFIG_PATH, read_risk_profile; "
-            "import contracts.runtime as r; "
+            "import contracts.runtime as r; from services.strategies import desks; "
             "json.dump({'config_path': CONFIG_PATH, 'network': r.network(), 'install': r.install_kind(), "
-            "'profile': read_risk_profile().model_dump()}, open(sys.argv[1], 'w'))")
+            "'profile': read_risk_profile().model_dump(), "
+            "'ladders': {s.id: list(s.leverage_ladder) for s in desks.list_specs()}}, "
+            "open(sys.argv[1], 'w'))")
     script = (f"set -euo pipefail\n. {shlex.quote(str(PLUGIN_ENV))}\n"
               "pathiel_paths\npathiel_resolve_network\npathiel_state_paths\npathiel_seed_config\n"
               f"cd {shlex.quote(str(ROOT))}\n"
@@ -114,6 +116,11 @@ def part_fresh_install(make, tmp: Path) -> List[Dict[str, Any]]:
              json.loads(config.read_text()) == json.loads(TEMPLATE.read_text()), True),
         _row("fresh: config mode 0600", oct(stat.S_IMODE(config.stat().st_mode)), "0o600"),
         _row("fresh: profile", got["profile"] == PUBLIC_DEFAULT_PROFILE.model_dump(), True),
+        # final review: the thesis writer and the brief offer no rung the profile refuses
+        _row("fresh: desk ladders within the profile cap",
+             sorted(d for d, lad in got["ladders"].items() if max(lad) > PUBLIC_DEFAULT_PROFILE.max_leverage),
+             []),
+        _row("fresh: oil ladder", got["ladders"].get("oil"), [2.0, 3.0]),
     ]
 
 
@@ -258,5 +265,5 @@ def run(make: Callable[..., Dict[str, str]], tmp: Path) -> List[Dict[str, Any]]:
 
 def test_public_install_eval(public_env, tmp_path, scorecard):
     card = scorecard(NAME, run(public_env, tmp_path))
-    assert card["total"] == 9 + 5 + 5 + 8 + 1
+    assert card["total"] == 11 + 5 + 5 + 8 + 1
     assert card["passed"] == card["total"], [r for r in card["rows"] if not r["ok"]]

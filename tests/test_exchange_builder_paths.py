@@ -9,7 +9,9 @@ What is pinned here:
   * public + approved + warm cache: every path signs a builder {'b', 'f'};
   * every other builder state: the order goes out without one, at once;
   * a builder order the venue placed nothing for is resent once without it,
-    whatever the wording; exceptions are never resent;
+    unless every error is a known Hyperliquid refusal unrelated to the fee
+    (an IOC no-match, margin, price...): that one is answered after one send,
+    with no cooldown; exceptions are never resent;
   * a stop after a filled market entry is never lost to builder state.
 """
 from __future__ import annotations
@@ -35,6 +37,9 @@ BULK_OK = {"status": "ok", "response": {"type": "order", "data": {"statuses": [
     {"resting": {"oid": 13}}, "waitingForFill", "waitingForFill"]}}}
 BUILDER_ERR = {"status": "err", "response": "Builder fee has not been approved."}
 MARGIN_ERR = {"status": "err", "response": "Insufficient margin to place order."}
+UNKNOWN_ERR = {"status": "err", "response": "Some wording the venue never used before."}
+NO_MATCH = {"status": "ok", "response": {"type": "order", "data": {"statuses": [
+    {"error": "Order could not immediately match against any resting orders. asset=0"}]}}}
 
 
 def _ok_reply(kind):
@@ -239,16 +244,49 @@ def test_venue_builder_rejection_resends_once_without(path, sdk, approved, build
 
 
 @pytest.mark.parametrize("path", list(PATHS))
-def test_unrelated_wording_error_with_builder_is_resent_without(path, sdk, approved):
-    sdk.reply = _reject_with_builder(MARGIN_ERR)
+def test_unknown_unrelated_wording_error_with_builder_is_resent_without(path, sdk, approved):
+    # the venue's builder text is not pinned: an unknown refusal gets the resend
+    sdk.reply = _reject_with_builder(UNKNOWN_ERR)
     out = PATHS[path]()
     assert out["ok"]
     assert [c["builder"] is not None for c in sdk.calls] == [True, False]
 
 
+@pytest.mark.parametrize("path", list(PATHS))
+def test_known_unrelated_wording_is_one_send_and_no_cooldown(path, sdk, approved, builder_jobs):
+    """Final review: a known venue refusal (margin here) is not the fee's
+    fault. One SDK call, the reply as is, no cooldown, approval kept."""
+    sdk.reply = _reject_with_builder(MARGIN_ERR)
+    out = PATHS[path]()
+    assert out["ok"] is False and "Insufficient margin" in out["error"]
+    assert len(sdk.calls) == 1 and sdk.calls[0]["builder"] is not None
+    assert out["builder"]["reason_code"] == "venue_refused"
+    assert out["builder"]["attached"] is False
+    assert out["builder"]["retried_without_builder"] is False
+    assert builder.builder_for_order(ACCT) == {"b": ADDR, "f": 10}, "no cooldown"
+    counters = builder.builder_status(ACCT)["counters"]
+    assert counters["refused"] == 1 and counters["retried"] == 0
+
+
+def test_ioc_no_match_is_one_send_and_no_cooldown(sdk, approved, builder_jobs):
+    """Final review regression: an IOC (close_position, the market entry) that
+    did not match with the builder was resent, could fill as a second market
+    order, and blamed the fee with a 600 s cooldown. Now: exactly one SDK
+    call, the no-match reply returned, the builder still attaches next time."""
+    sdk.reply = lambda kind, b: NO_MATCH if b is not None else FILLED
+    out = PATHS["ioc"]()
+    assert out["ok"] is False and "could not immediately match" in str(out)
+    assert [c["builder"] is not None for c in sdk.calls] == [True]
+    assert out["builder"]["reason_code"] == "venue_refused"
+    assert builder.builder_for_order(ACCT) == {"b": ADDR, "f": 10}
+    assert builder.last_decision(ACCT)["reason_code"] == "approved"
+    PATHS["ioc"]()
+    assert [c["builder"] is not None for c in sdk.calls] == [True, True]
+
+
 def test_cooldown_only_when_resend_places_or_text_names_builder(sdk, approved, builder_jobs):
     # both sends fail, no builder wording: a real refusal, not the builder; no cooldown
-    sdk.reply = lambda kind, b: MARGIN_ERR
+    sdk.reply = lambda kind, b: UNKNOWN_ERR
     out = PATHS["ioc"]()
     assert not out["ok"] and len(sdk.calls) == 2
     assert builder.builder_for_order(ACCT) is not None, "no cooldown"
@@ -262,7 +300,7 @@ def test_cooldown_only_when_resend_places_or_text_names_builder(sdk, approved, b
 
 
 def test_cooldown_starts_when_the_resend_places(sdk, approved):
-    sdk.reply = _reject_with_builder(MARGIN_ERR)
+    sdk.reply = _reject_with_builder(UNKNOWN_ERR)
     PATHS["limit"]()
     assert builder.builder_for_order(ACCT) is None
     assert builder.last_decision(ACCT)["reason_code"] == "rejected_cooldown"
@@ -277,12 +315,36 @@ def test_bulk_all_legs_error_resends(sdk, approved):
     assert out["builder"]["retried_without_builder"] is True
 
 
+def test_bulk_all_known_leg_errors_is_one_send(sdk, approved):
+    known = {"status": "ok", "response": {"type": "order", "data": {"statuses": [
+        {"error": "Order has invalid price."}, {"error": "Insufficient margin to place order."},
+        {"error": "Order must have minimum value of $10."}]}}}
+    sdk.reply = lambda kind, b: known if b is not None else BULK_OK
+    out = PATHS["bracket"]()
+    assert out["ok"] is False and len(sdk.calls) == 1
+
+
 def test_single_leg_error_with_builder_resends(sdk, approved):
     single_err = {"status": "ok", "response": {"type": "order", "data": {"statuses": [
-        {"error": "Order could not immediately match against any resting orders."}]}}}
+        {"error": "Builder fee exceeds the approved maximum."}]}}}
     sdk.reply = lambda kind, b: single_err if b is not None else FILLED
     out = PATHS["ioc"]()
     assert out["ok"] and [c["builder"] is not None for c in sdk.calls] == [True, False]
+
+
+def test_error_texts_and_known_venue_errors():
+    assert ex._error_texts(MARGIN_ERR) == ["Insufficient margin to place order."]
+    assert ex._error_texts(NO_MATCH)[0].startswith("Order could not immediately match")
+    assert ex._error_texts({}) == [] and ex._error_texts(None) == []
+    assert ex._worth_resending({}) is True, "nothing to read: resend"
+    assert ex._worth_resending(MARGIN_ERR) is False
+    assert ex._worth_resending(UNKNOWN_ERR) is True
+    assert ex._worth_resending(BUILDER_ERR) is True
+    mixed = {"status": "ok", "response": {"data": {"statuses": [
+        {"error": "Insufficient margin to place order."}, {"error": "new wording"}]}}}
+    assert ex._worth_resending(mixed) is True
+    # builder wording wins over a known substring
+    assert builder.is_known_venue_error("Insufficient margin for builder fee") is False
 
 
 @pytest.mark.parametrize("statuses", [
@@ -379,7 +441,7 @@ def test_stop_after_market_entry_survives_a_builder_rejection(market_bracket, sd
 
 def test_every_leg_lands_on_its_own_resend(market_bracket, sdk, approved, monkeypatch):
     monkeypatch.setattr(builder, "note_rejection", lambda account, text: None)   # no cooldown
-    sdk.reply = _reject_with_builder(MARGIN_ERR)
+    sdk.reply = _reject_with_builder(UNKNOWN_ERR)
     out = market_bracket()
     assert out["ok"] and "FILLED WITHOUT A STOP" not in str(out)
     kinds = [(c["kind"], c["builder"] is not None) for c in sdk.calls]
@@ -406,4 +468,8 @@ def test_error_bracket_reply_carries_the_note_on_public(sdk, approved):
     sdk.reply = lambda kind, b: MARGIN_ERR
     out = PATHS["bracket"]()
     assert out["ok"] is False and "Insufficient margin" in out["error"]
-    assert out["builder"]["retried_without_builder"] is True
+    assert out["builder"]["retried_without_builder"] is False
+    assert out["builder"]["reason_code"] == "venue_refused"
+    sdk.reply = lambda kind, b: UNKNOWN_ERR
+    out = PATHS["bracket"]()
+    assert out["ok"] is False and out["builder"]["retried_without_builder"] is True

@@ -75,7 +75,7 @@ _cache: Dict[_Key, Dict[str, Any]] = {}
 _in_flight: Set[_Key] = set()
 _cooldown_until: Dict[_Key, float] = {}
 _last: Dict[str, Dict[str, Any]] = {}       # account lowercase -> last decision
-_counters: Dict[str, int] = {"with_builder": 0, "without_builder": 0, "retried": 0}
+_counters: Dict[str, int] = {"with_builder": 0, "without_builder": 0, "retried": 0, "refused": 0}
 _tls = threading.local()
 
 _clock: Callable[[], float] = time.time     # tests replace it with a fake clock
@@ -350,6 +350,35 @@ def builder_status(account: Optional[str], *, refresh: bool = False) -> Dict[str
 
 def is_builder_rejection(text: Any) -> bool:
     return "builder" in str(text).lower()
+
+
+# Hyperliquid's own refusals that have nothing to do with the builder fee. A
+# builder order refused with one of these is answered as is: resending it
+# without the builder would only repeat the refusal, or, for an IOC that did
+# not match, fire a second market order the caller never asked for. Any other
+# wording (the venue's builder text could change) still gets the one resend,
+# so an order is never lost to builder state. Lowercase substrings.
+KNOWN_VENUE_ERRORS: tuple = (
+    "could not immediately match",
+    "insufficient margin",
+    "invalid price",
+    "invalid size",
+    "minimum value",
+    "reduce only order would increase position",
+    "post only order would have immediately matched",
+    "away from the reference price",
+    "too many cumulative requests",
+    "open interest",
+)
+
+
+def is_known_venue_error(text: Any) -> bool:
+    """True when `text` is one of Hyperliquid's own refusals and does not name
+    the builder."""
+    low = str(text).lower()
+    if "builder" in low:
+        return False
+    return any(k in low for k in KNOWN_VENUE_ERRORS)
 
 
 def note_rejection(account: str, text: str) -> None:

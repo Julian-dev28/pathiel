@@ -29,7 +29,9 @@ it resolves to operator, mainnet, and never attaches a builder.
 | `public` | `mainnet` | public | mainnet | mainnet URL |
 | `public` | `bogus` | public | testnet | testnet URL |
 
-`network_is_explicit()` is True only when `PATHIEL_NETWORK` holds a valid value.
+`network_is_explicit()` is True only when `PATHIEL_NETWORK` holds a valid value and
+`PATHIEL_NETWORK_SOURCE` is not `default`. The public launcher always exports
+`PATHIEL_NETWORK` and sets the source to `default` when nobody chose a network.
 
 ## Builder fee
 
@@ -51,6 +53,6 @@ Who uses it:
 
 * `pathiel/client/hl_client.py`: `HL_API = runtime.api_url()` at import.
 * `pathiel/client/builder.py`: whether and what builder to attach (cache only on the order path).
-* `pathiel/client/exchange.py`: attaches it, resends once without it when the venue placed nothing.
+* `pathiel/client/exchange.py`: attaches it, resends once without it when the venue placed nothing (not on a known venue refusal such as an IOC that did not match).
 
 `describe()` returns all of the above as one dict for status output.

@@ -114,9 +114,7 @@ def check_install(env: Mapping[str, str]) -> Check:
 def network_explicit(env: Mapping[str, str]) -> bool:
     """True when the user chose the network. The launcher always exports
     PATHIEL_NETWORK, so its PATHIEL_NETWORK_SOURCE ('default' when nothing
-    was set) decides; without the launcher, contracts.runtime does."""
-    if (env.get("PATHIEL_NETWORK_SOURCE") or "").strip() == "default":
-        return False
+    was set) decides; contracts.runtime reads both."""
     return runtime.network_is_explicit(env)
 
 

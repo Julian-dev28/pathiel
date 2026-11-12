@@ -36,7 +36,8 @@ Only after you approve. Until then, pathiel places every order without the
 builder fee. The same is true when you approved a lower rate, when the
 approval cannot be read, or when Hyperliquid refuses an order that carried
 the fee: the order is placed without it and the tool output says so. Builder
-state never blocks or fails an order.
+state never blocks or fails an order. An order Hyperliquid refuses for its own
+reason (no match, margin, price) is not sent again and is never charged.
 
 No fee is attached when no builder address is configured, or when your
 trading account is the builder address.
@@ -113,8 +114,10 @@ script prints the network first; run it again after you switch to mainnet.
   and whether orders carry the fee right now, with the reason.
 - Every order tool (`place_bracket`, `close_position`, `set_target`,
   `bracket_sweep`) says whether that order carried the fee.
-- A running pathiel notices a new approval within about a minute, or at once
-  on the next `state` call.
+- A running pathiel notices a new approval within about a minute. The
+  `state` tool reads it at once: when it has not seen an approval yet, it asks
+  Hyperliquid again, waiting at most 4 seconds.
+  `scripts/public_status.py --online` reads it at once too.
 
 ## For whoever runs the builder address
 
