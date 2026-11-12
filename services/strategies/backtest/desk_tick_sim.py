@@ -137,6 +137,20 @@ skipped setup is kept in `Run.reclaim_blocked` (time, side, entry, stop,
 target, the price to reclaim). `reclaim_blocks()` is the pure rule;
 services/strategies/stop_reclaim.py applies the same rule live.
 
+Trend veto (2026-11-13)
+-----------------------
+`Params.trend_gate_span` (None = off). The tournament's B_ret120
+(STRATEGY_TOURNAMENT_2026-11-10.md) gated the mechanical dip-buy on the
+sign of the 120h return; this is that veto on top of the thesis. On a
+flat tick with an entry (or a flip) ready to go, the sim reads the last
+CLOSED 1h close against the close `trend_gate_span` closed bars earlier
+(`next_trade.trend_gate`, the one function the live rule reads too): no
+new long while that return is negative, no new short while it is
+positive. Too few closed bars never block. The other side is never
+touched; an open position is never touched. Each skipped setup is kept in
+`Run.trend_blocked` (time, side, entry, stop, target, the return) and
+counted in `Run.refused["trend"]`. `trend_gate_blocks()` is the pure rule.
+
 Stop buffer floor (2026-11-02)
 ------------------------------
 `Params.stop_buffer_floor` (dollars) and `stop_buffer_floor_frac` (a
@@ -460,6 +474,10 @@ class Params:
     # (None) keeps every existing result byte-identical (test_stop_reclaim.py).
     reclaim_after_stops: Optional[int] = None   # after this many same-side stops in the window, wait for a 1h reclaim
     reclaim_window_h: float = 24.0              # the window those stops must fall in
+    # ── 5-day trend veto (2026-11-13, operator "yes" after the tournament's
+    # B_ret120: STRATEGY_TOURNAMENT_2026-11-10.md). See "Trend veto" above.
+    # None (off) keeps every existing result byte-identical (test_trend_gate.py).
+    trend_gate_span: Optional[int] = None       # no new long while the N-hour 1h-close return is negative; mirror for shorts
     # The live non-Brent stop rule, per tick (2026-11-02): the stop sits this
     # many x the tick's own 1h ATR14 beyond the entry structure
     # (next_trade.stop_buffer_for: 1.3 x ATR14), instead of the fixed
@@ -699,6 +717,10 @@ class Run:
     # "stop_px", "target_px", "is_market", "reclaim_px" (the stopped trade's
     # stop a 1h close must get back beyond), "stops_in_window"}. Empty when off.
     reclaim_blocked: List[Dict[str, Any]] = field(default_factory=list)
+    # Setups the trend veto skipped (Params.trend_gate_span), oldest first:
+    # {"time", "kind" ("entry"|"flip"), "side", "entry_px", "stop_px",
+    # "target_px", "is_market", "ret" (the span return), "span_h"}. Empty when off.
+    trend_blocked: List[Dict[str, Any]] = field(default_factory=list)
     # Stop buffer floor (Params.stop_buffer_floor / _frac). floor_blocked:
     # gate ("leverage"|"min_r") -> ticks the floored stop failed that gate
     # while the bare ATR stop passed both. floor_blocked_rows: those ticks,
@@ -1169,6 +1191,29 @@ def _reclaim_row(kind: str, setup: Dict[str, Any], t: int, is_market: bool, bloc
     return {"time": t, "kind": kind, "side": setup["side"], "entry_px": setup["entry_px"],
             "stop_px": setup["stop_px"], "target_px": setup["target_px"], "is_market": is_market,
             "reclaim_px": block["reclaim_px"], "stops_in_window": block["stops_in_window"]}
+
+
+def trend_gate_blocks(closed_1h: Sequence[Candle], side: str, params: Params) -> Optional[Dict[str, Any]]:
+    """The trend veto at a tick for a new `side` entry (see "Trend veto").
+    `closed_1h`: the 1h bars already CLOSED at the tick, oldest first.
+    None when the entry may go: the rule is off, too few closed bars (the
+    live rule never blocks on missing data), or the `trend_gate_span`-hour
+    close-to-close return is on the entry's side. Else next_trade.
+    trend_gate's answer ({"blocked": True, "ret", "span_h", "reason", ...}).
+    The live gate and the sim share the one function. Pure."""
+    span = params.trend_gate_span
+    if span is None:
+        return None
+    from services.strategies.next_trade import trend_gate
+    tail = closed_1h[-(span + 1):] if len(closed_1h) > span else closed_1h
+    g = trend_gate(side, [c.c for c in tail], span)
+    return g if g["blocked"] else None
+
+
+def _trend_row(kind: str, setup: Dict[str, Any], t: int, is_market: bool, gate: Dict[str, Any]) -> Dict[str, Any]:
+    return {"time": t, "kind": kind, "side": setup["side"], "entry_px": setup["entry_px"],
+            "stop_px": setup["stop_px"], "target_px": setup["target_px"], "is_market": is_market,
+            "ret": gate["ret"], "span_h": gate["span_h"]}
 
 
 def _close_trade(pos: _Position, exit_px: float, t: int, reason: str, fee_rate: float,
@@ -1650,6 +1695,8 @@ def simulate_steps(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], 
         raise ValueError(f"reclaim_after_stops {params.reclaim_after_stops} must be 1 or more (None turns it off)")
     if params.reclaim_after_stops is not None and not (params.reclaim_window_h > 0):
         raise ValueError(f"reclaim_window_h {params.reclaim_window_h} must be positive")
+    if params.trend_gate_span is not None and params.trend_gate_span < 1:
+        raise ValueError(f"trend_gate_span {params.trend_gate_span} must be 1 or more (None turns it off)")
     if params.stop_buffer_floor is not None and params.stop_buffer_floor < 0:
         raise ValueError(f"stop_buffer_floor {params.stop_buffer_floor} must be 0 or more (None turns it off)")
     if params.stop_buffer_floor_frac is not None and not (0 <= params.stop_buffer_floor_frac < 1):
@@ -1719,6 +1766,7 @@ def simulate_steps(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], 
     seen_1h_close: set = set()
     cap_on = params.daily_stop_cap is not None
     reclaim_on = params.reclaim_after_stops is not None
+    trend_on = params.trend_gate_span is not None
     stops_by_day: Counter = Counter()  # (UTC day, None|side) -> stop exits (Params.daily_stop_cap)
     n_tallied = 0
     filt_on = filters_on(params)
@@ -2027,6 +2075,9 @@ def simulate_steps(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], 
             elif reclaim_on and (rb := reclaim_blocks(run.trades, c1h[:n_closed], t, fs["side"], params)):
                 run.refused["reclaim"] += 1
                 run.reclaim_blocked.append(_reclaim_row("flip", fs, t, True, rb))
+            elif trend_on and (tg := trend_gate_blocks(c1h[:n_closed], fs["side"], params)):
+                run.refused["trend"] += 1
+                run.trend_blocked.append(_trend_row("flip", fs, t, True, tg))
             elif entry_guard is not None and entry_guard(t, fs["side"]) <= 0.0:
                 run.refused["guard"] += 1
             else:
@@ -2138,6 +2189,10 @@ def simulate_steps(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], 
                     # the stop-reclaim rule: skip this entry, keep it for the eval
                     run.refused["reclaim"] += 1
                     run.reclaim_blocked.append(_reclaim_row("entry", setup, t, open_now, rb))
+                elif trend_on and (tg := trend_gate_blocks(c1h[:n_closed], setup["side"], params)):
+                    # the trend veto: skip this entry, keep it for the eval
+                    run.refused["trend"] += 1
+                    run.trend_blocked.append(_trend_row("entry", setup, t, open_now, tg))
                 elif open_now and entry_guard is not None and entry_guard(t, setup["side"]) <= 0.0:
                     run.refused["guard"] += 1     # the portfolio's correlation guard
                 elif open_now:
@@ -2233,7 +2288,7 @@ def simulate_steps(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], 
 __all__ = ["Direction", "DirectionAt", "Params", "Trade", "Run", "simulate", "simulate_steps", "tick_bars",
           "SizeEquity", "offset_target", "cap_target", "regime_key",
           "trade_leverage", "CONVICTION_LEVERAGE_FLOOR", "live_params", "live_params_before_weekend_flat",
-          "live_params_before_no_break", "profit_lock_stop", "stop_cap_blocks", "reclaim_blocks",
+          "live_params_before_no_break", "profit_lock_stop", "stop_cap_blocks", "reclaim_blocks", "trend_gate_blocks",
           "tally_stops", "floored_buffer", "weekend_closed", "lock_on", "risk_capped_notional", "filters_on",
           "call_start", "entry_filter", "EntryGuard", "PULLBACK_MODES", "PB_TARGETS", "PB_TRIGGERS",
           "pullback_setup", "retest_level", "pb_cancel", "in_event_blackout"]

@@ -134,6 +134,41 @@ NO_BREAK_ENTRY = True
 BREAKOUT_STOP_H = 4
 
 
+def trend_gate(side: str, closes_1h: Sequence[float], span_h: int = 120) -> Dict[str, Any]:
+    """The 5-day trend veto (2026-11-13), from CLOSED 1h closes, oldest
+    first: the `span_h`-hour return is the last closed 1h close against the
+    close `span_h` closed bars earlier. A long is blocked while that return
+    is negative, a short while it is positive; a zero return blocks
+    nothing. Too few closes (under `span_h + 1`), a flat/unknown side or a
+    bad base close never block: missing data is reported, not traded on.
+    Keys: blocked, ret (None without data), span_h, reason, and the two
+    closes it read. The same formula as the tournament's B_ret120
+    (`strategy_tournament.compute_features`: ret[s][i] = closes[i-1] /
+    closes[i-1-s] - 1). Pure."""
+    span_h = int(span_h)
+    if span_h < 1:
+        raise ValueError(f"span_h {span_h} must be 1 or more")
+    out: Dict[str, Any] = {"blocked": False, "ret": None, "span_h": span_h, "last_close": None, "base_close": None}
+    if side not in ("long", "short"):
+        return {**out, "reason": f"the thesis is {side}: nothing to veto"}
+    n = len(closes_1h)
+    if n < span_h + 1:
+        return {**out, "reason": f"only {n} closed 1h candles, the {span_h}h return needs {span_h + 1}: veto not applied"}
+    last, base = float(closes_1h[-1]), float(closes_1h[-1 - span_h])
+    out.update(last_close=last, base_close=base)
+    if not (base > 0) or not (last > 0):
+        return {**out, "reason": f"bad 1h close ({base:g} -> {last:g}): veto not applied"}
+    ret = last / base - 1.0
+    blocked = (ret < 0) if side == "long" else (ret > 0)
+    sign = "negative" if ret < 0 else ("positive" if ret > 0 else "flat")
+    head = f"{span_h}h return {ret * 100:+.2f}% ({base:g} -> {last:g}) is {sign}"
+    if blocked:
+        reason = f"{head}: no new {side} against a {span_h}h {'down' if side == 'long' else 'up'}trend"
+    else:
+        reason = f"{head}: a {side} is allowed"
+    return {**out, "blocked": blocked, "ret": ret, "reason": reason}
+
+
 def leverage_fit_for(coin: str) -> Tuple[float, ...]:
     """The candidates a coin's new entries fit their leverage from; () = the
     fixed configured leverage (silver and every other coin, untested there)."""
@@ -379,6 +414,6 @@ def live_rule_line(nt: Dict[str, Any]) -> str:
 
 
 __all__ = ["next_trade", "stop_buffer_for", "stop_buffer_floor_frac_for", "live_rule_line", "fit_leverage",
-           "leverage_fit_for", "breakout_for", "breakout_levels", "breakout_trade",
+           "leverage_fit_for", "breakout_for", "breakout_levels", "breakout_trade", "trend_gate",
            "BRENT_STOP_BUFFER", "GOLD", "GOLD_STOP_BUFFER_FLOOR_FRAC", "LEVERAGE_FIT", "BREAKOUT_COINS",
            "BREAKOUT_LOOKBACK_H", "BREAKOUT_STOP_H", "NO_BREAK_ENTRY"]
