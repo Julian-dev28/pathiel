@@ -1,0 +1,118 @@
+{
+ "request": {
+  "type": "predictedFundings"
+ },
+ "response": [
+  [
+   "BTC",
+   [
+    [
+     "BinPerp",
+     {
+      "fundingRate": "0.0001",
+      "nextFundingTime": 1794528000000,
+      "fundingIntervalHours": 8
+     }
+    ],
+    [
+     "HlPerp",
+     {
+      "fundingRate": "0.0021027523",
+      "nextFundingTime": 1794517200000,
+      "fundingIntervalHours": 1
+     }
+    ],
+    [
+     "BybitPerp",
+     {
+      "fundingRate": "0.0001",
+      "nextFundingTime": 1794528000000,
+      "fundingIntervalHours": 8
+     }
+    ]
+   ]
+  ],
+  [
+   "ETH",
+   [
+    [
+     "BinPerp",
+     {
+      "fundingRate": "0.0001",
+      "nextFundingTime": 1794528000000,
+      "fundingIntervalHours": 8
+     }
+    ],
+    [
+     "HlPerp",
+     {
+      "fundingRate": "-0.0014932304",
+      "nextFundingTime": 1794517200000,
+      "fundingIntervalHours": 1
+     }
+    ],
+    [
+     "BybitPerp",
+     {
+      "fundingRate": "0.00008205",
+      "nextFundingTime": 1794528000000,
+      "fundingIntervalHours": 8
+     }
+    ]
+   ]
+  ],
+  [
+   "MATIC",
+   [
+    [
+     "BinPerp",
+     {
+      "fundingRate": "0.0001",
+      "nextFundingTime": 1794528000000
+     }
+    ],
+    [
+     "HlPerp",
+     {
+      "fundingRate": "0.0",
+      "nextFundingTime": 1794517200000,
+      "fundingIntervalHours": 1
+     }
+    ],
+    [
+     "BybitPerp",
+     null
+    ]
+   ]
+  ],
+  [
+   "SOL",
+   [
+    [
+     "BinPerp",
+     {
+      "fundingRate": "0.00003791",
+      "nextFundingTime": 1794528000000,
+      "fundingIntervalHours": 8
+     }
+    ],
+    [
+     "HlPerp",
+     {
+      "fundingRate": "0.005",
+      "nextFundingTime": 1794517200000,
+      "fundingIntervalHours": 1
+     }
+    ],
+    [
+     "BybitPerp",
+     {
+      "fundingRate": "0.0001",
+      "nextFundingTime": 1794528000000,
+      "fundingIntervalHours": 8
+     }
+    ]
+   ]
+  ]
+ ]
+}

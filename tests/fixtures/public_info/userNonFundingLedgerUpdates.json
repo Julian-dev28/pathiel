@@ -1,0 +1,85 @@
+{
+ "request": {
+  "type": "userNonFundingLedgerUpdates",
+  "user": "0x0000000000000000000000000000000000000001",
+  "startTime": 0
+ },
+ "response": [
+  {
+   "time": 1790111938481,
+   "hash": "0x600c880d3748fa6461860429f469070109009ff2d24c193603d5335ff64cd44f",
+   "delta": {
+    "type": "spotTransfer",
+    "token": "USDC",
+    "amount": "1.0",
+    "usdcValue": "1.0",
+    "user": "0x9905a3c44633212f6e1dc9d6e963f2b6ac243bc7",
+    "destination": "0x0000000000000000000000000000000000000001",
+    "fee": "0.0",
+    "nativeTokenFee": "0.0",
+    "nonce": 1790111937917,
+    "feeToken": ""
+   }
+  },
+  {
+   "time": 1790111947086,
+   "hash": "0x71439beef593e56d72bd0429f46991010400b3d49097043f150c4741b497bf58",
+   "delta": {
+    "type": "spotTransfer",
+    "token": "USDC",
+    "amount": "1.0",
+    "usdcValue": "1.0",
+    "user": "0xad31d770888ac93e99bb51569e55ff0578f5d6db",
+    "destination": "0x0000000000000000000000000000000000000001",
+    "fee": "0.0",
+    "nativeTokenFee": "0.0",
+    "nonce": 1790111946423,
+    "feeToken": ""
+   }
+  },
+  {
+   "time": 1790112352331,
+   "hash": "0x8f176dc05295fa6690910429f47fd500005285a5ed99193832e019131199d451",
+   "delta": {
+    "type": "internalTransfer",
+    "usdc": "1.0",
+    "user": "0x445d2db253193d8d1b04f86fb26481447be16885",
+    "destination": "0x0000000000000000000000000000000000000001",
+    "fee": "0.0"
+   }
+  },
+  {
+   "time": 1790112359284,
+   "hash": "0x337c4d204893a2be34f60429f48033010a006505e396c190d744f87307977ca8",
+   "delta": {
+    "type": "internalTransfer",
+    "usdc": "1.0",
+    "user": "0x6abdacbdb1e4ff138d109a4ae09fb2f8345745ea",
+    "destination": "0x0000000000000000000000000000000000000001",
+    "fee": "0.0"
+   }
+  },
+  {
+   "time": 1790234571455,
+   "hash": "0x0137910d7abb1af202b1042a11eb17010800a8f315be39c4a5003c6039bef4dc",
+   "delta": {
+    "type": "internalTransfer",
+    "usdc": "1.0",
+    "user": "0xa794d31d6055d7d237fd20e5ff966dc4eb4ae1d1",
+    "destination": "0x0000000000000000000000000000000000000001",
+    "fee": "0.0"
+   }
+  },
+  {
+   "time": 1790234577708,
+   "hash": "0xf71ebd690bbb24bef898042a11eb81010600d54ea6be43919ae768bbcabefea9",
+   "delta": {
+    "type": "internalTransfer",
+    "usdc": "1.0",
+    "user": "0x9bc75c87891ec862dc92afbbdb13f22ce5ee444b",
+    "destination": "0x0000000000000000000000000000000000000001",
+    "fee": "0.0"
+   }
+  }
+ ]
+}

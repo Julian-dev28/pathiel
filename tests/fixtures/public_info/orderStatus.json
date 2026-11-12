@@ -1,0 +1,10 @@
+{
+ "request": {
+  "type": "orderStatus",
+  "user": "0x0000000000000000000000000000000000000001",
+  "oid": 1
+ },
+ "response": {
+  "status": "unknownOid"
+ }
+}

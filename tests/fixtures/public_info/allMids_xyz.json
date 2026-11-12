@@ -1,0 +1,12 @@
+{
+ "request": {
+  "type": "allMids",
+  "dex": "xyz"
+ },
+ "response": {
+  "xyz:BRENTOIL": "100.0",
+  "xyz:CL": "88.671",
+  "xyz:GOLD": "5768.05",
+  "xyz:NVDA": "232.195"
+ }
+}

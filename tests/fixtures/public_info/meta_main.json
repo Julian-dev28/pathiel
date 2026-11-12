@@ -1,0 +1,35 @@
+{
+ "request": {
+  "type": "meta"
+ },
+ "response": {
+  "universe": [
+   {
+    "szDecimals": 2,
+    "name": "SOL",
+    "maxLeverage": 10,
+    "marginTableId": 10
+   },
+   {
+    "szDecimals": 5,
+    "name": "BTC",
+    "maxLeverage": 40,
+    "marginTableId": 54
+   },
+   {
+    "szDecimals": 4,
+    "name": "ETH",
+    "maxLeverage": 25,
+    "marginTableId": 53
+   },
+   {
+    "szDecimals": 1,
+    "name": "MATIC",
+    "maxLeverage": 50,
+    "marginTableId": 50,
+    "isDelisted": true
+   }
+  ],
+  "collateralToken": 0
+ }
+}
