@@ -26,22 +26,55 @@ docs/CONFIG.md for the full key reference.
     scripts/config_preset.py apply small_aggressive            # diff + confirm
     scripts/config_preset.py apply small_aggressive --yes      # skip confirm
     scripts/config_preset.py apply --account-size 250          # auto-pick by equity
+
+PUBLIC INSTALL (pathiel 0.4.0 plugin): seed a fresh config from the tracked
+template config/public/agent-config.json (3x, 1% a trade, one position).
+scripts/_plugin_env.sh runs it when the config file is missing:
+
+    scripts/config_preset.py seed-public           # writes $PATHIEL_AGENT_CONFIG_FILE once
+    scripts/config_preset.py seed-public --json
+
+It never overwrites a file, never writes the repo's .agent-config.json, and
+refuses a template whose risk_profile drifted from
+services.risk.presets.PUBLIC_DEFAULT_PROFILE.
+
+The config file the other subcommands use is $PATHIEL_AGENT_CONFIG_FILE when
+set, else the default pathiel.agents.config_store uses: the repo file on the
+operator's install, ~/.pathiel/.agent-config.json on a public one.
 """
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
 _REPO = Path(__file__).resolve().parents[1]
-CONFIG_FILE = _REPO / ".agent-config.json"
 
 # Running this file directly (not `python -m`) puts scripts/ on sys.path[0],
 # not the repo root — the `derive` subcommand needs `contracts`/`pathiel`/
 # `services` importable (see scripts/profit_audit.py for the same fix).
 if str(_REPO) not in sys.path:
     sys.path.insert(0, str(_REPO))
+
+import contracts.runtime as _runtime  # noqa: E402  (stdlib only; needs the sys.path line above)
+
+REPO_CONFIG_FILE = _REPO / ".agent-config.json"
+PUBLIC_TEMPLATE = _REPO / "config" / "public" / "agent-config.json"
+
+
+def _config_file() -> Path:
+    explicit = os.environ.get("PATHIEL_AGENT_CONFIG_FILE")
+    if explicit:
+        return Path(explicit).expanduser()
+    if _runtime.is_public():
+        home = os.environ.get("PATHIEL_HOME") or os.path.join(os.path.expanduser("~"), ".pathiel")
+        return Path(home) / ".agent-config.json"
+    return REPO_CONFIG_FILE
+
+
+CONFIG_FILE = _config_file()
 
 
 PRESETS: dict[str, dict] = {
@@ -326,6 +359,100 @@ def cmd_derive(equity: float, profile_name: str | None, as_json: bool) -> int:
     return 0
 
 
+def _seed_report(status: str, path: str, message: str, as_json: bool) -> None:
+    if as_json:
+        print(json.dumps({"status": status, "path": path, "message": message}))
+    else:
+        print(f"pathiel: config {status}: {message}" + (f" ({path})" if path else ""))
+
+
+def _template_drift(template: object) -> str | None:
+    """None when the template's risk_profile equals PUBLIC_DEFAULT_PROFILE
+    field for field, else one sentence naming the difference."""
+    from pydantic import ValidationError
+
+    from contracts.risk.models import RiskProfile
+    from services.risk.presets import PUBLIC_DEFAULT_PROFILE
+
+    raw = template.get("risk_profile") if isinstance(template, dict) else None
+    if not isinstance(raw, dict):
+        return "the template has no risk_profile object"
+    try:
+        parsed = RiskProfile.model_validate(raw)
+    except ValidationError as e:
+        return f"the template's risk_profile does not validate: {e.errors()[0].get('msg')}"
+    want = PUBLIC_DEFAULT_PROFILE.model_dump()
+    if parsed.model_dump() != want or set(raw) != set(want):
+        diff = sorted(k for k in set(raw) | set(want)
+                      if raw.get(k, "<unset>") != want.get(k, "<unset>"))
+        return ("the template's risk_profile differs from "
+                f"services.risk.presets.PUBLIC_DEFAULT_PROFILE on {', '.join(diff) or 'its keys'}")
+    return None
+
+
+def cmd_seed_public(as_json: bool = False) -> int:
+    """Copy config/public/agent-config.json to $PATHIEL_AGENT_CONFIG_FILE,
+    mode 0600, only when that file does not exist.
+
+    0  written, or kept (a file is there; it is never touched)
+    2  refused, nothing written: the variable is unset, it resolves to the
+       repo's .agent-config.json (the operator's live config), or the
+       template drifted from PUBLIC_DEFAULT_PROFILE
+    1  the write itself failed (permissions, disk)
+    """
+    raw_target = os.environ.get("PATHIEL_AGENT_CONFIG_FILE", "").strip()
+    if not raw_target:
+        _seed_report("refused", "", "PATHIEL_AGENT_CONFIG_FILE is not set; "
+                     "seed-public writes only to an explicit target", as_json)
+        return 2
+    target = Path(raw_target).expanduser()
+    if not target.is_absolute():
+        target = Path.cwd() / target
+    if os.path.realpath(target) == os.path.realpath(REPO_CONFIG_FILE):
+        _seed_report("refused", str(target), "the target is the repo's .agent-config.json; "
+                     "seed-public never writes it", as_json)
+        return 2
+    try:
+        template_bytes = PUBLIC_TEMPLATE.read_bytes()
+        template = json.loads(template_bytes)
+    except (OSError, ValueError) as e:
+        _seed_report("refused", str(target), f"cannot read {PUBLIC_TEMPLATE.name}: {e}", as_json)
+        return 2
+    drift = _template_drift(template)
+    if drift:
+        _seed_report("refused", str(target), "config/public/agent-config.json does not match "
+                     f"services.risk.presets.PUBLIC_DEFAULT_PROFILE ({drift}); nothing written",
+                     as_json)
+        return 2
+    if os.path.lexists(target):
+        _seed_report("kept", str(target), "a config file already exists; left as it is", as_json)
+        return 0
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        # O_EXCL: never replaces a file that appeared since the check above,
+        # and never follows a symlink planted at the target.
+        fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    except FileExistsError:
+        _seed_report("kept", str(target), "a config file already exists; left as it is", as_json)
+        return 0
+    except OSError as e:
+        _seed_report("failed", str(target), f"cannot create the file: {e}", as_json)
+        return 1
+    try:
+        with os.fdopen(fd, "wb") as fh:
+            fh.write(template_bytes)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.chmod(target, 0o600)
+    except OSError as e:
+        _seed_report("failed", str(target), f"cannot write the file: {e}", as_json)
+        return 1
+    _seed_report("written", str(target),
+                 "public default risk profile: 3x max leverage, 1% a trade, one position",
+                 as_json)
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -345,6 +472,10 @@ def main() -> int:
                          choices=["auto", "starter", "small", "standard", "pro", "custom"],
                          help="override the preset; omit to use the config's own saved/migrated profile")
     p_derive.add_argument("--json", action="store_true", dest="as_json")
+    p_seed = sub.add_parser("seed-public",
+                            help="write the public default config to $PATHIEL_AGENT_CONFIG_FILE "
+                                 "when that file does not exist")
+    p_seed.add_argument("--json", action="store_true", dest="as_json")
     args = ap.parse_args()
 
     if args.cmd == "list":
@@ -355,6 +486,8 @@ def main() -> int:
         return cmd_apply(args.name, args.account_size, args.yes, args.allow_legacy_risk_preset)
     if args.cmd == "derive":
         return cmd_derive(args.equity, args.profile, args.as_json)
+    if args.cmd == "seed-public":
+        return cmd_seed_public(args.as_json)
     return 0
 
 
