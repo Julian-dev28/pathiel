@@ -62,6 +62,63 @@ def test_system_prompt_names_the_desk_and_its_lessons(oil):
         assert lesson in text
 
 
+# The operator's thesis prompt for the fixture spec, as it was at 2816df7.
+# A public-install persona was added on 2026-11-12; the operator text must not
+# move by one byte. Changing the operator prompt on purpose means updating
+# this pin in the same commit.
+OPERATOR_PROMPT_SHA256 = "fc6794201c10e43d5214bd268fa4d4edd950f0c25e095c897e6a5584b72eca8c"
+OPERATOR_PROMPT_CHARS = 5497
+
+
+def test_operator_system_prompt_hash_is_the_base_value(oil, monkeypatch):
+    import hashlib
+    monkeypatch.delenv("PATHIEL_INSTALL", raising=False)
+    text = prompt_mod.build_system_prompt(oil.spec)
+    assert len(text) == OPERATOR_PROMPT_CHARS
+    assert hashlib.sha256(text.encode("utf-8")).hexdigest() == OPERATOR_PROMPT_SHA256
+
+
+def test_public_system_prompt_has_no_operator_persona(oil, monkeypatch):
+    monkeypatch.setenv("PATHIEL_INSTALL", "public")
+    text = prompt_mod.build_system_prompt(oil.spec)
+    assert "Julien" not in text
+    assert "ADHD" not in text
+    assert "himself" not in text
+    assert "—" not in text
+    assert text.startswith(
+        "You are a senior desk trader on the Oil desk, writing directly to "
+        "the person who trades it themselves.\n\n")
+
+
+def test_public_and_operator_share_the_rules_block(oil, monkeypatch):
+    monkeypatch.delenv("PATHIEL_INSTALL", raising=False)
+    operator = prompt_mod.build_system_prompt(oil.spec)
+    monkeypatch.setenv("PATHIEL_INSTALL", "public")
+    public = prompt_mod.build_system_prompt(oil.spec)
+    assert operator != public
+    marker = "Hard rules:"
+    assert operator.count(marker) == 1 and public.count(marker) == 1
+    tail = operator[operator.index(marker):]
+    assert public[public.index(marker):] == tail
+    assert tail == prompt_mod._RULES_BLOCK
+
+
+def test_public_system_prompt_names_the_desk_and_lessons(oil, monkeypatch):
+    monkeypatch.setenv("PATHIEL_INSTALL", "public")
+    text = prompt_mod.build_system_prompt(oil.spec)
+    assert "Oil desk" in text
+    assert oil.spec.lessons
+    for lesson in oil.spec.lessons:
+        assert lesson in text
+
+
+def test_public_system_prompt_without_lessons_uses_the_fallback(oil, monkeypatch):
+    monkeypatch.setenv("PATHIEL_INSTALL", "public")
+    spec = oil.spec.model_copy(update={"lessons": []})
+    text = prompt_mod.build_system_prompt(spec)
+    assert "a concept relevant to today's move" in text
+
+
 def test_system_prompt_has_no_em_dash(oil):
     assert "\u2014" not in prompt_mod.build_system_prompt(oil.spec)
 

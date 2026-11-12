@@ -13,6 +13,17 @@ metadata:
 
 # Pathiel Trading Desk
 
+**Plugin installs** (the Claude Code plugin, `scripts/pathiel-mcp`, or the
+container) keep keys, config and state under `~/.pathiel`
+(`~/.pathiel/.env.local`, `~/.pathiel/.agent-config.json`,
+`~/.pathiel/state/`) and default to Hyperliquid **testnet**. Going live is
+one explicit line, `PATHIEL_NETWORK=mainnet`, in `~/.pathiel/.env.local`. A
+fresh plugin install starts from a conservative risk profile (3x max
+leverage, about 1% of equity at risk per trade, one position); `risk_limits`
+reports the active one. The rest of this guide describes the maintainer's
+repo checkout (repo `.env.local`, repo `.agent-config.json`, the local
+dashboard), which runs on mainnet.
+
 `pathiel` is a **headless Hyperliquid trading desk** (operator decision,
 2026-10-23): Claude is the only trader on the wallet, placing every trade
 through the **MCP server** (`scripts/pathiel-mcp-server.py`, registered in
@@ -28,7 +39,7 @@ today: `/desk-tick <desk>` on a cron per active desk (oil every 15 min;
 metals, ai and gas every 30 min), one position per account across all
 desks, so a desk whose coin does not hold the slot logs SKIP and stops.
 
-Repo: `/Users/julian_dev/Documents/code/pathiel`. The user may work on
+In a repo checkout the user may work on
 dirty local branches and switch deploy branches between sessions. **Commit/push
 only when the user asks, and never push directly to another branch without
 explicit confirmation.**
@@ -96,7 +107,8 @@ against — there is no per-book roster any more.
 
 ## Operator rules (2026-10-24)
 
-- The live risk profile (`.agent-config.json` → `risk_profile`) is
+- The maintainer's live risk profile (the checkout's `.agent-config.json`
+  → `risk_profile`; a plugin install has its own, see the top) is
   `risk_per_trade_pct 100`, `daily_loss_limit_pct 100`, `max_leverage 20`,
   `max_open_positions 1` (contract `contracts/risk/models.py` 1.1.0 allows
   100). One full-port position per account across every desk
