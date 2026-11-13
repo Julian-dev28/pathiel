@@ -24,9 +24,9 @@ GET /api/desks/oil/levels route also calls, so the two never drift apart.
 Only the network leg stays in this file: a plain urllib POST. The system
 python3 the desk-tick agent runs has no CA bundle of its own (python.org's
 macOS build), so _ssl_context() loads certifi's, or the OS bundle when
-certifi is not installed. It used to shell out to curl for the same reason;
-the plugin directory reads a curl call as download-and-run, and urllib
-needs no second program.
+certifi is not installed. It used to shell out to a second program for the
+same reason; the plugin directory reads that as download-and-run, and
+urllib needs none.
 """
 from __future__ import annotations
 

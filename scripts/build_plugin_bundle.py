@@ -419,6 +419,8 @@ def publish(ref: str, push: bool) -> str:
                              f"run: git branch -f {BRANCH} origin/{BRANCH}")
     if parent and _git("rev-parse", f"{parent}^{{tree}}").strip() == tree:
         commit = parent
+        if not _rev(f"refs/heads/{BRANCH}"):   # only origin/plugin had it: track it locally
+            _git("update-ref", f"refs/heads/{BRANCH}", commit, "")
         print(f"{BRANCH}: already the bundle of {source[:7]} ({commit[:7]})", file=sys.stderr)
     else:
         msg = (f"plugin bundle {version_at(ref)} from {source[:12]}\n\n"

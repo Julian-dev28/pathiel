@@ -324,6 +324,12 @@ def test_publish_is_idempotent_fast_forward_and_check_catches_drift(tmp_path, re
         return subprocess.run(run + list(args), cwd=clone, capture_output=True, text=True,
                               env=_clean_env())
 
+    # The clone may already see origin/plugin (the real repo publishes); with
+    # or without it, publish must leave the local branch at the bundle.
+    if _git(clone, "branch", "-r", "--list", "origin/plugin"):
+        assert bundle("publish").stdout.strip() == _git(clone, "rev-parse", "plugin")
+        _git(clone, "branch", "-D", "plugin")
+        _git(clone, "update-ref", "-d", "refs/remotes/origin/plugin")
     first = bundle("publish").stdout.strip()
     assert first and _git(clone, "rev-parse", "plugin") == first
     assert _git(clone, "rev-parse", "plugin^{tree}") == bundle("tree").stdout.strip()
