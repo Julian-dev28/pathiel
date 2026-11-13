@@ -4,7 +4,8 @@ The research pool's contract: who is a member, what they signed, what is
 published. `services/pool` and the MCP server's pool tools code against this
 package and nowhere else. Design: `docs/overhaul/RESEARCH_POOL_2026-11-12.md`.
 
-`CONTRACT_VERSION = "1.0.0"`. Stdlib only at import, plus `contracts.runtime`.
+`CONTRACT_VERSION = "1.1.0"` (1.1.0, 2026-11-12 review: the cluster rule is anchored
+with a 24 hour span, and `reinstatement_problem` is new). Stdlib only at import, plus `contracts.runtime`.
 `recover_signer` imports `eth_account` (already in `requirements.lock`) when
 called. Nothing here reads the network or a key.
 
@@ -18,10 +19,11 @@ called. Nothing here reads the network or a key.
 | Who is in | `scan`, `active_members`, `membership`, `local_standing` | a leave at or after the join wins; a bad file fails the build, never a silent skip |
 | The house row | `load_house` | `pool/house.json`; the address must be `runtime.DEFAULT_BUILDER_ADDRESS` |
 | The 24 hour delay | `cutoff_ms`, `publishable` | cutoff = 00:00:00Z of the day before the build day |
-| Pull request freshness | `fresh_problem` | at most 7 days old, at most 10 minutes ahead |
+| Pull request freshness | `fresh_problem` | at most 7 days old, at most 10 minutes ahead, on the clock of whoever runs the check (not the merge) |
+| Coming back in | `reinstatement_problem(before, after, held_ms)` | an address becomes active only through a join newer than every statement the base branch holds or ever held for it. Refuses a deleted leave, an older leave swapped in, a member file put back from history. |
 | Agent approval | `agent_approved(address, signer, extraAgents reply, userRole reply, now)` | pure decision on two venue replies |
-| Who may sign a leave | `leave_signer_allowed` | the account, the key that joined, or an approved API wallet |
-| Independent trades | `cluster_ids` | same coin and side, entries chained within 60 minutes: one bet |
+| Who may sign a leave | `leave_signer_allowed` | the account, the key that joined, or an approved API wallet. The key that joined needs no venue read, so it can still leave after the account revoked it (accepted, documented in the function). |
+| Independent trades | `cluster_ids`, `CLUSTER_SPAN_MS` | same coin and side, entered within 24 hours of the cluster's first entry: one bet. Anchored, so no cluster spans more than 24 hours. Gated by `python -m services.pool.evals.cluster_eval`. |
 | Venue request bodies | `fills_request`, `orders_request`, `extra_agents_request`, `user_role_request` | checked against hyperliquid-python-sdk 0.24.0 and the venue docs |
 | The scoreboard | `Scoreboard`, `MemberRow`, `SliceRow`, `Counts`, `validate_scoreboard`, `dump_scoreboard`, `empty_scoreboard` | no dollars, prices, sizes or positions, enforced by key name |
 | Pull request link | `pr_new_file_url` | GitHub's prefilled new-file form |
@@ -53,7 +55,9 @@ request is checked.
 
 - `test_contract.py`: the statement text, the fixtures, every tamper refused
   with its code, join / leave / rejoin, the delay, freshness, the agent
-  table, clustering, the scoreboard validator catching each broken promise,
+  table, clustering (the anchor, the span bound, a stream with no quiet
+  hour), the reinstatement rule (a deleted leave, an older leave, a replayed
+  join), the scoreboard validator catching each broken promise,
   and the constants pinned to `services/review` (labels, minimum n, the
   dimensions, the desk coins).
 - `test_repo_pool.py`: every file under the repo's own `pool/` verifies. It
@@ -63,6 +67,12 @@ request is checked.
   name, what the pool may never import or read.
 
 Keys in tests are made in the test and dropped.
+
+The cluster rule also has an eval, in the service because it grades with
+`services/review`: `python -m services.pool.evals.cluster_eval` (offline,
+seeded, 200 seeds, about 40 seconds). On pure noise shared by 12 members it
+measures how often the pool row says EDGE or LEAK: 5.5% with this rule, 33%
+with a 60 minute window, 49.5% with every trade counted. Gate: 10%.
 
 ## Fixtures
 

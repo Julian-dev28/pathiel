@@ -13,7 +13,8 @@ Every unit of services/pool codes against this module and nowhere else:
   * the rules that need no network: the 24 hour delay (`cutoff_ms`), the
     freshness window, the agent approval decision on two venue replies
     (`agent_approved`), which trades count as one independent bet
-    (`cluster_ids`)
+    (`cluster_ids`), and the one rule a pull request must pass before an
+    address may become active (`reinstatement_problem`)
   * the venue request shapes (`fills_request`, `orders_request`,
     `extra_agents_request`, `user_role_request`)
   * the published scoreboard schema and its validator (`validate_scoreboard`)
@@ -39,7 +40,7 @@ from urllib.parse import quote
 
 from contracts import runtime
 
-CONTRACT_VERSION = "1.0.0"
+CONTRACT_VERSION = "1.1.0"
 
 # ── identity of the pool ────────────────────────────────────────────────────
 STATEMENT_VERSION = 1            # the signed text; a change needs every member to sign again
@@ -74,7 +75,8 @@ DELAY_MS = DAY_MS                # nothing closed inside the last 24h is ever pu
 FRESH_MAX_AGE_S = 7 * 86_400     # a statement in a pull request is at most this old
 FRESH_FUTURE_SKEW_S = 600        # and at most this far ahead of the checker's clock
 CONFIRM_MAX_AGE_S = 900          # dry run to confirm: the shown time stays signable this long
-CLUSTER_GAP_MS = HOUR_MS         # same coin and side, entries this close: one independent bet
+CLUSTER_SPAN_MS = DAY_MS         # same coin and side, entered within this long of the
+                                 # cluster's FIRST entry: one independent bet (see cluster_ids)
 MIN_N_EDGE = 10                  # services.review.stats.MIN_N_EDGE (pinned by a contract test)
 LABELS = ("EDGE", "LEAK", "LEANING+", "LEANING-", "FLUKE", "NOISE")
 MAX_FILE_BYTES = 4096
@@ -407,7 +409,13 @@ def publishable(exit_ms: Optional[int], cutoff: int) -> bool:
 
 def fresh_problem(at_ms: int, now_ms: int) -> Optional[str]:
     """Why a statement's time is not acceptable in a pull request, or None.
-    Bounds how far a join can be backdated to pick up a good week."""
+    Bounds how far a join can be backdated to pick up a good week.
+
+    `now_ms` is the clock of whoever runs the check, so the bound holds at
+    CHECK time, not at merge time: a pull request that passed and then sat
+    open is not checked again unless the check is run again. The maintainer's
+    merge checklist covers that (docs/overhaul/RESEARCH_POOL_2026-11-12.md,
+    "What Julien must do")."""
     if at_ms > now_ms + FRESH_FUTURE_SKEW_S * 1000:
         return f"statement time {iso_from_ms(at_ms)} is in the future"
     if at_ms < now_ms - FRESH_MAX_AGE_S * 1000:
@@ -644,6 +652,13 @@ def scan(pool_root: str, as_of_ms: Optional[int] = None) -> PoolScan:
       * the house address has exactly one row, the house's; member and leave
         files for it are ignored
       * a file that does not verify is a problem, never a silent skip
+
+    What this cannot see: a file that was DELETED. A scan reads the files
+    that are there. Take pool/leaves/<address>.json away while the old member
+    file stays and the address is a member again, counting from the OLD
+    joined_at, with no new signature. So a change to pool/ is judged before
+    it lands, as a move from one state to the next: `reinstatement_problem`,
+    which the pull request check runs on every address a pull request touches.
     """
     problems: List[ScanProblem] = []
     joins = _scan_dir(pool_root, MEMBERS_SUBDIR, "join", problems)
@@ -833,7 +848,18 @@ def leave_signer_allowed(leave: Verified, join: Optional[Verified], agent_ok: bo
     """Who may sign a leave: the account itself, the same key that signed the
     join in force (no venue read needed, so a lapsed API wallet can still
     leave), or an API wallet the account approves now. Leaving is never
-    harder than joining."""
+    harder than joining.
+
+    Known and accepted: the second rule never asks the venue, so an API
+    wallet the account has since REVOKED can still take the account out of
+    the pool, at any later time, with the key that signed the join. That is
+    the opposite direction of a revoked wallet staying in (`agent_approved`
+    is checked once): here a key the owner no longer trusts ends the
+    membership. The damage is bounded: a leave only removes published rows,
+    it moves no money and reads nothing, and the account can rejoin with a
+    new signed join (which then names the new signer, so the old key loses
+    this power). The alternative, a venue read on every agent-signed leave,
+    would lock out a member whose wallet expired."""
     if leave["signer_role"] == "master":
         return True
     if join is not None and join["address"] == leave["address"] and join["signer"] == leave["signer"]:
@@ -845,20 +871,87 @@ def leave_signer_allowed(leave: Verified, join: Optional[Verified], agent_ok: bo
 
 def cluster_ids(rows: Sequence[Tuple[str, str, int]]) -> List[int]:
     """One id per (coin, side, entry_ms) row, in input order. Rows on the same
-    coin and side whose entries chain within CLUSTER_GAP_MS of the previous
-    one share an id: ten members taking the same desk call are one bet, not
-    ten. Ids are numbered from 0 in (coin, side, entry_ms) order. Pure."""
+    coin and side entered within CLUSTER_SPAN_MS (24 hours) of the cluster's
+    FIRST entry share an id: ten members taking the same desk call are one
+    bet, not ten. The next entry after that window opens a new cluster and
+    becomes its anchor. Ids are numbered from 0 in (coin, side, entry_ms)
+    order. Pure.
+
+    Why anchored on the first entry, not chained from the previous one: a
+    chain (each entry within the window of the one before) has no bound. With
+    desks ticking every 15 minutes and enough members, one coin and side never
+    goes quiet, and its whole history folds into ONE cluster: the count of
+    independent trades stops growing however much evidence comes in. Anchored,
+    no cluster spans more than CLUSTER_SPAN_MS, and n grows with time, never
+    with members: at most one cluster per coin, side and 24 hours.
+
+    Why 24 hours, not 60 minutes: members who enter the same coin and side an
+    hour apart hold through the same price move, so their results are not
+    independent. Measured on a driftless walk with bracket trades (12 members,
+    30 days, median hold 4 hours; services/pool/evals/cluster_eval.py), the
+    share of 200 runs where pure noise is labelled EDGE or LEAK is 49.5% when
+    every trade counts, 33% with a 60 minute window, and 5.5% with this one.
+    The eval gates it at 10%.
+
+    What it does not claim: that two clusters a day apart are independent
+    when positions are held for days (the same eval measures 11% for a median
+    hold of 12 hours), or that a Brent long and a WTI long are two bets."""
     order = sorted(range(len(rows)), key=lambda i: (rows[i][0], rows[i][1], int(rows[i][2]), i))
     ids = [0] * len(rows)
     current = -1
-    prev: Optional[Tuple[str, str, int]] = None
+    anchor: Optional[Tuple[str, str, int]] = None    # the current cluster's coin, side, first entry
     for i in order:
         coin, side, entry_ms = rows[i][0], rows[i][1], int(rows[i][2])
-        if prev is None or (coin, side) != prev[:2] or entry_ms - prev[2] > CLUSTER_GAP_MS:
+        if anchor is None or (coin, side) != anchor[:2] or entry_ms - anchor[2] > CLUSTER_SPAN_MS:
             current += 1
+            anchor = (coin, side, entry_ms)
         ids[i] = current
-        prev = (coin, side, entry_ms)
     return ids
+
+
+# ── a change to the pool, judged before it lands ────────────────────────────
+
+def reinstatement_problem(before: Membership, after: Membership,
+                          held_ms: Sequence[int] = ()) -> Optional[str]:
+    """Would this change put an account INTO the pool without a new signed
+    join? None when it would not; otherwise the reason. Pure.
+
+    `before` and `after` are one address's `membership` in the base branch's
+    pool/ and in the pool/ the pull request would leave behind. `held_ms` is
+    every joined_at and left_at the base branch has EVER held for the address
+    (its git history of the two files), so a statement that was removed still
+    counts.
+
+    The rule: an address may be a member after the change only when
+
+      * it was a member before, on the same join (nothing about it changed), or
+      * its join is newer than every join and leave the base branch holds or
+        has ever held for it: a statement nobody has seen before, signed after
+        the last leave.
+
+    What it refuses, each of which a plain scan of the files would accept:
+
+      * a leave file deleted while the old member file stays (the account
+        would be back from the OLD joined_at, re-grading the time its owner
+        believed it was out)
+      * a leave file replaced by an older one, dated before the join
+      * a member file put back from git history after it was removed on
+        request, or swapped for an earlier join to count from further back
+
+    Removing a member (deleting the member file, adding a leave) never trips
+    it: only becoming active needs consent, and consent is a new signature."""
+    if after["state"] != "member" or after["join"] is None:
+        return None
+    join = after["join"]
+    if before["state"] == "member" and before["join"] == join:
+        return None
+    held = [int(ms) for ms in held_ms]
+    held += [v["at_ms"] for v in (before["join"], before["leave"]) if v is not None]
+    if not held or join["at_ms"] > max(held):
+        return None
+    return (f"this change would put {short_address(join['address'])} back in the pool from "
+            f"{join['at']} with no new consent: the repository already held a statement for it "
+            f"dated {iso_from_ms(max(held))}. An account comes back only with a join signed after that")
 
 
 # ── pull request link ───────────────────────────────────────────────────────

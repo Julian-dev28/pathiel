@@ -31,6 +31,11 @@ __pycache__/
 
 # Docs / notes that don't belong in the runtime image
 docs/
+# ... except the published scoreboard (static page + JSON), which the MCP
+# image ships so pool_status can show the pool's counts. Must come AFTER
+# `docs/`: the last matching pattern wins. Checked against real Docker and
+# pinned by tests/test_pool_docker_context.py.
+!docs/scoreboard/
 *.md
 !README.md
 skills/

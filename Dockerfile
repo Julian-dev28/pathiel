@@ -80,9 +80,12 @@ COPY services/risk/ services/risk/
 # and backtest proposals. Not on the request path; shipped so the image can
 # run the daily review against its own state volume.
 COPY services/review/ services/review/
-# The research pool (python3 -m services.pool): signed membership files, the
-# grading of members' public fills through services/review, the scoreboard
-# build. Reads the venue's public info endpoint only. Not on the request path.
+# The research pool's CODE only (python3 -m services.pool). Not on the request
+# path, and this image cannot run the scoreboard build: it does not hold pool/
+# (the signed member files) or docs/scoreboard/ (the output, a tracked file
+# the maintainer commits). The build runs from the maintainer's checkout. The
+# line is here because tests/test_deploy_config.py wants a COPY for every
+# services package that code under pathiel/, scripts/ or services/ imports.
 COPY services/pool/ services/pool/
 COPY conftest.py ./
 

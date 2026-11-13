@@ -412,26 +412,146 @@ def test_leave_signer_allowed():
     assert not pool.leave_signer_allowed(agent, other_join, False)
     assert not pool.leave_signer_allowed(agent, None, False)
     assert pool.leave_signer_allowed(agent, other_join, True)       # an approved API wallet
+    # Documented, accepted: the key that joined may leave with NO venue read, so it still can
+    # after the account revoked it. agent_ok=False stands for "not approved now".
+    assert pool.leave_signer_allowed(agent, join, False)
+    assert "REVOKED" in pool.leave_signer_allowed.__doc__
 
 
-def test_cluster_ids_chain_within_an_hour_on_one_coin_and_side():
-    h = pool.CLUSTER_GAP_MS
+def test_cluster_ids_anchor_on_the_first_entry_of_one_coin_and_side():
+    w = pool.CLUSTER_SPAN_MS
     rows = [
-        ("xyz:BRENTOIL", "long", 10 * h),            # 0 \
-        ("xyz:GOLD", "long", 10 * h),                # separate coin
-        ("xyz:BRENTOIL", "long", 10 * h + h),        # 0  | chained: exactly one gap
-        ("xyz:BRENTOIL", "short", 10 * h + 5),       # other side
-        ("xyz:BRENTOIL", "long", 12 * h),            # 0 /  chained through the middle one
-        ("xyz:BRENTOIL", "long", 13 * h + 1),        # a new bet: more than one gap later
+        ("xyz:BRENTOIL", "long", 10 * w),            # 0: the anchor
+        ("xyz:GOLD", "long", 10 * w),                # separate coin
+        ("xyz:BRENTOIL", "long", 11 * w),            # 0: exactly one window after the anchor
+        ("xyz:BRENTOIL", "short", 10 * w + 5),       # other side
+        ("xyz:BRENTOIL", "long", 11 * w + 1),        # a new bet: outside the anchor's window,
+        ("xyz:BRENTOIL", "long", 12 * w),            # ... and this one is in the NEW anchor's window
+        ("xyz:BRENTOIL", "long", 12 * w + 2),        # a third bet
     ]
     ids = pool.cluster_ids(rows)
-    assert ids[0] == ids[2] == ids[4]
-    assert len({ids[0], ids[1], ids[3], ids[5]}) == 4
-    assert sorted(set(ids)) == list(range(4))
+    assert ids[0] == ids[2]
+    assert ids[4] == ids[5] and ids[4] != ids[0]     # not chained through the middle one
+    assert len({ids[0], ids[1], ids[3], ids[4], ids[6]}) == 5
+    assert sorted(set(ids)) == list(range(5))
     assert pool.cluster_ids(list(reversed(rows))) == list(reversed(ids))     # input order does not matter
     assert pool.cluster_ids([]) == []
     # ten members on one call are one bet
-    assert len(set(pool.cluster_ids([("xyz:BRENTOIL", "long", 10 * h + i * 60_000) for i in range(10)]))) == 1
+    assert len(set(pool.cluster_ids([("xyz:BRENTOIL", "long", 10 * w + i * 60_000) for i in range(10)]))) == 1
+
+
+def test_a_run_of_entries_with_no_quiet_hour_does_not_fold_into_one_cluster():
+    """The review finding of 2026-11-12: chained on the previous entry, a coin
+    and side that never goes an hour without an entry was ONE cluster for
+    ever, so the count of independent trades could not grow. Anchored, a
+    cluster never spans more than CLUSTER_SPAN_MS."""
+    quarter = 15 * 60_000
+    days = 30
+    rows = [("xyz:BRENTOIL", "long", i * quarter) for i in range(days * 96)]     # every 15 minutes
+    ids = pool.cluster_ids(rows)
+    assert len(set(ids)) == days                                # one per 24 hours, not one in all
+    span = {}
+    for (_, _, entry), cid in zip(rows, ids):
+        lo, hi = span.get(cid, (entry, entry))
+        span[cid] = (min(lo, entry), max(hi, entry))
+    assert max(hi - lo for lo, hi in span.values()) <= pool.CLUSTER_SPAN_MS
+    # more members on the same stream add trades, never clusters
+    crowd = rows + [(c, s, e + 60_000) for c, s, e in rows] + [(c, s, e + 120_000) for c, s, e in rows]
+    assert len(set(pool.cluster_ids(crowd))) == days
+
+
+def test_cluster_span_is_bounded_on_seeded_random_streams():
+    import random
+    for seed in range(25):
+        rng = random.Random(seed)
+        rows = [(rng.choice(pool.POOL_COINS), rng.choice(("long", "short")), rng.randrange(0, 20 * pool.DAY_MS))
+                for _ in range(400)]
+        ids = pool.cluster_ids(rows)
+        seen = {}
+        for (coin, side, entry), cid in zip(rows, ids):
+            key, lo, hi = seen.get(cid, ((coin, side), entry, entry))
+            assert key == (coin, side)                          # a cluster is one coin and one side
+            seen[cid] = (key, min(lo, entry), max(hi, entry))
+        assert all(hi - lo <= pool.CLUSTER_SPAN_MS for _, lo, hi in seen.values())
+        assert sorted(set(ids)) == list(range(len(seen)))
+
+
+# ── a change to the pool, judged before it lands ────────────────────────────
+
+def _both(tmp_path: Path, name: str) -> Path:
+    root = tmp_path / name
+    root.mkdir()
+    return root
+
+
+def test_deleting_a_leave_would_restore_the_old_join_and_the_rule_refuses_it(tmp_path):
+    """The consent gap of the 2026-11-12 review. scan() reads the files that
+    are there: take the leave away and the OLD join is in force again."""
+    a = Account.create()
+    t_join, t_leave = "2026-11-12T10:00:00Z", "2026-11-20T10:00:00Z"
+    base, head = _both(tmp_path, "base"), _both(tmp_path, "head")
+    for root in (base, head):
+        _write(root, "members", _signed("join", a, a, t_join))
+    _write(base, "leaves", _signed("leave", a, a, t_leave))                  # head: the leave is gone
+    as_of = pool.ms_from_iso("2026-12-01T00:00:00Z")
+    assert pool.scan(str(base), as_of)["left"] == [a.address.lower()]
+    back = pool.scan(str(head), as_of)["members"]
+    assert [m["count_from"] for m in back] == [t_join]                       # the gap, pinned
+
+    before, after = pool.membership(str(base), a.address), pool.membership(str(head), a.address)
+    problem = pool.reinstatement_problem(before, after)
+    assert problem and "no new consent" in problem and t_join in problem and t_leave in problem
+    assert pool.short_address(a.address.lower()) in problem
+
+
+def test_reinstatement_rule_table(tmp_path):
+    a = Account.create()
+    t0, t1, t2, t3 = (f"2026-11-1{d}T10:00:00Z" for d in (2, 3, 4, 5))
+    ms = pool.ms_from_iso
+
+    def state(name: str, join: str = "", leave: str = "") -> dict:
+        root = _both(tmp_path, name)
+        if join:
+            _write(root, "members", _signed("join", a, a, join))
+        if leave:
+            _write(root, "leaves", _signed("leave", a, a, leave))
+        return pool.membership(str(root), a.address)
+
+    none = state("none")
+    member0, member2 = state("m0", join=t0), state("m2", join=t2)
+    left = state("left", join=t0, leave=t1)
+    rejoined = state("rejoined", join=t2, leave=t1)
+    rejoined_clean = state("rejoined_clean", join=t2)
+    old_leave = state("old_leave", join=t2, leave=t0)
+    assert (none["state"], member0["state"], left["state"], rejoined["state"]) == (
+        "none", "member", "left", "member")
+
+    ok = [
+        (none, member0, ()),                    # a first join
+        (member0, member0, ()),                 # nothing changed
+        (member0, left, ()),                    # a leave: going out never needs the rule
+        (left, rejoined, ()),                   # a rejoin signed after the leave
+        (left, rejoined_clean, ()),             # the same, with the old leave file removed too
+        (rejoined, rejoined_clean, ()),         # tidying away a leave that was not in force
+        (member0, member2, ()),                 # a newer join replaces the old one
+        (member0, none, ()),                    # removed on request
+        (left, none, ()),
+        (none, member2, (ms(t0), ms(t1))),      # removed long ago, back with a newer join
+    ]
+    for before, after, held in ok:
+        assert pool.reinstatement_problem(before, after, held) is None, (before["state"], after["state"])
+
+    refused = [
+        (left, member0, ()),                    # the leave deleted, the old join untouched
+        (state("left2", join=t2, leave=t3), old_leave, ()),     # the leave swapped for an older one
+        (member2, member0, ()),                 # the join swapped for an earlier one: counts further back
+        (none, member0, (ms(t0),)),             # a removed member file put back from git history
+        (none, member0, (ms(t0), ms(t1))),      # ... or put back after its leave was removed as well
+        (none, member2, (ms(t2),)),             # the same statement again is not a new one
+    ]
+    for before, after, held in refused:
+        problem = pool.reinstatement_problem(before, after, held)
+        assert problem and "no new consent" in problem, (before["state"], after["state"], held)
 
 
 def test_pr_url_prefills_the_path_and_content():

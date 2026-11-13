@@ -6,10 +6,15 @@ not move until the release).
 
 Committed with this doc: the contract `contracts/pool/` (tests and fixtures
 included), the shared skeleton of `services/pool/` (`__init__`, `__main__`,
-`paths`, `venue`, `account`, the test fixtures), the `pool/` directory with
-`house.json`, and one `COPY services/pool/` line in `Dockerfile` (the deploy
-config test requires it for any imported service). Four build units follow,
-with disjoint files.
+`paths`, `venue`, `account`, the test fixtures), the cluster eval
+(`services/pool/evals/cluster_eval.py`), the `pool/` directory with
+`house.json`, one `COPY services/pool/` line in `Dockerfile` (the deploy
+config test requires it for any imported service), and the `.dockerignore`
+exception for `docs/scoreboard/` with its test. Four build units follow, with
+disjoint files.
+
+Revision 2 (same day, after the design review): contract 1.1.0. Six findings,
+all applied; what was changed and what was not is under "Review decisions".
 
 ## Goal
 
@@ -35,7 +40,7 @@ returns.
 | Today | 19 graded trades, the maintainer alone (the 2026-11-12 audit); no slice can be EDGE or LEAK on evidence that thin |
 | Direction | up, toward 10 or more independent trades per slice, the floor `services/review` sets for an EDGE or LEAK verdict |
 | Trace | `docs/scoreboard/scoreboard.json`: `counts.graded_trades`, `counts.independent_trades`, `counts.slices_at_min_n`, `counts.members`. Git history of that file is the time series. |
-| Log line | `POOL <day> cutoff=<day> members=N house=1 left=N closed=N graded=N independent=N slices_at_10=K/M edge=N leak=N changed=yes|no out=<path>` printed by every build |
+| Log line | `POOL <day> cutoff=<day> members=N house=1 left=N closed=N graded=N independent=N slices_at_10=K/M edge=N leak=N changed=yes|no out=<path>` printed by every build. Before it, one `POOL-NEW <short address> since=<date>` line for every address that has a row now and had none in the scoreboard being replaced. |
 
 ## Decisions (the operator's, not reopened)
 
@@ -67,7 +72,7 @@ to overrule are repeated under Open questions.
 |---|---|---|
 | D1 | The contract holds the whole offline definition of membership (`verify_statement`, `scan`, `active_members`, `local_standing`), not only types. | Four builders must agree byte for byte on who is a member. One implementation, written and tested before the units start, cannot drift. |
 | D2 | Leaving is a second signed file, `pool/leaves/<address>.json`, not an edit of the member file. | GitHub's prefilled new-file link works for a new file only. Join and leave are then the same one-click flow. |
-| D3 | Pool stats count independent trades: trades on one coin and side whose entries chain within 60 minutes are one bet (`cluster_ids`). | Ten members taking the same desk call are one bet, not ten. Counting them as ten would reach n = 10 on one call and label noise as EDGE or LEAK. |
+| D3 | Pool stats count independent trades: trades on one coin and side entered within 24 hours of the cluster's first entry are one bet (`cluster_ids`, `CLUSTER_SPAN_MS`). The window is anchored on the first entry, so no cluster spans more than 24 hours. | Ten members taking the same desk call are one bet, not ten. Members who enter an hour apart still hold through the same move. Measured on pure noise shared by 12 members (`cluster_eval`, 200 seeds): the pool row says EDGE or LEAK in 49.5% of runs with every trade counted, 33% with a 60 minute window, 5.5% with this one. See "Independent trades". |
 | D4 | Nothing in dollars. Rows carry counts, win rate, mean R, ranges, p, a label and a luck score. `validate_scoreboard` refuses any key that names dollars, prices, sizes, positions or leverage. | Privacy, and no leaderboard of returns: ranking by return rewards leverage. Rows are ordered by trade count, never by result. |
 | D5 | The pool reads fills and orders only. Not the balance, not deposits or withdrawals, not funding, not open positions. | R needs the fills and the opening stop. Nothing else is needed, so nothing else is read. The risk-as-share-of-equity slice is given up for it. |
 | D6 | Desk coins only: `xyz:BRENTOIL`, `xyz:CL`, `xyz:SILVER`, `xyz:GOLD`. Fills on other coins are dropped before anything is computed or written. | The research question is which desks hold up. Narrower reads are also better privacy. |
@@ -78,6 +83,8 @@ to overrule are repeated under Open questions.
 | D11 | The pool tools are listed on public installs only. The operator's `tools/list` stays byte-identical; the operator uses `python -m services.pool`. | The operator path may not change, and its tools hash is pinned by a test. |
 | D12 | Mainnet only. | Testnet fills are not a record. |
 | D13 | A graded trade is one with an R: its opening stop was found. A trade without a stop counts as closed, not graded. | Same rule as `services/review`. Every pathiel bracket has a stop, so pathiel trades grade. |
+| D14 | Going out of the pool needs no proof. Coming in needs a new signature: an address becomes active only through a join newer than every join and leave the repository holds or ever held for it (`reinstatement_problem`, code `reinstated`). | A scan reads the files that are there. Deleting a leave file would otherwise put the old join back in force, from the old `joined_at`, with a green check and no consent. |
+| D15 | The `Pool members` check runs on every pull request, not only on ones that touch `pool/`. Without a membership change it prints `no membership change` and passes. | GitHub cannot scope a required status check to a path. A required check that a path filter skips never reports, and blocks every other pull request. Running always is what lets branch protection require it. |
 
 ## Data flow
 
@@ -92,7 +99,9 @@ member's machine                         GitHub repo (public)                 ma
         |
         +--- pull request ---> pool/members/<address>.json
                                CI: Tests job (offline, every file)
-                               CI: Pool members job (freshness, agent approval, one-file rule)
+                               CI: Pool members job (freshness, agent approval, one-file rule,
+                                   no way back in without a new join)
+                               branch protection: both checks required, branch up to date
                                maintainer merges
                                         |
                                         +------ git pull ------> python -m services.pool build
@@ -237,7 +246,31 @@ Pull request time (`python -m services.pool verify --pr-base <ref>`, the
 | `stale` | the statement time is at most 7 days old and at most 10 minutes ahead (`fresh_problem`) |
 | `agent_not_approved` | a join signed by an agent: the account approves that signer now (`agent_approved`) |
 | `leave_signer` | a leave is signed by the account, by the key that signed the join in force, or by an approved agent (`leave_signer_allowed`) |
-| note, not a failure | a deleted member file: the maintainer confirms the owner asked |
+| `reinstated` | after the change the address is a member only if it was one before on the same join, or its join is newer than every join and leave the base branch holds or ever held for it (`reinstatement_problem`) |
+| `not_merged`, `shallow` (exit 2) | the check runs on the merge result with full history: `REF` must be an ancestor of `HEAD`, and the clone must not be shallow |
+| note, not a failure | a deleted member file: the address goes out; the maintainer confirms the owner asked |
+| note, not a failure | a deleted leave file when the address stays out, or when its join was already newer than that leave |
+
+Changed paths come from `git diff --name-status --no-renames REF...HEAD`, so a
+deletion is a change like any other. A pull request that only deletes
+`pool/leaves/<address>.json` is a membership change and is checked.
+
+`reinstated` in detail. For the one address a pull request touches, the check
+builds two views with `contracts.pool.membership`: `before`, from the two
+files as they are at `REF`, and `after`, from the checked-out tree. It also
+collects `held`: every `joined_at` and `left_at` in the git history of the two
+paths on `REF`. The contract function decides. It refuses:
+
+- a leave file deleted while the old member file stays. Without the rule the
+  account would be a member again from the OLD `joined_at`, and the time its
+  owner believed it was out would be graded and published;
+- a leave file replaced by an older one, dated before the join;
+- a member file put back from git history after it was removed on request,
+  or swapped for an earlier join to count from further back.
+
+A deleted leave is fine in two cases: the member file is gone too, or the
+join in force is newer than the leave (a rejoin that tidies up). Coming back
+always takes a new join, signed after the last statement the repository saw.
 
 Agent approval, from two public reads (`contracts.pool.agent_approved`, pure):
 
@@ -266,6 +299,12 @@ Who is active (`contracts.pool.scan`):
 - a join dated after the build time is pending
 - the house address has one row, the house's
 - any file that does not verify stops the build (`active_members` raises)
+
+What a scan cannot see is a file that was deleted. That is why a change to
+`pool/` is judged as a move from one state to the next, before it lands
+(`reinstated` above), and why every build prints a `POOL-NEW` line for each
+address that gains a row: a way back in that skipped the pull request check
+(a direct push to `main`) is at least visible in the build output.
 
 ## What the build reads
 
@@ -312,6 +351,51 @@ day before the build day.
   before its `day`.
 - The personal report is not delayed: it is the member's own data, shown
   locally, and nothing in it is published.
+
+## Independent trades
+
+Pool rows are computed over clusters, not over member trades.
+`contracts.pool.cluster_ids`: trades on one coin and side entered within
+`CLUSTER_SPAN_MS` (24 hours) of the cluster's first entry are one bet. The
+next entry after that window opens a new cluster and is its anchor. A
+cluster's R is the mean R of its trades.
+
+Anchored, not chained. The first version chained each entry to the one before
+it (within 60 minutes). A chain has no bound: with desks ticking every 15
+minutes and enough members, one coin and side never goes quiet, and its whole
+history folds into one cluster. The count of independent trades would stop
+growing however much evidence came in, which is the opposite of the outcome
+this feature is for. Anchored, no cluster spans more than 24 hours, and n
+grows with time and never with members: at most one cluster per coin, side
+and 24 hours, so at most 8 a day over the four pool coins.
+
+24 hours, not 60 minutes. Members who enter the same coin and side an hour
+apart hold through the same price move. Their results are not independent,
+and a short window counts them as if they were. Measured by
+`python -m services.pool.evals.cluster_eval` (offline, seeded, 200 seeds): a
+price with no drift, 12 members entering bracket trades at 15 minute ticks,
+30 days, median hold about 4 hours. Every trade is worth 0 R on average, so
+any EDGE or LEAK on the pool row is false.
+
+| rule | pool row says EDGE or LEAK on pure noise |
+|---|---|
+| every trade is its own bet | 49.5% |
+| 60 minute window | 33% |
+| 24 hour window, anchored (the contract) | 5.5% |
+| the same, 60 days, median hold about 12 hours | 11% |
+
+With a real edge planted (a coin that lands up 52% of the time, about 0.5 R a
+trade), the 24 hour rule still says EDGE in 92.5% of runs over 30 days. Gates:
+noise at most 10%, long holds at most 20%, the planted edge at least 80%, a
+stream with no quiet hour gives at least 28 clusters in 30 days and no cluster
+past the span.
+
+What this costs: n grows slower than with a short window. The maintainer's
+own 19 graded trades will show fewer than 19 independent trades on the first
+build. That is the honest count. What it does not fix: positions held for
+days still leak from one cluster into the next (the 11% row), and a Brent
+long and a WTI long on one view are two clusters. The span is Open question
+17.
 
 ## What the scoreboard publishes
 
@@ -380,6 +464,16 @@ trades.
    of it in any pool row, and deletes `<state>/pool/ledger/<address>.jsonl`.
 5. Without a key: the member asks in an issue and the maintainer deletes the
    member file. Removal is honored on request; rejoining is always possible.
+6. Coming back is a new join, signed after the leave. Nothing else brings an
+   account back: a pull request that deletes or replaces the leave file while
+   the old member file stays fails the check (`reinstated`).
+
+Who may sign a leave has one accepted gap. The key that signed the join may
+sign the leave with no venue read, so that a member whose API wallet expired
+is not locked in. The same rule lets an API wallet the account has since
+revoked take the account out of the pool. It can do nothing else: a leave
+removes published rows, moves no money and reads nothing, and the account can
+rejoin with its current key. Open question 15.
 
 `pool_status` and `pool_report` read the repo copy and the local outbox
 together (`local_standing`), so a member who signed a leave sees
@@ -415,7 +509,7 @@ in `PUBLISHED_DIMENSIONS`.
 | # | What | Where it breaks | What holds |
 |---|---|---|---|
 | 1 | The venue keeps 10000 fills and 2000 orders per account, and serves 5000 5m bars (about 17 days). | A busy account's older trades lose their stop (no R, so closed but not graded) or their luck score on a fresh state dir. | The ledger freezes each record 12 hours after its exit. The build warns when `graded_trades` falls with no new leave. A lost state dir regrades with gaps. |
-| 2 | Members copy the same call. | n would grow with members, not with evidence. | Clusters (D3). Still open: a Brent long and a WTI long on one view are two clusters. |
+| 2 | Members copy the same call, or enter the same move hours apart. | n would grow with members, not with evidence. | Clusters with a 24 hour anchored span (D3, "Independent trades"): 5.5% false verdicts on shared noise against 49.5% unclustered. Still open: positions held for days (11%), and a Brent long and a WTI long on one view are two clusters. |
 | 3 | A join is backdated. | A signature does not prove its time. | The 7 day window at pull request time. A week of hindsight is still possible. |
 | 4 | A member leaves after losing. | Their trades vanish, so pool stats lean toward those who stay. | `counts.left` is published. Rows are not ordered by result and nothing is paid on returns, so the motive is weak. |
 | 5 | Two accounts trade opposite sides and one leaves. | A one-sided record. | Same as 4, and EDGE needs 10 trades and a range above zero. |
@@ -432,6 +526,12 @@ in `PUBLISHED_DIMENSIONS`.
 | 16 | GitHub Pages serves all of `docs/`. | Research docs become reachable on the Pages host. | `docs/.nojekyll` keeps them unrendered. Open question 2. |
 | 17 | Git history. | A removed member file and old scoreboards stay in history. | Said in the privacy doc. Fills are public on the chain regardless. |
 | 18 | The unnamed API wallet may not be in `extraAgents`. | An agent join would fail check 1. | Check 2 (`userRole`). Not confirmed live for an unnamed wallet; Open question 7. |
+| 19 | A leave file is deleted, or swapped for an older one, while the member file stays. | A scan reads the files that are there: the old join is in force again from the old `joined_at`, and the time the owner was out gets graded. | `reinstated` at the pull request (D14). Not covered: a direct push to `main`, which skips every check. The build's `POOL-NEW` lines show it after the fact. Open question 14. |
+| 20 | A member file removed on request is put back from git history inside the 7 day window. | The old signature is still valid and still fresh. | `reinstated` reads the history of both paths: the same statement is not a new one. |
+| 21 | An API wallet the account revoked signs a leave. | The account is taken out of the pool by a key its owner no longer trusts. | Accepted. It only removes published rows; the account rejoins with its current key. Open question 15. |
+| 22 | A membership pull request is merged on a failing, missing or old check. | The freshness window and the agent approval are measured when the check ran, not when the merge happens. Nothing in the repo can stop a merge. | Branch protection: both checks required, branch up to date with `main` (a moved `main` forces a new run). The merge checklist says to run the check again when it is over 24 hours old. An admin can still tick the bypass. Open question 16. |
+| 23 | A chain of entries with no quiet hour. | Chained on the previous entry, a coin and side folds into one cluster for ever and n stops growing. | The span is anchored and bounded (D3). Gated by `cluster_eval` and a contract test. |
+| 24 | `.dockerignore` excludes `docs/`. | `COPY docs/scoreboard/` fails the image build ("not found"), or with a looser pattern ships nothing. | `!docs/scoreboard/` after `docs/`, confirmed with real Docker (BuildKit and the legacy builder). `tests/test_pool_docker_context.py` applies Docker's own matching rule to every COPY source of both Dockerfiles. |
 
 ## Privacy
 
@@ -468,9 +568,11 @@ parallel from this commit.
 
 Frozen for all units (the architect's commit): `contracts/pool/**`,
 `services/pool/{__init__,__main__,paths,venue,account}.py`,
-`services/pool/tests/{__init__,conftest,test_skeleton}.py`,
-`services/pool/evals/__init__.py`, `pool/house.json`, `pool/*/.gitkeep`.
-A unit that needs a change there stops and reports it.
+`services/pool/tests/{__init__,conftest,test_skeleton,test_cluster_eval_smoke}.py`,
+`services/pool/evals/{__init__,cluster_eval}.py`, `pool/house.json`,
+`pool/*/.gitkeep`, `.dockerignore`, `tests/test_pool_docker_context.py` (the
+integrator extends that one). A unit that needs a change there stops and
+reports it.
 
 ### Seams
 
@@ -496,7 +598,16 @@ python -m services.pool report [--address 0x...] [--offline BUNDLE] [--json]
 ```
 
 Exit codes: 0 done, 1 a rule failed (verify), 2 refused (bad input, testnet, a
-pool file that does not verify, no key), 3 the venue could not be read.
+pool file that does not verify, no key; for `verify --pr-base` also a shallow
+clone or a `REF` that `HEAD` does not contain), 3 the venue could not be read.
+
+Evals (periodic lane, offline, seeded):
+
+```
+python -m services.pool.evals.cluster_eval    the independent-trade rule (architect's commit)
+python -m services.pool.evals.join_eval       statements accepted and refused (join unit)
+python -m services.pool.evals.pool_eval       the delay, leaves, labels on planted data (grade unit)
+```
 
 ### MCP tools
 
@@ -522,6 +633,12 @@ Signing rules for `pool_join` and `pool_leave`:
   and log line for the test key.
 - No key configured: `code: no_key`, with the command line for the hidden
   prompt (`join --master-prompt`), which the user runs in their own terminal.
+  On a plugin install the line carries the same three variables as the
+  launcher's own paste-ready commands (`scripts/_plugin_env.sh`,
+  `pathiel_print_commands`): `CLAUDE_PLUGIN_DATA`, `PATHIEL_HOME` and
+  `PATHIEL_PYTHON=<venv>/bin/python`. Without `PATHIEL_PYTHON` a plain
+  terminal's `python3` decides (macOS ships 3.9) and the launcher refuses it.
+  A test compares the variable names with that script.
 - Testnet process: `code: testnet`.
 
 ## Integration (after the four units merge)
@@ -543,12 +660,19 @@ Shared files, one integrator:
    rows.
 4. `CHANGELOG.md`: the Unreleased entry.
 5. `SECURITY.md`: the pool tools sign a text statement and nothing else.
-6. `Dockerfile.mcp`: copy `pool/` and `docs/scoreboard/`, so `pool_status` has
-   the member list and the counts in the container. (`Dockerfile` already
-   copies `services/pool/`.)
+6. `Dockerfile.mcp`: `COPY pool/ pool/` and `COPY docs/scoreboard/
+   docs/scoreboard/`, so `pool_status` has the member list and the counts in
+   the container. `.dockerignore` excluded `docs/` whole, which made that COPY
+   fail the build; the exception `!docs/scoreboard/` is already committed and
+   confirmed with real Docker. The integrator adds to
+   `tests/test_pool_docker_context.py` that both COPY lines are there and that
+   `docs/scoreboard/scoreboard.json` and `index.html` exist and reach the
+   context, then runs that file once with `PATHIEL_DOCKER_TESTS=1`. The
+   dashboard image (`Dockerfile`) gets the pool's code only: it cannot run the
+   scoreboard build, whose output is a tracked file the maintainer commits.
 7. `tests/test_public_copy.py`: the new public files in the lint list.
 8. `tests/test_pool_mcp.py` and `tests/test_pool_end_to_end.py`.
-9. The gate, both evals, the six `--help` calls.
+9. The gate, the three evals, the six `--help` calls.
 
 Not wired: the daily review loop (Open question 5). Not bumped: the version.
 
@@ -557,11 +681,38 @@ Not wired: the daily review loop (Open question 5). Not bumped: the version.
 1. Answer the open questions, the first two before the first build.
 2. Turn on GitHub Pages: repository Settings, Pages, "Deploy from a branch",
    branch `main`, folder `/docs`.
-3. Run `python3 -m services.pool build`, read the `POOL` line, commit
+3. Protect `main`: repository Settings, Branches, add a rule for `main`.
+   - "Require status checks to pass before merging", with these four checks:
+     `Tests (Python 3.11)`, `Tests (Python 3.12)`, `Tests (Python 3.13)`,
+     `Pool members`. GitHub lists a check only after it has run once, so do
+     this after the integration pull request has run them.
+   - "Require branches to be up to date before merging". When `main` moves,
+     an open membership pull request must be updated, which runs the checks
+     again on the new merge result.
+   - GitHub cannot scope a required check to `pool/**`. That is why
+     `Pool members` runs on every pull request and passes at once when no
+     membership file changed.
+   - Leave "Do not allow bypassing the above settings" off if direct pushes
+     to `main` should keep working (the scoreboard commit is one). The price:
+     an admin can tick a bypass box on a red pull request. Open question 16.
+   Without this step the freshness window and the agent approval are advice:
+   nothing stops a merge on a red or missing check.
+4. Run `python3 -m services.pool build`, read the `POOL` line, commit
    `docs/scoreboard/scoreboard.json`, push.
-4. For each membership pull request: one file changed, both checks green,
-   merge. Then build and push when convenient.
-5. Open the prefilled link once in a browser signed in as a non-collaborator
+5. For each membership pull request:
+   - a first-time contributor's workflow run waits for "Approve and run";
+     read the diff first (one or two files under `pool/members/` or
+     `pool/leaves/`, nothing else);
+   - both checks green, on the current `main`;
+   - if the `Pool members` run is more than 24 hours old (its last line
+     carries `at=<time>`), press "Update branch" or "Re-run all jobs" before
+     merging. The check reads the clock and the venue when it runs, not when
+     you merge: an API wallet can be revoked in between, and the 7 day
+     window is counted from that run;
+   - never use the admin bypass on a membership pull request;
+   - merge. Build and push when convenient, and read the `POOL-NEW` lines:
+     each should match a pull request you merged.
+6. Open the prefilled link once in a browser signed in as a non-collaborator
    and confirm GitHub offers "Propose new file".
 
 ## Restart
@@ -603,3 +754,55 @@ No sudo is involved.
 10. **Leavers in pool totals.** Dropped, as the statement says. Keeping them
     without the address would cut the survivorship lean and needs statement
     version 2.
+11. **Backdating.** A signature cannot prove when it was made, so a join may
+    be dated up to 7 days back (the freshness window at the pull request
+    check). Tighten to 24 hours, at the cost of joins that expire before the
+    pull request is opened?
+12. **The prefilled new-file link.** `github.com/<repo>/new/main?filename=...&value=...`
+    is the join flow's one-click path. Not exercised live from this session.
+    Fallback: the file the tool writes, plus `gh` or `git`.
+13. **Commit attribution.** The task text asked for a Claude Opus 5.5 trailer.
+    The architect commits carry the session's own line (Claude Fable 5.2), the
+    model that wrote them. Say so if the builders' commits should differ.
+14. **Coming back after a leave.** Deleting or replacing a leave file while
+    the old member file stays would reinstate the account from its old
+    `joined_at` with no new consent. The pull request check now refuses it
+    (`reinstated`, D14): only a join newer than everything the repository
+    ever held brings an account back. What is left open is a direct push to
+    `main`, which skips the check; the build shows it (`POOL-NEW`) but does
+    not stop it. Enough, or should every build also read git history and
+    refuse to grade an address whose newest statement in history is a leave?
+    That makes the build need a full clone, and it is a different question
+    from 8: 8 is about taking a member out without a signature, this one is
+    about putting one back in.
+15. **A revoked API wallet can take the account out.** The key that signed
+    the join may sign the leave with no venue read, so a wallet the owner has
+    since revoked can still end the membership at any later time. Question 6
+    is the other direction (a revoked wallet staying in). Kept: it only drops
+    published rows, and the alternative (a venue read on every agent-signed
+    leave) locks in a member whose wallet expired. Overrule?
+16. **Branch protection and the admin.** With the bypass left on, direct
+    pushes to `main` keep working and the maintainer can still merge a red
+    membership pull request by ticking a box. With "Do not allow bypassing"
+    on, nothing merges red, and every change to `main`, the daily scoreboard
+    commit included, has to go through a pull request. Which?
+17. **Cluster span.** 24 hours, anchored, on the measurement under
+    "Independent trades". A shorter span gives more independent trades sooner
+    and more false verdicts (33% at 60 minutes on shared noise). 48 hours
+    halves the count and was not measurably better in a side run (long holds:
+    10% against 12.5% on the same 120 streams, inside the noise). Keep 24
+    hours?
+
+## Review decisions
+
+The design review of 2026-11-12 asked for six changes. All six were applied.
+Where the fix differs from what was asked, the reason is in the last column.
+
+| # | Finding | Decision | What changed | Done differently, or not done, and why |
+|---|---|---|---|---|
+| 1 | Deleting `pool/leaves/<address>.json` while the member file stays silently reinstates the member from the old `joined_at`; the check showed it as a note. | Accepted, and widened. | `contracts.pool.reinstatement_problem` (contract 1.1.0) with a table test; the pull request check fails with `reinstated`; `--no-renames` so a bare deletion is a membership change; `not_merged` and `shallow` guards; the build prints `POOL-NEW`; Open question 14. | `scan()` itself is unchanged apart from its docstring: a scan reads the files present, and no rule over the files present can tell "never left" from "leave deleted". The rule therefore compares two states. Widened past the finding: an older leave swapped in, and a removed member file replayed from git history inside the 7 day window, are the same hole and are refused by the same rule. |
+| 2 | `master_command()` omitted `PATHIEL_PYTHON`, which the launcher's own paste-ready commands set on purpose. | Accepted. | The join unit's brief: the line carries `CLAUDE_PLUGIN_DATA`, `PATHIEL_HOME` and `PATHIEL_PYTHON=<PATHIEL_VENV>/bin/python`; outside a plugin install it uses the running interpreter, not `python3`; a test reads the variable names from `scripts/_plugin_env.sh` so the two cannot drift. | Nothing. |
+| 3 | `.dockerignore` excludes `docs/`, so `COPY docs/scoreboard/` fails; "check" should be "fix", with a test. The main `Dockerfile` comment overclaims. | Accepted, and done in this commit instead of being left to the integrator. | `!docs/scoreboard/` after `docs/`; `tests/test_pool_docker_context.py` (Docker's matching rule in the gate, plus an opt-in run against real Docker); the `Dockerfile` comment now says the image holds the pool's code only. | The doubt about negating a child of an excluded parent was tested, not assumed: with Docker 29.6.2 the original file fails `COPY docs/scoreboard/` with "not found", and the one added line fixes it under BuildKit and under the legacy builder. `pool/` and `docs/scoreboard/` are not added to the main `Dockerfile`: the scoreboard build writes a tracked file the maintainer commits, which an image cannot do, so the comment was wrong, not the COPY list. |
+| 4 | `cluster_ids` chains on the previous entry, so a run with no quiet hour is one cluster for ever; no eval covers it. | Accepted, both halves, and the span changed. | The window is anchored on the cluster's first entry (bounded span); `CLUSTER_GAP_MS` became `CLUSTER_SPAN_MS`; contract tests for the chain and the bound; `services/pool/evals/cluster_eval.py` with a chain gate and its smoke test. | The span went from 60 minutes to 24 hours, which the finding did not ask for. Bounding the span at 60 minutes fixes the collapse and leaves a worse problem the eval measured: on noise shared by 12 members the pool row says EDGE or LEAK in 33% of runs (5.5% at 24 hours). The finding expects more independent trades; in a sparse pool the 24 hour rule gives fewer than the old chain did. That is deliberate, and it is Open question 17. |
+| 5 | No branch protection in the operator's checklist; a stale check can be merged; freshness is measured at check time. | Accepted, with one correction. | "What Julien must do" steps 3 and 5; D15; failure mode 22; the summary line of the check carries `at=<time>`; `fresh_problem` documents which clock it uses; Open question 16. | "Scoped to `pool/**`" is not something GitHub offers for required checks, and a path-filtered required check blocks every other pull request. So the `Pool members` workflow lost its `paths` filter and runs always. Freshness at merge time cannot be enforced from inside the repo without a server or a workflow write permission, both ruled out: the "up to date" setting plus the re-run step is the answer, and the admin bypass is left to the operator. |
+| 6 | The "key that signed the join" rule lets a revoked API wallet force the account out; undocumented. | Accepted as documentation; the rule stays. | The `leave_signer_allowed` docstring, a test that pins it, the leave flow text, failure mode 21, Open question 15. | The rule is not tightened: a venue read on every agent-signed leave would lock in a member whose wallet expired, and a forced leave costs one rejoin. |
