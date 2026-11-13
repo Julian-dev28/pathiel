@@ -54,12 +54,15 @@ account setup.
 
 Cursor, Claude Desktop, Pathiel Agent and any other MCP client register the
 launcher `scripts/pathiel-mcp` from a clone as the server command, or run the
-container built from `Dockerfile.mcp`:
+published container (amd64 and arm64). It is listed in the official MCP
+registry as `io.github.Julian-dev28/pathiel`.
 
 ```bash
-docker build -f Dockerfile.mcp -t pathiel-mcp .
-docker run -i --rm --user "$(id -u):$(id -g)" -v "$HOME/.pathiel:/data" pathiel-mcp
+docker run -i --rm --user "$(id -u):$(id -g)" -v "$HOME/.pathiel:/data" \
+  ghcr.io/julian-dev28/pathiel-mcp:0.4.0
 ```
+
+To build it yourself: `docker build -f Dockerfile.mcp -t pathiel-mcp .`
 
 Both are the public install: keys and config come from `~/.pathiel`, with
 the same default network, profile and fee rules as the plugin. Starting

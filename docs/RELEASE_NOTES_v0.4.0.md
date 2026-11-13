@@ -79,9 +79,10 @@ after approving, set `PATHIEL_BUILDER_FEE_TENTHS_BP=0` in
 - **The thesis needs the Claude Code CLI.** `desk_refresh` writes a new
   thesis through your local `claude` command; without it, `desk_refresh`
   stops at once and says so.
-- **The container image is not on a registry yet.** Build it from
-  `Dockerfile.mcp` until `ghcr.io/julian-dev28/pathiel-mcp:0.4.0` is
-  published.
+- **The container is `ghcr.io/julian-dev28/pathiel-mcp:0.4.0`** (amd64 and
+  arm64), listed in the official MCP registry as
+  `io.github.Julian-dev28/pathiel`. It runs the same public launcher as the
+  plugin.
 - **A clone is not the public install.** Opening a clone and accepting the
   repo `.mcp.json` runs the maintainer's mainnet config (20x, whole-equity
   sizing). Use the plugin, the launcher or the container.

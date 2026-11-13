@@ -39,17 +39,24 @@ Measured 2026-11-12 on the maintainer's live account.
 A price needs an edge a buyer can check. This record does not show one,
 and 19 trades cannot tell one from luck. It stays out of public copy.
 
+## Closed on release day (2026-11-12)
+
+| gap | how it closed |
+|---|---|
+| 0.4.0 not on `main` | `main` fast-forwarded to the release; tag `v0.4.0`; GitHub release with notes attached |
+| Container image not published | `ghcr.io/julian-dev28/pathiel-mcp:0.4.0` and `:latest`, amd64 and arm64, public, smoke-tested over stdio with no key |
+| Not in the official MCP registry | Published as `io.github.Julian-dev28/pathiel` 0.4.0, status active |
+| Private vulnerability reporting off | Turned on |
+| GitHub About text said "Autonomous multi-market trading agent" | Description, homepage and 10 topics set |
+| smithery.yaml pointed at a dead flow | Removed: Smithery's hosted builds shut down 2026-10-31 |
+
 ## Remaining gaps
 
 | gap | why it matters | next move | owner |
 |---|---|---|---|
 | Builder balance sits on the xyz dex | Hyperliquid: "The builder must have at least 100 USDC in perps account value and must use standard as the account abstraction mode" (hyperliquid.gitbook.io, builder-codes). On 2026-11-12 the address held $0.009 on main perps and $213.77 on the xyz HIP-3 dex. No doc says whether a HIP-3 dex balance counts. Julien chose to leave it on xyz (the oil desk trades it) | Once public users approve the fee, check fills for a builder fee. If none arrive, move 100 USDC to main perps | Julien |
 | Builder fees on HIP-3 orders unconfirmed | The builder-codes doc never mentions HIP-3. The oil and metals desks trade HIP-3 (xyz) perps. If the venue refuses the fee there, pathiel resends without it: the order lands, no fee is earned | Confirm on the first approved public order on xyz | Julien |
-| 0.4.0 not on `main` | `/plugin marketplace add Julian-dev28/pathiel` clones the default branch, `main`; users get 0.3.0 until it merges | Merge the release branch to `main`, tag `v0.4.0` | Julien |
-| Container image not published | `server.json` names `ghcr.io/julian-dev28/pathiel-mcp:0.4.0`; the registry rejects a package it cannot pull | Build `Dockerfile.mcp` and push the tag to ghcr.io, public | Julien |
-| Listings not submitted | No directory lists pathiel yet | Submit in this order: official MCP registry (`mcp-publisher login github`, then `mcp-publisher publish`), Glama, PulseMCP, mcp.so. Smithery is directory-only since 2026-10-31 (hosted builds shut down, smithery.ai/future), so pathiel ships no smithery.yaml | Julien |
-| Private vulnerability reporting off | `SECURITY.md` points reporters at GitHub private advisories, which need it on | `gh api -X PUT repos/Julian-dev28/pathiel/private-vulnerability-reporting` | Julien |
-| GitHub About text says "Autonomous multi-market trading agent" | Contradicts the README: there is no autonomous bot | Set the description to the README's one-line pitch; add topics `hyperliquid`, `mcp`, `claude-code`, `trading`, `perps` | Julien |
+| Directory listings beyond the official registry | The official MCP registry lists `io.github.Julian-dev28/pathiel` 0.4.0 (published 2026-11-13 01:57 UTC); the others do not list it yet | Submit to Glama, PulseMCP and mcp.so (web forms; Glama also indexes public GitHub repos with a `glama.json`). Smithery is directory-only since 2026-10-31 (hosted builds shut down, smithery.ai/future), so pathiel ships no smithery.yaml | Julien |
 | No legal review | The builder fee is execution revenue, not a sale of advice, but no lawyer has said so | Legal review before any paid tier, and before marketing to any jurisdiction | Julien |
 | Record too small | 19 trades cannot show an edge either way | Keep grading; revisit only after enough trades for the interval to clear zero, and never as marketing | desk |
 
