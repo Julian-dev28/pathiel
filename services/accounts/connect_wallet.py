@@ -470,7 +470,7 @@ PAGE_SCRIPT = """
       if (e && e.code === 4001) {
         say("You declined in the wallet. Nothing was signed or sent. Pick a wallet to try again.");
       } else {
-        say("Wallet error: " + ((e && e.message) || e) + ". Nothing was sent. Pick a wallet to try again.", "err");
+        say("Error: " + ((e && e.message) || e) + ". Ask Claude for the status before you try again.", "err");
       }
     } finally {
       busy = false; render();
