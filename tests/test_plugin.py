@@ -58,7 +58,7 @@ def test_the_plugin_manifest_has_no_component_paths_outside_the_defaults():
     cannot quietly replace the default scans."""
     m = _manifest()
     assert set(m) <= {"name", "displayName", "version", "description", "author", "homepage",
-                      "repository", "documentationUrl", "privacyPolicyUrl", "supportUrl", "license", "keywords", "mcpServers"}, sorted(m)
+                      "repository", "documentationUrl", "privacyPolicyUrl", "supportUrl", "termsOfServiceUrl", "license", "keywords", "mcpServers"}, sorted(m)
     assert (ROOT / "skills" / "desk-tick" / "SKILL.md").is_file()
     assert (ROOT / "skills" / "pathiel-agent" / "SKILL.md").is_file()
     assert (ROOT / "agents" / "desk-tick.md").is_file()

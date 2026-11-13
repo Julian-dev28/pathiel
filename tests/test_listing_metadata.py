@@ -55,7 +55,7 @@ SECRET_NAME_RE = re.compile(r"(key|secret|token|password|passphrase|private|mnem
 # The key sets at 2816df7 (0.3.0). Claude Code validates these manifests; a new
 # key is a format change, not a description edit.
 PLUGIN_KEYS = {"name", "displayName", "version", "description", "author", "homepage",
-               "repository", "documentationUrl", "privacyPolicyUrl", "supportUrl", "license", "keywords", "mcpServers"}
+               "repository", "documentationUrl", "privacyPolicyUrl", "supportUrl", "termsOfServiceUrl", "license", "keywords", "mcpServers"}
 MARKET_KEYS = {"name", "description", "owner", "plugins"}
 MARKET_ENTRY_KEYS = {"name", "source", "description", "category", "keywords"}
 
@@ -294,3 +294,20 @@ def test_plugin_icon_meets_the_directory_rules():
 @pytest.mark.parametrize("path", [SERVER_JSON, GLAMA_JSON, PLUGIN_JSON, MARKET_JSON])
 def test_listing_json_files_parse(path):
     assert isinstance(_json(path), dict)
+
+
+def test_listing_urls_point_at_files_that_exist_and_terms_say_what_matters(copy_lint):
+    """The directory listing shows these four links (2026-11-13). Each repo
+    link must name a file on main, and the terms must carry the disclosures."""
+    plugin = _json(PLUGIN_JSON)
+    blob = "https://github.com/Julian-dev28/pathiel/blob/main/"
+    for key in ("documentationUrl", "privacyPolicyUrl", "termsOfServiceUrl"):
+        url = plugin[key]
+        assert url.startswith(blob) and (ROOT / url[len(blob):]).is_file(), (key, url)
+    assert plugin["supportUrl"] == "https://github.com/Julian-dev28/pathiel/issues"
+    assert plugin["homepage"] == "https://julian-dev28.github.io/pathiel/"
+    terms = " ".join((ROOT / "docs" / "TERMS.md").read_text(encoding="utf-8").split())
+    for must in ("MIT license", "without warranty", "Not financial advice", "US persons",
+                 "never withdraw", "charges no fee", "opt-in"):
+        assert must in terms, must
+    assert copy_lint.style_hits(terms) == [] and copy_lint.claim_hits(terms) == []
