@@ -245,6 +245,23 @@ def test_the_live_rule_has_every_axis_off():
     assert lp.lock_trigger_r is None and lp.partial_frac == 0.0
 
 
+def test_the_baseline_carries_the_live_leverage_fit_and_the_other_baseline_is_derived():
+    """2026-11-13 correction: the sweep's baseline is live_brent_params'
+    (fit on); the diagnostic's other baseline is the unfitted 20x rule, and
+    --no-lev-fit swaps them. Both read the fit off next_trade, never a typed
+    (20, 15)."""
+    from services.strategies.next_trade import BRENT, leverage_fit_for
+    live_fit = tuple(leverage_fit_for(BRENT))
+    assert E.base_params().entry_fit_leverage == live_fit
+    assert E.LIVE_FIT == {"entry_fit_leverage": live_fit}
+    assert E.UNFITTED == {"entry_fit_leverage": None}
+    assert not hasattr(E, "LEV_FIT_DIAGNOSTIC")        # the typed (20, 15) is gone
+    # the fit changes a wide-stop entry, so the two baselines are not the same run
+    rows = [ENTER_LONG, QUIET, QUIET]
+    fit, unfit = _run(rows, **E.LIVE_FIT), _run(rows, **E.UNFITTED)
+    assert fit.final_equity > 0 and unfit.final_equity > 0
+
+
 def test_roi_and_trade_rows():
     assert E.roi_pct(142.82, 182.09) == 78.4 and E.roi_pct(5.0, 0.0) == 0.0
     run = _run([ENTER_LONG, QUIET, QUIET])

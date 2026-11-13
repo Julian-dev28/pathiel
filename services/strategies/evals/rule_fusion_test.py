@@ -6,7 +6,8 @@ SUM? how would the best of the best work together?"
 
 Each rule tested so far was scored alone against the live baseline
 (`trend_gate_test.base_params`: market entry off the 24h range, 0.75 stop,
-0.5% offset target, 2R, 20x, no entry after a break, weekend flat, 6% risk).
+0.5% offset target, 2R, 20x fitted down to 15x on a wide stop, no entry
+after a break, weekend flat, 6% risk).
 This sweep turns every optional `desk_tick_sim.Params` switch that already
 exists and was tested into an AXIS with an off level, its tested value and
 one neighbour, and runs the full factorial of the axes on the live oil
@@ -25,8 +26,12 @@ winner-trait candidates:
 
 The zone gate (`entry_zone_frac`) is left out: it changes no trade on any
 dataset (the 2R gate already implies it). The funding filter is a no-op on
-the journal. The leverage fit (20/15) is live and is reported as a
-diagnostic, not an axis.
+the journal. The leverage fit (20/15, live since 11-04) is in the baseline
+since the 2026-11-13 correction (`live_params.live_brent_params` carries
+`entry_fit_leverage` read off `next_trade.leverage_fit_for`); the first
+run of this sweep had it missing, as every earlier eval did. `--no-lev-fit`
+re-runs the grid on that old unfitted baseline, and the other baseline's
+rows are always reported as a diagnostic (`fit_diagnostic`), not an axis.
 
 Per combo, on the journal: trades, wins, net $, ROI % on the starting
 equity, max DD, the last third (its own run from the start equity), and
@@ -82,8 +87,10 @@ import os
 import time
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
+from services.strategies import next_trade as next_trade_mod
 from services.strategies.backtest import data as D
 from services.strategies.backtest.desk_tick_sim import Run, simulate
+from services.strategies.evals import live_params as live_params_mod
 from services.strategies.evals.desk_tick_backtest import DAY_MS, HOUR_MS, journaled_direction
 from services.strategies.evals.stop_cap_test import FIFTEEN_MS, _iso, closed_only
 from services.strategies.evals.stop_reclaim_test import thirds
@@ -93,7 +100,7 @@ from services.strategies.evals.winner_traits_test import one_day_flips, summariz
 START = 182.09                # the tournament's and trend-gate test's start equity, so the baselines compare
 RISK_CAP_FRAC = 0.06
 EQUITY_NOW = 213.80           # account_overview, 2026-11-13 (read only); --equity overrides
-BRENT = "xyz:BRENTOIL"
+BRENT = next_trade_mod.BRENT     # "xyz:BRENTOIL"
 WTI = "xyz:CL"
 WEEK_MS = 7 * DAY_MS
 TOP_N = 10
@@ -126,7 +133,12 @@ AXES: Dict[str, Dict[str, Any]] = {
                         "4R": {"partial_frac": 0.5, "partial_r": 4.0}}, "primary": "3R",
              "doc": "take half off at N R as a resting limit (FINAL_STRATEGY_TEST_2026-11-04 half-off)"},
 }
-LEV_FIT_DIAGNOSTIC = {"entry_fit_leverage": (20.0, 15.0)}   # live since 11-04; the sim baseline omits it
+# The OTHER baseline, run as a diagnostic beside every reported row: with
+# the fit on (the default since the 2026-11-13 correction), the old unfitted
+# 20x-only baseline; with --no-lev-fit, the live fit. Read off next_trade,
+# never typed.
+UNFITTED = {"entry_fit_leverage": None}
+LIVE_FIT = {"entry_fit_leverage": live_params_mod.live_leverage_fit(BRENT)}
 
 Combo = Tuple[str, ...]      # one level name per axis, in AXES order
 
@@ -464,8 +476,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--axes", nargs="*", default=None, help="a subset of axes (default: all)")
     ap.add_argument("--jobs", type=int, default=max(1, (os.cpu_count() or 2) - 1))
     ap.add_argument("--no-wti", action="store_true")
-    ap.add_argument("--lev-fit", action="store_true",
-                    help="put the live 20/15 leverage fit (entry_fit_leverage) in the baseline and every combo")
+    ap.add_argument("--lev-fit", dest="lev_fit", action="store_true", default=True,
+                    help="the live 20/15 leverage fit (entry_fit_leverage) in the baseline and every combo (default since 2026-11-13)")
+    ap.add_argument("--no-lev-fit", dest="lev_fit", action="store_false",
+                    help="the pre-2026-11-13 unfitted baseline (fixed 20x), for comparison with the first run")
     a = ap.parse_args(argv)
     os.makedirs(a.out_dir, exist_ok=True)
     os.makedirs(a.cache_dir, exist_ok=True)
@@ -490,9 +504,10 @@ def main(argv: Optional[List[str]] = None) -> int:
         log(f"no theses at {a.oil_theses_dir!r}: nothing to judge")
         return 2
     b15, b1h, b_end, b_fund = load(BRENT)
-    bp = base_params(a.start_equity, a.risk_cap_frac)
-    if a.lev_fit:
-        bp = dataclasses.replace(bp, **LEV_FIT_DIAGNOSTIC)
+    bp = base_params(a.start_equity, a.risk_cap_frac)       # carries the live fit (live_brent_params)
+    if not a.lev_fit:
+        bp = dataclasses.replace(bp, **UNFITTED)
+    other = UNFITTED if a.lev_fit else LIVE_FIT               # the other baseline, for the diagnostic
     start, end = min(th.created_at_ms for th in theses), b_end
     direction = journaled_direction(theses)
     w15, w1h = _window(b15, b1h, start, end)
@@ -533,12 +548,18 @@ def main(argv: Optional[List[str]] = None) -> int:
         at_now[combo_name(c, axes)] = {"net_usd": s["net_usd"], "per_30d_usd": round(s["net_usd"] / days * 30.0, 2),
                                        "roi_pct": roi_pct(s["net_usd"], a.equity), "max_dd_pct": s["max_dd_pct"],
                                        "trades": s["trades"], "wins": s["wins"]}
-    lev_fit, _ = _run_one("brent", LEV_FIT_DIAGNOSTIC)
-    # the same rows on top of the live leverage fit (the sim baseline omits it)
-    with_fit: Dict[str, float] = {}
+    other_base, other_rows = _run_one("brent", other)
+    # "identical" compares the trade lists, not the rounded net: the fitted
+    # and unfitted baselines closed 2026-11-13 04:30Z at the same cent
+    # ($142.82) on different trades (an open 88.65 long marked at 93.35 vs
+    # a closed 88.33 -> 93.81 target), so net + count is not a proof.
+    same_trades = ([r["entry_ms"] for r in other_rows]
+                   == [r["entry_ms"] for r in results[b0]["brent_trades"]])
+    # the same rows on the other baseline (unfitted when the fit is on, and the reverse)
+    with_other: Dict[str, float] = {}
     for c in seen:
-        s, _ = _run_one("brent", {**overrides(c, axes), **LEV_FIT_DIAGNOSTIC})
-        with_fit[combo_name(c, axes)] = s["net_usd"]
+        s, _ = _run_one("brent", {**overrides(c, axes), **other})
+        with_other[combo_name(c, axes)] = s["net_usd"]
     log(f"judged ({time.time() - t0:.0f}s): {fun}")
 
     csv_path = os.path.join(a.out_dir, "combos.csv")
@@ -567,9 +588,10 @@ def main(argv: Optional[List[str]] = None) -> int:
         "baseline": judged[b0], "singles": {combo_name(c, axes): judged[c] for c in singles},
         "top": [judged[c] for c in ranked[:TOP_N]], "passing": [judged[c]["name"] for c in ranked if judged[c]["pass"]],
         "at_equity_now": at_now, "overlap": overlap,
-        "lev_fit_diagnostic": {"baseline_net_usd": judged[b0]["net_usd"], "lev_fit_net_usd": lev_fit["net_usd"],
-                               "identical": abs(lev_fit["net_usd"] - judged[b0]["net_usd"]) < 0.005
-                               and lev_fit["trades"] == judged[b0]["trades"], "rows_with_fit_net_usd": with_fit},
+        "fit_diagnostic": {"other_baseline": "unfitted (fixed 20x)" if a.lev_fit else "live 20/15 fit",
+                           "baseline_net_usd": judged[b0]["net_usd"], "other_baseline_net_usd": other_base["net_usd"],
+                           "identical": same_trades and abs(other_base["net_usd"] - judged[b0]["net_usd"]) < 0.005,
+                           "same_trades": same_trades, "rows_other_baseline_net_usd": with_other},
         "journal_trades": {combo_name(c, axes): results[c]["brent_trades"] for c in seen},
     }
     out_path = os.path.join(a.out_dir, "report.json")
@@ -612,13 +634,13 @@ def _print(rep: Dict[str, Any]) -> None:
     print(f"verdict: {'FUSION PASSES ' + rep['best'] if rep['best'] else 'NONE'}")
     if rep["best"]:
         print(_fmt_row(rep["verdict"]["best"], now.get(rep["best"])))
-    lf = rep["lev_fit_diagnostic"]
-    print(f"lev_fit (20/15, live) on the baseline: {lf['lev_fit_net_usd']:+.2f}$ vs {lf['baseline_net_usd']:+.2f}$ "
+    lf = rep["fit_diagnostic"]
+    print(f"other baseline ({lf['other_baseline']}): {lf['other_baseline_net_usd']:+.2f}$ vs {lf['baseline_net_usd']:+.2f}$ "
           f"-> {'identical' if lf['identical'] else 'DIFFERS'}")
-    base_fit = lf["rows_with_fit_net_usd"].get("baseline")
-    for name, net in lf["rows_with_fit_net_usd"].items():
-        if name != "baseline" and base_fit is not None:
-            print(f"    with lev_fit: {name:<44} {net:>8.2f}  ({net - base_fit:+.2f} vs the fitted baseline)")
+    base_other = lf["rows_other_baseline_net_usd"].get("baseline")
+    for name, net in lf["rows_other_baseline_net_usd"].items():
+        if name != "baseline" and base_other is not None:
+            print(f"    on the other baseline: {name:<44} {net:>8.2f}  ({net - base_other:+.2f} vs its baseline)")
     print("\noverlap (pairs at their tested value):")
     for r in rep["overlap"]:
         print(f"  {r['a']:<12} {r['b']:<12} singles {r['net_a']:>8.2f} {r['net_b']:>8.2f} pair {r['net_pair']:>8.2f} "

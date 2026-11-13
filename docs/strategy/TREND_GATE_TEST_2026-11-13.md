@@ -79,6 +79,28 @@ Bar on the fresh set: net -$38.36 (fail), DD better (pass), neighbours
 On the 11-10 snapshot: net +$13.19 (pass), DD (pass), 96h -$54.55 (fail),
 last third (pass). Either way: **FAIL**.
 
+**Corrected 2026-11-13: leverage fit.** The runs above used a baseline
+without the live 20/15 leverage fit (`live_params.live_brent_params` now
+carries it, read off `next_trade.leverage_fit_for`; RULE_FUSION_2026-11-13.md
+section 5). Re-run on candles to 2026-11-13 04:30Z, both baselines on the
+same data (`trend_gate_test` with and without `--no-lev-fit`):
+
+| | was (unfitted, to 11-13 04:30Z) | **now (fitted, the live rule)** |
+|---|---|---|
+| journal baseline | 16 trades, 8 wins, +142.82, DD 28.9%, last third +27.24 | **16 / 8 / +142.82, DD 27.7%, last third -1.11** |
+| journal veto 120h | 7 / 5 / +91.31, DD 7.2%, last third +0.00 | **8 / 6 / +134.06, DD 7.2%, last third +0.00** |
+| net delta | -51.51 | **-8.76** |
+| neighbours 96h / 144h | +23.57 / +100.54 (both under) | **+55.73 / +100.54 (both under)** |
+| replay30 baseline / veto | +85.51 / +95.22 | **+141.23 / +118.97** |
+| WTI journal sides baseline / veto | -22.90 / +29.26 | **-42.92 / +37.66** |
+| bar | net fail, DD pass, plateau fail, last third fail: **FAIL** | net fail, DD pass, plateau fail, last third pass (0.00 vs -1.11): **FAIL** |
+
+Verdict unchanged: FAIL. The fit lets the veto keep one more November
+trade (the 11-03 14:00Z long at 15x, which stops), so the veto's own net
+rises with the baseline's; the gap narrows to -$8.76 but the plateau still
+fails on both neighbours and the veto still blocks the 11-04 and 11-10
+bottoms.
+
 ### By month (journal, entered in; fresh set)
 
 | variant | October net $ (trades / wins) | November net $ (trades / wins) |

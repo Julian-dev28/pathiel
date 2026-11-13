@@ -57,6 +57,27 @@ size slippage on. Fresh candles to 2026-11-10 05:30Z.
 Bar: journal full window -$43.80 (worse), thirds 2/3 -> **fail**.
 Replay30: no-op (+$0.00, 3/3) -> pass. Verdict FAIL.
 
+**Corrected 2026-11-13: leverage fit.** The table above was run on a
+baseline without the live 20/15 leverage fit (`live_params.live_brent_params`
+now carries it, read off `next_trade.leverage_fit_for`;
+RULE_FUSION_2026-11-13.md section 5). Re-run on candles to 2026-11-13
+04:30Z (71 theses), $194 start, 6% risk, both baselines on the same data
+(`stop_reclaim_test` with and without `--no-lev-fit`):
+
+| brent_journal | was (unfitted, to 11-13 04:30Z) | **now (fitted, the live rule)** |
+|---|---|---|
+| baseline | 16 trades, 8 wins, 12.54R, +152.16, DD 28.9% | **16 / 8 / 8.26R / +152.16, DD 27.7%** |
+| reclaim | 15 / 7 / 9.12R / +97.47, DD 32.9%, 11 blocked ticks | **16 / 8 / 6.59R / +123.46, DD 31.9%, 30 blocked ticks** |
+| net delta | -54.69 | **-28.70** |
+| thirds not worse | 2/3 | **2/3** |
+| replay30 | no-op (+91.11 both) | **no-op (+150.47 both)** |
+| verdict | FAIL | **FAIL** |
+
+Verdict unchanged. Under the fit the reclaim no longer blocks the 11-04
+17:30Z winner outright (the fitted baseline's 11-04 bottom entry is the
+17:00Z long at 94.51); it blocks 30 ticks and still loses $28.70 to the
+baseline on the full window with the last third worse.
+
 ## Why it lost on the journal
 
 One trade. On 2026-11-04 the sim's longs at 100.63 and 99.24 were both

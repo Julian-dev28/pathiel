@@ -28,7 +28,7 @@ from pathiel.models.types import Candle
 from services.strategies.backtest.desk_tick_sim import (
     Direction, Params, live_params, simulate, trend_gate_blocks)
 from services.strategies.evals import trend_gate_test as E
-from services.strategies.next_trade import trend_gate
+from services.strategies.next_trade import BRENT, leverage_fit_for, trend_gate
 from services.strategies.tests.test_stop_cap import ENTER_LONG, QUIET, _bars, _params, _run
 
 HOUR_MS = 3_600_000
@@ -274,6 +274,9 @@ def test_grid_and_params():
     assert p.trend_gate_span is None and p.reclaim_after_stops is None
     assert p.risk_cap_frac == 0.06 and p.starting_equity == 182.09
     assert p.weekend_off == "flatten" and p.no_break_entry is True and p.size_slippage is True
+    # the live 20/15 leverage fit rides along since 2026-11-13 (live_params.live_brent_params),
+    # read off next_trade, so the eval baseline cannot drift from the live tick again
+    assert p.entry_fit_leverage == tuple(leverage_fit_for(BRENT)) == (20.0, 15.0)
 
 
 def test_side_only_strips_the_brent_priced_levels():

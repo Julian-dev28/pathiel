@@ -287,6 +287,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--spans", type=int, nargs="+", default=list(SPANS))
     ap.add_argument("--no-wti", action="store_true", help="skip the WTI cross-check")
     ap.add_argument("--no-controls", action="store_true", help="skip the no-thesis controls")
+    ap.add_argument("--no-lev-fit", dest="lev_fit", action="store_false", default=True,
+                    help="drop the live 20/15 leverage fit from the baseline (the pre-2026-11-13 eval baseline), for comparison")
     a = ap.parse_args(argv)
     os.makedirs(a.out_dir, exist_ok=True)
     os.makedirs(a.cache_dir, exist_ok=True)
@@ -310,8 +312,10 @@ def main(argv: Optional[List[str]] = None) -> int:
         return c15, c1h, end, fund
 
     b15, b1h, b_end, b_fund = load(BRENT)
-    bp = base_params(a.start_equity, a.risk_cap_frac)
-    log(f"Brent candles to {_iso(b_end)}; spans {spans}")
+    bp = base_params(a.start_equity, a.risk_cap_frac)       # carries the live 20/15 fit (live_brent_params, 2026-11-13)
+    if not a.lev_fit:
+        bp = dataclasses.replace(bp, entry_fit_leverage=None)
+    log(f"Brent candles to {_iso(b_end)}; spans {spans}; leverage fit {bp.entry_fit_leverage}")
 
     thesis_sets = []
     for label, tdir, end_rule in (("brent_journal", a.oil_theses_dir, "data"),
@@ -363,7 +367,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                     w.writerow({"dataset": ds, "variant": v, **row})
     report = {
         "generated_at": time.strftime("%Y-%m-%dT%H:%MZ", time.gmtime()), "seconds": round(time.time() - t0, 1),
-        "brent_data_end": _iso(b_end), "start_equity": a.start_equity, "risk_cap_frac": a.risk_cap_frac,
+        "brent_data_end": _iso(b_end), "start_equity": a.start_equity, "risk_cap_frac": a.risk_cap_frac, "entry_fit_leverage": bp.entry_fit_leverage,
         "spans": spans, "primary_span": PRIMARY_SPAN, "neighbours": list(NEIGHBOURS),
         "datasets": {k: {kk: vv for kk, vv in r.items() if kk not in ("blocked_rows", "trades")}
                      for k, r in results.items()},

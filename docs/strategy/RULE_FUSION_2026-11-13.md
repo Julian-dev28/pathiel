@@ -32,6 +32,79 @@ Data as of 2026-11-13T02:00Z candles. Every number is from
 `services/strategies/evals/rule_fusion_test.py`; reproduce commands at the
 end.
 
+## Corrected 2026-11-13: leverage fit
+
+The gap in section 5 is fixed. `live_params.live_brent_params` now carries
+`entry_fit_leverage` read off `next_trade.leverage_fit_for(BRENT)` (20/15,
+the same candidates `services/strategies/api.py` hands the live tick and
+`scripts/pathiel-mcp-server.py` `handle_place_bracket` fits the order at),
+so every eval that builds "the live rule" through it sizes a wide-stop
+entry the way the desk does: at 15x instead of refusing it at 20x. The
+sweep's default baseline is the fitted one; `--no-lev-fit` re-runs the old
+unfitted baseline for comparison. Both were re-run on the same candles
+(to 2026-11-13 04:30Z, 2.5 hours past the first run's 02:00Z), 71 theses,
+$182.09 start, 6% risk:
+
+| row | was (unfitted, 02:00Z) | unfitted, 04:30Z | **fitted, 04:30Z (the live rule)** | verdict was -> now |
+|---|---|---|---|---|
+| baseline net / ROI / DD | +142.82 / 78.4% / 28.9% | +142.82 / 78.4% / 28.9% | **+142.82 / 78.4% / 27.7%** | - |
+| baseline last third / WTI | +27.24 / -24.42 | +27.24 / -22.90 | **-1.11 / -42.92** | - |
+| delay120 | +187.38, +44.56 over | +187.38, +44.56 over (fails drop-best-day) | **+144.34, +1.52 over** (fails the old bar: last third -0.22) | fail -> fail |
+| delay180 | +237.40, DD 17.7%, WTI +123.72 | +237.40, DD 17.7%, WTI +123.72 | **+187.40, DD 20.6%, WTI +41.45, +44.58 over** | PASS -> PASS |
+| trend120 | +91.31, -51.51 | +91.31, -51.51 | **+134.06, -8.76** | fail -> fail |
+| reclaim24h | +112.42 (section 5) | +91.49, -51.33 | **+115.88, -26.94** | fail -> fail |
+| cap2 | +125.89 (section 5) | +143.07, +0.25 | **+129.52, -13.30** | fail -> fail |
+| one_entry1 | +142.82 (no-op) | +142.82, +0.00 | **+160.74, +17.92** (fails old bar, WTI -69.49) | fail -> fail |
+| half3R | +118.86 | +118.86, -23.96 | **+142.43, -0.39** | fail -> fail |
+| best fusion by net | delay180+edge0.15 +215.15 (fitted) | delay180+lock2R +237.40 (passenger, marginal fail) | **delay180+edge0.15 +215.15**, loses 2 of 4 weeks | fail -> fail |
+| passing combos | 1 (delay180) | 1 (delay180) | **4: delay180, delay180+half3R +199.83, delay120+half3R +154.95, delay90+half3R +154.71** | - |
+| funnel: beat / old bar / dbd / weeks / plateau / marginal / all | 592 / 69 / 870 / 342 / 123 / 17 / 4 (fitted) | 678 / 246 / 144 / 216 / 269 / 6 / 1 | **572 / 69 / 870 / 342 / 122 / 16 / 4** | - |
+
+The two baselines close at the same cent (+$142.82) on different trades:
+the fitted run holds the 11-10 10:00Z long at 88.65 open at the data end
+(marked at 93.35, +$58.06 unrealized) where the unfitted run's 88.33 entry
+filled its 93.81 target on 11-12 (+$80.74); final equity 324.906 vs
+324.909. The harness's `fit_diagnostic.identical` now compares trade lists,
+not the rounded net, so it reads DIFFERS.
+
+**delay180 under the fit: PASS, every bar and guard.** Old bar: net
++$187.40 vs +$142.82, DD 20.6% vs 27.7%, neighbour delay120 +$144.34 above
+the baseline, last third +$23.77 vs -$1.11, WTI +$41.45. Drop-best-day:
+best day 11-12 +$58.56, rest +$42.87 and +2.45R (not a fluke). Weeks:
+2 won / 0 lost / 2 flat, leave-one-week-out minimum +$28.55. Plateau: yes.
+Marginal: +$44.58 from its one rule. The three delay+half3R pairs pass on
+the fitted baseline only (on the unfitted one delay180+half3R fails
+marginal, the 90/120 pairs fail drop-best-day and weeks): still not a rule.
+The verdict above stands: NONE for fusions, delay180 the single survivor,
+**the delay stays OFF** for the reasons listed (end of the tested range,
+1 of 8,747, two of four weeks, November only). What changed is the
+attribution's delay120: it no longer clears its own bar on the live rule
+(TRADE_ATTRIBUTION_2026-11-13.md, corrected).
+
+The delay plateau on the corrected data (`delay_plateau.py` in the eval
+scratch dir reproduces it from the same contexts; net $ / DD / trades /
+WTI $):
+
+| delay min | unfitted | fitted (live) |
+|---|---|---|
+| off | +142.82 / 28.9% / 16 / -22.90 | +142.82 / 27.7% / 16 / -42.92 |
+| 90 | +187.41 / 27.5% / 14 / +28.97 | +144.10 / 25.6% / 16 / +2.89 |
+| 120 | +187.38 / 27.5% / 14 / +42.71 | +144.34 / 25.6% / 16 / +7.25 |
+| 150 | +211.69 / 22.7% / 13 / +73.15 | +164.77 / 25.5% / 15 / +4.46 |
+| 180 | +237.40 / 17.7% / 12 / +123.72 | +187.40 / 20.6% / 14 / +41.45 |
+| 210 | +264.91 / 15.5% / 11 / +138.53 | +211.63 / 15.4% / 13 / +52.28 |
+| 240 | +222.68 / 15.5% / 10 / +138.53 | +174.42 / 15.5% / 12 / +52.23 |
+| 300 | +201.14 / 15.5% / 10 / +83.88 | +220.41 / 13.1% / 11 / +75.46 |
+| 360 | +136.74 / 15.5% / 8 / +83.88 | +152.76 / 10.2% / 9 / +54.22 |
+
+Gate tests: `tests/test_live_params.py` fails the day `live_brent_params`
+and `next_trade.leverage_fit_for(BRENT)` disagree (the expected value is
+read off next_trade, never typed); `test_rule_fusion.py`,
+`test_trend_gate.py`, `test_stop_reclaim.py` pin that their baselines
+carry it. No gate test pinned a dollar figure from the unfitted baseline
+(the suite went 4985 -> 4992 with the new tests and nothing else moved);
+the pinned numbers lived in these docs and are corrected here.
+
 ## 1. What was fused
 
 Each axis is an existing `desk_tick_sim.Params` switch that was tested on
@@ -216,7 +289,10 @@ How to read it:
 
 ## 5. The same sweep on the live leverage fit
 
-`live_params()` does not carry `entry_fit_leverage=(20,15)` although the
+*(Was the diagnostic run; since the 2026-11-13 correction above this IS the
+default baseline. The numbers below are the 02:00Z run, kept as history.)*
+
+`live_params()` did not carry `entry_fit_leverage=(20,15)` although the
 desk has traded it since 11-04 (OIL_STRATEGY.md, FINAL_STRATEGY_TEST).
 With it the baseline takes entries the 20x gate refused, at 15x (10-20
 15:00Z, a +2.77R target; 11-03 14:00Z, a stop that replaces the 11-04
@@ -298,11 +374,14 @@ real plateau and it is one regime.
    11-12 03:58Z +$30.01) were both bought inside 2h of a rewrite. The sim
    says the delayed entry still fills (11-05 01:45Z, 11-10 13:45Z); the
    ledger cannot say that.
-5. The baseline every test has used is not the live rule: the 20/15
+5. ~~The baseline every test has used is not the live rule: the 20/15
    leverage fit is live and the sim leaves it out, and that alone moves
    `delay120` from +$44.56 to +$5.31. Follow-up (separate change, touches
    every eval's golden numbers): put `entry_fit_leverage=(20,15)` into
-   `live_params.live_brent_params` and re-pin.
+   `live_params.live_brent_params` and re-pin.~~ Done 2026-11-13 (the
+   correction at the top): `live_brent_params` reads the fit off
+   `next_trade.leverage_fit_for`; on the corrected data `delay120` is
+   +$1.52 over the live rule and fails its bar.
 
 What would make the delay a yes: a second November-style week where the
 live desk takes a fresh-thesis entry that stops inside three hours while
@@ -320,18 +399,20 @@ days), +$220.03 vs +$163.25 fitted. Nothing was changed.
 
 ## Reproduce
 
-    # the sweep, first baseline (exit 0 = something passes every guard)
+    # the sweep on the live rule (20/15 leverage fit in the baseline, the default
+    # since 2026-11-13; exit 0 = something passes every guard)
     PATHIEL_STATE_DIR=<pathia>/.state .venv/bin/python -m services.strategies.evals.rule_fusion_test \
         --oil-theses-dir <pathia>/.state/strategies/oil/theses --cache-dir <fresh dir> --out-dir <dir> --equity 213.80
 
-    # the same grid on the live 20/15 leverage fit
+    # the same grid on the pre-2026-11-13 unfitted baseline (fixed 20x), for comparison
     PATHIEL_STATE_DIR=<pathia>/.state .venv/bin/python -m services.strategies.evals.rule_fusion_test \
-        --oil-theses-dir <pathia>/.state/strategies/oil/theses --cache-dir <same dir> --out-dir <dir2> --equity 213.80 --lev-fit
+        --oil-theses-dir <pathia>/.state/strategies/oil/theses --cache-dir <same dir> --out-dir <dir2> --equity 213.80 --no-lev-fit
 
     # gate tests
     .venv/bin/python -m pytest -q services/strategies/tests/test_rule_fusion.py
 
 Outputs: `<out>/report.json` (baseline, singles, top 10, funnel, overlap,
-the trade lists of every reported row, the rows re-run with the fit),
+the trade lists of every reported row, the rows re-run on the other
+baseline under `fit_diagnostic`),
 `<out>/combos.csv` (every combo with every guard), `<out>/progress.log`.
 Both runs took about 150 s on 8 processes (26,241 simulations each).

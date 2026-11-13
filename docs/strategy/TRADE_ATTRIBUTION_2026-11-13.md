@@ -192,6 +192,34 @@ xyz:CL) not negative.
 | delay | yes (+44.56) | yes | yes (delay_90 yes, delay_180 yes) | yes (+55.95 vs +27.24) | yes (+42.71) | PASS | yes: 2026-11-04 is +2.23R of +2.24R |
 | edge | no (-93.94) | no | no (edge_rest15 no, edge_rest50 no) | no (+2.81 vs +27.24) | yes (+19.95) | fail | yes: 2026-11-12 is -6.00R of -11.72R |
 
+**Corrected 2026-11-13: leverage fit.** The table above was run on a
+baseline without the live 20/15 leverage fit (RULE_FUSION_2026-11-13.md
+section 5; `live_params.live_brent_params` now carries it, read off
+`next_trade.leverage_fit_for`). Re-run on the live rule, same candles
+(to 2026-11-13 04:30Z) for both columns, `winner_traits_test` with and
+without `--no-lev-fit`:
+
+| candidate | was (unfitted) | **now (fitted, the live rule)** | verdict was -> now |
+|---|---|---|---|
+| baseline | +142.82, DD 28.9%, last third +27.24, WTI -22.90 | **+142.82, DD 27.7%, last third -1.11, WTI -42.92** | - |
+| zone | +142.82 (no-op), fail | **+142.82 (no-op), fail** | fail -> fail |
+| delay (120) | +187.38, +44.56 over, 14 trades; bar PASS; one day (11-04) +2.23R of +2.24R: FLUKE | **+144.34, +1.52 over, 16 trades; bar FAIL** (last third -0.22: negative, so the "not negative" leg fails; net, DD, plateau 90/180, WTI +7.25 pass); one-day test: biggest day 11-12 +3.31R, rest +0.34R, not a fluke | **PASS -> FAIL** |
+| delay_90 / delay_180 | +187.41 / +237.40 | **+144.10 / +187.40** | - |
+| edge | +47.78, -95.04 over, fail | **+47.78, -95.04 over, fail** (the fit changes no edge trade) | fail -> fail |
+| sleeve (10% of $213.80), delay | +22.00 / 26d vs baseline +16.77 | **+16.95 / 26d vs +16.77** | - |
+
+Why the delay's edge shrinks under the fit: the fitted baseline takes the
+11-03 14:00Z long at 101.83 at 15x (the 20x gate refused it) and so is
+already stopped before the 11-04 14:00Z entry the unfitted baseline took;
+the delay then moves the 11-03 loss to a 11-04 12:30Z entry at 101.53
+that stops the same way instead of removing two 11-04 stops. The 2.23R
+"one afternoon" is gone; what is left is +1.09R on 11-04, -0.82R on 11-06
+(the delayed 94.51 entry exits the weekend lower) and +3.31R on 11-12 (the
+delayed 88.90 entry fills its target where the baseline's 88.65 entry is
+still open at the data end). The 180-minute delay still clears every leg
+(RULE_FUSION_2026-11-13.md, corrected section). Part 3 is unchanged: built,
+OFF, not recommended.
+
 - **zone** is a no-op: on every dataset it changes no trade. With the
   0.75 stop and the 2R gate, a market long above the bottom third of the
   range already fails R or the 20x line (the "leverage" refusals turn into

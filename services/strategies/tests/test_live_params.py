@@ -20,7 +20,9 @@ import pathlib
 
 import pytest
 
+from services.strategies import next_trade as NT
 from services.strategies.backtest.desk_tick_sim import Params, live_params
+from services.strategies.backtest.desk_tick_sim import _fit_leverage_setup
 from services.strategies.evals import live_params as LP
 from services.strategies.evals.market_scout import scouting_params
 
@@ -73,11 +75,13 @@ def test_live_brent_params_sets_the_15pct_risk_cap():
 def test_live_brent_params_matches_live_params_on_every_other_live_field():
     """Same as `desk_tick_sim.live_params()` (the decision rule itself:
     stop buffer, target offset, min R, entry mode/lookback, leverage) --
-    only risk_cap_frac is added. A change here means live_params() itself
-    changed, not a drift in this wrapper."""
+    only risk_cap_frac and entry_fit_leverage are added. A change here means
+    live_params() itself changed, not a drift in this wrapper."""
     p = LP.live_brent_params()
     base = live_params()
-    assert dataclasses.replace(p, risk_cap_frac=base.risk_cap_frac) == base
+    assert dataclasses.replace(p, risk_cap_frac=base.risk_cap_frac,
+                               entry_fit_leverage=base.entry_fit_leverage) == base
+    assert base.entry_fit_leverage is None      # the sim's default stays the pre-11-04 rule
     assert (p.stop_buffer, p.target_offset_frac, p.target_mode, p.min_r, p.leverage,
             p.entry_mode, p.entry_lookback_h, p.tick_minutes) == (
         0.75, 0.005, "limit", 2.0, 20.0, "market", 24, 15)
@@ -86,6 +90,71 @@ def test_live_brent_params_matches_live_params_on_every_other_live_field():
 def test_live_brent_params_overrides_apply_last():
     p = LP.live_brent_params(starting_equity=225.0, size_slippage=True)
     assert (p.starting_equity, p.size_slippage, p.risk_cap_frac) == (225.0, True, 0.15)
+    assert LP.live_brent_params(entry_fit_leverage=None).entry_fit_leverage is None   # the unfitted baseline, on request
+
+
+# ── the leverage fit: the eval baseline reads it off the live tick (2026-11-13) ──
+#
+# RULE_FUSION_2026-11-13.md section 5: the desk has fitted Brent's leverage
+# from 20/15 since 11-04 (next_trade.LEVERAGE_FIT, applied by
+# services/strategies/api.py and the MCP server's handle_place_bracket via
+# next_trade.leverage_fit_for), but live_brent_params never set
+# Params.entry_fit_leverage, so every "live" Brent eval sized wide-stop
+# entries differently from the desk. The expected value below is DERIVED
+# from next_trade, never typed: if the live fit changes, this still passes
+# only when live_params.py follows it.
+
+@pytest.mark.parametrize("coin, build", [
+    (NT.BRENT, lambda: LP.live_brent_params()),
+    (NT.SILVER, lambda: LP.live_silver_params(25.0, 0.5)),
+    (NT.GOLD, lambda: LP.live_gold_params(25.0, 12.0)),
+])
+def test_live_params_carry_exactly_the_live_leverage_fit(coin, build):
+    live_fit = NT.leverage_fit_for(coin)
+    expected = tuple(float(c) for c in live_fit) if live_fit else None
+    assert build().entry_fit_leverage == expected
+    assert LP.live_leverage_fit(coin) == expected
+
+
+def test_live_brent_fit_is_on_and_is_the_live_tick_s_candidates():
+    """Brent IS a fitted coin live (LEVERAGE_FIT_COINS), so the eval
+    baseline must not be the fixed-leverage sim default."""
+    assert NT.BRENT in NT.LEVERAGE_FIT_COINS
+    p = LP.live_brent_params()
+    assert p.entry_fit_leverage is not None
+    assert set(p.entry_fit_leverage) == set(NT.LEVERAGE_FIT)
+    assert max(p.entry_fit_leverage) == pytest.approx(p.leverage)      # the top candidate is the configured 20x
+
+
+def test_a_coin_without_a_live_fit_gets_none():
+    assert NT.leverage_fit_for("xyz:CL") == ()
+    assert LP.live_leverage_fit("xyz:CL") is None
+
+
+def test_sim_fit_agrees_with_the_live_fit_on_a_wide_and_a_tight_stop():
+    """The sim's `_fit_leverage_setup` and the live `next_trade.fit_leverage`
+    pick the same leverage from live_brent_params' candidates: the tight
+    stop stays at 20x, the wide stop drops to 15x where the fixed-20x
+    baseline refused ("leverage"). This is the trade the old eval baseline
+    never took and the live desk did."""
+    p = LP.live_brent_params()
+    coin_max = p.max_leverage
+    # 20x liq sits 2.56% away (mmr 2.5%), so a stop over 1.28% of price fails 20x;
+    # 15x liq sits 4.27% away, so a stop under 2.14% still fits 15x.
+    tight = {"entry_low": 94.75, "entry_high": 100.0, "atr14": 0.6, "target_low": 94.75, "target_high": 100.0}   # stop 94.0, 1.05%
+    wide = {"entry_low": 94.95, "entry_high": 103.0, "atr14": 0.6, "target_low": 94.95, "target_high": 103.0}    # stop 94.2, 1.88%
+    from services.strategies.backtest.desk_tick_sim import Direction
+    d = Direction(side="long")
+    for lv, mid in ((tight, 95.0), (wide, 96.0)):
+        stop = lv["entry_low"] - p.stop_buffer
+        live_lev, live_gate = NT.fit_leverage(mid, stop, p.leverage, coin_max, p.entry_fit_leverage)
+        setup, sim_lev = _fit_leverage_setup(d, mid, lv, p)
+        assert sim_lev == pytest.approx(live_lev), (lv, setup)
+        assert live_gate.get("ok") and setup is not None and not setup.get("refused"), (lv, live_gate, setup)
+    # and the wide one really is the 15x case
+    stop = wide["entry_low"] - p.stop_buffer
+    assert NT.fit_leverage(96.0, stop, p.leverage, coin_max, p.entry_fit_leverage)[0] == pytest.approx(15.0)
+    assert not NT.check_leverage(96.0, stop, 20.0, coin_max).get("ok")
 
 
 def test_live_silver_params_sets_the_cap_and_the_real_live_stop_rule():
@@ -109,12 +178,14 @@ def test_live_silver_params_caps_leverage_at_the_venue_max():
 def test_live_silver_params_matches_scouting_params_plus_the_cap_and_floor():
     """Byte-for-byte the pre-fix hand-built pattern
     (`dataclasses.replace(scouting_params(...), stop_buffer_atr=1.3,
-    stop_buffer_floor_frac=0.008)`), plus risk_cap_frac. Proves the fix
-    changed exactly one thing."""
+    stop_buffer_floor_frac=0.008)`), plus risk_cap_frac (2026-11-03) and
+    the live leverage fit (2026-11-13). Proves the fixes changed exactly
+    those two things."""
     old = dataclasses.replace(scouting_params(20.0, 0.6), stop_buffer_atr=1.3, stop_buffer_floor_frac=0.008)
     new = LP.live_silver_params(20.0, 0.6)
-    assert dataclasses.replace(new, risk_cap_frac=old.risk_cap_frac) == old
+    assert dataclasses.replace(new, risk_cap_frac=old.risk_cap_frac, entry_fit_leverage=old.entry_fit_leverage) == old
     assert old.risk_cap_frac is None and new.risk_cap_frac == pytest.approx(0.15)
+    assert old.entry_fit_leverage is None and new.entry_fit_leverage == LP.live_leverage_fit(NT.SILVER)
 
 
 def test_live_silver_params_overrides_apply_last():
@@ -227,11 +298,13 @@ def test_affected_harnesses_list_is_exhaustive_over_known_live_baseline_builders
 def test_live_gold_params_is_live_silver_params_plus_golds_floor_and_fit():
     """The gold rule is silver's shape with gold's own floor (0.8%, the
     GOLD_STRATEGY_TEST_2026-11-05.md plateau) and the 20/15 leverage fit the
-    live tick applies on gold; the cap rides along."""
+    live tick applies on gold (since 2026-11-13 silver carries its own fit
+    too, read off next_trade the same way); the cap rides along."""
     gold = LP.live_gold_params(25.0, 12.0)
     silver = LP.live_silver_params(25.0, 12.0)
-    assert dataclasses.replace(gold, entry_fit_leverage=None) == silver
-    assert gold.entry_fit_leverage == (20.0, 15.0)
+    assert dataclasses.replace(gold, entry_fit_leverage=silver.entry_fit_leverage,
+                               stop_buffer_floor_frac=silver.stop_buffer_floor_frac) == silver
+    assert gold.entry_fit_leverage == (20.0, 15.0) == LP.live_leverage_fit(NT.GOLD)
     assert gold.stop_buffer_floor_frac == pytest.approx(0.008) and gold.risk_cap_frac == pytest.approx(0.15)
     assert gold.max_leverage == pytest.approx(25.0) and gold.leverage == pytest.approx(20.0)
 

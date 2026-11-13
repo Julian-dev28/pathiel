@@ -289,6 +289,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--equity", type=float, default=EQUITY_NOW, help="today's equity; the sleeve is 10% of it")
     ap.add_argument("--no-wti", action="store_true")
     ap.add_argument("--no-controls", action="store_true")
+    ap.add_argument("--no-lev-fit", dest="lev_fit", action="store_false", default=True,
+                    help="drop the live 20/15 leverage fit from the baseline (the pre-2026-11-13 eval baseline), for comparison")
     a = ap.parse_args(argv)
     os.makedirs(a.out_dir, exist_ok=True)
     os.makedirs(a.cache_dir, exist_ok=True)
@@ -310,8 +312,10 @@ def main(argv: Optional[List[str]] = None) -> int:
         return c15, c1h, end, D.fetch_funding_cached(coin, c15[0].t, end, a.cache_dir)
 
     b15, b1h, b_end, b_fund = load(BRENT)
-    bp = base_params(a.start_equity, a.risk_cap_frac)
-    log(f"Brent candles to {_iso(b_end)}; variants {list(named)}")
+    bp = base_params(a.start_equity, a.risk_cap_frac)       # carries the live 20/15 fit (live_brent_params, 2026-11-13)
+    if not a.lev_fit:
+        bp = dataclasses.replace(bp, entry_fit_leverage=None)
+    log(f"Brent candles to {_iso(b_end)}; variants {list(named)}; leverage fit {bp.entry_fit_leverage}")
 
     thesis_sets: List[Tuple[str, Any, int, int, Callable]] = []
     for label, tdir, end_rule in (("brent_journal", a.oil_theses_dir, "data"),
@@ -353,7 +357,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     sleeve: Dict[str, Any] = {}
     if PRIMARY_DATASET in results and thesis_sets:
         label, theses, start, end, direction = thesis_sets[0]
-        sp = base_params(round(a.equity * SLEEVE, 2), a.risk_cap_frac)
+        sp = dataclasses.replace(base_params(round(a.equity * SLEEVE, 2), a.risk_cap_frac),
+                                 entry_fit_leverage=bp.entry_fit_leverage)
         ds = run_dataset(b15, b1h, direction, sp, start, end, b_fund,
                          {"baseline": {}, **{c: CANDIDATES[c]["primary"] for c in CANDIDATES}})
         sleeve = {"equity_now": a.equity, "sleeve_equity": sp.starting_equity,
@@ -368,7 +373,7 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     report = {
         "generated_at": time.strftime("%Y-%m-%dT%H:%MZ", time.gmtime()), "seconds": round(time.time() - t0, 1),
-        "brent_data_end": _iso(b_end), "start_equity": a.start_equity, "risk_cap_frac": a.risk_cap_frac,
+        "brent_data_end": _iso(b_end), "start_equity": a.start_equity, "risk_cap_frac": a.risk_cap_frac, "entry_fit_leverage": bp.entry_fit_leverage,
         "candidates": {c: {k: v for k, v in CANDIDATES[c].items()} for c in CANDIDATES}, "variants": named,
         "datasets": {k: {kk: vv for kk, vv in r.items() if kk != "trades"} for k, r in results.items()},
         "verdict": ver, "sleeve": sleeve, "tournament": tourney,

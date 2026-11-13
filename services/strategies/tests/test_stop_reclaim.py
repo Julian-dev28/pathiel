@@ -226,6 +226,10 @@ def test_grid_and_params():
     p = E.base_params()
     assert p.reclaim_after_stops is None and p.risk_cap_frac == 0.06 and p.starting_equity == 194.0
     assert p.weekend_off == "flatten" and p.no_break_entry is True and p.size_slippage is True
+    # the live 20/15 leverage fit (2026-11-13 correction), read off next_trade
+    from services.strategies.next_trade import BRENT, leverage_fit_for
+    assert p.entry_fit_leverage == tuple(leverage_fit_for(BRENT))
+    assert dataclasses.replace(p, entry_fit_leverage=None).entry_fit_leverage is None   # what --no-lev-fit runs
 
 
 def test_thirds_are_equal_and_contiguous():
