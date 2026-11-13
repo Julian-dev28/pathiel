@@ -439,6 +439,12 @@ def publish(ref: str, push: bool) -> str:
                f"Built by scripts/build_plugin_bundle.py from {source}.\n"
                f"Do not edit this branch by hand: publish again from main.\n")
         args = ["commit-tree", tree, "-m", msg] + (["-p", parent] if parent else [])
+        # commit-tree does not read commit.gpgsign; honor it, so the bundle
+        # commit is signed like every other commit (GitHub: Verified).
+        sign = subprocess.run(["git", "config", "--bool", "commit.gpgsign"], cwd=ROOT,
+                              capture_output=True, text=True).stdout.strip()
+        if sign == "true":
+            args.insert(1, "-S")
         commit = _git(*args).strip()
         _git("update-ref", f"refs/heads/{BRANCH}", commit, *( [parent] if parent and
              _rev(f"refs/heads/{BRANCH}") else []))

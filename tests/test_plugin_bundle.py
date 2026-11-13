@@ -487,3 +487,10 @@ def test_the_pool_data_ships_and_pool_status_answers_the_same_from_the_bundle(bu
     got = _call(built / "scripts" / "pathiel-mcp-server.py", public_env, "pool_status", {})
     want = _call(ROOT / "scripts" / "pathiel-mcp-server.py", public_env, "pool_status", {})
     assert got == want and not got.get("isError"), got
+
+
+def test_publish_signs_the_bundle_commit_when_git_is_set_to_sign():
+    """commit-tree ignores commit.gpgsign; the bundle commit came out unsigned
+    (GitHub: Unverified) until publish passed -S itself (2026-11-13)."""
+    src = SCRIPT.read_text(encoding="utf-8")
+    assert '"commit.gpgsign"' in src and 'args.insert(1, "-S")' in src

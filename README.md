@@ -124,13 +124,15 @@ The mode follows from what is in `~/.pathiel/.env.local`:
 | you have | mode | what works |
 |---|---|---|
 | no key | read-only, mainnet (the default) data | every read tool; order tools answer that no key is configured |
-| an API wallet key | mainnet (the default) | everything, with real money |
+| an [API wallet](https://app.hyperliquid.xyz/API) key | mainnet (the default) | everything, with real money |
 | a key and `PATHIEL_NETWORK=testnet` | testnet | everything, with test funds; the oil desk trades WTI (`xyz:CL`) |
 
 State (theses, journals, caches) is kept per network, so testnet and mainnet
 never share it. Testnet needs its own API wallet, created and approved in the
-testnet app. The network is read once when the server starts: after editing
-the env file, reconnect pathiel in `/mcp`.
+[testnet app](https://app.hyperliquid-testnet.xyz/API). How to create one,
+step by step: [Connect your Hyperliquid account](docs/GETTING_STARTED.md#connect-your-hyperliquid-account).
+The network is read once when the server starts: after editing the env file,
+reconnect pathiel in `/mcp`.
 
 ### How the safety works
 
