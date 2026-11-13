@@ -483,3 +483,55 @@ def test_track_record_for_desk_reads_the_journal():
     tr = G.track_record_for_desk("oil")
     assert tr.n_graded == 1
     assert tr.direction_hit_rate == 1.0
+
+
+# ── the heartbeat: every finished sweep leaves a trace ─────────────────────
+
+def test_a_sweep_that_grades_nothing_still_writes_the_heartbeat():
+    """The 2026-11-13 picture: open calls, nothing resolved, 0 graded. The
+    heartbeat is what tells grading_lag_check the sweep ran."""
+    assert journal.load_sweep() is None
+    created = NOW_11_13 - timedelta(days=2)
+    journal.save_thesis(make_thesis(desk_id="oil", thesis_id="open-1", instrument="XYZ",
+                                    entry_px=100.0, stop_px=90.0, targets=[110.0],
+                                    created_at=created, horizon_days=7, scenarios=[]))
+    journal.save_thesis(make_thesis(desk_id="oil", thesis_id="unfilled-1", instrument="XYZ",
+                                    entry_px=95.0, stop_px=90.0, targets=[110.0],
+                                    created_at=created, horizon_days=7, scenarios=[]))
+    fetcher = _fetcher({"XYZ": make_candles([100.0, 101.0, 99.0, 102.0] * 20,
+                                            start=created - HOUR, step=HOUR)})
+    assert G.grade_all_due(hourly_fetcher=fetcher, now=NOW_11_13) == 0
+
+    hb = journal.load_sweep()
+    assert hb["swept_at"] == NOW_11_13.isoformat() and hb["graded"] == 0 and hb["regrade"] is False
+    assert sorted((o["id"], o["note"]) for o in hb["open"]) == [
+        ("open-1", "open: neither stop nor target touched yet"),
+        ("unfilled-1", "entry not filled yet"),
+    ]
+    assert all(o["desk"] == "oil" and o["created_at"] == created.isoformat() for o in hb["open"])
+
+
+def test_a_resolved_call_leaves_the_open_list_and_the_count_moves():
+    journal.save_thesis(CALL_11_11)
+    assert G.grade_all_due(hourly_fetcher=_brent_fetcher, now=NOW_11_13) == 1
+    hb = journal.load_sweep()
+    assert hb["graded"] == 1 and hb["open"] == []
+
+
+def test_a_sweep_that_raises_leaves_the_previous_heartbeat():
+    """A venue read that fails mid-journal must not look like a finished
+    sweep: the old heartbeat stays, ages, and the check fails on it."""
+    journal.save_thesis(make_thesis(desk_id="oil", thesis_id="c", instrument="XYZ",
+                                    created_at=NOW_11_13 - timedelta(days=1), horizon_days=7, scenarios=[]))
+    journal.save_sweep({"swept_at": (NOW_11_13 - timedelta(hours=1)).isoformat(), "graded": 0, "open": []})
+
+    def broken(coin, interval, count):
+        raise RuntimeError("429")
+    with pytest.raises(RuntimeError):
+        G.grade_all_due(hourly_fetcher=broken, now=NOW_11_13)
+    assert journal.load_sweep()["swept_at"] == (NOW_11_13 - timedelta(hours=1)).isoformat()
+
+
+def test_an_empty_journal_sweep_writes_a_heartbeat_with_no_open_calls():
+    assert G.grade_all_due(hourly_fetcher=_fetcher({}), now=NOW_11_13) == 0
+    assert journal.load_sweep() == {"swept_at": NOW_11_13.isoformat(), "graded": 0, "regrade": False, "open": []}

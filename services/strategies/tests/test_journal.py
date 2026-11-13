@@ -129,3 +129,30 @@ def test_state_dir_resolved_at_call_time(monkeypatch, tmp_path):
     monkeypatch.setenv("PATHIEL_STATE_DIR", str(other))
     journal.save_thesis(make_thesis(thesis_id="in-other-dir"))
     assert os.path.exists(os.path.join(str(other), "strategies", "oil", "theses", "in-other-dir.json"))
+
+
+# ── the grader's heartbeat ─────────────────────────────────────────────────
+
+def test_sweep_heartbeat_roundtrip_and_absence():
+    import os
+    from services.strategies import journal as J
+    assert J.load_sweep() is None
+    rec = {"swept_at": "2026-11-13T09:53:00+00:00", "graded": 0, "regrade": False,
+           "open": [{"desk": "oil", "id": "oil-20261110T2150-m", "note": "entry not filled yet"}]}
+    J.save_sweep(rec)
+    assert J.load_sweep() == rec
+    assert J.sweep_path() == os.path.join(J.strategies_dir(), "grade_sweep.json")
+    # the heartbeat lives beside the desk directories and is not a desk
+    assert J.all_desk_ids() == []
+
+
+def test_sweep_heartbeat_unreadable_is_none():
+    import os
+    from services.strategies import journal as J
+    os.makedirs(J.strategies_dir(), exist_ok=True)
+    with open(J.sweep_path(), "w") as fh:
+        fh.write("{half a record")
+    assert J.load_sweep() is None
+    with open(J.sweep_path(), "w") as fh:
+        fh.write("[]")
+    assert J.load_sweep() is None

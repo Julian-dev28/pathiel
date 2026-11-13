@@ -24,10 +24,14 @@ just flukes or a predictions"). One script call; no agent, no LLM, no MCP.
        python3 -m services.strategies.evals.grading_lag_check
 
    It prints one `GRADING OK|FAIL ...` line. On FAIL, print it and the
-   rows under it: a call past its horizon with no grade means the
+   rows under it: `stale` (a call past its horizon with no grade),
+   `sweep ... STOPPED` (calls pending and the grader's heartbeat
+   `strategies/grade_sweep.json` is missing or older than 2h) and
+   `missed` (a pending call the last sweep never read) all mean the
    dashboard server's hourly sweep (pathiel/server.py `_grade_loop`) is
-   not running or is on old code; say so and name the restart. Never
-   grade from here.
+   not running or is on old code; say so and name the restart. A high
+   `pending` count with `sweep=0.xh ago` and no rows is fine: those calls
+   are open, the sweep read them and left them. Never grade from here.
 3. **Something new?** If `new_leaks` names a slice or `new_proposals` is
    above 0: say so in one short message (the slice, its label, n, and the
    lever the report proposes, from the report's "What to try next"), and

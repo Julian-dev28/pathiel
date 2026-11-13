@@ -1,26 +1,34 @@
 """Check: no call in the desk journal is still pending past the point it
-should have been graded.
+should have been graded, and the sweep that grades them is alive.
 
-    python3 -m services.strategies.evals.grading_lag_check [--state-dir DIR] [--grace-hours N] [--json]
+    python3 -m services.strategies.evals.grading_lag_check [--state-dir DIR] [--grace-hours N] [--as-of ISO] [--json]
 
-Reads every thesis under $PATHIEL_STATE_DIR/strategies/<desk>/theses/ and
-fails (exit 1) when one of these is true:
+Reads every thesis under $PATHIEL_STATE_DIR/strategies/<desk>/theses/ plus
+the grader's heartbeat $PATHIEL_STATE_DIR/strategies/grade_sweep.json
+(written by grader.grade_all_due at the end of every sweep that finished)
+and fails (exit 1) when one of these is true:
 
     stale    expires_at + grace < now and grade is None
              (the horizon passed; the hourly sweep in pathiel/server.py
              should have written at least "expired"/"untriggered")
-    lagging  the call carries no grade, its horizon is still open, and the
-             sweep has not written ANY grade on that desk in the last
-             `--grace-hours` hours even though grades exist for calls made
-             AFTER it (a grader that stopped mid-journal)
+    sweep    calls are pending and the heartbeat is missing or older than
+             `--grace-hours` (the sweep stopped, or the dashboard server
+             runs code older than the heartbeat and needs a restart)
+    missed   a call pending in the journal, created more than grace
+             before the last sweep, that the sweep did not list as open:
+             it never read that call (a desk directory it skipped, a row
+             it could not parse)
 
 Read only: it never grades, never writes. The operator's question of
 2026-11-13 ("no pending should be there right? right") is what this
-catches: before that day the grader only graded at the 7-day horizon, so a
-call stopped out within hours sat "pending" for a week. That is now graded
-the hour it resolves (services/strategies/grader.py); this check watches
-the part that is deterministic without candles -- horizon passed, still
-pending -- and the review-trades skill runs it daily.
+catches. The first version of this check (same day) had a "lagging" rule
+instead of the heartbeat: no grade written in 2h while a newer call than
+a pending one was graded. That is exactly what a journal looks like when
+nothing resolved for two hours -- six open Brent longs (stops 87.58,
+targets 94.278 / 97.667) sat correctly ungraded while Brent ran 89.5 to
+94.6 between them, and the rule called the sweep stopped. The journal
+alone cannot tell a stopped sweep from a quiet one; the heartbeat can.
+The review-trades skill runs this daily.
 """
 from __future__ import annotations
 
@@ -32,6 +40,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Sequence
 
 DEFAULT_GRACE_HOURS = 2.0   # the sweep runs hourly; two misses is a stopped sweep, not a slow one
+SWEEP_FILE = "grade_sweep.json"   # == services.strategies.journal.SWEEP_FILE; kept literal so this stays import-free
 
 
 def _parse(ts: Optional[str]) -> Optional[datetime]:
@@ -65,6 +74,18 @@ def load_theses(state_dir: str) -> Dict[str, List[Dict[str, Any]]]:
     return out
 
 
+def load_sweep(state_dir: str) -> Optional[Dict[str, Any]]:
+    """The grader's last heartbeat, raw; None when no sweep ever finished on
+    this state dir (or the file is unreadable, which counts the same)."""
+    path = os.path.join(state_dir, "strategies", SWEEP_FILE)
+    try:
+        with open(path) as fh:
+            rec = json.load(fh)
+    except (OSError, ValueError):
+        return None
+    return rec if isinstance(rec, dict) else None
+
+
 def find_stale(theses_by_desk: Dict[str, Sequence[Dict[str, Any]]], *, now: datetime,
                grace: timedelta = timedelta(hours=DEFAULT_GRACE_HOURS)) -> List[Dict[str, Any]]:
     """Calls past their horizon (plus grace) with no grade. Pure."""
@@ -78,27 +99,48 @@ def find_stale(theses_by_desk: Dict[str, Sequence[Dict[str, Any]]], *, now: date
     return stale
 
 
-def find_lagging(theses_by_desk: Dict[str, Sequence[Dict[str, Any]]], *, now: datetime,
-                 grace: timedelta = timedelta(hours=DEFAULT_GRACE_HOURS)) -> List[Dict[str, Any]]:
-    """Ungraded calls inside their horizon on a desk where the newest grade
-    was written more than `grace` ago AND a newer call than this one is
-    already graded. A newer call graded while an older one is not is normal
-    for an hour (the older one has simply not resolved); it is a stopped
-    grader when nothing has been written since. Pure."""
-    lagging = []
+def sweep_status(sweep: Optional[Dict[str, Any]], *, now: datetime, pending: int,
+                 grace: timedelta = timedelta(hours=DEFAULT_GRACE_HOURS)) -> Dict[str, Any]:
+    """Whether the sweep is alive: {"ok", "swept_at", "age_hours", "reason"}.
+    With calls pending, a missing heartbeat or one older than `grace` is a
+    stopped sweep. With nothing pending the heartbeat is not required (a
+    fresh state dir, a desk with every call graded). Pure."""
+    swept_at = _parse((sweep or {}).get("swept_at"))
+    age_hours = round((now - swept_at).total_seconds() / 3600.0, 1) if swept_at is not None else None
+    if pending == 0:
+        return {"ok": True, "swept_at": sweep.get("swept_at") if sweep else None,
+                "age_hours": age_hours, "reason": None}
+    if swept_at is None:
+        return {"ok": False, "swept_at": None, "age_hours": None,
+                "reason": "no heartbeat: no sweep has finished on this state dir "
+                          "(dashboard server on pre-heartbeat code, or never started)"}
+    if swept_at + grace < now:
+        return {"ok": False, "swept_at": sweep.get("swept_at"), "age_hours": age_hours,
+                "reason": f"last sweep finished {age_hours}h ago; the hourly sweep stopped"}
+    return {"ok": True, "swept_at": sweep.get("swept_at"), "age_hours": age_hours, "reason": None}
+
+
+def find_missed(theses_by_desk: Dict[str, Sequence[Dict[str, Any]]], sweep: Optional[Dict[str, Any]], *,
+                grace: timedelta = timedelta(hours=DEFAULT_GRACE_HOURS)) -> List[Dict[str, Any]]:
+    """Pending calls the last sweep never read: created more than `grace`
+    before `swept_at`, still ungraded, and absent from the heartbeat's
+    `open` list. A sweep that read a call either graded it (no longer
+    pending) or listed it open; anything else it skipped. Without a
+    heartbeat there is nothing to compare against (sweep_status already
+    fails that case). Pure."""
+    swept_at = _parse((sweep or {}).get("swept_at"))
+    if swept_at is None:
+        return []
+    seen = {(o.get("desk"), o.get("id")) for o in (sweep or {}).get("open", []) if isinstance(o, dict)}
+    missed = []
     for desk, rows in theses_by_desk.items():
-        graded_at = [_parse((t.get("grade") or {}).get("graded_at")) for t in rows if t.get("grade")]
-        graded_at = [g for g in graded_at if g is not None]
-        if not graded_at or max(graded_at) + grace > now:
-            continue
-        newest_graded_created = max((_parse(t.get("created_at")) for t in rows if t.get("grade")), default=None)
         for t in rows:
             created = _parse(t.get("created_at"))
-            if (t.get("grade") is None and created is not None and newest_graded_created is not None
-                    and created < newest_graded_created):
-                lagging.append({"desk": desk, "id": t.get("id"), "created_at": t.get("created_at"),
-                                "last_grade_written": max(graded_at).isoformat()})
-    return lagging
+            if (t.get("grade") is None and created is not None and created + grace < swept_at
+                    and (desk, t.get("id")) not in seen):
+                missed.append({"desk": desk, "id": t.get("id"), "created_at": t.get("created_at"),
+                               "swept_at": (sweep or {}).get("swept_at")})
+    return missed
 
 
 def run(state_dir: str, *, now: Optional[datetime] = None,
@@ -106,12 +148,14 @@ def run(state_dir: str, *, now: Optional[datetime] = None,
     now = now or datetime.now(timezone.utc)
     grace = timedelta(hours=grace_hours)
     theses = load_theses(state_dir)
-    stale = find_stale(theses, now=now, grace=grace)
-    lagging = find_lagging(theses, now=now, grace=grace)
+    sweep = load_sweep(state_dir)
     n = sum(len(v) for v in theses.values())
     pending = sum(1 for v in theses.values() for t in v if t.get("grade") is None)
-    return {"ok": not stale and not lagging, "theses": n, "pending": pending,
-            "stale": stale, "lagging": lagging, "as_of": now.isoformat()}
+    stale = find_stale(theses, now=now, grace=grace)
+    status = sweep_status(sweep, now=now, pending=pending, grace=grace)
+    missed = find_missed(theses, sweep, grace=grace)
+    return {"ok": not stale and status["ok"] and not missed, "theses": n, "pending": pending,
+            "stale": stale, "sweep": status, "missed": missed, "as_of": now.isoformat()}
 
 
 def main(argv: Optional[List[str]] = None) -> int:
@@ -119,21 +163,27 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--state-dir", default=os.environ.get("PATHIEL_STATE_DIR"),
                     help="defaults to $PATHIEL_STATE_DIR")
     ap.add_argument("--grace-hours", type=float, default=DEFAULT_GRACE_HOURS)
+    ap.add_argument("--as-of", default=None, metavar="ISO",
+                    help="evaluate as of this UTC time instead of now (a replay of a past state dir)")
     ap.add_argument("--json", action="store_true")
     args = ap.parse_args(argv)
     if not args.state_dir:
         print("grading_lag_check: set PATHIEL_STATE_DIR or pass --state-dir", file=sys.stderr)
         return 2
-    report = run(args.state_dir, grace_hours=args.grace_hours)
+    report = run(args.state_dir, now=_parse(args.as_of), grace_hours=args.grace_hours)
     if args.json:
         print(json.dumps(report, indent=2))
     else:
+        sw = report["sweep"]
+        sweep_word = ("none" if sw["age_hours"] is None else f"{sw['age_hours']}h ago") + ("" if sw["ok"] else " STOPPED")
         print(f"GRADING {'OK' if report['ok'] else 'FAIL'} theses={report['theses']} pending={report['pending']} "
-              f"stale={len(report['stale'])} lagging={len(report['lagging'])}")
+              f"stale={len(report['stale'])} missed={len(report['missed'])} sweep={sweep_word}")
         for row in report["stale"]:
             print(f"  stale   {row['desk']} {row['id']} horizon passed {row['overdue_hours']}h ago, no grade")
-        for row in report["lagging"]:
-            print(f"  lagging {row['desk']} {row['id']} ungraded; last grade written {row['last_grade_written']}")
+        if not sw["ok"]:
+            print(f"  sweep   {sw['reason']}; {report['pending']} pending call(s) wait on it")
+        for row in report["missed"]:
+            print(f"  missed  {row['desk']} {row['id']} created {row['created_at']}, not read by the sweep of {row['swept_at']}")
     return 0 if report["ok"] else 1
 
 

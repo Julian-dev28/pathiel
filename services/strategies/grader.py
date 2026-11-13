@@ -25,7 +25,15 @@ analytics.build_pair_snapshot; closes only, so its "bars" are flat) when
 side == "pair" and the desk's PairSpec is available. `grade_all_due` is the
 idempotent sweep: every desk, every ungraded thesis, graded once it has
 resolved or expired and saved back via the journal -- calling it again finds
-nothing left to grade and does nothing.
+nothing left to grade and does nothing but refresh the heartbeat.
+
+The heartbeat (journal.save_sweep, strategies/grade_sweep.json) is written
+at the end of every sweep that finished: when it ran, what it wrote, and
+which ungraded calls it read and left open. A sweep that grades 0 is the
+normal picture whenever nothing resolved that hour (2026-11-13: six open
+Brent longs sat correctly ungraded for 30+ hours while Brent ran between
+their stops and targets), so "no grade written for hours" says nothing
+about the sweep; the heartbeat does, and grading_lag_check reads it.
 """
 from __future__ import annotations
 
@@ -307,10 +315,19 @@ def grade_all_due(*, hourly_fetcher: Optional[HourlyFetcher] = None,
     grade --regrade`) re-reads EVERY thesis under today's rules and
     overwrites its grade, except that a real grade is never replaced by an
     ungradeable one (no candles that far back). Returns the number of
-    grades written."""
+    grades written.
+
+    Every sweep that reaches the end writes the heartbeat
+    (journal.save_sweep): `swept_at` = this sweep's `now`, `graded`, and
+    `open` = the ungraded calls it read and left open, each with the
+    grader's reason ("entry not filled yet" / "open: neither stop nor
+    target touched yet"). A venue read that raises leaves the previous
+    heartbeat in place, which is how grading_lag_check tells a stopped
+    sweep from a quiet one."""
     now = now or datetime.now(timezone.utc)
     inner = hourly_fetcher or default_hourly_fetcher
     graded = 0
+    open_calls: List[Dict[str, object]] = []
     for desk_id in journal.all_desk_ids():
         spec = get_spec(desk_id)
         due = [t for t in journal.list_theses(desk_id)
@@ -321,11 +338,17 @@ def grade_all_due(*, hourly_fetcher: Optional[HourlyFetcher] = None,
         for thesis in due:
             grade = grade_thesis(thesis, hourly_fetcher=fetcher, spec=spec, now=now)
             if not is_final(grade, thesis, now):
+                open_calls.append({"desk": desk_id, "id": thesis.id,
+                                   "created_at": thesis.created_at.isoformat(),
+                                   "note": grade.notes[0] if grade.notes else "open",
+                                   "ret_pct": grade.ret_pct})
                 continue
             if regrade and thesis.grade is not None and _ungradeable(grade) and not _ungradeable(thesis.grade):
                 continue
             journal.save_thesis(thesis.model_copy(update={"grade": grade}))
             graded += 1
+    journal.save_sweep({"swept_at": now.isoformat(), "graded": graded, "regrade": regrade,
+                        "open": open_calls})
     return graded
 
 
