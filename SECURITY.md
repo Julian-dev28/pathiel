@@ -69,7 +69,7 @@ local Claude Code CLI. pathiel holds no Anthropic or other model key.
 - Send telemetry. Outbound calls go to Hyperliquid's API and to the public
   data sources the desk briefs read (news, EIA, FRED, Congress, prediction
   markets).
-- Declare a key in any listing file (`server.json`, `smithery.yaml`,
+- Declare a key in any listing file (`server.json`,
   `glama.json`, the plugin manifests). A test enforces it.
 
 ## Checks that enforce this

@@ -48,7 +48,6 @@ PUBLIC_COPY = [
     ".claude-plugin/plugin.json",
     ".claude-plugin/marketplace.json",
     "server.json",
-    "smithery.yaml",
     "glama.json",
     "CHANGELOG.md",
     "SECURITY.md",
@@ -471,7 +470,7 @@ def test_every_public_copy_file_exists(rel):
 # ── 5. facts of 0.4.0: network, fee recipient, install lines ────────────────
 
 # Phrases of the 0.3.x/0.4.0-draft default (testnet). The files this unit owns
-# never state it; commands/setup.md, docs/BUILDER_FEE.md and smithery.yaml
+# never state it; commands/setup.md and docs/BUILDER_FEE.md
 # belong to other units and are not checked here.
 STALE_NETWORK_PHRASES = ("testnet (the default)", "testnet by default", "starts on testnet",
                          "PATHIEL_NETWORK=mainnet")

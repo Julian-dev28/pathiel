@@ -34,7 +34,7 @@ builder fee, and listing metadata for the MCP directories. Release notes:
 - `scripts/pathiel-mcp --commands`: paste-ready status and approval lines
   with absolute paths for your machine.
 - Container image (`Dockerfile.mcp`) running the same public launcher, and
-  listing files for the official MCP registry (`server.json`), Smithery and
+  listing files for the official MCP registry (`server.json`) and
   Glama.
 - `docs/strategy/OIL_RULES.md`: the oil desk's rules with the code's own
   numbers, and what is not known.

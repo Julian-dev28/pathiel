@@ -70,6 +70,10 @@ after approving, set `PATHIEL_BUILDER_FEE_TENTHS_BP=0` in
 - **The network is read at start.** After editing the env file, reconnect
   pathiel in `/mcp`. An approval signed on one network does not cover the
   other.
+- **Builder fees on HIP-3 perps (xyz:BRENTOIL, xyz:GOLD) are unconfirmed.**
+  Hyperliquid's builder-code docs cover perps in general and never mention
+  HIP-3 dexes. If the venue refuses the fee on such an order, pathiel sends it
+  again without the fee, so the order still lands.
 - **The first order after a cold start may carry no fee** if the background
   approval read has not landed yet. Orders are never held for it.
 - **The thesis needs the Claude Code CLI.** `desk_refresh` writes a new

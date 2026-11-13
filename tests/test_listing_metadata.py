@@ -1,5 +1,5 @@
 """Gate tests for the listing metadata: the official MCP registry (server.json),
-Smithery (smithery.yaml), Glama (glama.json) and the Claude Code marketplace
+Glama (glama.json) and the Claude Code marketplace
 (.claude-plugin/).
 
 Nothing here submits anything. Each check is a rule a registry or a user
@@ -8,9 +8,9 @@ testnet as the opt-in (0.4.0), the fee, the default and the opt-in in the
 manifest descriptions, discovery keywords, and no key or secret declared in
 any listing (keys live only in the user's own env file).
 
-smithery.yaml belongs to another unit. Its network default is checked for
-internal consistency (schema default, example, command fallback agree), not
-pinned to a value here.
+There is no smithery.yaml: Smithery shut down its hosted build and connection
+services on 2026-10-31 (https://smithery.ai/future) and is a directory only.
+test_no_smithery_yaml keeps a dead build file from coming back.
 
 Offline, no network.
 
@@ -28,7 +28,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 SERVER_JSON = ROOT / "server.json"
-SMITHERY_YAML = ROOT / "smithery.yaml"
+SMITHERY_YAML = ROOT / "smithery.yaml"   # must not exist
 GLAMA_JSON = ROOT / "glama.json"
 PLUGIN_JSON = ROOT / ".claude-plugin" / "plugin.json"
 MARKET_JSON = ROOT / ".claude-plugin" / "marketplace.json"
@@ -94,15 +94,12 @@ def _walk(node: Any, path: str = "") -> Iterator[Tuple[str, Any]]:
 
 
 def declared_secrets(server: Optional[Dict[str, Any]] = None,
-                     smithery: Optional[Dict[str, Any]] = None,
                      glama: Optional[Dict[str, Any]] = None) -> List[str]:
     """Every place a listing file marks something secret or names a key-shaped
     input: isSecret true anywhere, an environment variable, argument, variable
-    or config property whose name looks like a credential, or a key variable
-    named in Smithery's command function. Defaults to the files on disk."""
+    or config property whose name looks like a credential, Defaults to the files on disk."""
     hits: List[str] = []
     server = _json(SERVER_JSON) if server is None else server
-    smithery = _yaml(SMITHERY_YAML) if smithery is None else smithery
     glama = _json(GLAMA_JSON) if glama is None else glama
     for path, node in _walk(server):
         if not isinstance(node, dict):
@@ -115,14 +112,6 @@ def declared_secrets(server: Optional[Dict[str, Any]] = None,
         for var in (node.get("variables") or {}):
             if SECRET_NAME_RE.search(var):
                 hits.append(f"server.json{path}.variables: {var!r}")
-    start = smithery.get("startCommand") or {}
-    props = ((start.get("configSchema") or {}).get("properties") or {})
-    for prop in props:
-        if SECRET_NAME_RE.search(prop):
-            hits.append(f"smithery.yaml configSchema property {prop!r}")
-    for var in re.findall(r"\b([A-Z][A-Z0-9_]*)\s*:", str(start.get("commandFunction") or "")):
-        if SECRET_NAME_RE.search(var):
-            hits.append(f"smithery.yaml commandFunction env {var!r}")
     for path, node in _walk(glama):
         if isinstance(node, dict) and node.get("isSecret") is True:
             hits.append(f"glama.json{path}: isSecret true")
@@ -177,32 +166,15 @@ def server_json_rules() -> List[Tuple[str, bool]]:
     ]
 
 
-def smithery_network() -> Dict[str, Any]:
-    """smithery.yaml's network as declared in its three places."""
-    start = _yaml(SMITHERY_YAML).get("startCommand") or {}
-    prop = ((start.get("configSchema") or {}).get("properties") or {}).get("network") or {}
-    fn = str(start.get("commandFunction") or "")
-    m = re.search(r"PATHIEL_NETWORK\s*:\s*config\.network\s*\|\|\s*'(\w+)'", fn)
-    return {"enum": prop.get("enum"), "default": prop.get("default"),
-            "fallback": m.group(1) if m else None,
-            "example": (start.get("exampleConfig") or {}).get("network")}
-
-
 def network_defaults() -> List[Tuple[str, bool]]:
     """Each listing's network rule, as (rule, ok): the files this unit owns
-    say mainnet by default and testnet opt-in; smithery.yaml agrees with
-    itself."""
+    say mainnet by default and testnet opt-in."""
     pkg = oci_package()
     net = {e.get("name"): e for e in pkg.get("environmentVariables") or []}.get("PATHIEL_NETWORK") or {}
-    smithery = smithery_network()
     plugin = _json(PLUGIN_JSON)["description"].lower()
     market = _json(MARKET_JSON)["plugins"][0]["description"].lower()
     return [
         ("server.json PATHIEL_NETWORK default is mainnet", net.get("default") == PUBLIC_DEFAULT_NETWORK),
-        ("smithery.yaml offers both networks", sorted(smithery["enum"] or []) == sorted(NETWORKS)),
-        ("smithery.yaml default, fallback and example agree",
-         smithery["default"] in NETWORKS
-         and smithery["default"] == smithery["fallback"] == smithery["example"]),
         ("plugin.json description: mainnet by default, testnet opt-in",
          "mainnet by default" in plugin and "testnet opt-in" in plugin),
         ("marketplace.json description: mainnet by default, testnet opt-in",
@@ -241,21 +213,14 @@ def test_server_json_declares_no_secret():
 
 def test_secret_check_catches_planted_keys():
     """An empty list proves nothing if the check never looked. Plant a
-    key-shaped env var with isSecret, a key-shaped Smithery property and a
-    key in the command function; each must be named."""
+    key-shaped env var with isSecret; it must be named."""
     server = _json(SERVER_JSON)
     server["packages"][0]["environmentVariables"].append(
         {"name": "HYPERLIQUID_PRIVATE_KEY", "isSecret": True})
-    smithery = _yaml(SMITHERY_YAML)
-    smithery["startCommand"]["configSchema"]["properties"]["privateKey"] = {"type": "string"}
-    smithery["startCommand"]["commandFunction"] = (
-        "(config) => ({command: 'x', env: {HYPERLIQUID_PRIVATE_KEY: config.privateKey}})")
-    hits = declared_secrets(server=server, smithery=smithery)
+    hits = declared_secrets(server=server)
     joined = "\n".join(hits)
     assert "isSecret true" in joined, hits
     assert "name 'HYPERLIQUID_PRIVATE_KEY'" in joined, hits
-    assert "property 'privateKey'" in joined, hits
-    assert "commandFunction env 'HYPERLIQUID_PRIVATE_KEY'" in joined, hits
 
 
 def test_network_defaults_in_every_listing_file():
@@ -263,32 +228,15 @@ def test_network_defaults_in_every_listing_file():
     assert not failed, f"network rules broken: {failed}"
 
 
-def test_smithery_yaml_shape():
-    d = _yaml(SMITHERY_YAML)
-    assert d["build"] == {"dockerfile": "Dockerfile.mcp", "dockerBuildPath": "."}
-    start = d["startCommand"]
-    assert start["type"] == "stdio"
-    schema = start["configSchema"]
-    assert schema["type"] == "object"
-    assert set(schema["properties"]) == {"network"}, "configSchema takes the network and nothing else"
-    net = schema["properties"]["network"]
-    assert sorted(net["enum"]) == sorted(NETWORKS) and net["default"] in NETWORKS
-    fn = start["commandFunction"]
-    assert "'/app/scripts/pathiel-mcp'" in fn and "PATHIEL_NETWORK" in fn
-    assert not re.search(r"(PRIVATE_KEY|_KEY\b|SECRET|TOKEN|MASTER)", fn), fn
-    assert start["exampleConfig"] == {"network": net["default"]}
+def test_no_smithery_yaml():
+    """Smithery's hosted builds ended 2026-10-31; a smithery.yaml would
+    describe a deploy flow that no longer exists."""
+    assert not SMITHERY_YAML.exists()
 
 
 def test_glama_json_shape():
     d = _json(GLAMA_JSON)
     assert d == {"$schema": GLAMA_SCHEMA_URL, "maintainers": ["Julian-dev28"]}
-
-
-def test_smithery_consistency_check_fails_on_a_split_default():
-    """The consistency rule is only proof if it can fail."""
-    smithery = smithery_network()
-    split = dict(smithery, fallback="mainnet" if smithery["default"] == "testnet" else "testnet")
-    assert not (split["default"] == split["fallback"] == split["example"])
 
 
 def test_plugin_and_marketplace_descriptions_disclose_fee_and_network():
