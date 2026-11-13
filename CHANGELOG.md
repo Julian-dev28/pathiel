@@ -20,6 +20,16 @@ All notable changes to pathiel. The format follows
   and wire payload for testnet as well (`hyperliquidChain` "Testnet"),
   proven equal to the installed SDK's `sign_agent` on both networks.
   Mainnet output is unchanged.
+- A landing page, https://julian-dev28.github.io/pathiel/ (`site/`): what
+  pathiel is, the install lines, the safety rules, the risks, and search
+  metadata (description, canonical, Open Graph, schema.org JSON-LD,
+  sitemap). It loads nothing from anywhere else.
+
+### Changed
+
+- GitHub Pages serves the `gh-pages` branch, built by
+  `scripts/publish_site.py` from the landing page and `docs/scoreboard/`
+  only. It used to serve all of `docs/` from `main`, research docs included.
 
 ### Security
 
@@ -38,6 +48,10 @@ All notable changes to pathiel. The format follows
   Hyperliquid then lists the agent. An existing key is never replaced
   without `replace`; the write keeps every other line, is atomic and leaves
   the file at mode 600.
+- The new API wallet is approved as `pathiel-plugin`, never `pathiel`: the
+  maintainer's live API wallet carries that name, and Hyperliquid replaces
+  an agent when a new one is approved under the same name. Reconnecting
+  replaces only the earlier `pathiel-plugin` wallet; the page says so.
 - `wallet_connect` refuses on the maintainer's own checkout
   (`operator_install`) before any file is read or written, and refuses a
   checkout's `.env.local` as a target, so the live trading key cannot be

@@ -3,7 +3,7 @@
 The boundary for "connect your Hyperliquid wallet" on a plugin install. Stdlib
 only (plus `contracts.runtime`), so the MCP server imports it at start for free.
 
-`CONTRACT_VERSION = "1.0.0"`. Bump it if a reader would break.
+`CONTRACT_VERSION = "1.1.0"` (1.1.0: the agent name is `pathiel-plugin`, never the maintainer's `pathiel`). Bump it if a reader would break.
 
 ## Who uses it
 

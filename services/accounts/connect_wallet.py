@@ -513,6 +513,7 @@ PAGE_TEMPLATE = """<!doctype html>
 <li>This key can trade but never withdraw.</li>
 <li>pathiel never sees your main key. It stays in your wallet.</li>
 <li>The new key was made on this computer and is saved only in your env file.</li>
+<li>The Hyperliquid app lists it as <code>{agent_name}</code>. It replaces an earlier pathiel API wallet of that name on this account, and no other.</li>
 <li>You can remove it any time in the Hyperliquid app (More, API).</li>
 </ul>
 <div id="wallets"></div>
@@ -543,7 +544,7 @@ def render_page(*, network: str, agent_address: str, typed_data: Dict[str, Any],
         net_label="MAINNET" if mainnet else "TESTNET",
         net_note=("Real money: this key will place orders with your account's real funds."
                   if mainnet else "Test funds only. Your wallet signs for the Hyperliquid testnet."),
-        agent=html.escape(agent_address))
+        agent=html.escape(agent_address), agent_name=html.escape(contract.AGENT_NAME))
 
 
 # ── the flow ─────────────────────────────────────────────────────────────────

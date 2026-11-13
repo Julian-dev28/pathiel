@@ -42,7 +42,7 @@ def test_codes_states_and_keys():
     assert c.ENV_KEYS == ("HYPERLIQUID_PRIVATE_KEY", "HYPERLIQUID_WALLET_ADDRESS",
                           "HYPERLIQUID_MASTER_ADDRESS")
     assert c.PAGE_TIMEOUT_S == 600
-    assert c.AGENT_NAME == "pathiel"
+    assert c.AGENT_NAME == "pathiel-plugin"
 
 
 def test_operator_refusal_happens_before_any_import(monkeypatch):
@@ -83,3 +83,17 @@ def test_result_problems():
     assert c.result_problems({"ok": True, "state": "done", "next": key.upper()[2:]})
     # a 130-hex signature or a 40-hex address is not a key
     assert c.result_problems({"ok": True, "state": "done", "agent_address": "0x" + "a" * 40}) == []
+
+
+def test_the_agent_name_is_never_the_maintainers_live_one():
+    """Approving an agent under a name the account already uses replaces it.
+    The maintainer's live API wallet is approved as "pathiel"
+    (scripts/approve_api_wallet.py), so a connect signed with the
+    maintainer's master wallet must use another name (review, 2026-11-13)."""
+    import re
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[3]
+    src = (root / "scripts" / "approve_api_wallet.py").read_text(encoding="utf-8")
+    operator_default = re.search(r'"--name", default="([^"]+)"', src).group(1)
+    assert c.AGENT_NAME != operator_default
+    assert len(c.AGENT_NAME) <= 16                      # short, as the app shows it

@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>pathiel: AI trading agent for Hyperliquid in Claude Code</title>
+<meta name="description" content="Free, open-source Hyperliquid MCP server and Claude Code plugin. Claude trades perps with an exact stop-loss and take-profit on every order.">
+<link rel="canonical" href="https://julian-dev28.github.io/pathiel/">
+<link rel="icon" type="image/png" href="icon.png">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="pathiel">
+<meta property="og:title" content="pathiel: AI trading agent for Hyperliquid in Claude Code">
+<meta property="og:description" content="Free, open-source Hyperliquid MCP server and Claude Code plugin. Claude trades perps with an exact stop-loss and take-profit on every order.">
+<meta property="og:url" content="https://julian-dev28.github.io/pathiel/">
+<meta property="og:image" content="https://julian-dev28.github.io/pathiel/icon.png">
+<meta name="twitter:card" content="summary">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src 'self'; base-uri 'none'; form-action 'none'">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "pathiel",
+  "description": "AI trading agent for Hyperliquid: a free, open-source MCP server and Claude Code plugin. Claude trades perpetual futures with an exact stop-loss and take-profit on every order.",
+  "applicationCategory": "FinanceApplication",
+  "operatingSystem": "macOS, Linux",
+  "softwareVersion": "0.5.0",
+  "license": "https://opensource.org/licenses/MIT",
+  "url": "https://julian-dev28.github.io/pathiel/",
+  "codeRepository": "https://github.com/Julian-dev28/pathiel",
+  "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"},
+  "keywords": "Hyperliquid, MCP server, Claude Code plugin, AI trading agent, perpetual futures, risk management"
+}
+</script>
+<style>
+  :root { --bg: #000; --fg: #f2f2f2; --dim: #a8a8a8; --line: #2a2a2a; --warn: #ff6b5e; --code: #111; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg);
+         font: 17px/1.6 -apple-system, "Avenir Next", "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 760px; margin: 0 auto; padding: 56px 16px 72px; }
+  .mark { font-weight: 600; letter-spacing: 0.32em; font-size: 15px; color: var(--dim); margin: 0 0 28px; }
+  h1 { font-size: 34px; line-height: 1.25; margin: 0 0 16px; }
+  h2 { font-size: 21px; margin: 44px 0 10px; border-top: 1px solid var(--line); padding-top: 28px; }
+  p, li { color: var(--fg); }
+  .lede { color: var(--dim); font-size: 19px; margin: 0 0 22px; }
+  .warn { border: 1px solid var(--warn); border-radius: 8px; padding: 12px 16px; }
+  .warn strong { color: var(--warn); }
+  pre { background: var(--code); border: 1px solid var(--line); border-radius: 8px;
+        padding: 14px 16px; overflow-x: auto; font-size: 15px; }
+  code { font-family: ui-monospace, Menlo, Consolas, monospace; }
+  a { color: var(--fg); }
+  ul { padding-left: 22px; }
+  footer { margin-top: 56px; color: var(--dim); font-size: 14px; border-top: 1px solid var(--line); padding-top: 20px; }
+</style>
+</head>
+<body>
+<main>
+  <p class="mark">PATHIEL</p>
+  <h1>An AI trading agent for Hyperliquid: Claude trades perps from Claude Code, with an exact stop and target on every order.</h1>
+  <p class="lede">pathiel is a free, open-source Hyperliquid MCP server and Claude Code plugin: 65 tools that read Hyperliquid perpetual futures markets and your account, and place orders, from Claude Code, Claude Desktop, Cursor or any MCP client.</p>
+  <p class="warn"><strong>Real money.</strong> pathiel runs on Hyperliquid mainnet. With no key it only reads; once you add a key, orders are real. Practice on testnet with one line: <code>PATHIEL_NETWORK=testnet</code>.</p>
+
+  <h2>Install in Claude Code</h2>
+<pre><code>/plugin marketplace add Julian-dev28/pathiel
+/plugin install pathiel@pathiel
+/pathiel:setup</code></pre>
+  <p>Setup shows the network and the risks, builds a private Python environment and connects the MCP server. Reading markets needs no account; trading needs a Hyperliquid API wallet, which can trade and never withdraw.</p>
+
+  <h2>What it does</h2>
+  <ul>
+    <li>Every trade is one bracket order: an entry, a stop-loss and a take-profit target, sized from your risk profile.</li>
+    <li>Default profile: at most 3x leverage, 1% of equity at risk at the stop, one position at a time.</li>
+    <li>Orders under 2R are refused, and so is a stop outside half the distance to liquidation.</li>
+    <li>Desk briefs for crude oil (Brent and WTI) and metals (gold and silver) on Hyperliquid's HIP-3 markets give Claude a written call to trade from.</li>
+    <li>Claude Code asks before each live-money call. Nothing trades in the background.</li>
+  </ul>
+
+  <h2>Free</h2>
+  <p>pathiel charges no fee: no order it places carries a Hyperliquid builder fee, so you pay only Hyperliquid's own trading fee.</p>
+
+  <h2>Research pool</h2>
+  <p>Opt in with one signed statement and pathiel grades your public fills with the same fluke-or-edge harness it runs on its own trades. Results are published at least 24 hours late on the <a href="scoreboard/">scoreboard</a>. No payout or reward is tied to returns.</p>
+
+  <h2>Risk</h2>
+  <p>Leveraged perps can lose the whole account, fast. There is no demonstrated edge and no return is promised. This is software, not financial advice. Hyperliquid's terms bar use from restricted jurisdictions, including by US persons; pathiel does not check where you are.</p>
+
+  <footer>
+    <p><a href="https://github.com/Julian-dev28/pathiel">Source on GitHub</a> · <a href="https://github.com/Julian-dev28/pathiel#readme">README</a> · <a href="https://github.com/Julian-dev28/pathiel/blob/main/docs/GETTING_STARTED.md">Getting started</a> · <a href="scoreboard/">Scoreboard</a> · MIT license</p>
+  </footer>
+</main>
+</body>
+</html>

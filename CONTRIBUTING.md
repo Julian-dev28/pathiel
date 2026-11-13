@@ -130,6 +130,12 @@ it touches, and paste the gate's last line.
 5. If a push is refused: package settings, Manage Actions access, give
    `Julian-dev28/pathiel` the Write role, re-run the failed jobs.
 
+The website (GitHub Pages) is the `gh-pages` branch: the landing page in
+`site/` and the scoreboard in `docs/scoreboard/`, nothing else. After a
+change to either, including each pool build's `scoreboard.json`, publish it
+from `main`: `python3 scripts/publish_site.py publish --ref origin/main --push`.
+`tests/test_site.py` pins what it holds and the page's search metadata.
+
 Manual fallback, from a checkout of the tag (needs `gh` with
 `write:packages` and Docker running):
 

@@ -29,7 +29,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, TypedDict
 
 from contracts import runtime
 
-CONTRACT_VERSION = "1.0.0"
+CONTRACT_VERSION = "1.1.0"   # 1.1.0 (2026-11-13): AGENT_NAME "pathiel-plugin"
 
 TOOL_NAME = "wallet_connect"
 # scripts/pathiel-mcp-server.py TOOL_CLASSES key. "account_setup" tools write
@@ -45,7 +45,13 @@ ENV_WALLET_ADDRESS = "HYPERLIQUID_WALLET_ADDRESS"  # the agent address
 ENV_MASTER_ADDRESS = "HYPERLIQUID_MASTER_ADDRESS"  # the account that signed: holds the funds
 ENV_KEYS = (ENV_PRIVATE_KEY, ENV_WALLET_ADDRESS, ENV_MASTER_ADDRESS)
 
-AGENT_NAME = "pathiel"            # the agentName the approval carries (the app lists it)
+# The agentName the approval carries (the app lists it). Not "pathiel": the
+# maintainer's own live API wallet carries that name (scripts/approve_api_wallet.py
+# --name default), and approving a new agent under a name the account already
+# uses replaces that agent on Hyperliquid. A connect signed by the maintainer's
+# master wallet must never knock out the live desk's signer (review, 2026-11-13).
+# Reconnecting replaces the previous "pathiel-plugin" wallet, which is the point.
+AGENT_NAME = "pathiel-plugin"
 PAGE_TIMEOUT_S = 600              # the signing page closes after 10 minutes
 
 STATES = ("none", "waiting", "working", "done", "failed", "cancelled")

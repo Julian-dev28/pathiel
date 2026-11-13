@@ -243,7 +243,7 @@ def test_full_flow_writes_the_agent_and_posts_once(env_file, monkeypatch, networ
     assert len(venue.exchange_posts) == 1
     action = venue.exchange_posts[0]["action"]
     assert action == {"type": "approveAgent", "agentAddress": flow.agent_address,
-                      "agentName": "pathiel", "nonce": action["nonce"], "signatureChainId": "0x1",
+                      "agentName": "pathiel-plugin", "nonce": action["nonce"], "signatureChainId": "0x1",
                       "hyperliquidChain": "Mainnet" if network == "mainnet" else "Testnet"}
     assert venue.recovered == [master.address.lower()]
     vals = cw.env_values(env_file.read_text())

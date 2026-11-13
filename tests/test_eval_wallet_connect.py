@@ -105,7 +105,7 @@ def _serve(flow):
 
 
 def _sdk_typed(agent: str, nonce: int, network: str, chain_id: int) -> Dict[str, Any]:
-    action = {"agentAddress": agent, "agentName": "pathiel", "nonce": nonce,
+    action = {"agentAddress": agent, "agentName": "pathiel-plugin", "nonce": nonce,
               "signatureChainId": hex(chain_id),
               "hyperliquidChain": "Mainnet" if network == "mainnet" else "Testnet"}
     return user_signed_payload("HyperliquidTransaction:ApproveAgent", F.APPROVE_AGENT_FIELDS, action)
