@@ -61,19 +61,44 @@ the chat; the user types keys into files and prompts on their own machine.
        cp "${CLAUDE_PLUGIN_ROOT}/config/public/env.local.example" ~/.pathiel/.env.local
        chmod 600 ~/.pathiel/.env.local
 
-   For read-only mode the file can stay as it is. For trading, tell the user
-   to open `~/.pathiel/.env.local` and fill in:
+   For read-only mode the file can stay as it is. For trading, a testnet
+   user first adds `PATHIEL_NETWORK=testnet` to the file and reconnects
+   pathiel in `/mcp`, so the key is made for the network they will trade
+   on. Then offer two ways to add the key, in this order:
 
-   - `HYPERLIQUID_WALLET_ADDRESS` and `HYPERLIQUID_PRIVATE_KEY`: an **API
-     wallet** (agent wallet) created in the Hyperliquid app under More, API
-     and approved by their main account. It can trade and cannot withdraw.
-     Never the main account's key.
-   - `HYPERLIQUID_MASTER_ADDRESS`: the main account the API wallet trades
-     for. A public address.
+   - **Connect your wallet (recommended).** Call the `wallet_connect` tool;
+     Claude Code asks the user first. It makes a new API wallet key on this
+     machine and opens a local page in the browser. The page shows the
+     network (MAINNET in red) and the new API wallet's address, and the
+     user approves it with one signature in their browser wallet
+     (MetaMask, Rabby, Coinbase Wallet or any other). The key can trade and
+     never withdraw; the main key stays in the wallet. Give the user the
+     `url` it returns in case no browser opened, then call `wallet_connect`
+     with `{"status": true}` until the state is `done` or `failed`. `done`
+     means the key and both addresses are in `~/.pathiel/.env.local`: go to
+     step 4. A `failed` result names the reason in `error`; fix it and call
+     again. `key_exists` means a key is set already: ask the user before
+     calling again with `{"replace": true}`. If the tool is not listed, run
+     the same flow as a script in the background (it waits up to 10
+     minutes) and show the user the URL it prints:
 
-   Testnet has its own accounts. The API wallet for testnet must be created
-   and approved in the testnet app, https://app.hyperliquid-testnet.xyz, and
-   the testnet account funded with test USDC there. A mainnet API wallet does
+         "${CLAUDE_PLUGIN_ROOT}/scripts/pathiel-py" scripts/connect_wallet.py
+
+   - **Paste an API wallet (fallback),** for a user without a browser
+     wallet or who prefers the Hyperliquid app. Tell the user to open
+     `~/.pathiel/.env.local` and fill in:
+
+     - `HYPERLIQUID_WALLET_ADDRESS` and `HYPERLIQUID_PRIVATE_KEY`: an **API
+       wallet** (agent wallet) created in the Hyperliquid app under More,
+       API and approved by their main account. It can trade and cannot
+       withdraw. Never the main account's key.
+     - `HYPERLIQUID_MASTER_ADDRESS`: the main account the API wallet trades
+       for. A public address.
+
+   Testnet has its own accounts. Pasted by hand, the API wallet for testnet
+   must be created and approved in the testnet app,
+   https://app.hyperliquid-testnet.xyz, and the testnet account funded with
+   test USDC there. A mainnet API wallet does
    not work on testnet, and a testnet one does not work on mainnet.
 
    The intel keys (`EIA_API_KEY`, `FRED_API_KEY`, `CONGRESS_API_KEY`) are
@@ -100,7 +125,7 @@ the chat; the user types keys into files and prompts on their own machine.
    before the env file existed. After creating or editing
    `~/.pathiel/.env.local`, tell the user to reconnect pathiel in `/mcp`
    (or restart Claude Code). Then confirm in `/mcp` that the `pathiel`
-   server shows as connected with 64 tools. If it does not, the error is in
+   server shows as connected with 65 tools. If it does not, the error is in
    the MCP panel; the usual cause is step 1 not having finished.
 
 7. **Prove it.** Call `get_price` with `{coin: "BTC"}`, then `state`. The

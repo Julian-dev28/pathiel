@@ -3,8 +3,8 @@
 **An AI trading agent for Hyperliquid: Claude trades perps from Claude Code, with an exact stop and target on every order.**
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Version 0.5.0](https://img.shields.io/badge/version-0.5.0-informational.svg)](CHANGELOG.md)
-[![MCP server](https://img.shields.io/badge/MCP-64_tools-6f42c1.svg)](https://github.com/Julian-dev28/pathiel/blob/main/docs/overhaul/MCP.md)
+[![Version 0.6.0](https://img.shields.io/badge/version-0.6.0-informational.svg)](CHANGELOG.md)
+[![MCP server](https://img.shields.io/badge/MCP-65_tools-6f42c1.svg)](https://github.com/Julian-dev28/pathiel/blob/main/docs/overhaul/MCP.md)
 [![Claude Code plugin](https://img.shields.io/badge/Claude_Code-plugin-d97757.svg)](#install-in-30-seconds)
 [![CI](https://github.com/Julian-dev28/pathiel/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Julian-dev28/pathiel/actions/workflows/ci.yml)
 
@@ -15,7 +15,7 @@
 
 ## What it does
 
-pathiel is a free, open-source Hyperliquid MCP server and Claude Code plugin: 64 tools that read Hyperliquid perpetual futures (perps) markets and your account, and place orders, from Claude Code, Claude Desktop, Cursor or any MCP client.
+pathiel is a free, open-source Hyperliquid MCP server and Claude Code plugin: 65 tools that read Hyperliquid perpetual futures (perps) markets and your account, and place orders, from Claude Code, Claude Desktop, Cursor or any MCP client.
 Every trade is one bracket order: an entry, a stop-loss and a take-profit target, sized from your risk profile (3x and 1% of equity per trade by default).
 Desk briefs for crude oil (Brent and WTI) and metals (gold and silver) on Hyperliquid's HIP-3 markets give Claude a written call to trade from; nothing trades unless you ask.
 
@@ -46,7 +46,8 @@ the default risk profile, checks the install without printing any key, and
 connects the MCP server. The steps are in `commands/setup.md`.
 
 You need Claude Code, Python 3.11 or later, and for trading a Hyperliquid
-account with an API wallet. Reading markets needs no account.
+account and a browser wallet (or an API wallet you make in the Hyperliquid
+app). Reading markets needs no account.
 [docs/GETTING_STARTED.md](https://github.com/Julian-dev28/pathiel/blob/main/docs/GETTING_STARTED.md) walks through the
 account setup.
 
@@ -69,9 +70,9 @@ Paste these into Claude Code once `/mcp` shows `pathiel` connected.
 
 ## What Claude can do
 
-`scripts/pathiel-mcp-server.py` exposes 64 tools over stdio to a plugin
-install: the 60 trading tools plus the opt-in research pool's 4. The
-maintainer's own checkout lists the 60 only. The full table, generated from
+`scripts/pathiel-mcp-server.py` exposes 65 tools over stdio to a plugin
+install: the 60 trading tools, `wallet_connect`, and the opt-in research
+pool's 4. The maintainer's own checkout lists the 60 only. The full table, generated from
 the server's own tool list, is [docs/overhaul/MCP.md](https://github.com/Julian-dev28/pathiel/blob/main/docs/overhaul/MCP.md).
 
 | group | tools | examples |
@@ -82,6 +83,7 @@ the server's own tool list, is [docs/overhaul/MCP.md](https://github.com/Julian-
 | Market data | 19 | `get_price`, `get_candles`, `get_l2_book`, `get_funding_rate`, `market_list_instruments` |
 | Account history | 21 | `get_open_orders`, `get_trade_history`, `get_user_fills_by_time`, `get_portfolio_pnl` |
 | Wallet reads | 2 | `connected_wallets`, `wallet_account` |
+| Wallet connect | 1 | `wallet_connect`: approve a new API wallet with one signature |
 | Research pool | 4 | `pool_status`, `pool_report`, `pool_join`, `pool_leave` |
 
 `connected_wallets` and `wallet_account` read other addresses and nothing
@@ -106,6 +108,14 @@ The mode follows from what is in `~/.pathiel/.env.local`:
 | no key | read-only, mainnet (the default) data | every read tool; order tools answer that no key is configured |
 | an [API wallet](https://app.hyperliquid.xyz/API) key | mainnet (the default) | everything, with real money |
 | a key and `PATHIEL_NETWORK=testnet` | testnet | everything, with test funds; the oil desk trades WTI (`xyz:CL`) |
+
+**Connect your wallet** is the quick way to a key: `/pathiel:setup` (or
+asking Claude to connect your wallet) runs `wallet_connect`. It makes a new
+API wallet key on your machine and opens a local page where your browser
+wallet approves it with one signature, on the network you run. The key goes
+into `~/.pathiel/.env.local` (mode 600) and nowhere else: it can trade, never
+withdraw, and your main key never leaves the wallet. Pasting an API wallet
+from the Hyperliquid app by hand still works.
 
 State (theses, journals, caches) is kept per network, so testnet and mainnet
 never share it. Testnet needs its own API wallet, created and approved in the
@@ -254,7 +264,7 @@ the keys and state gone.
 | [docs/GETTING_STARTED.md](https://github.com/Julian-dev28/pathiel/blob/main/docs/GETTING_STARTED.md) | account setup, permissions, prompts from first read to first trade |
 | [docs/BUILDER_FEE.md](docs/BUILDER_FEE.md) | the fee is waived; revoking a 0.4.0 approval; how it works if it returns |
 | [docs/strategy/OIL_RULES.md](https://github.com/Julian-dev28/pathiel/blob/main/docs/strategy/OIL_RULES.md) | the rules every oil bracket must pass, and what is not known |
-| [docs/overhaul/MCP.md](https://github.com/Julian-dev28/pathiel/blob/main/docs/overhaul/MCP.md) | all 64 tools |
+| [docs/overhaul/MCP.md](https://github.com/Julian-dev28/pathiel/blob/main/docs/overhaul/MCP.md) | all 65 tools |
 | [docs/PRIVACY.md](https://github.com/Julian-dev28/pathiel/blob/main/docs/PRIVACY.md) | the research pool: what is public, what is not, how to join, leave and come back |
 | [Scoreboard](https://julian-dev28.github.io/pathiel/scoreboard/) | the research pool's public, graded results |
 | [SECURITY.md](SECURITY.md) | where keys live, what pathiel never does, how to report a problem |

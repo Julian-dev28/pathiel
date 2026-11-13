@@ -6,8 +6,25 @@ All notable changes to pathiel. The format follows
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-13
+
+Connect your Hyperliquid wallet with one signature, and a website. Notes:
+[docs/RELEASE_NOTES_v0.6.0.md](https://github.com/Julian-dev28/pathiel/blob/main/docs/RELEASE_NOTES_v0.6.0.md).
+
 ### Added
 
+- Connect your Hyperliquid wallet with one signature: the `wallet_connect`
+  MCP tool (plugin installs only, 65 tools in total) and
+  `scripts/connect_wallet.py` make a new API wallet key on your machine,
+  open a one-time local page where your browser wallet signs Hyperliquid's
+  `approveAgent` for it, check that Hyperliquid lists it, and write the key
+  and both addresses into `~/.pathiel/.env.local`. Mainnet and testnet.
+  `/pathiel:setup` offers it first; pasting an API wallet by hand stays as
+  the fallback.
+- `services/accounts/agent_approval.py` builds the `approveAgent` typed data
+  and wire payload for testnet as well (`hyperliquidChain` "Testnet"),
+  proven equal to the installed SDK's `sign_agent` on both networks.
+  Mainnet output is unchanged.
 - A landing page, https://julian-dev28.github.io/pathiel/ (`site/`): what
   pathiel is, the install lines, the safety rules, the risks, and search
   metadata (description, canonical, Open Graph, schema.org JSON-LD,
@@ -18,6 +35,35 @@ All notable changes to pathiel. The format follows
 - GitHub Pages serves the `gh-pages` branch, built by
   `scripts/publish_site.py` from the landing page and `docs/scoreboard/`
   only. It used to serve all of `docs/` from `main`, research docs included.
+
+### Security
+
+- The agent private key is made locally and is never printed, logged,
+  returned by the tool, or sent to the browser; only its address leaves the
+  process. Tests and an eval scan every HTTP response, result and output
+  stream for it.
+- The signing page binds to 127.0.0.1 on a random port behind a secret path,
+  accepts only a `Host` of `127.0.0.1:<port>` or `localhost:<port>` (DNS
+  rebinding), requires a matching `Origin` on the POST, works once, closes
+  after 10 minutes, and serves a CSP that allows only its own hashed inline
+  script and style (no external script, style or frame).
+- The signature must recover to the account the page reports, the typed
+  data is rebuilt on the server (the page cannot change the agent, nonce or
+  network), approveAgent is posted once, and nothing is written unless
+  Hyperliquid then lists the agent. An existing key is never replaced
+  without `replace`; the write keeps every other line, is atomic and leaves
+  the file at mode 600.
+- Hyperliquid keeps an API wallet approved for 90 days (seen live
+  2026-11-13). The connect result and page give the end date and say to
+  connect again before it.
+- The new API wallet is approved as `pathiel-plugin`, never `pathiel`: the
+  maintainer's live API wallet carries that name, and Hyperliquid replaces
+  an agent when a new one is approved under the same name. Reconnecting
+  replaces only the earlier `pathiel-plugin` wallet; the page says so.
+- `wallet_connect` refuses on the maintainer's own checkout
+  (`operator_install`) before any file is read or written, and refuses a
+  checkout's `.env.local` as a target, so the live trading key cannot be
+  overwritten through it.
 
 ## [0.5.0] - 2026-11-13
 
@@ -199,7 +245,8 @@ builder fee, and listing metadata for the MCP directories. Release notes:
 - First Claude Code plugin release: the MCP server, the desk-tick skill and
   `/pathiel:setup`, installed from this repo. Mainnet only.
 
-[Unreleased]: https://github.com/Julian-dev28/pathiel/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/Julian-dev28/pathiel/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/Julian-dev28/pathiel/releases/tag/v0.6.0
 [0.5.0]: https://github.com/Julian-dev28/pathiel/releases/tag/v0.5.0
 [0.4.1]: https://github.com/Julian-dev28/pathiel/releases/tag/v0.4.1
 [0.4.0]: https://github.com/Julian-dev28/pathiel/releases/tag/v0.4.0
