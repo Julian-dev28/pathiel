@@ -7,7 +7,10 @@
     "name": "Julian Martinez",
     "url": "https://github.com/Julian-dev28"
   },
-  "homepage": "https://github.com/Julian-dev28/pathiel#readme",
+  "homepage": "https://julian-dev28.github.io/pathiel/",
+  "documentationUrl": "https://github.com/Julian-dev28/pathiel/blob/main/docs/GETTING_STARTED.md",
+  "privacyPolicyUrl": "https://github.com/Julian-dev28/pathiel/blob/main/docs/PRIVACY.md",
+  "supportUrl": "https://github.com/Julian-dev28/pathiel/issues",
   "repository": "https://github.com/Julian-dev28/pathiel",
   "license": "MIT",
   "keywords": ["hyperliquid", "trading", "perps", "mcp", "claude-code", "risk-management", "oil", "gold", "ai-agent", "trading-agent", "ai-trading"],

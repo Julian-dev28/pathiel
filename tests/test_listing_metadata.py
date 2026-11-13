@@ -55,7 +55,7 @@ SECRET_NAME_RE = re.compile(r"(key|secret|token|password|passphrase|private|mnem
 # The key sets at 2816df7 (0.3.0). Claude Code validates these manifests; a new
 # key is a format change, not a description edit.
 PLUGIN_KEYS = {"name", "displayName", "version", "description", "author", "homepage",
-               "repository", "license", "keywords", "mcpServers"}
+               "repository", "documentationUrl", "privacyPolicyUrl", "supportUrl", "license", "keywords", "mcpServers"}
 MARKET_KEYS = {"name", "description", "owner", "plugins"}
 MARKET_ENTRY_KEYS = {"name", "source", "description", "category", "keywords"}
 
