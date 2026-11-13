@@ -38,8 +38,10 @@ withdraw or transfer funds. Revoke it in the app and it stops working at
 once. On a public install, `scripts/approve_api_wallet.py` refuses to run:
 API wallets are approved in the Hyperliquid app.
 
-**The master key** is needed for one thing: approving the builder fee with
-`scripts/approve_builder_fee.py`. On a public install:
+**The master key** is needed for one thing, and only if you choose it:
+revoking a builder fee approval given to pathiel 0.4.0 with
+`scripts/approve_builder_fee.py` (pathiel charges no fee now; see
+[docs/BUILDER_FEE.md](docs/BUILDER_FEE.md)). On a public install:
 
 - it is typed at a hidden prompt in your own terminal, and read from nowhere
   else;

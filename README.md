@@ -3,7 +3,7 @@
 **An AI trading agent for Hyperliquid: Claude trades perps from Claude Code, with an exact stop and target on every order.**
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Version 0.4.0](https://img.shields.io/badge/version-0.4.0-informational.svg)](CHANGELOG.md)
+[![Version 0.4.1](https://img.shields.io/badge/version-0.4.1-informational.svg)](CHANGELOG.md)
 [![MCP server](https://img.shields.io/badge/MCP-60_tools-6f42c1.svg)](https://github.com/Julian-dev28/pathiel/blob/main/docs/overhaul/MCP.md)
 [![Claude Code plugin](https://img.shields.io/badge/Claude_Code-plugin-d97757.svg)](#install-in-30-seconds)
 [![CI](https://github.com/Julian-dev28/pathiel/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Julian-dev28/pathiel/actions/workflows/ci.yml)
@@ -40,7 +40,7 @@ Claude Code v2.1.275 or later also takes the first two lines as one:
 `/plugin install pathiel --marketplace Julian-dev28/pathiel`. If Claude Code
 says `Run /reload-plugins to apply`, do that, then run `/pathiel:setup`.
 
-`/pathiel:setup` shows the fee and the risks, builds a private Python
+`/pathiel:setup` shows the network and the risks, builds a private Python
 environment, creates `~/.pathiel/.env.local` (mode 600) for your keys, seeds
 the default risk profile, checks the install without printing any key, and
 connects the MCP server. The steps are in `commands/setup.md`.
@@ -134,28 +134,18 @@ the env file, reconnect pathiel in `/mcp`.
 
 ### Builder fee
 
-pathiel is free. It adds a Hyperliquid builder fee of 0.01% of notional per
-fill, 0.02% a round trip (in and out), to every fill pathiel routes for you,
-once you approve it. That is 1 basis point on top of Hyperliquid's own
-trading fee, paid to the project's builder address
-`0x2c2e4efF574B3Fd9879AdeF9c5CAC6fD7C916985`. On a 2,000 USD position the
-round trip costs 0.40 USD. The maintainer's own checkout never attaches one.
+None. pathiel is free: no order it places carries a Hyperliquid builder fee,
+so you pay only Hyperliquid's own trading fee. There is nothing to approve.
 
-### Approving the fee
+### If a fee ever comes back
 
-The fee applies only after you approve it once with your master wallet:
-`/pathiel:setup` prints the command, a dry run by default, which you run in
-your own terminal. Details: [docs/BUILDER_FEE.md](docs/BUILDER_FEE.md).
-Declining is fine: if you never approve, orders go out with no builder fee
-and everything else works the same.
-
-### How Hyperliquid enforces the fee
-
-Hyperliquid itself rejects any order whose builder fee is above the max you
-approved. pathiel asks you to approve exactly the rate it charges, 0.01%, so
-a higher rate would need a new signature from you. Hyperliquid caps a perp
-builder fee at 0.1%. pathiel never blocks an order over the fee: with no
-approval the order goes out without it, and the tool output says so.
+It would ship as a new version with the rate in the changelog, and it could
+not touch your orders on its own: Hyperliquid charges a builder fee only
+after you approve that exact rate with your master wallet, and rejects any
+order whose builder fee is above the max you approved. Hyperliquid caps a
+perp builder fee at 0.1%. If you approved the 0.01% fee of pathiel 0.4.0,
+it is no longer charged; [docs/BUILDER_FEE.md](docs/BUILDER_FEE.md) shows
+how to revoke it anyway.
 
 ### Risk
 
@@ -180,13 +170,13 @@ re-prompts Claude on a timer, only while that session stays open.
 
 **Can it withdraw my money?**
 No. pathiel signs with an API wallet, which Hyperliquid lets trade and never
-withdraw. Your master key is never stored; the one step that needs it (the
-fee approval) asks for it at a hidden prompt in your own terminal.
+withdraw. Your master key is never stored, and pathiel needs it for nothing:
+the only script that takes it revokes a builder fee approval, at a hidden
+prompt in your own terminal.
 
-**Do I have to pay the builder fee?**
-No. Skip the approval and every order goes out without it. To stop after
-approving, set `PATHIEL_BUILDER_FEE_TENTHS_BP=0` in `~/.pathiel/.env.local`
-and reconnect.
+**Does pathiel charge a fee?**
+No. Orders carry no builder fee; you pay Hyperliquid's own trading fee
+only.
 
 **How do I practice without real money?**
 Add `PATHIEL_NETWORK=testnet` to `~/.pathiel/.env.local`, create an API
@@ -211,7 +201,7 @@ the keys and state gone.
 | doc | for |
 |---|---|
 | [docs/GETTING_STARTED.md](https://github.com/Julian-dev28/pathiel/blob/main/docs/GETTING_STARTED.md) | account setup, permissions, prompts from first read to first trade |
-| [docs/BUILDER_FEE.md](docs/BUILDER_FEE.md) | the fee: rate, approval, enforcement, how to stop |
+| [docs/BUILDER_FEE.md](docs/BUILDER_FEE.md) | the fee is waived; revoking a 0.4.0 approval; how it works if it returns |
 | [docs/strategy/OIL_RULES.md](https://github.com/Julian-dev28/pathiel/blob/main/docs/strategy/OIL_RULES.md) | the rules every oil bracket must pass, and what is not known |
 | [docs/overhaul/MCP.md](https://github.com/Julian-dev28/pathiel/blob/main/docs/overhaul/MCP.md) | all 60 tools |
 | [SECURITY.md](SECURITY.md) | where keys live, what pathiel never does, how to report a problem |

@@ -6,8 +6,20 @@ All notable changes to pathiel. The format follows
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-11-13
+
+pathiel is free: the builder fee is waived. Notes:
+[docs/RELEASE_NOTES_v0.4.1.md](https://github.com/Julian-dev28/pathiel/blob/main/docs/RELEASE_NOTES_v0.4.1.md).
+
 ### Changed
 
+- **The builder fee is waived.** No order carries a Hyperliquid builder
+  code, including for users who approved the 0.4.0 fee; there is nothing to
+  approve, `/pathiel:setup` skips the approval step, and
+  `scripts/approve_builder_fee.py` refuses to sign anything but a 0%
+  revocation. One switch brings it back: `BUILDER_FEE_WAIVED` in
+  `contracts/runtime` (contract 1.2.0), with the steps in
+  `docs/BUILDER_FEE.md`.
 - The Claude plugin directory reviews a bundle, not the repo:
   `scripts/build_plugin_bundle.py` publishes only the files the plugin runs
   (166 of 908) to the `plugin` branch. The repo-root review had flagged
@@ -27,9 +39,6 @@ All notable changes to pathiel. The format follows
   `GIT_INDEX_FILE`, `GIT_WORK_TREE` or `GIT_COMMON_DIR` is set: inside a git
   hook those point at another repo, and a test's publish once wrote a
   `plugin` branch into the real one that way.
-- `scripts/_plugin_env.sh` makes paths absolute without `eval`: a
-  `PATHIEL_HOME` holding `$(...)` is now kept as text, never run.
-
 - Listing copy leads with what people search for: "AI trading agent for
   Hyperliquid" in the README headline, `plugin.json`, `marketplace.json` and
   `server.json` (the registry picks it up with the next version). New
@@ -51,6 +60,11 @@ All notable changes to pathiel. The format follows
   else.
 - `docs/LISTINGS.md`: every place pathiel is listed, and the copy for the
   forms only the maintainer can submit.
+
+### Security
+
+- `scripts/_plugin_env.sh` makes paths absolute without `eval`: a
+  `PATHIEL_HOME` holding `$(...)` is now kept as text, never run.
 
 ## [0.4.0] - 2026-11-12
 
@@ -123,6 +137,7 @@ builder fee, and listing metadata for the MCP directories. Release notes:
 - First Claude Code plugin release: the MCP server, the desk-tick skill and
   `/pathiel:setup`, installed from this repo. Mainnet only.
 
-[Unreleased]: https://github.com/Julian-dev28/pathiel/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/Julian-dev28/pathiel/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/Julian-dev28/pathiel/releases/tag/v0.4.1
 [0.4.0]: https://github.com/Julian-dev28/pathiel/releases/tag/v0.4.0
 [0.3.0]: https://github.com/Julian-dev28/pathiel/commit/ae26611
