@@ -461,3 +461,100 @@ def test_node_pure_functions_and_render(tmp_path):
 
     # 8. schema mismatch: stale message, nothing else material rendered.
     assert "older than the data" in out["staleText"]
+
+
+# ── integration: the page also renders the grade unit's REAL output, not
+# just this unit's own golden fixture ────────────────────────────────────────
+
+_REAL_BOARD_NODE_SCRIPT = r"""
+'use strict';
+const m = require(JS_PATH);
+const doc = require(BOARD_PATH);
+
+function FakeElement(tag) {
+  this.tagName = String(tag).toUpperCase();
+  this.children = [];
+  this.attributes = {};
+  this._text = '';
+}
+Object.defineProperty(FakeElement.prototype, 'textContent', {
+  get: function () {
+    if (this.children.length === 0) return this._text;
+    return this.children.map(function (c) { return c.textContent; }).join('');
+  },
+  set: function (v) { this.children = []; this._text = String(v); },
+});
+FakeElement.prototype.appendChild = function (c) { this.children.push(c); return c; };
+FakeElement.prototype.removeChild = function (c) {
+  const i = this.children.indexOf(c);
+  if (i >= 0) this.children.splice(i, 1);
+  return c;
+};
+FakeElement.prototype.setAttribute = function (n, v) { this.attributes[n] = String(v); };
+FakeElement.prototype.getAttribute = function (n) {
+  return Object.prototype.hasOwnProperty.call(this.attributes, n) ? this.attributes[n] : null;
+};
+
+function FakeDocument() { this._byId = {}; }
+FakeDocument.prototype.createElement = function (tag) { return new FakeElement(tag); };
+FakeDocument.prototype.getElementById = function (id) { return this._byId[id] || null; };
+FakeDocument.prototype.register = function (id, el) {
+  el.attributes.id = id;
+  this._byId[id] = el;
+};
+
+function findAll(el, tag, found) {
+  found = found || [];
+  if (el.tagName === tag) found.push(el);
+  for (const c of el.children) findAll(c, tag, found);
+  return found;
+}
+
+const fakeDoc = new FakeDocument();
+const app = fakeDoc.createElement('div');
+fakeDoc.register('app', app);
+
+const out = {};
+let threw = false;
+try {
+  m.render(doc, fakeDoc);
+} catch (e) {
+  threw = true;
+  out.error = String(e);
+}
+out.threw = threw;
+out.tableCount = findAll(app, 'TABLE').length;
+const tbodies = findAll(app, 'TBODY');
+out.poolRowCount = tbodies.length ? tbodies[0].children.length : 0;
+out.memberRowCount = tbodies.length > 1 ? tbodies[1].children.length : 0;
+
+process.stdout.write(JSON.stringify(out));
+"""
+
+
+@pytest.mark.skipif(NODE is None, reason="node not installed")
+def test_renders_the_real_committed_scoreboard_not_just_the_fixture(tmp_path):
+    """The grade unit writes docs/scoreboard/scoreboard.json independently of
+    this unit's own tests; this is the one check that the two actually fit
+    together: the committed file validates against the contract and this
+    unit's render() draws it with no throw, the right number of tables, and
+    one row per member."""
+    board_path = SCOREBOARD_DIR / pool.SCOREBOARD_JSON
+    assert board_path.is_file(), "docs/scoreboard/scoreboard.json is not committed"
+    doc = json.loads(board_path.read_text(encoding="ascii"))
+    assert pool.validate_scoreboard(doc) == []
+
+    script = (_REAL_BOARD_NODE_SCRIPT
+              .replace("JS_PATH", json.dumps(str(JS)))
+              .replace("BOARD_PATH", json.dumps(str(board_path))))
+    script_path = tmp_path / "run_real_board_test.js"
+    script_path.write_text(script, encoding="utf-8")
+    proc = subprocess.run([NODE, str(script_path)], capture_output=True, text=True,
+                          timeout=20, cwd=str(tmp_path))
+    assert proc.returncode == 0, proc.stderr
+    out = json.loads(proc.stdout)
+
+    assert out["threw"] is False, out.get("error")
+    assert out["tableCount"] == 2
+    assert out["poolRowCount"] == len(doc["pool"])
+    assert out["memberRowCount"] == len(doc["members"])
