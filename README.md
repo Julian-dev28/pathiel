@@ -4,7 +4,7 @@
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Version 0.4.0](https://img.shields.io/badge/version-0.4.0-informational.svg)](CHANGELOG.md)
-[![MCP server](https://img.shields.io/badge/MCP-60_tools-6f42c1.svg)](docs/overhaul/MCP.md)
+[![MCP server](https://img.shields.io/badge/MCP-60_tools-6f42c1.svg)](https://github.com/Julian-dev28/pathiel/blob/main/docs/overhaul/MCP.md)
 [![Claude Code plugin](https://img.shields.io/badge/Claude_Code-plugin-d97757.svg)](#install-in-30-seconds)
 [![CI](https://github.com/Julian-dev28/pathiel/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Julian-dev28/pathiel/actions/workflows/ci.yml)
 
@@ -47,28 +47,10 @@ connects the MCP server. The steps are in `commands/setup.md`.
 
 You need Claude Code, Python 3.11 or later, and for trading a Hyperliquid
 account with an API wallet. Reading markets needs no account.
-[docs/GETTING_STARTED.md](docs/GETTING_STARTED.md) walks through the
+[docs/GETTING_STARTED.md](https://github.com/Julian-dev28/pathiel/blob/main/docs/GETTING_STARTED.md) walks through the
 account setup.
 
-### Other MCP clients
-
-Cursor, Claude Desktop, Pathiel Agent and any other MCP client register the
-launcher `scripts/pathiel-mcp` from a clone as the server command, or run the
-published container (amd64 and arm64). It is listed in the official MCP
-registry as `io.github.Julian-dev28/pathiel`.
-
-```bash
-docker run -i --rm --user "$(id -u):$(id -g)" -v "$HOME/.pathiel:/data" \
-  ghcr.io/julian-dev28/pathiel-mcp:0.4.0
-```
-
-To build it yourself: `docker build -f Dockerfile.mcp -t pathiel-mcp .`
-
-Both are the public install: keys and config come from `~/.pathiel`, with
-the same default network, profile and fee rules as the plugin. Starting
-`scripts/pathiel-mcp-server.py` directly, or accepting the repo `.mcp.json`
-when you open a clone in Claude Code, is the maintainer path (see
-[Maintainer setup](#maintainer-setup)).
+Other MCP clients: see [the README on GitHub](https://github.com/Julian-dev28/pathiel#other-mcp-clients).
 
 ## First prompts to try
 
@@ -89,7 +71,7 @@ Paste these into Claude Code once `/mcp` shows `pathiel` connected.
 
 `scripts/pathiel-mcp-server.py` exposes 60 tools over stdio. The full table,
 generated from the server's own tool list, is
-[docs/overhaul/MCP.md](docs/overhaul/MCP.md).
+[docs/overhaul/MCP.md](https://github.com/Julian-dev28/pathiel/blob/main/docs/overhaul/MCP.md).
 
 | group | tools | examples |
 |---|---|---|
@@ -109,7 +91,7 @@ The oil desk is the one active desk on a fresh install. It trades Brent
 (`xyz:BRENTOIL`) on mainnet, and WTI (`xyz:CL`) on testnet, where Brent is
 not listed. The metals desk (gold, silver) is registered and off by default;
 `desk_brief` still reads it. The rules each bracket must pass are in
-[docs/strategy/OIL_RULES.md](docs/strategy/OIL_RULES.md).
+[docs/strategy/OIL_RULES.md](https://github.com/Julian-dev28/pathiel/blob/main/docs/strategy/OIL_RULES.md).
 
 ## Before you trade
 
@@ -228,51 +210,15 @@ the keys and state gone.
 
 | doc | for |
 |---|---|
-| [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md) | account setup, permissions, prompts from first read to first trade |
+| [docs/GETTING_STARTED.md](https://github.com/Julian-dev28/pathiel/blob/main/docs/GETTING_STARTED.md) | account setup, permissions, prompts from first read to first trade |
 | [docs/BUILDER_FEE.md](docs/BUILDER_FEE.md) | the fee: rate, approval, enforcement, how to stop |
-| [docs/strategy/OIL_RULES.md](docs/strategy/OIL_RULES.md) | the rules every oil bracket must pass, and what is not known |
-| [docs/overhaul/MCP.md](docs/overhaul/MCP.md) | all 60 tools |
+| [docs/strategy/OIL_RULES.md](https://github.com/Julian-dev28/pathiel/blob/main/docs/strategy/OIL_RULES.md) | the rules every oil bracket must pass, and what is not known |
+| [docs/overhaul/MCP.md](https://github.com/Julian-dev28/pathiel/blob/main/docs/overhaul/MCP.md) | all 60 tools |
 | [SECURITY.md](SECURITY.md) | where keys live, what pathiel never does, how to report a problem |
-| [CONTRIBUTING.md](CONTRIBUTING.md) | dev setup, the test gate, style rules |
+| [CONTRIBUTING.md](https://github.com/Julian-dev28/pathiel/blob/main/CONTRIBUTING.md) | dev setup, the test gate, style rules |
 | [CHANGELOG.md](CHANGELOG.md) | what changed per version |
 
-## Maintainer setup
-
-> Maintainer path: this runs mainnet with the tracked repo config (20x, whole-equity sizing). It is not the public install.
-
-This is how the maintainer runs pathiel on his own account, from a checkout.
-It is not the public install and its numbers are not the defaults.
-
-```bash
-git clone https://github.com/Julian-dev28/pathiel
-cd pathiel
-cp .env.local.example .env.local
-scripts/restart.sh          # FastAPI Desk page on http://localhost:8000/ and the log rotator
-scripts/restart.sh status
-```
-
-- **MCP server.** The repo `.mcp.json` starts
-  `scripts/pathiel-mcp-server.py` directly, with no install marker, so it
-  runs mainnet on the tracked `.agent-config.json`. Opening a clone in
-  Claude Code offers that server; accepting it is the maintainer path, not
-  the public install. Other clients that want the public path register
-  `scripts/pathiel-mcp`.
-- **Risk profile.** The tracked config sets 20x, the whole equity per
-  position less the opening fee, one position. The rules `place_bracket`
-  enforces (2R minimum, stop inside half the distance to liquidation, one
-  slot) hold on both paths.
-- **Desk loop.** `.claude/skills/desk-tick/SKILL.md` on `/loop 15m /desk-tick oil`.
-  `scripts/build_plugin_skill.py` generates the plugin copies under
-  `skills/` and `agents/`; the gate fails when a copy is stale.
-- **Gate.** `PATHIEL_STATE_DIR=$(mktemp -d) .venv/bin/python -m pytest -q`,
-  offline, run by `scripts/hooks/pre-commit` (`scripts/install_hooks.sh`
-  wires it in). `scripts/mcp_tool_table.py` regenerates the tool table;
-  `.venv/bin/python scripts/mcp_smoke.py` is a live, read-only MCP smoke.
-- **Keys.** `scripts/preflight_secrets.py` checks the env file without
-  printing it; `docs/SECRETS.md` lists every secret and how to rotate it.
-
-More: [CONTRIBUTING.md](CONTRIBUTING.md) for the code layout,
-[SECURITY.md](SECURITY.md) for the hardening checks.
+Maintainer setup: see [the README on GitHub](https://github.com/Julian-dev28/pathiel#maintainer-setup).
 
 ## License
 

@@ -84,7 +84,7 @@ local Claude Code CLI. pathiel holds no Anthropic or other model key.
 | Dependencies pinned with hashes; CI actions pinned to commit SHAs | `requirements.lock`, `scripts/supply_chain_check.py`, `tests/test_supply_chain.py` |
 
 The secrets inventory, with how to rotate each one, is
-[docs/SECRETS.md](docs/SECRETS.md).
+[docs/SECRETS.md](https://github.com/Julian-dev28/pathiel/blob/main/docs/SECRETS.md).
 
 ## Reporting a vulnerability
 
