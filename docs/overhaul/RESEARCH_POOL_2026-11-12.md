@@ -680,7 +680,8 @@ Not wired: the daily review loop (Open question 5). Not bumped: the version.
 
 1. Answer the open questions, the first two before the first build.
 2. Turn on GitHub Pages: repository Settings, Pages, "Deploy from a branch",
-   branch `main`, folder `/docs`.
+   branch `gh-pages`, folder `/ (root)`. (Done 2026-11-13. It first ran from
+   `main` `/docs`; open question 2 resolved below.)
 3. Protect `main`: repository Settings, Branches, add a rule for `main`.
    - "Require status checks to pass before merging", with these four checks:
      `Tests (Python 3.11)`, `Tests (Python 3.12)`, `Tests (Python 3.13)`,
@@ -734,7 +735,9 @@ pathiel in `/mcp`. No sudo is involved.
    docs with backtest figures included, on the Pages host. `docs/.nojekyll`
    keeps them unrendered but reachable. The alternative with no workflow: an
    orphan branch that holds only the scoreboard, pushed by the build command,
-   with Pages deploying that branch's root. Default kept as decided.
+   with Pages deploying that branch's root. Resolved 2026-11-13 (Julien:
+   "fix" the plain-text docs on the web): the branch is `gh-pages`, built by
+   `scripts/publish_site.py` from `site/` and `docs/scoreboard/` only.
 3. **Telling pathiel trades from hand trades.** The pool grades every trade on
    the pool coins. Two ways to narrow it: a cloid prefix on pathiel's orders
    (touches the order path, so not done), or the `builderFee` field the venue

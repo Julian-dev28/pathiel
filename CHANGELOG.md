@@ -6,6 +6,19 @@ All notable changes to pathiel. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- A landing page, https://julian-dev28.github.io/pathiel/ (`site/`): what
+  pathiel is, the install lines, the safety rules, the risks, and search
+  metadata (description, canonical, Open Graph, schema.org JSON-LD,
+  sitemap). It loads nothing from anywhere else.
+
+### Changed
+
+- GitHub Pages serves the `gh-pages` branch, built by
+  `scripts/publish_site.py` from the landing page and `docs/scoreboard/`
+  only. It used to serve all of `docs/` from `main`, research docs included.
+
 ## [0.5.0] - 2026-11-13
 
 The opt-in research pool and its public scoreboard. Notes:

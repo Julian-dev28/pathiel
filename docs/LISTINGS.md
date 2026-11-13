@@ -19,6 +19,7 @@ in the top 100 for 5.
 | Place | How | Status |
 |---|---|---|
 | GitHub repo description and topics | `gh repo edit` | Done 2026-11-12: "AI trading agent for Hyperliquid…", 16 topics |
+| Website (GitHub Pages) | `scripts/publish_site.py` to `gh-pages` | Live: https://julian-dev28.github.io/pathiel/ (landing page and scoreboard only) |
 | Official MCP registry | release.yml (GitHub OIDC) | Live: `io.github.Julian-dev28/pathiel` 0.5.0 (2026-11-13), new description included |
 | ghcr.io image | release.yml | Live: `ghcr.io/julian-dev28/pathiel-mcp:0.5.0` and `latest`, amd64 + arm64 |
 | punkpeye/awesome-mcp-servers | pull request | Open: [#19383](https://github.com/punkpeye/awesome-mcp-servers/pull/19383) |
