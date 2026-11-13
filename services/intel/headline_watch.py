@@ -449,16 +449,60 @@ def _alerts_path(path: Optional[str]) -> str:
     return path or ALERTS_PATH
 
 
-def match_headline(group: str, title: str) -> Optional[str]:
+def _load_triggers() -> Dict[str, List[Tuple[str, re.Pattern]]]:
+    """data/oil_triggers.json -> [(label, regex)] per group, compiled once at
+    import. Every phrase is a whole-word, case-insensitive match with an
+    optional plural s ("tankers"); "OPEC+" keeps its plus. A missing or
+    broken file is an empty list, never an import error."""
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "oil_triggers.json")
+    try:
+        with open(path) as fh:
+            data = json.load(fh)
+    except (OSError, ValueError):
+        return {}
+    out: List[Tuple[str, re.Pattern]] = []
+    for category, phrases in data.items():
+        if category.startswith("_") or not isinstance(phrases, list):
+            continue
+        alts = []
+        for p in phrases:
+            p = str(p).strip()
+            if not p:
+                continue
+            esc = re.escape(p).replace(r"\ ", r"\s+")
+            tail = r"" if p.endswith("+") else r"s?\b"
+            alts.append(rf"(?<!\w){esc}{tail}")
+        if alts:
+            out.append((f"trigger:{category}", re.compile("|".join(alts), re.I)))
+    return {"oil": out}
+
+
+TRIGGERS: Dict[str, List[Tuple[str, re.Pattern]]] = _load_triggers()
+
+
+def match_trigger(group: str, title: str) -> Optional[str]:
+    """The first Stage 1 trigger label (data/oil_triggers.json) `title`
+    matches for `group`, else None. Pure, no price-wrap check: callers go
+    through match_headline(triggers=True)."""
+    for label, rx in TRIGGERS.get(group, []):
+        if rx.search(title or ""):
+            return label
+    return None
+
+
+def match_headline(group: str, title: str, *, triggers: bool = False) -> Optional[str]:
     """The first pattern label `title` matches for `group`, else None. A price
-    wrap never matches (PRICE_WRAP)."""
+    wrap never matches (PRICE_WRAP). `triggers=True` (the streaming
+    providers, since 2026-11-14) also reads data/oil_triggers.json AFTER the
+    patterns; the default path is unchanged, so the RSS feeds match exactly
+    what they matched before."""
     title = title or ""
     if PRICE_WRAP.search(title):
         return None
     for label, rx in PATTERNS.get(group, []):
         if rx.search(title):
             return label
-    return None
+    return match_trigger(group, title) if triggers else None
 
 
 def match_post(group: str, text: str) -> Optional[str]:
@@ -483,13 +527,17 @@ def trusted_source(source: Optional[str]) -> bool:
 
 
 def news_alerts(group: str, items: Iterable[Dict[str, Any]], seen: set, now_ms: int, *,
-                shared: bool = False) -> List[Dict[str, Any]]:
+                shared: bool = False, triggers: bool = False) -> List[Dict[str, Any]]:
     """New matching headlines from trusted sources, feed order. Adds every
     item's key to `seen` (matching or not) so a headline alerts once. Items:
     parse_rss_items rows ({title, url, source, published_at}). `shared`: the
     same items go to every group (the official feeds), so the key carries the
     group and the item id (URL): each desk judges the item once, and an edited
-    title does not alert twice."""
+    title does not alert twice. `triggers`: a streaming provider's items
+    (sources/providers.NewsItem) also match data/oil_triggers.json; the row
+    then carries `provider`, `sentiment` and `received_ms` for the event log.
+    The dedup key stays the title, so a headline Finlight pushes and Google
+    News lists two minutes later alerts once."""
     out = []
     for it in items:
         title = (it.get("title") or "").strip()
@@ -505,11 +553,17 @@ def news_alerts(group: str, items: Iterable[Dict[str, Any]], seen: set, now_ms: 
             continue
         if not trusted_source(it.get("source")):
             continue
-        label = match_headline(group, title)
+        label = match_headline(group, title, triggers=triggers)
         if label:
-            out.append({"group": group, "kind": "news", "label": label, "title": title[:200],
-                        "source": it.get("source"), "url": it.get("url"), "at_ms": now_ms,
-                        "published_ms": pub_ms, "direction": text_direction(group, title)})
+            row = {"group": group, "kind": "news", "label": label, "title": title[:200],
+                   "source": it.get("source"), "url": it.get("url"), "at_ms": now_ms,
+                   "published_ms": pub_ms, "direction": text_direction(group, title)}
+            if it.get("provider"):
+                rec = it.get("received_at")
+                row["provider"] = it["provider"]
+                row["sentiment"] = it.get("sentiment")
+                row["received_ms"] = int(rec.timestamp() * 1000) if isinstance(rec, datetime) else None
+            out.append(row)
     return out
 
 
@@ -728,7 +782,8 @@ def save_state(state: Dict[str, Any], path: Optional[str] = None) -> None:
 __all__ = ["ALERTS_PATH", "HEADLINE_BLACKOUT_MIN", "HEADLINE_MIN_GAP_MIN", "NEWS_POLL_S", "NEWS_QUERIES",
            "PATTERNS", "POSTS_POLL_S", "POST_PATTERNS", "PRICE_REARM_MIN", "PRICE_SHOCK", "PRICE_WINDOW_MIN",
            "DRIFT_WINDOW_MIN", "DRIFT_REARM_MIN", "PRICE_DRIFT", "HISTORY_KEEP_MIN", "price_drift",
-           "PRICE_WRAP", "TRUSTED_SOURCES", "DIRECTION_WORDS", "ODDS_POLARITY", "alert_direction", "alerts_for",
-           "headline_blackout", "latest_for", "load_state", "match_headline", "match_post", "news_alerts",
+           "PRICE_WRAP", "TRUSTED_SOURCES", "TRIGGERS", "DIRECTION_WORDS", "ODDS_POLARITY", "alert_direction",
+           "alerts_for", "headline_blackout", "latest_for", "load_state", "match_headline", "match_post",
+           "match_trigger", "news_alerts",
            "odds_alerts", "odds_direction", "odds_polarity", "post_alerts", "price_shock", "read_alerts", "record",
            "save_state", "skipped_aligned", "supports", "text_direction", "trusted_source"]
