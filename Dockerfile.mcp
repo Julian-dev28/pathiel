@@ -47,6 +47,13 @@ COPY contracts/ contracts/
 COPY services/ services/
 COPY scripts/ scripts/
 COPY config/ config/
+# The research pool's data: the signed member/leave files pool_status reads
+# (pool/) and the published scoreboard pool_status summarizes (docs/scoreboard/,
+# let through .dockerignore's docs/ exclusion by its own !docs/scoreboard/
+# line, which must stay after `docs/`). This image, unlike the dashboard one,
+# runs no build: it ships whatever was committed at image build time.
+COPY pool/ pool/
+COPY docs/scoreboard/ docs/scoreboard/
 
 # Build the venv (hash-checked requirements.lock) at image build time, so the
 # first MCP start is instant. The throwaway PATHIEL_HOME keeps the build's

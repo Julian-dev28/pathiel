@@ -50,8 +50,11 @@ def keyed(monkeypatch, tmp_path, builder_jobs):
 # ── classification ────────────────────────────────────────────────────────────
 
 def test_every_tool_is_classified_exactly_once():
-    names = [t["name"] for t in M.TOOLS]
-    assert len(names) == 60
+    """TOOLS (the operator's 60, never listed with the four pool tools) plus
+    POOL_TOOLS (listed on a public install only, 4 more): every one of the 64
+    lands in exactly one class."""
+    names = [t["name"] for t in M.TOOLS] + [t["name"] for t in M.POOL_TOOLS]
+    assert len(names) == 64
     for name in names:
         homes = [k for k, s in M.TOOL_CLASSES.items() if name in s]
         assert len(homes) == 1, (name, homes)
@@ -101,11 +104,15 @@ def test_the_shipped_classes_have_no_problems():
 # ── tools/list and instructions ───────────────────────────────────────────────
 
 def test_public_tools_list_same_names_and_schemas(no_key):
+    """The 60 operator-style tools, unchanged, plus the 4 research-pool tools
+    appended with the contract's own descriptions: 64 (tests/test_pool_mcp.py
+    covers the pool tools' own descriptions/classes/annotations in detail)."""
     listed = no_key.rpc("tools/list")["result"]["tools"]
+    operator_style = M.TOOLS + M.POOL_TOOLS
     assert listed is not M.TOOLS
-    assert len(listed) == 60
-    assert [t["name"] for t in listed] == [t["name"] for t in M.TOOLS]
-    for pub, op in zip(listed, M.TOOLS):
+    assert len(listed) == 64
+    assert [t["name"] for t in listed] == [t["name"] for t in operator_style]
+    for pub, op in zip(listed, operator_style):
         assert pub["inputSchema"] == op["inputSchema"]
         assert pub["annotations"] == op["annotations"]
         assert set(pub) == set(op)
@@ -122,7 +129,9 @@ def test_public_tools_list_has_no_dashboard_or_pause_wording(no_key):
     for tool in M.TOOLS:
         if any(w in tool["description"].lower() for w in E.FORBIDDEN_TOOL_WORDS):
             assert tool["name"] in M._PUBLIC_DESCRIPTION_OVERRIDES
-    assert len(json.dumps(listed)) <= len(json.dumps(M.TOOLS)) + 200
+    # the baseline includes the four research-pool tools appended on every
+    # public install (M.POOL_TOOLS); the +200 slop is for the overrides alone
+    assert len(json.dumps(listed)) <= len(json.dumps(M.TOOLS + M.POOL_TOOLS)) + 200
 
 
 SHIPPED_BUILDER = "0x2c2e4efF574B3Fd9879AdeF9c5CAC6fD7C916985"
@@ -140,7 +149,7 @@ def test_public_instructions_content_and_length(case, monkeypatch, tmp_path, bui
     low = text.lower()
     net = kw.get("network", "testnet")
     assert len(text) <= 2500
-    assert text.endswith("write the local desk journal).")      # never truncated
+    assert text.endswith("placing no order and moving no money).")      # never truncated
     assert f"network: {net}" in low
     assert "not financial advice" in low
     assert "3x max leverage" in text and "1% of equity at risk at the stop" in text
@@ -592,7 +601,7 @@ class TestStdioFreshHome:
             out[msg.get("id")] = msg
         return proc, out
 
-    def test_starts_and_lists_60_tools(self, public_env):
+    def test_starts_and_lists_64_tools(self, public_env):
         proc, out = self._session(public_env, {"method": "tools/list"})
         assert proc.returncode == 0, proc.stderr[-2000:]
         init = out[1]["result"]
@@ -600,7 +609,7 @@ class TestStdioFreshHome:
         assert "Network: mainnet. REAL MONEY" in init["instructions"]   # the default, 2026-11-12
         assert "Trading: read-only" in init["instructions"]
         tools = out[2]["result"]["tools"]
-        assert len(tools) == 60
+        assert len(tools) == 64
         assert not any("dashboard" in t["description"].lower() for t in tools)
         assert "maintainer mode" not in proc.stderr
         notices = [ln for ln in proc.stderr.splitlines() if ln.startswith("pathiel: public install")]

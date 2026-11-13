@@ -63,6 +63,7 @@ _state_env.load_env_local(os.path.dirname(_SCRIPTS_DIR))
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import contracts.runtime as runtime  # noqa: E402
+import contracts.pool as pool_contract  # noqa: E402 - stdlib only at import, safe at operator start
 from pathiel import __version__
 from pathiel.agents.config_store import read_agent_config
 from pathiel.client.hl_client import fetch_account_state, resolve_user_address
@@ -217,7 +218,7 @@ Coins: main-dex perps by name (BTC, ETH). HIP-3 perps as dex:SYMBOL (xyz:GOLD). 
 
 {_public_fee_sentence()}
 
-LIVE MONEY: place_bracket, bracket_sweep, set_target, close_position, set_leverage, cancel_order act on the account on {net}, and config with arguments rewrites the trading config. Call them only when the user asked for that exact action in this conversation. Every other tool only reads (desk_refresh, desk_submit_call and desk_grade write the local desk journal)."""
+LIVE MONEY: place_bracket, bracket_sweep, set_target, close_position, set_leverage, cancel_order act on the account on {net}, and config with arguments rewrites the trading config. Call them only when the user asked for that exact action in this conversation. Every other tool only reads (desk_refresh, desk_submit_call and desk_grade write the local desk journal; pool_join/pool_leave sign a text statement with the user's key, only when asked, placing no order and moving no money)."""
     return text[:MAX_PUBLIC_INSTRUCTIONS_CHARS]
 
 
@@ -1428,6 +1429,13 @@ def _tool_handlers() -> Dict[str, Any]:
     for _name in _STUB_TOOL_NAMES:
         tool_handlers[_name] = _make_stub_handler(_name)
 
+    # Research pool: wired on every install (operator included), the same as
+    # every other handler; only server_tools()/TOOLS decide what gets listed.
+    # pool_contract.mcp_handler() lazily imports services.pool on first call,
+    # so an operator who never calls a pool tool pays nothing for it.
+    for _pool_tool_name in pool_contract.MCP_HANDLERS:
+        tool_handlers[_pool_tool_name] = pool_contract.mcp_handler(_pool_tool_name)
+
     # Hidden aliases: old tool names from before the 2026-10-17 consolidation,
     # dispatched to the handler that now covers them but no longer listed in
     # TOOLS (tools/list). Every existing client that calls one of these by
@@ -1508,6 +1516,28 @@ TOOL_CLASSES: Dict[str, frozenset] = {
     "live_config": LIVE_CONFIG_TOOLS, "local_write": LOCAL_WRITE_TOOLS,
 }
 
+# ── research pool: four tools, public installs only ─────────────────────────
+# Listed in server_tools() only when runtime.is_public() (never added to the
+# operator's own TOOLS / tools/list, which tests/test_mcp_overhaul.py and
+# tests/test_mcp_operator_unchanged.py pin at 60, byte-identical). Their
+# dispatch is wired into _tool_handlers() below regardless of install kind,
+# the same way every other handler is; only the *listing* differs.
+POOL_TOOLS: List[Dict[str, Any]] = copy.deepcopy(pool_contract.MCP_TOOLS)
+for _pool_name, _pool_class in pool_contract.MCP_TOOL_CLASS.items():
+    if _pool_class == "local_read":
+        LOCAL_READ_TOOLS = LOCAL_READ_TOOLS | frozenset({_pool_name})
+    elif _pool_class == "account_read":
+        ACCOUNT_READ_TOOLS = ACCOUNT_READ_TOOLS | frozenset({_pool_name})
+    elif _pool_class == "local_write":
+        LOCAL_WRITE_TOOLS = LOCAL_WRITE_TOOLS | frozenset({_pool_name})
+    else:
+        raise RuntimeError(f"pool tool {_pool_name!r}: unknown MCP_TOOL_CLASS {_pool_class!r}")
+TOOL_CLASSES["local_read"] = LOCAL_READ_TOOLS
+TOOL_CLASSES["account_read"] = ACCOUNT_READ_TOOLS
+TOOL_CLASSES["local_write"] = LOCAL_WRITE_TOOLS
+_annotate_tools(POOL_TOOLS)   # pool_join/pool_leave land in LOCAL_WRITE_TOOLS above, not
+                              # LIVE_MONEY_TOOLS: destructiveHint false, never in LIVE_MONEY_TOOLS.
+
 # An account read that is a what-if when any of these arguments is given: it
 # needs no account then.
 _ACCOUNT_READ_WHAT_IF: Dict[str, Tuple[str, ...]] = {
@@ -1525,8 +1555,12 @@ def _check_tool_classes() -> List[str]:
     the problems to stderr and keeps starting: the classes gate public users
     only, so a missed class must never cost the operator his close_position
     and bracket_sweep while a position is open. The gate tests still fail on
-    any problem (tests/test_mcp_public_mode.py)."""
-    names = [t["name"] for t in TOOLS]
+    any problem (tests/test_mcp_public_mode.py).
+
+    Checks TOOLS + POOL_TOOLS together: the pool tools are never in TOOLS
+    itself (the operator's tools/list stays byte-identical), but they must
+    still land in exactly one class, same as every other tool."""
+    names = [t["name"] for t in TOOLS] + [t["name"] for t in POOL_TOOLS]
     problems = []
     for name in names:
         homes = [k for k, s in TOOL_CLASSES.items() if name in s]
@@ -1535,7 +1569,7 @@ def _check_tool_classes() -> List[str]:
     listed = set(names)
     for k, s in TOOL_CLASSES.items():
         for name in sorted(s - listed):
-            problems.append(f"{name}: in {k} but not in TOOLS")
+            problems.append(f"{name}: in {k} but not in TOOLS or POOL_TOOLS")
     for alias, target in ALIASES.items():
         if target not in listed:
             problems.append(f"alias {alias} -> {target}: not a TOOLS name")
@@ -1582,9 +1616,10 @@ _PUBLIC_TOOLS: "List[Dict[str, Any]] | None" = None
 
 
 def server_tools() -> List[Dict[str, Any]]:
-    """tools/list. TOOLS itself on the operator's install. On a public one, a
-    deep copy with _PUBLIC_DESCRIPTION_OVERRIDES applied: same names, order,
-    inputSchema and annotations."""
+    """tools/list. TOOLS itself on the operator's install (60, byte-identical).
+    On a public one, a deep copy with _PUBLIC_DESCRIPTION_OVERRIDES applied
+    (same names, order, inputSchema and annotations as TOOLS) plus the four
+    research-pool tools appended with the contract's own descriptions: 64."""
     global _PUBLIC_TOOLS
     if not runtime.is_public():
         return TOOLS
@@ -1594,7 +1629,7 @@ def server_tools() -> List[Dict[str, Any]]:
             override = _PUBLIC_DESCRIPTION_OVERRIDES.get(tool["name"])
             if override is not None:
                 tool["description"] = override
-        _PUBLIC_TOOLS = tools
+        _PUBLIC_TOOLS = tools + copy.deepcopy(POOL_TOOLS)
     return _PUBLIC_TOOLS
 
 
@@ -1647,7 +1682,7 @@ def _profile_leverage_cap() -> "float | None":
 
 def _user_given(canon: str, args: Dict[str, Any]) -> bool:
     """True when the call names its own address and the tool honors it."""
-    tool = next((t for t in TOOLS if t["name"] == canon), None)
+    tool = next((t for t in TOOLS + POOL_TOOLS if t["name"] == canon), None)
     props = ((tool or {}).get("inputSchema") or {}).get("properties") or {}
     for key in ("user", "address"):
         if key in props and str(args.get(key) or "").strip():
