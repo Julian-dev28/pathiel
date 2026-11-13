@@ -1,6 +1,6 @@
 # pathiel
 
-**Let Claude trade Hyperliquid perps from Claude Code, with an exact stop and target on every order.**
+**An AI trading agent for Hyperliquid: Claude trades perps from Claude Code, with an exact stop and target on every order.**
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Version 0.4.0](https://img.shields.io/badge/version-0.4.0-informational.svg)](CHANGELOG.md)

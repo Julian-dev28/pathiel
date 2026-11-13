@@ -63,7 +63,7 @@ def test_the_plugin_manifest_has_no_component_paths_outside_the_defaults():
     assert (ROOT / "skills" / "pathiel-agent" / "SKILL.md").is_file()
     assert (ROOT / "agents" / "desk-tick.md").is_file()
     assert (ROOT / "commands" / "setup.md").is_file()
-    assert sorted(p.name for p in (ROOT / ".claude-plugin").iterdir()) == ["marketplace.json", "plugin.json"]
+    assert sorted(p.name for p in (ROOT / ".claude-plugin").iterdir()) == ["icon.png", "marketplace.json", "plugin.json"]
 
 
 # ── the MCP entry point ──────────────────────────────────────────────────────
@@ -71,8 +71,10 @@ def test_the_plugin_manifest_has_no_component_paths_outside_the_defaults():
 def test_the_mcp_server_runs_through_the_plugin_wrapper():
     m = _manifest()
     server = m["mcpServers"]["pathiel"]
-    assert server["command"] == "${CLAUDE_PLUGIN_ROOT}/scripts/pathiel-mcp"
-    assert server.get("args", []) == []
+    # The directory asks for the interpreter by name (START_FILE_AS_PROGRAM):
+    # bash starts the launcher, the launcher is the first argument.
+    assert server["command"] == "bash"
+    assert server["args"] == ["${CLAUDE_PLUGIN_ROOT}/scripts/pathiel-mcp"]
     for path in (MCP_WRAPPER, PY_WRAPPER):
         assert path.is_file(), path
         assert path.stat().st_mode & stat.S_IXUSR, f"{path.name} is not executable"

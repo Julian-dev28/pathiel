@@ -1,0 +1,220 @@
+name: Release
+
+# Publishes a release to the two places a stranger finds pathiel outside the
+# Claude Code plugin marketplace:
+#   1. the MCP container image, ghcr.io/julian-dev28/pathiel-mcp:<version> (+ latest),
+#      amd64 and arm64, each built natively and smoke-tested before it is pushed
+#   2. the official MCP registry entry, from server.json
+#
+# Runs when a GitHub release is published, or by hand (Actions > Release >
+# Run workflow) to republish the version server.json names. Nothing else can
+# start it: the two write scopes below are job-scoped and
+# scripts/supply_chain_check.py refuses this file if it ever gains a push or
+# pull_request trigger.
+#
+# No personal token. The image is pushed with this run's GITHUB_TOKEN
+# (packages: write); the registry login is GitHub OIDC (id-token: write),
+# which proves the io.github.Julian-dev28/* namespace without a secret.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  IMAGE: ghcr.io/julian-dev28/pathiel-mcp
+  # mcp-publisher, pinned with the sha256 from registry_1.8.9_checksums.txt
+  # (github.com/modelcontextprotocol/registry/releases/tag/v1.8.9).
+  MCP_PUBLISHER_VERSION: "1.8.9"
+  MCP_PUBLISHER_SHA256: 4d527ca8f1ced0394c962dc925c2a4a4addef441cbefd62501c875e9481823a8
+
+jobs:
+  version:
+    name: Read the version and check every place agrees
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+
+      - id: version
+        run: |
+          python3 - <<'EOF'
+          import json, os, re, sys
+          server = json.load(open("server.json"))
+          plugin = json.load(open(".claude-plugin/plugin.json"))
+          init = open("pathiel/__init__.py").read()
+          v = server["version"]
+          ident = server["packages"][0]["identifier"]
+          problems = []
+          if ident != f"{os.environ['IMAGE']}:{v}":
+              problems.append(f"server.json identifier {ident} is not {os.environ['IMAGE']}:{v}")
+          if plugin["version"] != v:
+              problems.append(f"plugin.json says {plugin['version']}, server.json {v}")
+          if not re.search(r"__version__\s*=\s*['\"]" + re.escape(v) + r"['\"]", init):
+              problems.append(f"pathiel.__version__ is not {v}")
+          if os.environ["GITHUB_EVENT_NAME"] == "release" and os.environ["GITHUB_REF_NAME"] != f"v{v}":
+              problems.append(f"release tag {os.environ['GITHUB_REF_NAME']} is not v{v}")
+          if problems:
+              sys.exit("\n".join(problems))
+          open(os.environ["GITHUB_OUTPUT"], "a").write(f"version={v}\n")
+          print(f"version {v}")
+          EOF
+
+      # The Claude plugin directory tracks the `plugin` branch, not main
+      # (docs/LISTINGS.md). Refuse to ship a version whose bundle was not
+      # published there first, byte for byte: same git tree.
+      - name: The plugin branch holds this version's bundle
+        run: |
+          git fetch --no-tags --depth=1 origin "+refs/heads/plugin:refs/remotes/origin/plugin"
+          python3 scripts/build_plugin_bundle.py check --ref HEAD --against origin/plugin
+
+  image:
+    # One native build per architecture (no QEMU): 0.4.0 shipped amd64 and
+    # arm64, and an amd64-only :latest would break Apple Silicon users.
+    name: Build, smoke test and push (${{ matrix.arch }})
+    needs: version
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    permissions:
+      contents: read
+      packages: write
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      ARCH: ${{ matrix.arch }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+
+      - name: Build
+        run: |
+          docker build -f Dockerfile.mcp \
+            --label "org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}" \
+            --label "org.opencontainers.image.version=${VERSION}" \
+            -t "$IMAGE:${VERSION}-${ARCH}" .
+
+      - name: Smoke test over stdio (no key, read-only)
+        run: |
+          python3 - "$IMAGE:${VERSION}-${ARCH}" "${VERSION}" <<'EOF'
+          import json, subprocess, sys
+          image, version = sys.argv[1], sys.argv[2]
+          msgs = [
+              {"jsonrpc": "2.0", "id": 1, "method": "initialize",
+               "params": {"protocolVersion": "2025-06-18", "capabilities": {},
+                          "clientInfo": {"name": "release-smoke", "version": "0"}}},
+              {"jsonrpc": "2.0", "method": "notifications/initialized"},
+              {"jsonrpc": "2.0", "id": 2, "method": "tools/list"},
+              {"jsonrpc": "2.0", "id": 3, "method": "tools/call",
+               "params": {"name": "place_bracket",
+                          "arguments": {"coin": "BTC", "entry_px": 1, "stop_px": 0.9, "tp_px": 1.5}}},
+          ]
+          stdin = "".join(json.dumps(m) + "\n" for m in msgs)
+          proc = subprocess.run(["docker", "run", "-i", "--rm", image], input=stdin,
+                                capture_output=True, text=True, timeout=120)
+          replies = {}
+          for line in proc.stdout.splitlines():
+              try:
+                  m = json.loads(line)
+              except ValueError:
+                  sys.exit(f"non-JSON on stdout (the MCP channel): {line[:200]}")
+              if "id" in m:
+                  replies[m["id"]] = m
+          info = replies[1]["result"]["serverInfo"]
+          tools = replies[2]["result"]["tools"]
+          refusal = json.loads(replies[3]["result"]["content"][0]["text"])
+          assert info == {"name": "pathiel", "version": version}, info
+          assert len(tools) >= 60, len(tools)
+          assert refusal.get("read_only") is True and refusal.get("ok") is False, refusal
+          print(f"serverInfo {info}, {len(tools)} tools, place_bracket refused read-only")
+          EOF
+
+      - name: Push the per-architecture tag
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          printf '%s' "$TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          docker push "$IMAGE:${VERSION}-${ARCH}" || {
+            echo "::error::Push refused. Open github.com/users/Julian-dev28/packages/container/pathiel-mcp/settings, Manage Actions access, add Julian-dev28/pathiel with the Write role, then re-run."
+            exit 1; }
+          docker logout ghcr.io
+
+  manifest:
+    name: Tag <version> and latest for both architectures
+    needs: [version, image]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - name: Create the multi-arch tags
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          printf '%s' "$TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          docker buildx imagetools create -t "$IMAGE:${VERSION}" -t "$IMAGE:latest" \
+            "$IMAGE:${VERSION}-amd64" "$IMAGE:${VERSION}-arm64"
+          out=$(docker buildx imagetools inspect "$IMAGE:${VERSION}")
+          echo "$out"
+          for platform in linux/amd64 linux/arm64; do
+            grep -q "$platform" <<<"$out" || { echo "::error::$platform missing from $IMAGE:${VERSION}"; exit 1; }
+          done
+          docker logout ghcr.io
+
+  registry:
+    name: Publish to the official MCP registry
+    needs: [version, manifest]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+
+      - name: Install mcp-publisher (pinned, checksum verified)
+        run: |
+          url="https://github.com/modelcontextprotocol/registry/releases/download/v${MCP_PUBLISHER_VERSION}/mcp-publisher_linux_amd64.tar.gz"
+          curl -fsSL -o mcp-publisher.tar.gz "$url"
+          echo "${MCP_PUBLISHER_SHA256}  mcp-publisher.tar.gz" | sha256sum -c -
+          tar -xzf mcp-publisher.tar.gz mcp-publisher
+          ./mcp-publisher --version
+
+      - name: Check the image is public
+        run: |
+          # The registry pulls the image to read its server-name label; a
+          # private package fails there with a vaguer error. ghcr.io hands
+          # anonymous pull tokens only for public packages.
+          v="${{ needs.version.outputs.version }}"
+          token=$(curl -fsS "https://ghcr.io/token?scope=repository:julian-dev28/pathiel-mcp:pull" \
+                  | python3 -c "import json,sys;print(json.load(sys.stdin)['token'])") || {
+            echo "::error::ghcr.io/julian-dev28/pathiel-mcp is not public. Open github.com/users/Julian-dev28/packages/container/pathiel-mcp/settings, set visibility to Public, then re-run this job."
+            exit 1; }
+          curl -fsS -o /dev/null -H "Authorization: Bearer $token" \
+            -H "Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.v2+json, application/vnd.oci.image.manifest.v1+json" \
+            "https://ghcr.io/v2/julian-dev28/pathiel-mcp/manifests/$v"
+
+      - name: Validate, log in with GitHub OIDC, publish
+        run: |
+          ./mcp-publisher validate server.json
+          ./mcp-publisher login github-oidc
+          ./mcp-publisher publish server.json

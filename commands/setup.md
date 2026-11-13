@@ -33,7 +33,7 @@ the chat; the user types keys into files and prompts on their own machine.
 
 1. **Build the environment** (idempotent, about a minute on the first run):
 
-       "${CLAUDE_PLUGIN_ROOT}/scripts/pathiel-mcp" --bootstrap
+       bash "${CLAUDE_PLUGIN_ROOT}/scripts/pathiel-mcp" --bootstrap
 
    It prints the Python it uses, the env file, the state directory, the
    config file and the network. A fresh install gets the public default risk
@@ -94,7 +94,7 @@ the chat; the user types keys into files and prompts on their own machine.
 5. **Builder fee approval (optional).** Tell the user the exact rate again:
    0.01% of notional per fill. Then get the commands for their own terminal:
 
-       "${CLAUDE_PLUGIN_ROOT}/scripts/pathiel-mcp" --commands
+       bash "${CLAUDE_PLUGIN_ROOT}/scripts/pathiel-mcp" --commands
 
    It prints three lines, `status`, `approve-dry` and `approve-sign`, each a
    label, a tab, then a command with absolute paths. Both approve lines run

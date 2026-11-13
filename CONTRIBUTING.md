@@ -107,25 +107,42 @@ it touches, and paste the gate's last line.
    `pathiel/__init__.py`. `tests/test_listing_metadata.py` fails until all
    three agree. Add the `CHANGELOG.md` entry and
    `docs/RELEASE_NOTES_v<version>.md`.
-2. Merge to `main`, tag `v<version>`, publish a GitHub release from the tag
+2. Merge to `main`, then publish the plugin bundle from it:
+   `python3 scripts/build_plugin_bundle.py publish --ref main --push`. That
+   commits only the files the plugin runs (no CLAUDE.md, `.mcp.json`,
+   `.claude/`, docs, tests or CI) to the `plugin` branch, which is what the
+   Claude plugin directory tracks; it picks up the new `plugin.json` version
+   from there. `tests/test_plugin_bundle.py` pins what goes in.
+3. Tag `v<version>` on that commit and publish a GitHub release from the tag
    with the release notes as the body. Plugin users then get it with
    `claude plugin update pathiel@pathiel`.
-3. Container, from a checkout of the tag (needs `gh` with `write:packages`
-   and Docker running):
+4. Publishing the release starts `.github/workflows/release.yml`. It checks
+   the versions agree with the tag and that the `plugin` branch holds the
+   bundle of the tag (else it stops and prints the publish command), builds the MCP image natively on amd64
+   and arm64, smoke-tests each over stdio (`initialize` answers with
+   `serverInfo.version == <version>`, 60 tools, `place_bracket` refused
+   read-only with no key), pushes `<version>` and `latest` for both, then
+   publishes `server.json` to the official MCP registry with GitHub OIDC.
+   No token or secret to set up. It is the only workflow allowed to write
+   (`packages`, `id-token`), and `scripts/supply_chain_check.py` fails it
+   if it ever runs on a push or pull request. To republish by hand: Actions,
+   Release, Run workflow.
+5. If a push is refused: package settings, Manage Actions access, give
+   `Julian-dev28/pathiel` the Write role, re-run the failed jobs.
 
-   ```bash
-   gh auth token | docker login ghcr.io -u Julian-dev28 --password-stdin
-   docker buildx build --platform linux/amd64,linux/arm64 -f Dockerfile.mcp \
-     --label org.opencontainers.image.source=https://github.com/Julian-dev28/pathiel \
-     -t ghcr.io/julian-dev28/pathiel-mcp:<version> \
-     -t ghcr.io/julian-dev28/pathiel-mcp:latest --push .
-   ```
+Manual fallback, from a checkout of the tag (needs `gh` with
+`write:packages` and Docker running):
 
-   Smoke-test it first: `docker run -i --rm <image>` must answer MCP
-   `initialize` with `serverInfo.version == <version>`, list 60 tools, and
-   refuse `place_bracket` as read-only with no key.
-4. Official MCP registry: `mcp-publisher login github` (device code), then
-   `mcp-publisher validate server.json` and `mcp-publisher publish
-   server.json`. The registry pulls the image to read its
-   `io.modelcontextprotocol.server.name` label, so the package must be
-   public.
+```bash
+gh auth token | docker login ghcr.io -u Julian-dev28 --password-stdin
+docker buildx build --platform linux/amd64,linux/arm64 -f Dockerfile.mcp \
+  --label org.opencontainers.image.source=https://github.com/Julian-dev28/pathiel \
+  -t ghcr.io/julian-dev28/pathiel-mcp:<version> \
+  -t ghcr.io/julian-dev28/pathiel-mcp:latest --push .
+mcp-publisher login github
+mcp-publisher validate server.json
+mcp-publisher publish server.json
+```
+
+The registry pulls the image to read its `io.modelcontextprotocol.server.name`
+label, so the package must stay public.

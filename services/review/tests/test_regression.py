@@ -15,6 +15,7 @@ from services.review import analysis as A
 from services.review import inputs as I
 from services.review import ledger as LG
 from services.review import stats as S
+from services.review import thesis_match as TM
 from services.review.tests.conftest import AUDIT_CSV, BUNDLE
 
 NOV2_LONG = "2026-11-02T03:50Z"
@@ -27,7 +28,7 @@ def csv_records():
 
 @pytest.fixture(scope="module")
 def bundle_records():
-    return LG.build_records(I.load_bundle(BUNDLE))
+    return TM.build_records(I.load_bundle(BUNDLE))
 
 
 def test_the_csv_holds_the_ten_closed_trades(csv_records):
@@ -80,5 +81,5 @@ def test_settled_and_provisional_split_at_twelve_hours(bundle_records):
 
 
 def test_the_luck_check_is_deterministic(bundle_records):
-    again = LG.build_records(I.load_bundle(BUNDLE))
+    again = TM.build_records(I.load_bundle(BUNDLE))
     assert [r["luck_pct"] for r in again] == [r["luck_pct"] for r in bundle_records]

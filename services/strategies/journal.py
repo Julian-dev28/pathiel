@@ -3,6 +3,7 @@
 Layout, under PATHIEL_STATE_DIR:
 
     strategies/<desk_id>/theses/<thesis_id>.json
+    strategies/grade_sweep.json          the grader's heartbeat (save_sweep)
 
 `PATHIEL_STATE_DIR` is resolved at CALL time (not frozen at import), the same
 discipline pathiel.agents.capital_flows uses — so a test can point it at a
@@ -16,7 +17,7 @@ again.
 from __future__ import annotations
 
 import os
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from contracts.strategies.models import Author, Thesis
 from pathiel.agents.atomic_io import write_json_atomic
@@ -85,6 +86,38 @@ def list_theses(desk_id: str, *, author: Optional[Author] = None,
 def latest_thesis(desk_id: str, *, author: Optional[Author] = None) -> Optional[Thesis]:
     rows = list_theses(desk_id, author=author, limit=1)
     return rows[0] if rows else None
+
+
+SWEEP_FILE = "grade_sweep.json"
+
+
+def sweep_path() -> str:
+    return os.path.join(strategies_dir(), SWEEP_FILE)
+
+
+def save_sweep(record: Dict[str, Any]) -> None:
+    """The grader's heartbeat: grader.grade_all_due writes one record at the
+    end of every sweep that finished (swept_at, how many grades it wrote,
+    which ungraded calls it read and left open). A sweep that raised
+    mid-journal writes nothing, so a missing or old record IS the signal
+    that the sweep stopped -- the only way to tell a stopped sweep from a
+    quiet hour in which nothing resolved. grading_lag_check reads it."""
+    write_json_atomic(sweep_path(), record)
+
+
+def load_sweep() -> Optional[Dict[str, Any]]:
+    """The last finished sweep's record, or None when no sweep has run on
+    this state dir (or the file is unreadable)."""
+    path = sweep_path()
+    if not os.path.exists(path):
+        return None
+    import json
+    try:
+        with open(path) as fh:
+            rec = json.load(fh)
+    except (OSError, ValueError):
+        return None
+    return rec if isinstance(rec, dict) else None
 
 
 def all_desk_ids() -> List[str]:

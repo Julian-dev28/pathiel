@@ -146,13 +146,27 @@ number; nothing reads `grader.py`'s thesis-only roll-up directly any more.
   thesis grading always covers every desk, it is cheap and idempotent).
   `grade --regrade` is the backfill form (every thesis re-read; snapshot
   the journal first).
+- **The heartbeat**: every sweep that finishes writes
+  `$PATHIEL_STATE_DIR/strategies/grade_sweep.json` (`journal.save_sweep`):
+  `swept_at`, `graded`, and `open` = the ungraded calls it read and left
+  open, each with the grader's reason ("entry not filled yet" / "open:
+  neither stop nor target touched yet"). A sweep that raises writes
+  nothing, so the heartbeat ages. "0 graded" every hour is the normal
+  picture while open calls sit between their stops and targets; the
+  heartbeat is what says the sweep ran.
 - **The check**: `python -m services.strategies.evals.grading_lag_check`
-  (reads `$PATHIEL_STATE_DIR`, exits 1) fails when a call is past its
-  horizon with no grade, or when the sweep has written nothing for hours
-  while older calls wait behind graded newer ones. The review-trades skill
-  runs it daily; the dashboard server must be restarted after a grader
-  change for the hourly sweep to pick it up (it imports the facade in
-  process).
+  (reads `$PATHIEL_STATE_DIR`, exits 1; `--as-of ISO` replays a past
+  state dir) fails when a call is past its horizon with no grade
+  (`stale`), when calls are pending and the heartbeat is missing or older
+  than 2h (`sweep ... STOPPED`), or when a pending call is absent from the
+  last heartbeat's `open` list (`missed`: the sweep skipped it). The
+  review-trades skill runs it daily; the dashboard server must be
+  restarted after a grader change for the hourly sweep to pick it up (it
+  imports the facade in process). A first version (2026-11-13) instead
+  called the sweep stopped when no grade had been written for 2h while a
+  newer call than a pending one was graded; that is exactly a quiet
+  journal (six open Brent longs sat correctly ungraded for 30+ hours) and
+  it was replaced by the heartbeat the same day.
 
 Analytics freshness (2026-10-18). Rebuilding live on every `get_brief()` ran
 through the dashboard server's Hyperliquid budget (60 burst, 2 weight/s) and
