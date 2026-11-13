@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>pathiel research pool scoreboard</title>
+<link rel="stylesheet" href="scoreboard.css">
+</head>
+<body>
+
+<header>
+  <h1>pathiel research pool scoreboard</h1>
+  <p class="lede">
+    This page shows graded results of pathiel research pool members' public
+    Hyperliquid fills. Hyperliquid already makes fills public; nobody
+    uploads anything here.
+  </p>
+</header>
+
+<section class="about">
+  <p>Graded results of public fills, at least 24 hours late. Not live positions, not advice.</p>
+  <p>No edge is demonstrated until a row with 10 or more independent trades says EDGE.</p>
+  <p>Pool rows count independent trades: trades on the same coin and side entered within 24 hours of the first one count once.</p>
+  <p>Rows are ordered by number of graded trades, not by result.</p>
+  <p>
+    To join, run <code>/pathiel:share</code> in the pathiel Claude Code
+    plugin. Project and source:
+    <a href="https://github.com/Julian-dev28/pathiel" rel="noopener noreferrer" target="_blank">github.com/Julian-dev28/pathiel</a>.
+  </p>
+  <p>
+    What is public and what stays private, and how to leave, is in the
+    <a href="https://github.com/Julian-dev28/pathiel/blob/main/docs/PRIVACY.md" rel="noopener noreferrer" target="_blank">privacy doc</a>.
+  </p>
+</section>
+
+<noscript>
+  <p>This page needs JavaScript to show the pool counts and tables. The text above still applies without it.</p>
+</noscript>
+
+<main id="app" aria-live="polite">
+  <p>Loading the scoreboard&hellip;</p>
+</main>
+
+<footer>
+  <p>pathiel is free to install. This scoreboard is generated offline and published as a static page; no server reads this address when you view it.</p>
+</footer>
+
+<script src="scoreboard.js"></script>
+</body>
+</html>
