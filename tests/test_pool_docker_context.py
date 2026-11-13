@@ -176,3 +176,36 @@ def test_real_docker_agrees_with_the_rule(tmp_path):
     for path, included in CASES:
         assert (path in shipped) is included, f"Docker: {path}"
         assert (path in shipped) is (not ignored(path, text)), f"the rule here disagrees with Docker: {path}"
+
+
+# ── integration: the MCP image ships the pool's data, the dashboard image
+# does not (that image cannot run the build) ────────────────────────────────
+
+def test_dockerfile_mcp_copies_pool_and_scoreboard():
+    sources = _copy_sources("Dockerfile.mcp")
+    assert "pool/" in sources, "Dockerfile.mcp has no COPY pool/ pool/"
+    assert "docs/scoreboard/" in sources, "Dockerfile.mcp has no COPY docs/scoreboard/ docs/scoreboard/"
+
+
+def test_dockerfile_dashboard_never_copies_pool_or_scoreboard_data():
+    """Dockerfile (the dashboard image) ships services/pool/'s CODE
+    (python3 -m services.pool), never pool/ or docs/scoreboard/: it cannot
+    run the scoreboard build (see the COPY services/pool/ comment there)."""
+    sources = _copy_sources("Dockerfile")
+    assert "pool/" not in sources
+    assert "docs/scoreboard/" not in sources
+
+
+def test_the_scoreboard_files_reach_the_mcp_image():
+    text = DOCKERIGNORE.read_text()
+    for path in ("docs/scoreboard/scoreboard.json", "docs/scoreboard/index.html"):
+        assert (ROOT / path).is_file(), f"{path} is not committed"
+        assert ignored(path, text) is False, path
+
+
+def test_at_least_one_pool_file_reaches_the_mcp_image():
+    text = DOCKERIGNORE.read_text()
+    tracked = _tracked("pool")
+    assert tracked, "no tracked file under pool/"
+    reaching = [p for p in tracked if not ignored(p, text)]
+    assert reaching, f"every tracked pool/ file is removed by .dockerignore: {tracked}"
