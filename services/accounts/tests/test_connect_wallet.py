@@ -528,3 +528,27 @@ def test_serve_after_close_waits_for_an_in_flight_submission(env_file):
     assert res["state"] == "done" and res["ok"] is True
     th.join(5)
     t.join(5)
+
+
+def test_valid_until_is_read_from_extra_agents_and_never_fails_the_flow():
+    """Live, 2026-11-13: approvals come back valid for 90 days. The date is
+    reported so the user knows when to connect again; a failed read gives
+    None and the connect still succeeds."""
+    from services.accounts import connect_wallet as cw
+
+    class V:
+        def __init__(self, reply):
+            self.reply = reply
+
+        def info(self, payload):
+            if isinstance(self.reply, Exception):
+                raise self.reply
+            return self.reply
+
+    agent, master = "0x" + "ab" * 20, "0x" + "cd" * 20
+    assert cw.agent_valid_until(V([{"name": "pathiel-plugin", "address": agent.upper().replace("0X", "0x"),
+                                    "validUntil": 1802304000000}]), master, agent) == "2027-02-11"
+    assert cw.agent_valid_until(V([{"address": agent}]), master, agent) is None
+    assert cw.agent_valid_until(V([]), master, agent) is None
+    assert cw.agent_valid_until(V(ConnectionError("down")), master, agent) is None
+    assert cw.agent_valid_until(V([{"address": agent, "validUntil": True}]), master, agent) is None

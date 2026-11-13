@@ -48,6 +48,9 @@ All notable changes to pathiel. The format follows
   Hyperliquid then lists the agent. An existing key is never replaced
   without `replace`; the write keeps every other line, is atomic and leaves
   the file at mode 600.
+- Hyperliquid keeps an API wallet approved for 90 days (seen live
+  2026-11-13). The connect result and page give the end date and say to
+  connect again before it.
 - The new API wallet is approved as `pathiel-plugin`, never `pathiel`: the
   maintainer's live API wallet carries that name, and Hyperliquid replaces
   an agent when a new one is approved under the same name. Reconnecting

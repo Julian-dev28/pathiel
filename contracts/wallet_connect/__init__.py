@@ -29,7 +29,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, TypedDict
 
 from contracts import runtime
 
-CONTRACT_VERSION = "1.1.0"   # 1.1.0 (2026-11-13): AGENT_NAME "pathiel-plugin"
+CONTRACT_VERSION = "1.2.0"   # 1.2.0: valid_until in the result. 1.1.0 (2026-11-13): AGENT_NAME "pathiel-plugin"
 
 TOOL_NAME = "wallet_connect"
 # scripts/pathiel-mcp-server.py TOOL_CLASSES key. "account_setup" tools write
@@ -96,6 +96,7 @@ class ConnectResult(TypedDict, total=False):
     env_file: str                 # where the key was written
     expires_in_s: int
     replaced: bool                # an earlier key was swapped out
+    valid_until: Optional[str]    # UTC date Hyperliquid's approval ends (about 90 days), or None
     code: str                     # one of ERROR_CODES when ok is false
     error: str
     next: str                     # one plain sentence: what the user does now

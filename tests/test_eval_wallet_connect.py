@@ -147,6 +147,9 @@ def run(tmp: Path, monkeypatch, capfd) -> List[Dict[str, Any]]:
             result_texts.append(json.dumps(res))
             rows.append(_row(f"connects on {network}", res.get("state"), "done",
                              res.get("ok") is True and res.get("state") == "done"))
+            vu = res.get("valid_until")
+            rows.append(_row(f"approval end date reported ({network})", vu, "a date",
+                             bool(vu) and vu in (res.get("next") or "")))
             rows.append(_row(f"approveAgent posts per connect ({network})", len(w.venue.exchange_posts),
                              1, len(w.venue.exchange_posts) == 1))
             rows.append(_row(f"venue recovers the browser's account ({network})",

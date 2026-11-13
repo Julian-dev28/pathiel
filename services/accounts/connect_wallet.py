@@ -377,6 +377,22 @@ def agent_is_approved(venue: Venue, master: str, agent: str) -> bool:
     return False
 
 
+def agent_valid_until(venue: Venue, master: str, agent: str) -> Optional[str]:
+    """The UTC date Hyperliquid's approval of `agent` ends, from extraAgents'
+    validUntil, or None when it cannot be read. Live, 2026-11-13: an
+    approveAgent with no expiry in its name came back valid for 90 days, so
+    an API wallet stops trading on that date unless the user connects again."""
+    try:
+        for entry in venue.info({"type": "extraAgents", "user": master}) or []:
+            if isinstance(entry, dict) and str(entry.get("address", "")).lower() == agent.lower():
+                ms = entry.get("validUntil")
+                if isinstance(ms, (int, float)) and not isinstance(ms, bool) and ms > 0:
+                    return datetime.fromtimestamp(ms / 1000, timezone.utc).strftime("%Y-%m-%d")
+    except Exception:   # noqa: BLE001 - the date is advice, never a reason to fail
+        return None
+    return None
+
+
 # ── the page ─────────────────────────────────────────────────────────────────
 
 PAGE_STYLE = """
@@ -462,7 +478,7 @@ PAGE_SCRIPT = """
       var out = await resp.json();
       finished = true;
       if (out.ok) {
-        say("Connected. " + out.agent_address + " can now trade for " + out.master_address + ". Close this tab and go back to Claude Code.", "ok");
+        say("Connected. " + out.agent_address + " can now trade for " + out.master_address + "." + (out.valid_until ? " Hyperliquid keeps it approved until " + out.valid_until + "; connect again before then." : "") + " Close this tab and go back to Claude Code.", "ok");
       } else {
         say("Not connected: " + (out.error || "unknown error") + " Start again from Claude Code.", "err");
       }
@@ -791,16 +807,22 @@ class ConnectFlow:
                                f"Hyperliquid approved {self.agent_address}, but {self.env_file} "
                                f"could not be written ({errno.errorcode.get(e.errno, 'error')}). "
                                "That key is lost and harmless; connect again.") from None
+        valid_until = agent_valid_until(self._venue, master, self.agent_address)
+        note = contract.RECONNECT_NOTE
+        if valid_until:
+            note += (f" Hyperliquid keeps this API wallet approved until {valid_until} (UTC); "
+                     "connect again before then to keep trading.")
         return {"ok": True, "state": "done", "network": self.network,
                 "agent_address": self.agent_address, "master_address": master,
                 "env_file": str(self.env_file), "replaced": replaced,
-                "next": contract.RECONNECT_NOTE}
+                "valid_until": valid_until, "next": note}
 
 
 # ── HTTP ─────────────────────────────────────────────────────────────────────
 
 # What the page gets back: no env file path, nothing it does not show.
-_PAGE_KEYS = ("ok", "state", "network", "agent_address", "master_address", "code", "error")
+_PAGE_KEYS = ("ok", "state", "network", "agent_address", "master_address", "valid_until",
+              "code", "error")
 
 
 def _make_server(flow: ConnectFlow) -> ThreadingHTTPServer:

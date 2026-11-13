@@ -111,3 +111,26 @@ Acceptance: `--verify` passes, `wallet.js` stays under the 5 MB ceiling in
 registers the account and shows it on the Account page with zero console
 errors, and `npm audit --omit=dev` reports no advisory in code that ships to
 the browser.
+
+
+## Wallet connect, 2026-11-13 (no npm): verified live
+
+`wallet_connect` / `scripts/connect_wallet.py` (services/accounts/connect_wallet.py)
+replaced the modal without any npm dependency. Checked on mainnet with a real
+wallet on 2026-11-13, from a throwaway `PATHIEL_HOME`:
+
+- Chrome with the OKX Wallet extension: EIP-6963 found the wallet, the page
+  ran under its strict CSP with no console errors, Chrome sent `Origin` on
+  the POST, and the signature on the wallet's own chain was accepted.
+- Hyperliquid listed the agent as `pathiel-plugin` in `extraAgents` and
+  `userRole` answered `{"role": "agent", "data": {"user": <master>}}`, the
+  shapes the code reads.
+- The maintainer's live `pathiel` API wallet on the same master stayed
+  approved: a separate agent name is what keeps a connect from replacing it.
+- The env file came out at mode 600 with the key; no key in any output.
+- Found live: the approval is valid for 90 days (`validUntil`), not open
+  ended. The result and the page now say the date and to connect again
+  before it (`valid_until`, contract 1.2.0).
+
+Not yet checked by hand: Firefox, Safari, MetaMask, Rabby, testnet, a
+rejected signature, and the 10 minute timeout in a real browser.
