@@ -12,6 +12,8 @@ Rows (every one must meet its target):
   bundle files / repo files                   < 1/3
   files the directory flagged on the root     0
   download-and-run lines in shipped text      0
+  install commands in shipped Markdown        0   (docker run/build, git clone)
+  dead relative links in shipped Markdown     0
   eval in shipped shell                       0
   MCP server declarations, named interpreter  1, bash
   unclassified data files                     0
@@ -69,6 +71,17 @@ def run(bundle: Path, public_env) -> List[dict]:
     rows.append(row("files the directory flagged on the repo root", len(flagged), 0, not flagged))
     fx = T.fetch_exec_hits(bundle, paths)
     rows.append(row("download-and-run lines in shipped text", len(fx), 0, not fx))
+    import re
+    shipped = set(paths)
+    installs = dead = 0
+    for p in B.TRANSFORMED:
+        text = (bundle / p).read_text(encoding="utf-8")
+        installs += sum(text.count(n) for n in ("docker run", "docker build", "git clone"))
+        dead += sum(1 for m in re.finditer(r"\]\((?!https?://|mailto:|#)([^)\s#]+)", text)
+                    if m.group(1) not in shipped and
+                    re.sub(r"^\./", "", m.group(1)) not in shipped)
+    rows.append(row("install commands in shipped Markdown", installs, 0, installs == 0))
+    rows.append(row("dead relative links in shipped Markdown", dead, 0, dead == 0))
     ev = T.shell_eval_hits(bundle, paths)
     rows.append(row("eval in shipped shell", len(ev), 0, not ev))
 

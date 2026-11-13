@@ -12,7 +12,7 @@ tracks that branch.
 What goes in, decided by rules a test pins (tests/test_plugin_bundle.py):
 
   listing    .claude-plugin/plugin.json + icon.png, README, LICENSE,
-             SECURITY, CHANGELOG
+             SECURITY, CHANGELOG, docs/BUILDER_FEE.md
   content    commands/, agents/, skills/ (what Claude Code loads)
   runtime    the launcher scripts, requirements.lock, config/public/, and
              every first-party Python module reachable from the entry
@@ -20,6 +20,13 @@ What goes in, decided by rules a test pins (tests/test_plugin_bundle.py):
              functions, and dotted module strings such as
              "services.intel.api:build_packet" all count), plus the
              package data files listed in DATA_INCLUDE
+
+The listing Markdown files (README, SECURITY, CHANGELOG, BUILDER_FEE) ship transformed,
+by bundle_text(): a block between `<!-- bundle:omit -->` and
+`<!-- /bundle:omit -->` becomes one line pointing at that section on GitHub
+(the README's container command and maintainer clone setup, which the
+directory read as download-and-run), and a relative link to a file the
+bundle does not hold becomes a GitHub URL, so no link in the bundle is dead.
 
 Everything else stays out. A data file under pathiel/, services/ or
 contracts/ that neither DATA_INCLUDE nor DATA_EXCLUDE classifies fails the
@@ -47,6 +54,7 @@ import ast
 import fnmatch
 import json
 import os
+import posixpath
 import re
 import subprocess
 import sys
@@ -56,6 +64,7 @@ from typing import Dict, Iterable, List, Optional, Set, Tuple
 
 ROOT = Path(__file__).resolve().parents[1]
 BRANCH = "plugin"
+HOOK_ENV = ("GIT_DIR", "GIT_INDEX_FILE", "GIT_WORK_TREE", "GIT_COMMON_DIR")
 
 LISTING_FILES = (
     ".claude-plugin/plugin.json",
@@ -64,6 +73,7 @@ LISTING_FILES = (
     "LICENSE",
     "SECURITY.md",
     "CHANGELOG.md",
+    "docs/BUILDER_FEE.md",        # the fee disclosure the README links to
 )
 
 # Loaded by Claude Code as plugin content, shipped whole.
@@ -122,6 +132,16 @@ DATA_EXCLUDE = (
     "pathiel/templates/*",            # the dashboard's pages
     "services/pathiel_data_api/*",    # a separately deployed service
 )
+
+REPO_URL = "https://github.com/Julian-dev28/pathiel"
+# Shipped transformed by bundle_text(); everything else ships byte for byte.
+TRANSFORMED = ("README.md", "SECURITY.md", "CHANGELOG.md", "docs/BUILDER_FEE.md")
+OMIT_START, OMIT_END = "<!-- bundle:omit -->", "<!-- /bundle:omit -->"
+_LINK = re.compile(r"\]\((?!https?://|mailto:|#)([^)\s#]+)(#[^)\s]*)?\)")
+# A marker counts only alone on its line, so prose that names it (this
+# file, the CHANGELOG) is not one.
+_MARKER = re.compile(r"^[ \t]*(<!-- bundle:omit -->|<!-- /bundle:omit -->)[ \t]*\n?", re.M)
+_HEADING = re.compile(r"^#{1,6}\s+(.+?)\s*$", re.M)
 
 FIRST_PARTY = re.compile(r"^(pathiel|services|contracts)(\.[A-Za-z_]\w*)+(:[A-Za-z_]\w*)?$")
 
@@ -252,6 +272,57 @@ def closure(entries: Iterable[str], files: Dict[str, Tuple[str, str]]) -> Set[st
     return seen
 
 
+# ── the shipped Markdown ────────────────────────────────────────────────────
+
+def _anchor(heading: str) -> str:
+    """GitHub's heading anchor: lowercase, punctuation dropped, spaces to -."""
+    text = re.sub(r"[`*_\[\]()]", "", heading).strip().lower()
+    return re.sub(r"[^\w\- ]", "", text).replace(" ", "-")
+
+
+def bundle_text(path: str, text: str, shipped: Set[str], repo_files: Set[str]) -> str:
+    """The bundle's copy of a listing Markdown file (see the module doc)."""
+    out, pos, open_at = [], 0, None
+    for m in _MARKER.finditer(text):
+        if m.group(1) == OMIT_START:
+            if open_at is not None:
+                raise SystemExit(f"{path}: nested {OMIT_START}")
+            out.append(text[pos:m.start()])
+            open_at = m.end()
+            continue
+        if open_at is None:
+            raise SystemExit(f"{path}: {OMIT_END} without {OMIT_START}")
+        heading = _HEADING.search(text[open_at:m.start()])
+        if not heading:
+            raise SystemExit(f"{path}: an omitted block must start with a heading")
+        title = heading.group(1)
+        out.append(f"{title}: see [the README on GitHub]({REPO_URL}#{_anchor(title)}).\n")
+        pos, open_at = m.end(), None
+    if open_at is not None:
+        raise SystemExit(f"{path}: {OMIT_START} without {OMIT_END}")
+    out.append(text[pos:])
+    base = posixpath.dirname(path)
+
+    def link(m: "re.Match[str]") -> str:
+        target, frag = m.group(1), m.group(2) or ""
+        rel = posixpath.normpath(posixpath.join(base, target))
+        if rel in shipped:
+            return m.group(0)
+        kind = "tree" if rel not in repo_files and any(f.startswith(rel.rstrip("/") + "/")
+                                                        for f in repo_files) else "blob"
+        return f"]({REPO_URL}/{kind}/main/{rel}{frag})"
+
+    return _LINK.sub(link, "".join(out))
+
+
+def _shipped_blobs(files: Dict[str, Tuple[str, str]], paths: List[str]) -> Dict[str, bytes]:
+    """Contents of the transformed files, as the bundle holds them."""
+    shipped, names = set(paths), set(files)
+    raw = read_blobs(files[p][1] for p in TRANSFORMED if p in shipped)
+    return {p: bundle_text(p, raw[files[p][1]].decode("utf-8"), shipped, names).encode("utf-8")
+            for p in TRANSFORMED if p in shipped}
+
+
 # ── the bundle ──────────────────────────────────────────────────────────────
 
 def classify_data(path: str) -> Optional[bool]:
@@ -284,7 +355,13 @@ def version_at(ref: str) -> str:
 def tree_sha(ref: str) -> str:
     """The git tree of the bundle built from ref. Same files, same sha."""
     files = ls_tree(ref)
-    lines = "".join(f"{files[p][0]} {files[p][1]}\t{p}\n" for p in bundle_paths(files))
+    paths = bundle_paths(files)
+    entries = {p: files[p] for p in paths}
+    for p, data in _shipped_blobs(files, paths).items():
+        sha = subprocess.run(["git", "hash-object", "-w", "--stdin"], cwd=ROOT, input=data,
+                             capture_output=True, check=True).stdout.decode().strip()
+        entries[p] = ("100644", sha)
+    lines = "".join(f"{entries[p][0]} {entries[p][1]}\t{p}\n" for p in paths)
     with tempfile.TemporaryDirectory() as tmp:
         env = dict(os.environ, GIT_INDEX_FILE=os.path.join(tmp, "index"))
         _git("read-tree", "--empty", env=env)
@@ -300,11 +377,12 @@ def build(ref: str, out: Path) -> List[str]:
     files = ls_tree(ref)
     paths = bundle_paths(files)
     blobs = read_blobs(files[p][1] for p in paths)
+    changed = _shipped_blobs(files, paths)
     for p in paths:
         mode, sha = files[p]
         dest = out / p
         dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_bytes(blobs[sha])
+        dest.write_bytes(changed.get(p, blobs[sha]))
         if mode == "100755":
             dest.chmod(0o755)
     return paths
@@ -320,6 +398,14 @@ def publish(ref: str, push: bool) -> str:
     """Commit the bundle of ref onto the `plugin` branch. Returns its sha."""
     if ref == INDEX:
         raise SystemExit("publish needs a commit (a tag or main), not the index")
+    # Inside a git hook, git exports GIT_DIR / GIT_INDEX_FILE for the repo
+    # being committed. A publish there writes refs into whichever repo those
+    # name, not the one in the working directory (2026-11-13: a test's
+    # throwaway clone wrote a `plugin` branch into the real repo that way).
+    hooked = sorted(k for k in HOOK_ENV if k in os.environ)
+    if hooked:
+        raise SystemExit(f"publish refused: {', '.join(hooked)} is set (a git hook or a "
+                         f"nested git command); run it from a plain shell")
     tree = tree_sha(ref)
     source = _git("rev-parse", f"{ref}^{{commit}}").strip()
     if push:

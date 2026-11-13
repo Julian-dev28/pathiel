@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import ssl
+import sys
 from pathlib import Path
 
 import pytest
@@ -128,21 +130,66 @@ def _load_cli(name: str):
     return mod
 
 
+class _Resp:
+    def __init__(self, body: bytes = b"[]"):
+        self._body = body
+
+    def read(self) -> bytes:
+        return self._body
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+
 def _posted_url(mod, monkeypatch) -> str:
-    """The URL _post hands curl, with subprocess.run faked (no network)."""
+    """The URL _post opens, with urlopen faked (no network)."""
     seen = []
 
-    class _Done:
-        stdout = "[]"
+    def fake_urlopen(req, timeout=None, context=None):
+        seen.append((req, timeout, context))
+        return _Resp()
 
-    def fake_run(argv, **kwargs):
-        seen.append(argv)
-        return _Done()
-
-    monkeypatch.setattr(mod.subprocess, "run", fake_run)
+    monkeypatch.setattr(mod.urllib.request, "urlopen", fake_urlopen)
     assert mod._post({"type": "allMids"}) == []
-    assert len(seen) == 1 and seen[0][0] == "curl"
-    return [a for a in seen[0] if a.startswith("https://")][0]
+    assert len(seen) == 1
+    req, timeout, context = seen[0]
+    assert req.get_method() == "POST" and json.loads(req.data) == {"type": "allMids"}
+    assert req.get_header("Content-type") == "application/json"
+    assert timeout == 10 and context is not None and context.verify_mode == ssl.CERT_REQUIRED
+    return req.full_url
+
+
+def test_the_network_leg_runs_no_second_program():
+    """The plugin directory flags a curl call as download-and-run
+    (RUNTIME_FETCH_EXEC, 2026-11-13); the POST is urllib now."""
+    src = (ROOT / "scripts" / "oil_levels.py").read_text(encoding="utf-8")
+    code = "\n".join(ln.split("#", 1)[0] for ln in src.splitlines())
+    assert "subprocess" not in code and '"curl"' not in code
+
+
+def test_ssl_context_uses_certifi_when_it_is_installed(monkeypatch):
+    mod = _load_cli("oil_levels_ssl_certifi")
+    loaded = []
+    monkeypatch.setattr(ssl.SSLContext, "load_verify_locations",
+                        lambda self, cafile=None, **kw: loaded.append(cafile))
+    import certifi
+    ctx = mod._ssl_context()
+    assert loaded == [certifi.where()] and ctx.check_hostname is True
+
+
+def test_ssl_context_falls_back_to_the_os_bundle_without_certifi(monkeypatch):
+    """python.org's macOS python3 has no CA bundle; /etc/ssl/cert.pem does."""
+    mod = _load_cli("oil_levels_ssl_os")
+    loaded = []
+    monkeypatch.setitem(sys.modules, "certifi", None)          # import certifi -> ImportError
+    monkeypatch.setattr(ssl.SSLContext, "load_verify_locations",
+                        lambda self, cafile=None, **kw: loaded.append(cafile))
+    monkeypatch.setattr(mod, "_SYSTEM_CA_FILES", ("/nonexistent/ca.pem", __file__))
+    ctx = mod._ssl_context()
+    assert loaded == [__file__] and ctx.verify_mode == ssl.CERT_REQUIRED
 
 
 @pytest.mark.parametrize("env, want", [

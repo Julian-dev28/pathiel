@@ -50,6 +50,7 @@ account with an API wallet. Reading markets needs no account.
 [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md) walks through the
 account setup.
 
+<!-- bundle:omit -->
 ### Other MCP clients
 
 Cursor, Claude Desktop, Pathiel Agent and any other MCP client register the
@@ -69,6 +70,7 @@ the same default network, profile and fee rules as the plugin. Starting
 `scripts/pathiel-mcp-server.py` directly, or accepting the repo `.mcp.json`
 when you open a clone in Claude Code, is the maintainer path (see
 [Maintainer setup](#maintainer-setup)).
+<!-- /bundle:omit -->
 
 ## First prompts to try
 
@@ -236,6 +238,7 @@ the keys and state gone.
 | [CONTRIBUTING.md](CONTRIBUTING.md) | dev setup, the test gate, style rules |
 | [CHANGELOG.md](CHANGELOG.md) | what changed per version |
 
+<!-- bundle:omit -->
 ## Maintainer setup
 
 > Maintainer path: this runs mainnet with the tracked repo config (20x, whole-equity sizing). It is not the public install.
@@ -273,6 +276,7 @@ scripts/restart.sh status
 
 More: [CONTRIBUTING.md](CONTRIBUTING.md) for the code layout,
 [SECURITY.md](SECURITY.md) for the hardening checks.
+<!-- /bundle:omit -->
 
 ## License
 

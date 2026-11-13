@@ -16,6 +16,17 @@ All notable changes to pathiel. The format follows
   `release.yml` refuses a version whose bundle is not on that branch.
 - `plugin.json` starts the server as `bash scripts/pathiel-mcp`, naming the
   interpreter as the directory asks; `/pathiel:setup` does the same.
+- The bundle's README, SECURITY, CHANGELOG and `docs/BUILDER_FEE.md` ship
+  transformed: README blocks marked `<!-- bundle:omit -->` (the container
+  command, the maintainer clone setup) become one line linking that section
+  on GitHub, and links to files outside the bundle become GitHub URLs.
+- `scripts/oil_levels.py` posts with urllib (certifi's CA bundle, else the
+  OS one) instead of shelling out to curl, which the directory read as
+  download-and-run.
+- `build_plugin_bundle.py publish` refuses to run when `GIT_DIR`,
+  `GIT_INDEX_FILE`, `GIT_WORK_TREE` or `GIT_COMMON_DIR` is set: inside a git
+  hook those point at another repo, and a test's publish once wrote a
+  `plugin` branch into the real one that way.
 - `scripts/_plugin_env.sh` makes paths absolute without `eval`: a
   `PATHIEL_HOME` holding `$(...)` is now kept as text, never run.
 
