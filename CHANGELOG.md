@@ -15,8 +15,8 @@ All notable changes to pathiel. The format follows
 
 ### Added
 
-- `.claude-plugin/icon.png`, the plugin directory icon, drawn by
-  `scripts/make_icon.py`.
+- `.claude-plugin/icon.png`, the plugin directory icon: the PATHIEL wordmark,
+  white on black, from `docs/brand/icon.svg`.
 - `scripts/seo_rank.py` and a weekly read-only **SEO rank** workflow: pathiel's
   GitHub search rank on nine stranger queries. Baseline in
   `docs/seo/github_rank.jsonl`.

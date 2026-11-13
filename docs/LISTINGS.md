@@ -42,7 +42,10 @@ Before you open it:
    context for the plugin.
 2. The icon is `.claude-plugin/icon.png`. The directory takes the icon only
    the first time the plugin is saved or submitted, so replace it before
-   then if you want a different one (`scripts/make_icon.py` draws this one).
+   then if you want a different one. It is the PATHIEL wordmark, rendered
+   from `docs/brand/icon.svg` on macOS with
+   `qlmanage -t -s 1024 -o /tmp docs/brand/icon.svg` (Avenir Next Demi Bold,
+   widened 1.55x).
 3. Your GitHub account is connected on claude.ai and can push to the repo.
 
 Form answers:

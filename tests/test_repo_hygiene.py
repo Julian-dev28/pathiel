@@ -55,8 +55,8 @@ MAX_TRACKED_FILE_BYTES = 5 * 1024 * 1024
 # ever becomes a real, deliberate exception, widen this set, don't delete
 # the test.
 # Each entry needs a reason. The plugin directory reads its listing icon from
-# the repo, so it cannot live in LFS or cloud storage; it is 7 KB and
-# scripts/make_icon.py redraws it byte for byte (2026-11-12).
+# the repo, so it cannot live in LFS or cloud storage. It is 27 KB, rendered
+# from docs/brand/icon.svg (2026-11-12).
 BINARY_ALLOWLIST: Set[str] = {".claude-plugin/icon.png"}
 
 
