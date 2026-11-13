@@ -1,0 +1,10 @@
+{
+  "schema": 1,
+  "kind": "join",
+  "network": "mainnet",
+  "address": "0x1f25fa78cf6aba9a5cb01fa921017e4d0dd288c7",
+  "signer": "0xd56c89350903501c0ec0192b3292bf2a29d3d3a4",
+  "joined_at": "2026-11-12T12:00:00Z",
+  "message": "pathiel research pool: join\nVersion: 1\nNetwork: hyperliquid-mainnet\nAccount: 0x1f25fa78cf6aba9a5cb01fa921017e4d0dd288c7\nSigner: 0xd56c89350903501c0ec0192b3292bf2a29d3d3a4\nJoined at: 2026-11-12T12:00:00Z\nProject: github.com/Julian-dev28/pathiel\n\nI am the owner of this Hyperliquid account, or an API wallet it approved.\nI ask pathiel to grade this account's public fills on the pool coins from the time above.\nI agree that the graded results are published at least 24 hours late on the public scoreboard, next to this address.\nNo trade, transfer, fee or payment is authorized by this statement.\nI can leave at any time with a signed leave statement.",
+  "signature": "0xdb678e60dd7137f82ba47bde4b8171566368b798c59f49901c5890c1d3b3553636a5d9a47882fd7802f67051f63b02f4dbe6427f977db1c0f058962c702560b91b"
+}

@@ -80,6 +80,10 @@ COPY services/risk/ services/risk/
 # and backtest proposals. Not on the request path; shipped so the image can
 # run the daily review against its own state volume.
 COPY services/review/ services/review/
+# The research pool (python3 -m services.pool): signed membership files, the
+# grading of members' public fills through services/review, the scoreboard
+# build. Reads the venue's public info endpoint only. Not on the request path.
+COPY services/pool/ services/pool/
 COPY conftest.py ./
 
 # ── Runtime state ────────────────────────────────────────────────────────────
