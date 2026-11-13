@@ -66,8 +66,8 @@ def _probe(tmp_path, **extra):
     ("public", None, rt.MAINNET_API_URL, None),         # 2026-11-12: mainnet by default
     ("public", "mainnet", rt.MAINNET_API_URL, None),
     ("public", "testnet", rt.TESTNET_API_URL, None),
-    ("public", "bogus", rt.MAINNET_API_URL, None),      # Python: invalid = unset; the launcher
-                                                        # never passes one (it exports testnet)
+    ("public", "bogus", rt.TESTNET_API_URL, None),      # invalid on public = testnet, as the
+                                                        # launcher does (review 2026-11-12)
 ])
 def test_hl_api_follows_env_at_import(install, net, want, state, tmp_path):
     extra = {}

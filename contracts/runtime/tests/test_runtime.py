@@ -28,7 +28,12 @@ def test_install_kind_table(value, kind):
     (None, "bogus", "mainnet"), (None, " TestNet ", "testnet"), (None, "", "mainnet"),
     ("public", None, "mainnet"), ("public", "mainnet", "mainnet"), ("public", "MAINNET", "mainnet"),
     ("public", "testnet", "testnet"), ("public", " Testnet\n", "testnet"),
-    ("public", "bogus", "mainnet"), ("public", "", "mainnet"),
+    ("public", "bogus", "testnet"), ("public", "", "mainnet"),
+    # Raw env-file text, as Python sees it when started without the launcher.
+    ("public", '"testnet"', "testnet"), ("public", "'testnet'", "testnet"),
+    ("public", "export PATHIEL_NETWORK", "testnet"), ("public", "testnet # practice", "testnet"),
+    ("public", "\ufefftestnet", "testnet"), ("public", '"mainnet"', "mainnet"),
+    ("public", "mainet", "testnet"), (None, "mainet", "mainnet"), (None, '"testnet"', "testnet"),
 ])
 def test_network_table(install, net, want):
     env = {}

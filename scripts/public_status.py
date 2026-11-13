@@ -120,6 +120,9 @@ def network_explicit(env: Mapping[str, str]) -> bool:
 
 def check_network(env: Mapping[str, str]) -> Check:
     net = runtime.network(env)
+    if runtime.network_is_invalid(env):
+        return Check("WARN", "network", f"{net}: the PATHIEL_NETWORK line is not mainnet or testnet, "
+                                        "so pathiel fell back to testnet. Fix the line and reconnect")
     how = "set by PATHIEL_NETWORK" if network_explicit(env) else "the default"
     if net == "mainnet":
         practise = ("" if network_explicit(env) else

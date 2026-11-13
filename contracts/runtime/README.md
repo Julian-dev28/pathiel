@@ -30,7 +30,7 @@ it resolves to operator, mainnet, and never attaches a builder.
 | `public` | unset | public | mainnet | mainnet URL |
 | `public` | `testnet` | public | testnet | testnet URL |
 | `public` | `mainnet` | public | mainnet | mainnet URL |
-| `public` | `bogus` | public | mainnet | mainnet URL |
+| `public` | `bogus` | public | testnet | testnet URL |
 
 Mainnet is the default on both install kinds (decision of 2026-11-12): a
 public install trades real money unless the user opts into testnet. The

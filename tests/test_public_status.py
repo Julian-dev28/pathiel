@@ -323,3 +323,18 @@ def test_builder_line_when_the_account_is_the_builder(public_env):
     status, msg = by_name(out, "builder fee")[0]
     assert code == 0 and status == "PASS"
     assert "the trading account is the builder address" in msg and "never carry" in msg
+
+
+@pytest.mark.parametrize("extra", [
+    {"PATHIEL_NETWORK": "testnet", "PATHIEL_NETWORK_SOURCE": "invalid"},   # what the launcher exports
+    {"PATHIEL_NETWORK": "mainet"},                                          # a direct start
+])
+def test_an_unreadable_network_line_is_a_warning_not_the_default(public_env, extra):
+    """Review 2026-11-12: a typo used to show as 'testnet (the default)',
+    which contradicts every doc (mainnet is the default)."""
+    code, out, err = run(public_env(PATHIEL_STATE_DIR=None, **extra))
+    assert code == 0, out + err
+    status, msg = by_name(out, "network")[0]
+    assert status == "WARN"
+    assert msg.startswith("testnet") and "not mainnet or testnet" in msg
+    assert "the default" not in msg

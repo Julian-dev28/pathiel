@@ -66,6 +66,11 @@ builder fee, and listing metadata for the MCP directories. Release notes:
   and a refused order with a builder attached is sent once more without it,
   so a stop is never lost to the fee.
 - No listing file declares a key or secret.
+- A network line nobody can read never means real money. The launcher reads
+  `PATHIEL_NETWORK` in any key case, past a UTF-8 BOM, CRLF endings and an
+  empty first line, and warns when two lines disagree. A value that is
+  neither network means testnet on a public install, in the launcher and in
+  Python alike, and `public_status` reports it as a warning to fix.
 
 ## [0.3.0] - 2026-10-25
 

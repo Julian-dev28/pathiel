@@ -459,3 +459,41 @@ def test_sign_line_is_the_dry_line_plus_yes(public_env, tmp_path):
     assert by_label["approve-sign"] == by_label["approve-dry"] + " --yes"
     # The sign line is compared as text only; it never runs here.
     assert not any("--yes" in a for c in calls(log) for a in c["args"])
+
+
+# ── review 2026-11-12: lines that used to resolve to mainnet silently ─────────
+
+@pytest.mark.parametrize("content", [
+    "﻿PATHIEL_NETWORK=testnet\n",                       # editor-saved UTF-8 BOM
+    "PATHIEL_NETWORK=\nPATHIEL_NETWORK=testnet\n",           # empty line first
+    "pathiel_network=testnet\n",                            # lowercase key
+    "Pathiel_Network=testnet\r\n",                          # mixed case, CRLF
+])
+def test_testnet_lines_are_never_read_as_the_mainnet_default(public_env, tmp_path, content):
+    """Each of these used to come out mainnet with source 'default' and no
+    warning: a user who chose testnet would trade real money."""
+    home = tmp_path / "home"
+    env = fresh_env(public_env, HOME=str(home))
+    (home / ".pathiel" / ".env.local").write_text(content, encoding="utf-8")
+    got, proc = run_functions(env, tmp_path / "out")
+    assert got["PATHIEL_NETWORK"] == "testnet", repr(content)
+    assert got["PATHIEL_NETWORK_SOURCE"] == "env file"
+
+
+def test_disagreeing_lines_warn_and_use_the_first(public_env, tmp_path):
+    home = tmp_path / "home"
+    env = fresh_env(public_env, HOME=str(home))
+    (home / ".pathiel" / ".env.local").write_text("PATHIEL_NETWORK=testnet\nPATHIEL_NETWORK=mainnet\n")
+    got, proc = run_functions(env, tmp_path / "out")
+    assert got["PATHIEL_NETWORK"] == "testnet"
+    warnings = [w for w in proc.stderr.splitlines() if "warning" in w]
+    assert len(warnings) == 1 and "more than once" in warnings[0], proc.stderr
+
+
+def test_repeated_identical_lines_do_not_warn(public_env, tmp_path):
+    home = tmp_path / "home"
+    env = fresh_env(public_env, HOME=str(home))
+    (home / ".pathiel" / ".env.local").write_text("PATHIEL_NETWORK=testnet\nexport PATHIEL_NETWORK=Testnet\n")
+    got, proc = run_functions(env, tmp_path / "out")
+    assert got["PATHIEL_NETWORK"] == "testnet"
+    assert "warning" not in proc.stderr

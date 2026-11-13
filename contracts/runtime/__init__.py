@@ -85,20 +85,43 @@ def is_public(env: Optional[Mapping[str, str]] = None) -> bool:
     return install_kind(env) == "public"
 
 
+def _normalize_network(raw: object) -> str:
+    """PATHIEL_NETWORK as the launcher reads it: a leading 'export ', a
+    trailing ' # comment', whitespace and quotes removed, lowercased. Python
+    can see the raw env-file text when the server starts without the
+    launcher, so both must read '"testnet"' as testnet."""
+    value = str(raw or "").replace("\ufeff", "").strip()
+    value = re.sub(r"^export\s+", "", value)
+    value = re.sub(r"\s#.*$", "", value)
+    return value.replace('"', "").replace("'", "").strip().lower()
+
+
 def _explicit_network(env: Optional[Mapping[str, str]]) -> Optional[str]:
-    raw = _env(env).get(ENV_NETWORK) or ""
-    value = str(raw).strip().lower()
+    value = _normalize_network(_env(env).get(ENV_NETWORK))
     return value if value in _NETWORKS else None
+
+
+def network_is_invalid(env: Optional[Mapping[str, str]] = None) -> bool:
+    """True when the user wrote a PATHIEL_NETWORK that is neither network:
+    the launcher marked it 'invalid', or the raw value is set and unreadable."""
+    e = _env(env)
+    if str(e.get(ENV_NETWORK_SOURCE) or "").strip().lower() == "invalid":
+        return True
+    value = _normalize_network(e.get(ENV_NETWORK))
+    return bool(value) and value not in _NETWORKS
 
 
 def network(env: Optional[Mapping[str, str]] = None) -> str:
     """A valid PATHIEL_NETWORK wins. Otherwise mainnet, on both install kinds
     (Julien, 2026-11-12: a public install trades real money unless the user
-    asks for testnet). An invalid value counts as unset. The public launcher
-    never hands Python an invalid value: it exports testnet for one."""
+    asks for testnet). An invalid value means testnet on a public install,
+    the side that cannot lose money, as the launcher does; on the operator's
+    install it counts as unset (unchanged)."""
     explicit = _explicit_network(env)
     if explicit:
         return explicit
+    if is_public(env) and network_is_invalid(env):
+        return "testnet"
     return "mainnet"
 
 
@@ -175,6 +198,6 @@ __all__ = [
     "CONTRACT_VERSION", "MAINNET_API_URL", "TESTNET_API_URL",
     "ENV_INSTALL", "ENV_NETWORK", "ENV_NETWORK_SOURCE", "ENV_BUILDER_ADDRESS", "ENV_BUILDER_FEE", "RUNTIME_ENV_VARS",
     "DEFAULT_BUILDER_ADDRESS", "DEFAULT_BUILDER_FEE_TENTHS_BP", "MAX_PERP_BUILDER_FEE_TENTHS_BP",
-    "install_kind", "is_public", "network", "network_is_explicit", "api_url", "info_url",
+    "install_kind", "is_public", "network", "network_is_explicit", "network_is_invalid", "api_url", "info_url",
     "is_mainnet", "builder_address", "builder_fee_tenths_bp", "fee_rate_str", "describe",
 ]

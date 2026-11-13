@@ -166,6 +166,9 @@ def _public_network_line(net: str) -> str:
 
 def _public_start_notice(net: str) -> str:
     """The one stderr line a public install prints at start, naming the network."""
+    if net == "testnet" and runtime.network_is_invalid():
+        return ("pathiel: public install on Hyperliquid testnet because the PATHIEL_NETWORK line "
+                "is not mainnet or testnet. Fix it in ~/.pathiel/.env.local and reconnect.")
     if net == "testnet":
         return ("pathiel: public install on Hyperliquid testnet (test funds). The oil desk "
                 "trades WTI (xyz:CL) as the Brent stand-in.")

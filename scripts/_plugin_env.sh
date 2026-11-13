@@ -68,11 +68,26 @@ pathiel_paths() {
 #    PATHIEL_NETWORK_SOURCE says where the answer came from (environment,
 #    env file, default, invalid), so status output can tell a user's choice
 #    from the default even though PATHIEL_NETWORK is always exported.
+#    The key matches in any case, a UTF-8 BOM and CRLF endings are ignored, and
+#    an empty PATHIEL_NETWORK= line is skipped: the first line with a value
+#    wins, with one warning when later lines disagree with it.
+pathiel_network_values() {
+  local bom
+  bom="$(printf '\357\273\277')"
+  LC_ALL=C sed -e "1s/^$bom//" -e 's/\r$//' "$1" 2>/dev/null \
+    | LC_ALL=C grep -i -E '^[[:space:]]*(export[[:space:]]+)?PATHIEL_NETWORK[[:space:]]*=' \
+    | sed -e 's/^[^=]*=//' -e 's/[[:space:]]#.*$//' \
+    | tr -d "[:blank:]\"'" | tr '[:upper:]' '[:lower:]' | grep -v '^$' || true
+}
+
 pathiel_resolve_network() {
-  local raw="${PATHIEL_NETWORK:-}" from="the environment" source="environment" net
+  local raw="${PATHIEL_NETWORK:-}" from="the environment" source="environment" net values
   if [ -z "$raw" ] && [ -f "${PATHIEL_ENV_FILE:-}" ]; then
-    raw="$(grep -m 1 -E '^[[:space:]]*(export[[:space:]]+)?PATHIEL_NETWORK[[:space:]]*=' "$PATHIEL_ENV_FILE" 2>/dev/null \
-           | sed -e 's/^[^=]*=//' -e 's/[[:space:]]#.*$//' || true)"
+    values="$(pathiel_network_values "$PATHIEL_ENV_FILE")"
+    raw="$(printf '%s\n' "$values" | head -n 1)"
+    if [ "$(printf '%s\n' "$values" | grep -v '^$' | sort -u | wc -l | tr -d ' ')" -gt 1 ]; then
+      pathiel_warn "PATHIEL_NETWORK is set more than once in $PATHIEL_ENV_FILE with different values; using the first: $raw"
+    fi
     from="$PATHIEL_ENV_FILE"
     source="env file"
   fi
