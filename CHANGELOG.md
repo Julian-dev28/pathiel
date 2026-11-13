@@ -6,6 +6,11 @@ All notable changes to pathiel. The format follows
 
 ## [Unreleased]
 
+### Removed
+
+- `docs/LISTINGS.md`, the maintainer's listing notes and form answers. They
+  live outside the repository now.
+
 ## [0.6.0] - 2026-11-13
 
 Connect your Hyperliquid wallet with one signature, and a website. Notes:
@@ -166,8 +171,6 @@ pathiel is free: the builder fee is waived. Notes:
   `id-token`, job-scoped); `scripts/supply_chain_check.py` refuses it if it
   gains a push or pull request trigger, and refuses those scopes anywhere
   else.
-- `docs/LISTINGS.md`: every place pathiel is listed, and the copy for the
-  forms only the maintainer can submit.
 
 ### Security
 
