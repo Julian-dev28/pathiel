@@ -7,7 +7,7 @@ else) code against directly:
     refresh(desk_id, force=False) -> RefreshJob          (synchronous)
     submit_user_thesis(desk_id, body: UserThesisIn) -> Thesis
     track_record(desk_id) -> TrackRecord          (thesis grading + trade grading, combined)
-    grade_due() -> int                            (thesis grading only)
+    grade_due(regrade=False) -> int               (thesis grading only)
     grade_due_trades(desk_id=None) -> int          (trade grading only; run AFTER grade_due())
 
 `list_cards()` is cheap: it reads whatever analytics/intel/thesis were last
@@ -391,13 +391,15 @@ def track_record(desk_id: str) -> TrackRecord:
     return trade_grading.track_record_for_desk(desk_id)
 
 
-def grade_due() -> int:
-    """Grade every expired, ungraded thesis across every desk. Idempotent —
-    see grader.grade_all_due. Thesis grading only; call grade_due_trades()
-    after this (same sweep) so a thesis that just expired is graded before
-    its trades are computed — the server's background job and the
-    desk_grade MCP tool both do this in that order."""
-    return grader.grade_all_due()
+def grade_due(regrade: bool = False) -> int:
+    """Grade every ungraded thesis across every desk that has resolved (stop
+    or target touched) or expired. Idempotent — see grader.grade_all_due.
+    `regrade=True` re-reads every thesis under today's rules (the CLI's
+    `grade --regrade`; a backfill, never the hourly sweep). Thesis grading
+    only; call grade_due_trades() after this (same sweep) so a thesis that
+    just expired is graded before its trades are computed — the server's
+    background job and the desk_grade MCP tool both do this in that order."""
+    return grader.grade_all_due(regrade=regrade)
 
 
 def grade_due_trades(desk_id: Optional[str] = None) -> int:

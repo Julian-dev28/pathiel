@@ -484,11 +484,32 @@ function renderLessons(spec, thesis) {
     ? 'More on this desk: ' + rest.map(t => `<span class="chip">${esc(t)}</span>`).join('') : '';
 }
 
+// Result column: the word the grader wrote (win / loss / expired /
+// untriggered, Grade.result -- a call resolves the hour its stop or target
+// is touched, 2026-11-13) plus the return it locked in; "pending" only while
+// a call is inside its horizon with nothing touched. gradeResult /
+// gradeClass / gradeShowsReturn live in call_history.js (pure, node-tested).
 function gradeCellHtml(t) {
   const g = t.grade;
-  if (!g) return '<span class="grade-pending">pending</span>';
-  if (g.direction_hit == null) return `<span>${pctSigned(g.ret_pct)}</span>`;
-  return `<span class="${g.direction_hit ? 'grade-hit' : 'grade-miss'}">${pctSigned(g.ret_pct)}</span>`;
+  const word = gradeResult(g);
+  const cls = gradeClass(g);
+  const ret = gradeShowsReturn(g) ? ` <span class="grade-ret">${pctSigned(g.ret_pct)}</span>` : '';
+  return `<span class="${cls}">${esc(word)}</span>${ret}`;
+}
+
+// A run of rows restating one call folds into one line; see
+// collapseCallHistory in call_history.js. The journal itself keeps every row.
+function repeatsHtml(group) {
+  if (group.repeats < 2) return '';
+  const when = group.last_restated_at ? new Date(group.last_restated_at) : null;
+  const last = when ? `, last ${when.toLocaleDateString()} ${when.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : '';
+  return ` <span class="chip repeat-chip" title="restated ${group.repeats - 1} time${group.repeats === 2 ? '' : 's'}${esc(last)}">×${group.repeats}</span>`;
+}
+
+function resultsSummary(a) {
+  const r = (a && a.results) || {};
+  const parts = ['win', 'loss', 'expired', 'untriggered'].filter(k => r[k]).map(k => `${r[k]} ${k}`);
+  return parts.length ? ' · ' + parts.join(', ') : '';
 }
 
 function renderTrackRecord(tr) {
@@ -503,7 +524,7 @@ function renderTrackRecord(tr) {
     return `<div class="track-col">
       <div class="sec-label">${esc(label)}</div>
       <div class="kv">${a.direction_hit_rate != null ? pctUnsigned(a.direction_hit_rate, 0) : '—'}</div>
-      <div class="ksub">${a.n_graded} graded${a.mean_ret_pct != null ? ' · ' + pctSigned(a.mean_ret_pct) + ' avg' : ''}</div>
+      <div class="ksub">${a.n_graded} graded${resultsSummary(a)}${a.mean_ret_pct != null ? ' · ' + pctSigned(a.mean_ret_pct) + ' avg' : ''}</div>
     </div>`;
   };
   // What the account actually did: fills on closed windows plus the open
@@ -531,14 +552,17 @@ function renderHistory(brief) {
     body.innerHTML = ''; empty.hidden = false;
   } else {
     empty.hidden = true;
-    body.innerHTML = history.map(t => `<tr>
+    body.innerHTML = collapseCallHistory(history).map(group => {
+      const t = group.thesis;
+      return `<tr data-thesis-id="${esc(t.id)}" data-repeats="${group.repeats}">
         <td>${esc(new Date(t.created_at).toLocaleDateString())}</td>
         <td><span class="badge ${t.author === 'user' ? 'b-user' : 'b-machine'}">${esc(t.author)}</span></td>
         <td><span class="badge ${SIDE_CLASS[t.call.side] || ''}">${esc((t.call.side || '').toUpperCase())}</span>
-            ${esc(t.call.one_liner)}</td>
+            ${esc(t.call.one_liner)}${repeatsHtml(group)}</td>
         <td class="num">${pctUnsigned(t.call.confidence, 0)}</td>
         <td class="num">${gradeCellHtml(t)}</td>
-      </tr>`).join('');
+      </tr>`;
+    }).join('');
   }
   renderTrackRecord(brief.track_record);
 }

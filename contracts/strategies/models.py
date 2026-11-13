@@ -435,17 +435,31 @@ class Usage(_M):
     skipped_reason: Optional[str] = None       # set when the pipeline reused a thesis
 
 
+# How a bracket call ended (2026-11-13, services/strategies/grader.py):
+#   win          entry filled, first target touched before the stop
+#   loss         entry filled, stop touched first (a bar touching both is a loss)
+#   expired      entry filled, neither touched by the horizon; ret_pct is the close
+#   untriggered  the entry limit never filled inside the horizon; no trade
+# None: a flat call (nothing to resolve), or a grade written before this field.
+CallResult = Literal["win", "loss", "expired", "untriggered"]
+
+
 class Grade(_M):
     graded_at: datetime
-    outcome_px: float
-    ret_pct: float
-    direction_hit: Optional[bool] = None       # None for flat
+    outcome_px: float                          # target / stop for win / loss, else the last close
+    ret_pct: float                             # direction-adjusted; 0.0 for flat and untriggered
+    direction_hit: Optional[bool] = None       # None for flat and untriggered
     hit_target_first: Optional[bool] = None
     hit_stop_first: Optional[bool] = None
-    brier: Optional[float] = None              # multiclass Brier over scenarios
+    brier: Optional[float] = None              # multiclass Brier over scenarios; None before the horizon
     mae_pct: float
     mfe_pct: float
     notes: List[str] = []
+    # Additive (2026-11-13): a call resolves the hour its stop or target is
+    # touched, not a week later. Old grades on disk have none of these.
+    result: Optional[CallResult] = None
+    triggered_at: Optional[datetime] = None    # open time of the 1h bar that filled the entry
+    resolved_at: Optional[datetime] = None     # bar that touched stop/target, or the window end
 
 
 class Thesis(_M):
@@ -531,6 +545,9 @@ class TrackRecord(_M):
     direction_hit_rate: Optional[float] = None
     mean_brier: Optional[float] = None
     mean_ret_pct: Optional[float] = None
+    # {"win": 3, "loss": 11, "expired": 2, "untriggered": 1} over graded calls
+    # that carry Grade.result; a key is absent when its count is 0.
+    results: dict = {}
     by_author: dict = {}                       # {"machine": {...}, "user": {...}} same keys
     # Trade-grading roll-up (services/strategies/trades.py), aggregated across
     # every registered account's fills on every closed thesis window for this

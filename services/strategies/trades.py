@@ -232,10 +232,13 @@ def grade_due(*, fills_fetcher: Optional[FillsFetcher] = None, now: Optional[dat
              desk_id: Optional[str] = None) -> int:
     """Grade trades for every thesis whose WINDOW HAS CLOSED and that has no
     trades file yet, across every desk with a journal on disk (or just
-    `desk_id`). A window is closed when the thesis is graded, has expired,
-    or has been superseded by a newer thesis (its window ends at that
-    thesis's created_at, so nothing more can land in it: 2026-10-25, before
-    this a superseded call's fills waited up to a week for its own expiry).
+    `desk_id`). A window is closed when the thesis has expired or has been
+    superseded by a newer thesis (its window ends at that thesis's
+    created_at, so nothing more can land in it: 2026-10-25, before this a
+    superseded call's fills waited up to a week for its own expiry). A
+    thesis GRADE no longer closes the window (2026-11-13): the grader now
+    writes a grade the hour a stop or target is touched, while the account
+    can still trade under that thesis until it is replaced or expires.
     Idempotent: a thesis with a trades file already saved is skipped, so
     calling this twice in a row grades 0 the second time -- same contract as
     grader.grade_all_due. Call this AFTER grade_due() in the same sweep (the
@@ -253,7 +256,7 @@ def grade_due(*, fills_fetcher: Optional[FillsFetcher] = None, now: Optional[dat
         spec = desks.get_spec(d_id)
         for i, thesis in enumerate(theses):
             superseded = i + 1 < len(theses) and theses[i + 1].created_at <= now
-            due = thesis.grade is not None or thesis.expires_at <= now or superseded
+            due = thesis.expires_at <= now or superseded
             if not due or get_thesis_trades(d_id, thesis.id) is not None:
                 continue
             next_created_at = theses[i + 1].created_at if i + 1 < len(theses) else None

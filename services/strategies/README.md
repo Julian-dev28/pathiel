@@ -59,16 +59,48 @@ evals/           verdict_backtest.py — walk-forward liquidation backtest;
 
 ## Grading: what, when, where
 
-**Thesis grading** (`grader.py`, unchanged by this build): every expired
-thesis gets a point-in-time `Grade` (direction hit, target/stop-first, Brier,
-MAE/MFE) from hourly candles, written back onto the thesis itself
-(`journal.save_thesis`). Idempotent — a thesis with `.grade` already set is
-skipped.
+**Thesis grading** (`grader.py`): a call is a bracket (entry limit, stop,
+first target, good for `horizon_days`), and it is graded from 1h candles the
+hour it resolves, not at the horizon (2026-11-13; before that the sweep only
+looked at `expires_at`, so with oil's 7-day horizon the Desk page showed 32
+calls as "pending" whose stops had been hit days earlier). Rules, in order:
+
+| step | rule |
+|---|---|
+| entry fill | first bar whose low touches the entry (long) / high touches it (short); a limit at or through the market fills on the first bar |
+| resolve | from the fill bar on, the first bar whose low/high touches the stop or the first target; a bar touching both is the **stop** (the worse, unprovable outcome) |
+| `result` | `win` / `loss` at the touch; `expired` (filled, nothing touched) or `untriggered` (never filled) at the horizon; `None` for a flat call |
+| `ret_pct` | target or stop vs entry for win/loss; last close for expired; 0 for untriggered and flat |
+| Brier | scored on the horizon return, so `None` for a call graded before its horizon |
+| `triggered_at` / `resolved_at` | open time of the fill bar / of the touching bar (or the window end) |
+
+The `Grade` is written back onto the thesis (`journal.save_thesis`) only
+once it is final (`grader.is_final`: resolved, or horizon passed). An open,
+unresolved call is read each sweep and left ungraded, so "pending" on the
+Desk page means exactly that: inside its horizon, nothing touched yet.
+Idempotent — a thesis with `.grade` already set is skipped. One venue read
+per coin per desk per sweep (`_SweepFetcher`), sized back to the oldest
+ungraded call's `created_at`, because the candle fetcher counts back from
+now. `grade_all_due(regrade=True)` (CLI `grade --regrade`) re-reads every
+thesis under today's rules; it never replaces a real grade with an
+ungradeable one. The thesis prompt never sees a grade before the horizon:
+`services.thesis.scorecard.eligible_theses` requires `expires_at <= as_of`
+(and the scorecard is off by default).
+
+**Restated calls.** The desk rewrites its thesis every 15 to 60 minutes, so
+one call is several journal rows. Every row is graded and kept; the Desk
+page folds a run of consecutive rows with the same author, side,
+instrument, entry, stop and first target into the row where the call was
+first made, marked `×N` (`pathiel/static/call_history.js`,
+`collapseCallHistory`). Display only; the API and the journal return every
+row.
 
 **Trade grading** (`trades.py`, 2026-10-23): every REGISTERED account (every
 mode — trade and watch — plus the synthetic `env` account for `.env.local`
 keys; `services.accounts.view.list_all_accounts()`) gets graded against every
-thesis that is graded-or-expired, on the call's instrument coin(s) (both legs
+thesis whose window has closed (expired, or superseded by a newer thesis; a
+thesis grade alone no longer closes it, since grades now arrive mid-window),
+on the call's instrument coin(s) (both legs
 for a `pair` call), over the window `[thesis.created_at, min(thesis.expires_at,
 the next thesis's created_at)]`. Per account, per thesis: `n_fills`,
 `n_opens`, `n_closes`, `realized_pnl_usd` (sum(closedPnl) - sum(fee)),
@@ -112,6 +144,15 @@ number; nothing reads `grader.py`'s thesis-only roll-up directly any more.
 - **On demand**: `python -m services.strategies grade` (CLI) or the
   `desk_grade` MCP tool (optional `desk` — narrows TRADE grading only;
   thesis grading always covers every desk, it is cheap and idempotent).
+  `grade --regrade` is the backfill form (every thesis re-read; snapshot
+  the journal first).
+- **The check**: `python -m services.strategies.evals.grading_lag_check`
+  (reads `$PATHIEL_STATE_DIR`, exits 1) fails when a call is past its
+  horizon with no grade, or when the sweep has written nothing for hours
+  while older calls wait behind graded newer ones. The review-trades skill
+  runs it daily; the dashboard server must be restarted after a grader
+  change for the hourly sweep to pick it up (it imports the facade in
+  process).
 
 Analytics freshness (2026-10-18). Rebuilding live on every `get_brief()` ran
 through the dashboard server's Hyperliquid budget (60 burst, 2 weight/s) and
@@ -288,6 +329,8 @@ export PATHIEL_STATE_DIR="$(mktemp -d)"                      # never the live on
 .venv/bin/python -m services.strategies refresh oil --force
 .venv/bin/python -m services.strategies refresh --all      # every desk, one call — the scheduler hook
 .venv/bin/python -m services.strategies grade          # theses, then every account's trades
+.venv/bin/python -m services.strategies grade --regrade   # backfill: every thesis under today's rules
+.venv/bin/python -m services.strategies.evals.grading_lag_check   # exit 1 if a call past its horizon is still pending
 .venv/bin/python -m services.strategies.evals.verdict_backtest          # periodic eval, hits live HL
 .venv/bin/python -m services.strategies.evals.trades_replay             # offline, two fixtures, no HL
 ```

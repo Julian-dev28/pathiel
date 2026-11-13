@@ -19,6 +19,15 @@ just flukes or a predictions"). One script call; no agent, no LLM, no MCP.
    starts `REVIEW <utc> trades=...`.
 2. **Print that line.** Nothing else when it says `new_leaks=none` and
    `new_proposals=0`.
+2b. **Check the call grades are current** (read only, no network):
+
+       python3 -m services.strategies.evals.grading_lag_check
+
+   It prints one `GRADING OK|FAIL ...` line. On FAIL, print it and the
+   rows under it: a call past its horizon with no grade means the
+   dashboard server's hourly sweep (pathiel/server.py `_grade_loop`) is
+   not running or is on old code; say so and name the restart. Never
+   grade from here.
 3. **Something new?** If `new_leaks` names a slice or `new_proposals` is
    above 0: say so in one short message (the slice, its label, n, and the
    lever the report proposes, from the report's "What to try next"), and

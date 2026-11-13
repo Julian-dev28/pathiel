@@ -224,6 +224,9 @@
 .track-cols{ display:grid; gap:20px; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); margin-bottom:20px; }
 .track-col .sec-label{ margin-bottom:6px; }
 .grade-hit{ color:var(--up); } .grade-miss{ color:var(--down); } .grade-pending{ color:var(--ink-3); }
+.grade-expired{ color:var(--ink-2); } .grade-untriggered{ color:var(--ink-3); font-style:italic; }
+.grade-ret{ color:var(--ink-3); font-size:12px; }
+.repeat-chip{ margin-left:6px; font-size:11px; color:var(--ink-3); border:1px solid var(--rule-2); border-radius:999px; padding:0 6px; }
 
 /* ── user thesis form ─────────────────────────────────────────────────────── */
 

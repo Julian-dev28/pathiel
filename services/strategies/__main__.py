@@ -81,7 +81,7 @@ def cmd_grade(args: argparse.Namespace) -> int:
     """Thesis grading, then trade grading (every registered account's fills
     against every graded-or-expired call) -- the same two calls the
     server's hourly background sweep and the desk_grade MCP tool make."""
-    n_theses = facade.grade_due()
+    n_theses = facade.grade_due(regrade=bool(getattr(args, "regrade", False)))
     n_trades = facade.grade_due_trades()
     if args.json:
         print(json.dumps({"theses_graded": n_theses, "trades_graded": n_trades}))
@@ -107,7 +107,11 @@ def main(argv: Optional[List[str]] = None) -> int:
     p_refresh.add_argument("--all", action="store_true", help="refresh every registered desk")
     p_refresh.add_argument("--force", action="store_true", help="bypass the token gate")
 
-    sub.add_parser("grade", help="grade every expired thesis, then every account's trades against it")
+    p_grade = sub.add_parser("grade", help="grade every resolved or expired thesis, then every "
+                                           "account's trades against it")
+    p_grade.add_argument("--regrade", action="store_true",
+                         help="re-read EVERY thesis under today's rules and overwrite its grade "
+                              "(a backfill; snapshot the journal first)")
 
     args = parser.parse_args(argv)
     if args.command == "refresh" and not args.all and not args.desk:

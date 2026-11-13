@@ -107,12 +107,26 @@ def test_cmd_grade_json_reports_both_counts(capsys):
 def test_cmd_grade_runs_trade_grading_after_thesis_grading(capsys, monkeypatch):
     from services.strategies import facade as facade_mod
     order = []
-    monkeypatch.setattr(facade_mod, "grade_due", lambda: (order.append("theses"), 2)[1])
+    seen = {}
+    monkeypatch.setattr(facade_mod, "grade_due",
+                        lambda regrade=False: (order.append("theses"), seen.update(regrade=regrade), 2)[2])
     monkeypatch.setattr(facade_mod, "grade_due_trades", lambda: (order.append("trades"), 5)[1])
     rc = cli.main(["grade"])
     assert rc == 0
     assert order == ["theses", "trades"]
+    assert seen == {"regrade": False}          # the hourly path never rewrites a grade
     assert "graded 2 theses, 5 trade grades" in capsys.readouterr().out
+
+
+def test_cmd_grade_regrade_flag_reaches_the_facade(monkeypatch):
+    """`grade --regrade` is the backfill: every thesis re-read under today's
+    rules. The flag must reach grader.grade_all_due, not be swallowed."""
+    from services.strategies import facade as facade_mod
+    seen = {}
+    monkeypatch.setattr(facade_mod, "grade_due", lambda regrade=False: (seen.update(regrade=regrade), 0)[1])
+    monkeypatch.setattr(facade_mod, "grade_due_trades", lambda: 0)
+    assert cli.main(["grade", "--regrade"]) == 0
+    assert seen == {"regrade": True}
 
 
 def test_main_requires_a_subcommand():
