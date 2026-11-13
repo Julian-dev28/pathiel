@@ -6,6 +6,23 @@ All notable changes to pathiel. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Listing copy leads with what people search for: "AI trading agent for
+  Hyperliquid" in the README headline, `plugin.json`, `marketplace.json` and
+  `server.json` (the registry picks it up with the next version). New
+  keywords: `ai-agent`, `trading-agent`, `ai-trading`.
+
+### Added
+
+- `.claude-plugin/icon.png`, the plugin directory icon, drawn by
+  `scripts/make_icon.py`.
+- `scripts/seo_rank.py` and a weekly read-only **SEO rank** workflow: pathiel's
+  GitHub search rank on nine stranger queries. Baseline in
+  `docs/seo/github_rank.jsonl`.
+- `docs/LISTINGS.md`: every place pathiel is listed, and the copy for the
+  forms only the maintainer can submit.
+
 ## [0.4.0] - 2026-11-12
 
 The first release built for strangers: safe public defaults, an optional

@@ -41,7 +41,7 @@ REPO_URL = "https://github.com/Julian-dev28/pathiel"
 PUBLIC_DEFAULT_NETWORK = "mainnet"
 NETWORKS = ["mainnet", "testnet"]
 # Discovery: the terms a user types into a plugin or MCP directory search.
-DISCOVERY_KEYWORDS = {"hyperliquid", "trading", "perps", "mcp", "claude-code", "risk-management",
+DISCOVERY_KEYWORDS = {"hyperliquid", "trading", "perps", "mcp", "claude-code", "risk-management", "ai-agent", "trading-agent", "ai-trading",
                       "oil", "gold"}
 MARKET_CATEGORY = "finance"
 IMAGE = "ghcr.io/julian-dev28/pathiel-mcp"
@@ -272,7 +272,19 @@ def test_manifest_key_set_unchanged():
     assert plugin["mcpServers"] == {"pathiel": {"command": "${CLAUDE_PLUGIN_ROOT}/scripts/pathiel-mcp",
                                                 "args": []}}
     assert sorted(p.name for p in (ROOT / ".claude-plugin").iterdir()) == \
-        ["marketplace.json", "plugin.json"]
+        ["icon.png", "marketplace.json", "plugin.json"]
+
+
+def test_plugin_icon_meets_the_directory_rules():
+    """The plugin directory takes a square PNG, 512 to 2048 px a side, under
+    2 MB, and keeps only the first one it sees, so a bad file here sticks."""
+    import struct
+
+    data = (ROOT / ".claude-plugin" / "icon.png").read_bytes()
+    assert data[:8] == b"\x89PNG\r\n\x1a\n"
+    w, h = struct.unpack(">II", data[16:24])
+    assert w == h and 512 <= w <= 2048, (w, h)
+    assert len(data) < 2 * 1024 * 1024
 
 
 @pytest.mark.parametrize("path", [SERVER_JSON, GLAMA_JSON, PLUGIN_JSON, MARKET_JSON])

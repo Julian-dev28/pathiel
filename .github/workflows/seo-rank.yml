@@ -1,0 +1,27 @@
+name: SEO rank
+
+# Weekly: where pathiel ranks in GitHub search for the queries a stranger
+# types when looking for an AI trading agent (scripts/seo_rank.py). The table
+# lands in the run summary. Read only: the search API needs no write scope,
+# and nothing is committed. docs/LISTINGS.md says what the numbers mean.
+
+on:
+  schedule:
+    - cron: "41 7 * * 1"   # Mondays 07:41 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rank:
+    name: GitHub search rank
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+
+      - name: Rank
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 scripts/seo_rank.py | tee -a "$GITHUB_STEP_SUMMARY"

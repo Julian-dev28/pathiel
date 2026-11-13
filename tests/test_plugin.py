@@ -63,7 +63,7 @@ def test_the_plugin_manifest_has_no_component_paths_outside_the_defaults():
     assert (ROOT / "skills" / "pathiel-agent" / "SKILL.md").is_file()
     assert (ROOT / "agents" / "desk-tick.md").is_file()
     assert (ROOT / "commands" / "setup.md").is_file()
-    assert sorted(p.name for p in (ROOT / ".claude-plugin").iterdir()) == ["marketplace.json", "plugin.json"]
+    assert sorted(p.name for p in (ROOT / ".claude-plugin").iterdir()) == ["icon.png", "marketplace.json", "plugin.json"]
 
 
 # ── the MCP entry point ──────────────────────────────────────────────────────

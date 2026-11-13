@@ -54,7 +54,10 @@ MAX_TRACKED_FILE_BYTES = 5 * 1024 * 1024
 # LFS or cloud storage with a pointer per CLAUDE.md, not land here — if that
 # ever becomes a real, deliberate exception, widen this set, don't delete
 # the test.
-BINARY_ALLOWLIST: Set[str] = set()
+# Each entry needs a reason. The plugin directory reads its listing icon from
+# the repo, so it cannot live in LFS or cloud storage; it is 7 KB and
+# scripts/make_icon.py redraws it byte for byte (2026-11-12).
+BINARY_ALLOWLIST: Set[str] = {".claude-plugin/icon.png"}
 
 
 def test_no_tracked_file_exceeds_size_ceiling():
