@@ -247,9 +247,15 @@ def test_setup_shows_the_disclosure_before_any_key_and_never_runs_the_sign_line(
     # One line of prose: line breaks and blockquote markers folded to spaces.
     text = re.sub(r"\s*\n\s*(>\s*)?", " ", (ROOT / "commands" / "setup.md").read_text())
     first_key = text.index("HYPERLIQUID_PRIVATE_KEY")
-    for needle in ("testnet", _per_fill(), "not financial advice", "US persons", "approve"):
+    import contracts.runtime as runtime
+    fee_needle = "Fee: **none**" if runtime.BUILDER_FEE_WAIVED else _per_fill()
+    for needle in ("testnet", fee_needle, "not financial advice", "US persons", "approve"):
         assert needle in text and text.index(needle) < first_key, needle
-    assert "Never run the `approve-sign` command yourself" in text
+    if runtime.BUILDER_FEE_WAIVED:
+        assert "nothing to approve and no master key to ask for" in text
+        assert "approve-sign" not in text          # setup never hands out a signing line
+    else:
+        assert "Never run the `approve-sign` command yourself" in text
     assert "never ask for" in text.lower()
 
 
@@ -266,6 +272,14 @@ def test_setup_fee_figures_follow_the_default_fee():
     import contracts.runtime as runtime
     fee = runtime.DEFAULT_BUILDER_FEE_TENTHS_BP
     text = re.sub(r"\s*\n\s*(>\s*)?", " ", (ROOT / "commands" / "setup.md").read_text())
+    if runtime.BUILDER_FEE_WAIVED:
+        # Waived: setup names no rate except the past one of pathiel 0.4.0.
+        rates = re.findall(r"([0-9.]+%) (?:of notional per fill|for a round trip)", text)
+        assert rates == [], rates
+        # Left: the 1% risk figure and the 0% revocation rate.
+        others = set(re.findall(r"([0-9.]+%)", text.replace("0.01% fee of pathiel 0.4.0", "")))
+        assert others <= {"1%", "0%"}, others
+        return
     per_fill = re.findall(r"([0-9.]+%) of notional per fill", text)
     assert per_fill and set(per_fill) == {runtime.fee_rate_str(fee)}, per_fill
     round_trip = re.findall(r"([0-9.]+%) for a round trip", text)
@@ -293,6 +307,10 @@ def test_setup_says_the_fee_approval_is_per_network():
     without this line a user who switches later pays no fee and never knows."""
     text = re.sub(r"\s+", " ", (ROOT / "commands" / "setup.md").read_text())
     step2 = text[text.index("2. **Choose a mode"):text.index("3. **The env file.**")]
+    import contracts.runtime as runtime
+    if runtime.BUILDER_FEE_WAIVED:          # nothing to approve on any network
+        assert "approve-sign" not in step2
+        return
     step5 = text[text.index("5. **Builder fee approval"):text.index("6. **Connect the tools.**")]
     assert "does not carry over" in step2 and "`approve-sign`" in step2
     assert "The approval is per network" in step5

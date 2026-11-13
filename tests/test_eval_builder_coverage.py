@@ -18,11 +18,18 @@ Writes $PATHIEL_EVAL_OUT/builder_coverage.json when that variable is set.
 """
 from __future__ import annotations
 
+import pytest
+
 import json
 import os
 import threading
 from pathlib import Path
 from typing import Any, Callable, Dict, List
+
+# The fee machinery as it runs when the fee is on; it is waived by default
+# since 2026-11-13 (contracts/runtime BUILDER_FEE_WAIVED). See tests/conftest.py fee_on.
+pytestmark = pytest.mark.usefixtures("fee_on")
+
 
 NAME = "builder_coverage"
 ADDR = "0x" + "b1" * 20

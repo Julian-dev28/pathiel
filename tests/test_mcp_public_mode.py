@@ -129,9 +129,12 @@ SHIPPED_BUILDER = "0x2c2e4efF574B3Fd9879AdeF9c5CAC6fD7C916985"
 
 
 @pytest.mark.parametrize("case", ["no_key", "testnet_key", "mainnet_key", "builder_set",
-                                  "builder_unset", "builder_shipped"])
-def test_public_instructions_content_and_length(case, monkeypatch, tmp_path, builder_jobs):
-    kw = {"no_key": {}, "testnet_key": {"key": True}, "mainnet_key": {"key": True, "network": "mainnet"},
+                                  "builder_unset", "builder_shipped", "waived_shipped"])
+def test_public_instructions_content_and_length(case, monkeypatch, tmp_path, builder_jobs, request):
+    if case in ("builder_set", "builder_shipped"):
+        request.getfixturevalue("fee_on")            # the fee as it reads when switched on
+    kw = {"waived_shipped": {"key": True, "builder_address": None, "network": "mainnet"},
+          "no_key": {}, "testnet_key": {"key": True}, "mainnet_key": {"key": True, "network": "mainnet"},
           "builder_set": {"key": True, "builder_address": E.BUILDER},
           "builder_unset": {"key": True, "builder_address": ""},
           "builder_shipped": {"key": True, "builder_address": None, "network": "mainnet"}}[case]
@@ -154,7 +157,7 @@ def test_public_instructions_content_and_length(case, monkeypatch, tmp_path, bui
     elif case == "builder_shipped":
         assert "0.01%" in text and SHIPPED_BUILDER.lower() in text and "approve" in low
     else:
-        assert "builder fee: not configured" in low
+        assert "builder fee: none" in low and "0.01%" not in text
     for word in ("localhost", "desk page", "/api/", "dashboard", "20x"):
         assert word not in low, word
     if net == "mainnet":
@@ -367,7 +370,7 @@ def test_a_broken_gate_fails_closed_for_writes_only(no_key, monkeypatch):
 
 # ── builder fee in live-money output ──────────────────────────────────────────
 
-def test_live_money_outputs_carry_network_and_builder_fee(keyed):
+def test_live_money_outputs_carry_network_and_builder_fee(fee_on, keyed):
     keyed.warm_builder()
     err, body = keyed.call("place_bracket", E.WRITE_ARGS["place_bracket"])
     assert not err, body
@@ -393,7 +396,24 @@ def test_live_money_outputs_carry_network_and_builder_fee(keyed):
     assert all(u.startswith(TESTNET_API_URL) for u in keyed.venue.urls)
 
 
-def test_cold_cache_output_says_not_charged(keyed):
+def test_waived_fee_sends_every_order_without_a_builder_code(keyed):
+    """Decision 2026-11-13: the fee is waived. Even with an approval cached,
+    no order on any of the four order tools carries a builder code, and the
+    output says so."""
+    keyed.warm_builder()
+    err, body = keyed.call("place_bracket", E.WRITE_ARGS["place_bracket"])
+    assert not err, body
+    fee = body["builder_fee"]
+    assert fee["charged"] is False and fee["rate"] == "0%" and fee["reason"] == "fee_zero"
+    E.seed_positions(keyed.venue)
+    for tool in ("close_position", "set_target", "bracket_sweep"):
+        err, body = keyed.call(tool, E.WRITE_ARGS[tool])
+        assert not err, (tool, body)
+        assert body["builder_fee"]["charged"] is False, (tool, body["builder_fee"])
+    assert keyed.sdk.orders and all(not o.get("builder") for o in keyed.sdk.orders)
+
+
+def test_cold_cache_output_says_not_charged(fee_on, keyed):
     err, body = keyed.call("place_bracket", E.WRITE_ARGS["place_bracket"])
     assert not err, body
     assert body["builder_fee"]["charged"] is False
@@ -402,7 +422,7 @@ def test_cold_cache_output_says_not_charged(keyed):
     assert keyed.sdk.orders and all(o["builder"] is None for o in keyed.sdk.orders)
 
 
-def test_not_approved_output_says_not_charged(monkeypatch, tmp_path, builder_jobs):
+def test_not_approved_output_says_not_charged(fee_on, monkeypatch, tmp_path, builder_jobs):
     h = E.install(monkeypatch, tmp_path, M, builder_jobs, key=True, builder_address=E.BUILDER,
                   max_builder_fee=5)
     h.warm_builder()
@@ -414,7 +434,7 @@ def test_not_approved_output_says_not_charged(monkeypatch, tmp_path, builder_job
     assert "approve_builder_fee.py" in body["builder_fee"]["detail"]
 
 
-def test_live_money_call_warms_the_builder_cache(keyed):
+def test_live_money_call_warms_the_builder_cache(fee_on, keyed):
     from pathiel.client import builder
     assert keyed.jobs == []
     keyed.call("set_leverage", {"coin": "BTC", "leverage": 2})
@@ -432,7 +452,7 @@ def test_builder_fee_estimate_math():
     assert M._fee_estimate(3041.72, 10) == 0.3042
 
 
-def test_dry_run_output_names_the_next_order(keyed):
+def test_dry_run_output_names_the_next_order(fee_on, keyed):
     keyed.warm_builder()
     err, body = keyed.call("place_bracket", {**E.WRITE_ARGS["place_bracket"], "dry_run": True})
     assert body["builder_fee"]["charged"] is False
@@ -443,7 +463,7 @@ def test_dry_run_output_names_the_next_order(keyed):
 
 # ── state, risk_limits, wording ───────────────────────────────────────────────
 
-def test_state_carries_the_install_block(keyed):
+def test_state_carries_the_install_block(fee_on, keyed):
     keyed.warm_builder()
     err, body = keyed.call("state")
     assert not err
@@ -473,7 +493,7 @@ def test_state_install_block_names_testnet_and_the_stand_in(no_key):
     assert "WTI (xyz:CL)" in notice
 
 
-def test_state_reads_a_new_approval_at_once(keyed):
+def test_state_reads_a_new_approval_at_once(fee_on, keyed):
     """Final review: docs/BUILDER_FEE.md says state sees a new approval at
     once. The cache said not_approved 20 s ago; the user signs; state must
     re-read and say the fee attaches now, not wait for the 60 s refresh."""
@@ -489,7 +509,7 @@ def test_state_reads_a_new_approval_at_once(keyed):
     assert fee["approved_tenths_bp"] == 10
 
 
-def test_state_does_not_reread_an_approved_cache(keyed, monkeypatch):
+def test_state_does_not_reread_an_approved_cache(fee_on, keyed, monkeypatch):
     keyed.warm_builder()
     from pathiel.client import builder
     calls = []

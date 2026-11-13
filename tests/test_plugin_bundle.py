@@ -421,4 +421,5 @@ def test_the_bundle_readme_keeps_every_disclosure(built):
     copy = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(copy)
     results = copy.disclosure_results((built / "README.md").read_text(encoding="utf-8"))
-    assert [label for label, ok, _ in results if not ok] == [] and len(results) == 7
+    assert [label for label, ok, _ in results if not ok] == []
+    assert len(results) == len(copy.DISCLOSURE_CHECKLIST)

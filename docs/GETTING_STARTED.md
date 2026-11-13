@@ -68,8 +68,8 @@ it asks you to run `/reload-plugins`, do that first.
 Run `/pathiel:setup` and follow it; the steps are in `commands/setup.md`.
 It builds a private Python environment, creates `~/.pathiel/.env.local`
 and a safe starting config (at most 3x, 1% of equity at the stop, one
-position), checks the keys without printing them, shows the builder fee,
-and connects the MCP server.
+position), checks the keys without printing them, shows the risks, and
+connects the MCP server.
 
 - **Mainnet by default.** With a key, every order is real money on
   Hyperliquid mainnet.
@@ -81,10 +81,9 @@ and connects the MCP server.
   (app.hyperliquid-testnet.xyz), with test funds. Testnet and mainnet keep
   separate state. On testnet the oil desk trades WTI (`xyz:CL`); swap it in
   for `xyz:BRENTOIL` in the prompts below.
-- **Builder fee.** Orders carry a 0.01% builder fee per fill once you
-  approve it; declining is fine and orders go out with no fee. The rate,
-  how to approve and how Hyperliquid enforces it are in
-  [BUILDER_FEE.md](BUILDER_FEE.md).
+- **Builder fee.** None: pathiel charges no fee and its orders carry no
+  builder fee. [BUILDER_FEE.md](BUILDER_FEE.md) has the details, and how to
+  revoke an approval you gave pathiel 0.4.0.
 
 Other MCP clients use the launcher `scripts/pathiel-mcp` or the container,
 both described in the README.

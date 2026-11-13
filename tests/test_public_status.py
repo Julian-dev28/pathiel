@@ -212,23 +212,23 @@ def test_state_dir_must_match_the_network(public_env, tmp_path):
 def test_builder_line_for_unset_and_set_address(public_env):
     # The shipped default is set (2026-11-12); a non-address override is a
     # fork's off switch.
-    code, out, _err = run(public_env(PATHIEL_BUILDER_ADDRESS="none"))
+    code, out, _err = run(public_env(PATHIEL_BUILDER_FEE_TENTHS_BP="10", PATHIEL_BUILDER_ADDRESS="none"))
     assert code == 0
     assert by_name(out, "builder fee") == [
-        ("PASS", "no builder address configured: orders carry no builder fee")]
+        ("PASS", "none: pathiel charges no fee and orders carry no builder code")]
 
-    code, out, _err = run(public_env(PATHIEL_BUILDER_ADDRESS=BUILDER))
+    code, out, _err = run(public_env(PATHIEL_BUILDER_FEE_TENTHS_BP="10", PATHIEL_BUILDER_ADDRESS=BUILDER))
     status, msg = by_name(out, "builder fee")[0]
     assert status == "PASS"
     assert "0.01% of notional per fill" in msg and BUILDER in msg
     assert "charged only after you approve it" in msg and "--online" in msg
 
     # --online with no address set: nothing to read, so no network either way.
-    code, out, _err = run(public_env(PATHIEL_BUILDER_ADDRESS="none"), "--online")
-    assert code == 0 and "no builder address configured" in by_name(out, "builder fee")[0][1]
+    code, out, _err = run(public_env(PATHIEL_BUILDER_FEE_TENTHS_BP="10", PATHIEL_BUILDER_ADDRESS="none"), "--online")
+    assert code == 0 and "none: pathiel charges no fee" in by_name(out, "builder fee")[0][1]
 
     # The operator's install never carries a builder fee.
-    code, out, _err = run(public_env(PATHIEL_BUILDER_ADDRESS=BUILDER, PATHIEL_INSTALL=None))
+    code, out, _err = run(public_env(PATHIEL_BUILDER_FEE_TENTHS_BP="10", PATHIEL_BUILDER_ADDRESS=BUILDER, PATHIEL_INSTALL=None))
     assert by_name(out, "builder fee")[0][1].startswith("operator install")
 
 
@@ -259,7 +259,7 @@ def test_online_names_the_network_and_says_the_approval_is_per_network(public_en
     """A testnet approval reads as 0 on mainnet. The --online line names the
     network it read and says to sign again there, so a user who switched
     networks learns why orders carry no fee."""
-    env = public_env(PATHIEL_BUILDER_ADDRESS=BUILDER, PATHIEL_NETWORK="mainnet",
+    env = public_env(PATHIEL_BUILDER_FEE_TENTHS_BP="10", PATHIEL_BUILDER_ADDRESS=BUILDER, PATHIEL_NETWORK="mainnet",
                      HYPERLIQUID_WALLET_ADDRESS=other_address())
     code, out, err = run_online_with(env, "not_approved", 0)
     assert code == 0, out + err
@@ -308,7 +308,7 @@ SHIPPED_BUILDER = "0x2c2e4efF574B3Fd9879AdeF9c5CAC6fD7C916985"
 def test_builder_line_names_the_shipped_address(public_env):
     """No override: the fee goes to the shipped builder (Julien's master
     account), shown lowercase."""
-    code, out, _err = run(public_env(PATHIEL_BUILDER_ADDRESS=None))
+    code, out, _err = run(public_env(PATHIEL_BUILDER_FEE_TENTHS_BP="10", PATHIEL_BUILDER_ADDRESS=None))
     status, msg = by_name(out, "builder fee")[0]
     assert code == 0 and status == "PASS"
     assert SHIPPED_BUILDER.lower() in msg and "0.01% of notional per fill" in msg
@@ -317,7 +317,7 @@ def test_builder_line_names_the_shipped_address(public_env):
 def test_builder_line_when_the_account_is_the_builder(public_env):
     """The builder's own account trading through a public install never pays
     its own fee; status says so without any read."""
-    code, out, _err = run(public_env(PATHIEL_BUILDER_ADDRESS=None,
+    code, out, _err = run(public_env(PATHIEL_BUILDER_FEE_TENTHS_BP="10", PATHIEL_BUILDER_ADDRESS=None,
                                      HYPERLIQUID_MASTER_ADDRESS=SHIPPED_BUILDER,
                                      HYPERLIQUID_WALLET_ADDRESS=other_address()), "--online")
     status, msg = by_name(out, "builder fee")[0]
@@ -338,3 +338,12 @@ def test_an_unreadable_network_line_is_a_warning_not_the_default(public_env, ext
     assert status == "WARN"
     assert msg.startswith("testnet") and "not mainnet or testnet" in msg
     assert "the default" not in msg
+
+
+def test_builder_line_while_the_fee_is_waived(public_env):
+    """Decision 2026-11-13: the shipped default charges nothing; status says
+    so without naming a rate or asking for an approval."""
+    code, out, _err = run(public_env(PATHIEL_BUILDER_ADDRESS=None))
+    assert code == 0
+    assert by_name(out, "builder fee") == [
+        ("PASS", "none: pathiel charges no fee and orders carry no builder code")]

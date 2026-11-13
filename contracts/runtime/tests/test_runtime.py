@@ -101,6 +101,8 @@ def test_default_builder_address_is_julien_s_master_account():
     assert rt.DEFAULT_BUILDER_ADDRESS == JULIEN_BUILDER
     assert rt.builder_address({}) == JULIEN_BUILDER.lower()
     assert rt.describe({rt.ENV_INSTALL: "public"})["builder"] == {
+        "address": JULIEN_BUILDER.lower(), "fee_tenths_bp": 0, "fee_rate": "0%"}   # waived
+    assert rt.describe({rt.ENV_INSTALL: "public", rt.ENV_BUILDER_FEE: "10"})["builder"] == {
         "address": JULIEN_BUILDER.lower(), "fee_tenths_bp": 10, "fee_rate": "0.01%"}
 
 
@@ -128,7 +130,7 @@ def test_builder_address_validation(monkeypatch):
 
 
 @pytest.mark.parametrize("raw,want", [
-    (None, 10), ("", 10), ("0", 0), ("101", 0), ("abc", 0), ("25", 25), ("100", 100),
+    (None, 0), ("", 0), ("10", 10), ("0", 0), ("101", 0), ("abc", 0), ("25", 25), ("100", 100),
     ("-5", 0), ("2.5", 0), ("1_0", 0), (" 25 ", 25), ("+5", 0),
 ])
 def test_builder_fee_bounds(raw, want):
@@ -137,10 +139,25 @@ def test_builder_fee_bounds(raw, want):
     assert got == want and type(got) is int
 
 
-def test_default_fee_is_one_bp_well_under_the_cap():
-    assert rt.DEFAULT_BUILDER_FEE_TENTHS_BP == 10
+def test_the_fee_is_waived_and_the_listed_rate_is_one_bp_well_under_the_cap():
+    """Decision 2026-11-13: free while pathiel grows. The listed rate stays
+    defined, so turning the fee back on is the one switch."""
+    assert rt.BUILDER_FEE_WAIVED is True
+    assert rt.DEFAULT_BUILDER_FEE_TENTHS_BP == 0 and rt.builder_fee_tenths_bp({}) == 0
+    assert rt.LISTED_BUILDER_FEE_TENTHS_BP == 10
     assert rt.MAX_PERP_BUILDER_FEE_TENTHS_BP == 100
-    assert rt.DEFAULT_BUILDER_FEE_TENTHS_BP * 10 <= rt.MAX_PERP_BUILDER_FEE_TENTHS_BP
+    assert rt.LISTED_BUILDER_FEE_TENTHS_BP * 10 <= rt.MAX_PERP_BUILDER_FEE_TENTHS_BP
+
+
+def test_the_switch_is_the_only_thing_between_waived_and_charging():
+    """Re-evaluating the module with the switch off gives the listed rate."""
+    import importlib.util
+    src = Path(rt.__file__).read_text().replace("BUILDER_FEE_WAIVED = True", "BUILDER_FEE_WAIVED = False")
+    spec = importlib.util.spec_from_loader("_runtime_fee_on", loader=None)
+    mod = importlib.util.module_from_spec(spec)
+    exec(compile(src, rt.__file__, "exec"), mod.__dict__)
+    assert mod.DEFAULT_BUILDER_FEE_TENTHS_BP == mod.LISTED_BUILDER_FEE_TENTHS_BP == 10
+    assert mod.builder_fee_tenths_bp({}) == 10
 
 
 @pytest.mark.parametrize("fee,s", [
@@ -155,9 +172,9 @@ def test_describe_shape():
     d = rt.describe({rt.ENV_INSTALL: "public", rt.ENV_BUILDER_ADDRESS: ADDR})
     assert d == {"install": "public", "network": "mainnet", "network_explicit": False,
                  "api_url": rt.MAINNET_API_URL,
-                 "builder": {"address": ADDR, "fee_tenths_bp": 10, "fee_rate": "0.01%"}}
+                 "builder": {"address": ADDR, "fee_tenths_bp": 0, "fee_rate": "0%"}}
     assert rt.describe({})["install"] == "operator"
-    assert rt.CONTRACT_VERSION == "1.1.0"
+    assert rt.CONTRACT_VERSION == "1.2.0"
 
 
 def test_config_point_banner_is_in_place():

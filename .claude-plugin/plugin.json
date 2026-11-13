@@ -1,8 +1,8 @@
 {
   "name": "pathiel",
   "displayName": "pathiel",
-  "version": "0.4.0",
-  "description": "AI trading agent for Hyperliquid: Claude trades perps with an exact stop and target on every order. 60 MCP tools: desk briefs for oil and metals, bracket orders, risk sizing (3x, 1% per trade, one position by default), account reads. Mainnet by default, testnet opt-in, read-only without a key. Optional 0.01% builder fee per fill, charged only if you approve it.",
+  "version": "0.4.1",
+  "description": "AI trading agent for Hyperliquid: Claude trades perps with an exact stop and target on every order. 60 MCP tools: desk briefs for oil and metals, bracket orders, risk sizing (3x, 1% per trade, one position by default), account reads. Mainnet by default, testnet opt-in, read-only without a key. Free: no builder fee.",
   "author": {
     "name": "Julian Martinez",
     "url": "https://github.com/Julian-dev28"

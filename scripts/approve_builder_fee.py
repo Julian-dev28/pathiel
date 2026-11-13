@@ -230,6 +230,12 @@ def main(argv: Optional[List[str]] = None, *,
     builder = runtime.builder_address()
     base: Dict[str, Any] = {"network": net, "account": account or None, "builder": builder or None}
 
+    if args.max_fee_rate is None and runtime.builder_fee_tenths_bp() <= 0:
+        # The fee is waived (contracts/runtime BUILDER_FEE_WAIVED): there is no
+        # rate to approve. Revoking an earlier approval stays possible.
+        return _refuse("pathiel charges no builder fee right now: nothing to approve. To revoke "
+                       "an approval you gave an earlier version: --max-fee-rate 0% --yes",
+                       base, as_json)
     rate_in = args.max_fee_rate if args.max_fee_rate is not None \
         else runtime.fee_rate_str(runtime.builder_fee_tenths_bp())
     try:

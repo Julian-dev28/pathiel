@@ -331,3 +331,20 @@ def scorecard() -> Callable[[str, List[dict]], dict]:
     {'name', 'passed', 'total', 'rows'}. Rows are
     {'check': str, 'got': Any, 'want': Any, 'ok': bool}."""
     return _emit_scorecard
+
+
+@pytest.fixture
+def fee_on(monkeypatch):
+    """The builder fee as it is when the switch is on (contracts/runtime
+    BUILDER_FEE_WAIVED = False): the listed rate as the default. Tests of the
+    fee machinery use it so that path stays proven while the fee is waived
+    (2026-11-13). In-process only; a subprocess gets
+    PATHIEL_BUILDER_FEE_TENTHS_BP from fee_on_env()."""
+    import contracts.runtime as runtime
+    monkeypatch.setattr(runtime, "DEFAULT_BUILDER_FEE_TENTHS_BP", runtime.LISTED_BUILDER_FEE_TENTHS_BP)
+    return runtime.LISTED_BUILDER_FEE_TENTHS_BP
+
+
+def fee_on_env() -> Dict[str, str]:
+    import contracts.runtime as runtime
+    return {"PATHIEL_BUILDER_FEE_TENTHS_BP": str(runtime.LISTED_BUILDER_FEE_TENTHS_BP)}

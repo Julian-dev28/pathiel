@@ -22,7 +22,8 @@ import re
 from decimal import Decimal
 from typing import Any, Dict, Mapping, Optional
 
-CONTRACT_VERSION = "1.1.0"   # 1.1.0 (2026-11-12): mainnet default on public installs
+CONTRACT_VERSION = "1.2.0"   # 1.2.0 (2026-11-13): fee waived by default, BUILDER_FEE_WAIVED and
+                             # LISTED_BUILDER_FEE_TENTHS_BP added. 1.1.0 (2026-11-12): mainnet default on public installs
 
 MAINNET_API_URL = "https://api.hyperliquid.xyz"
 TESTNET_API_URL = "https://api.hyperliquid-testnet.xyz"
@@ -58,10 +59,21 @@ RUNTIME_ENV_VARS = (ENV_INSTALL, ENV_NETWORK, ENV_BUILDER_ADDRESS, ENV_BUILDER_F
 # ════════════════════════════════════════════════════════════════════════════
 DEFAULT_BUILDER_ADDRESS = "0x2c2e4efF574B3Fd9879AdeF9c5CAC6fD7C916985"
 
-# 10 tenths of a basis point = 1 bp = 0.01% of notional per fill. A tenth of the
-# 0.1% perp cap and about a fifth of the base taker fee. Approval asks for this
-# exact rate, so a raise needs a new signature from the user.
-DEFAULT_BUILDER_FEE_TENTHS_BP = 10
+# The rate pathiel charges when the fee is on: 10 tenths of a basis point =
+# 1 bp = 0.01% of notional per fill. A tenth of the 0.1% perp cap and about a
+# fifth of the base taker fee. Approval asks for this exact rate, so a raise
+# needs a new signature from the user.
+LISTED_BUILDER_FEE_TENTHS_BP = 10
+
+# ════════════════════════════════════════════════════════════════════════════
+# FEE SWITCH. Waived since 0.4.1 (Julien, 2026-11-13): pathiel is free while it
+# grows, and no order carries a builder code. To charge again, the whole list
+# is in docs/BUILDER_FEE.md "Turning the fee back on": flip this, bump the
+# version, restore the fee copy, ship. Hyperliquid still charges nobody who has
+# not approved the rate with their master key.
+# ════════════════════════════════════════════════════════════════════════════
+BUILDER_FEE_WAIVED = True
+DEFAULT_BUILDER_FEE_TENTHS_BP = 0 if BUILDER_FEE_WAIVED else LISTED_BUILDER_FEE_TENTHS_BP
 MAX_PERP_BUILDER_FEE_TENTHS_BP = 100   # Hyperliquid perp cap, 0.1%
 
 _NETWORKS = ("mainnet", "testnet")
@@ -197,7 +209,8 @@ def describe(env: Optional[Mapping[str, str]] = None) -> Dict[str, Any]:
 __all__ = [
     "CONTRACT_VERSION", "MAINNET_API_URL", "TESTNET_API_URL",
     "ENV_INSTALL", "ENV_NETWORK", "ENV_NETWORK_SOURCE", "ENV_BUILDER_ADDRESS", "ENV_BUILDER_FEE", "RUNTIME_ENV_VARS",
-    "DEFAULT_BUILDER_ADDRESS", "DEFAULT_BUILDER_FEE_TENTHS_BP", "MAX_PERP_BUILDER_FEE_TENTHS_BP",
+    "DEFAULT_BUILDER_ADDRESS", "DEFAULT_BUILDER_FEE_TENTHS_BP", "LISTED_BUILDER_FEE_TENTHS_BP",
+    "BUILDER_FEE_WAIVED", "MAX_PERP_BUILDER_FEE_TENTHS_BP",
     "install_kind", "is_public", "network", "network_is_explicit", "network_is_invalid", "api_url", "info_url",
     "is_mainnet", "builder_address", "builder_fee_tenths_bp", "fee_rate_str", "describe",
 ]
