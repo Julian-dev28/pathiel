@@ -59,7 +59,8 @@ PUBLIC_COPY = [
     ".github/pull_request_template.md",
 ]
 # Owned by other units; linted when they exist.
-PUBLIC_COPY_WHEN_PRESENT = ["commands/setup.md", "docs/BUILDER_FEE.md"]
+PUBLIC_COPY_WHEN_PRESENT = ["commands/setup.md", "docs/BUILDER_FEE.md",
+                            "docs/PRIVACY.md", "commands/share.md", "pool/README.md"]
 
 MAINTAINER_WARNING = ("Maintainer path: this runs mainnet with the tracked repo config "
                       "(20x, whole-equity sizing). It is not the public install.")
@@ -455,10 +456,11 @@ def test_readme_no_longer_claims_mode_off_or_an_edge():
 
 def test_readme_keeps_tool_count_and_getting_started_link():
     readme = _read("README.md")
-    assert "60 tools over stdio" in readme
+    assert "64 tools over stdio" in readme
     assert "docs/GETTING_STARTED.md" in readme
     for tool in ("place_bracket", "bracket_sweep", "close_position", "set_leverage",
-                 "cancel_order", "connected_wallets", "wallet_account", "desk_brief"):
+                 "cancel_order", "connected_wallets", "wallet_account", "desk_brief",
+                 "pool_status", "pool_report", "pool_join", "pool_leave"):
         assert f"`{tool}`" in readme, tool
 
 

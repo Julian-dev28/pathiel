@@ -131,10 +131,17 @@ class TestTheReadmeTellsTheTruth:
     """
 
     def test_the_advertised_tool_count_matches_the_server(self):
+        """A public install (the plugin) sees TOOLS plus the opt-in research
+        pool's POOL_TOOLS; the maintainer's own checkout sees TOOLS alone.
+        The README states both, recomputed from the server so neither can go
+        stale the way the 99-vs-88 count once did."""
         readme = (_ROOT / "README.md").read_text()
-        assert f"{len(MCP.TOOLS)} tools over stdio" in readme, (
-            f"README does not say '{len(MCP.TOOLS)} tools over stdio'; the "
-            f"server exposes {len(MCP.TOOLS)}")
+        public_total = len(MCP.TOOLS) + len(MCP.POOL_TOOLS)
+        assert f"{public_total} tools over stdio" in readme, (
+            f"README does not say '{public_total} tools over stdio'; a public install "
+            f"exposes {public_total} ({len(MCP.TOOLS)} plus {len(MCP.POOL_TOOLS)} pool tools)")
+        assert f"lists the {len(MCP.TOOLS)} only" in readme, (
+            f"README does not say the maintainer's checkout lists {len(MCP.TOOLS)} only")
 
     def test_the_wallet_tools_are_documented(self):
         readme = (_ROOT / "README.md").read_text()

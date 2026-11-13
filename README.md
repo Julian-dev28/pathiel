@@ -4,7 +4,7 @@
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Version 0.4.0](https://img.shields.io/badge/version-0.4.0-informational.svg)](CHANGELOG.md)
-[![MCP server](https://img.shields.io/badge/MCP-60_tools-6f42c1.svg)](docs/overhaul/MCP.md)
+[![MCP server](https://img.shields.io/badge/MCP-64_tools-6f42c1.svg)](docs/overhaul/MCP.md)
 [![Claude Code plugin](https://img.shields.io/badge/Claude_Code-plugin-d97757.svg)](#install-in-30-seconds)
 [![CI](https://github.com/Julian-dev28/pathiel/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Julian-dev28/pathiel/actions/workflows/ci.yml)
 
@@ -15,7 +15,7 @@
 
 ## What it does
 
-pathiel is a free Claude Code plugin and MCP server: 60 tools that read Hyperliquid markets and your account, and place orders.
+pathiel is a free Claude Code plugin and MCP server: 64 tools that read Hyperliquid markets and your account, and place orders.
 Every trade is one bracket: an entry, a stop and a target, sized from your risk profile (3x and 1% of equity per trade by default).
 Desk briefs for oil and metals give Claude a written call to trade from; nothing trades unless you ask.
 
@@ -87,9 +87,10 @@ Paste these into Claude Code once `/mcp` shows `pathiel` connected.
 
 ## What Claude can do
 
-`scripts/pathiel-mcp-server.py` exposes 60 tools over stdio. The full table,
-generated from the server's own tool list, is
-[docs/overhaul/MCP.md](docs/overhaul/MCP.md).
+`scripts/pathiel-mcp-server.py` exposes 64 tools over stdio to a plugin
+install: the 60 trading tools plus the opt-in research pool's 4. The
+maintainer's own checkout lists the 60 only. The full table, generated from
+the server's own tool list, is [docs/overhaul/MCP.md](docs/overhaul/MCP.md).
 
 | group | tools | examples |
 |---|---|---|
@@ -99,6 +100,7 @@ generated from the server's own tool list, is
 | Market data | 19 | `get_price`, `get_candles`, `get_l2_book`, `get_funding_rate`, `market_list_instruments` |
 | Account history | 21 | `get_open_orders`, `get_trade_history`, `get_user_fills_by_time`, `get_portfolio_pnl` |
 | Wallet reads | 2 | `connected_wallets`, `wallet_account` |
+| Research pool | 4 | `pool_status`, `pool_report`, `pool_join`, `pool_leave` |
 
 `connected_wallets` and `wallet_account` read other addresses and nothing
 else. The server signs with one key, yours, so it has no path to place,
@@ -189,6 +191,47 @@ Hyperliquid's terms bar use from restricted jurisdictions, including by US
 persons. The current list is in Hyperliquid's terms. pathiel does not check
 where you are; staying within the rules where you live is on you.
 
+## Research pool (opt-in)
+
+pathiel can grade your trades alongside everyone else's. You register your
+Hyperliquid address with one signed statement; you upload nothing, since
+pathiel only reads fills Hyperliquid already makes public. From the time
+you join, your public fills on the pool coins (`xyz:BRENTOIL`, `xyz:CL`,
+`xyz:SILVER`, `xyz:GOLD`) are graded with the same harness the project runs
+on its own trades, and published on a public scoreboard at least 24 hours
+late.
+
+What you get: your own graded report (fluke or edge on your trades, with
+ranges, through `pool_report`), and pool-level stats on which desks and
+setups hold up across members.
+
+What it is not: not a fee waiver, since the builder fee is already optional
+and declining it already costs nothing. No payout, refund or reward is ever
+tied to your returns. Not a copy-trading feed: results are published at
+least 24 hours late, never live. No edge is demonstrated by joining, or by
+anything the pool's stats show.
+
+Run `/pathiel:share` to join or leave. It shows you the exact statement
+before it signs anything, and the pull request it opens for you.
+
+Scoreboard: https://julian-dev28.github.io/pathiel/scoreboard/
+
+### Privacy
+
+What is public: your account address (shortened, with an explorer link),
+the date you joined, your closed and graded trade counts, your graded row
+(win rate, mean result in R, a label, a luck score), and pool totals that
+include your trades. What is never public: anything closed in the last 24
+hours, any open position, single trades, prices, sizes, dollar results,
+account value, leverage, or any key.
+
+Leaving is one more signed statement, or a request in a GitHub issue with
+no signature. Coming back takes a new signed join; only trades after the
+new join count, and deleting a leave file never brings an account back on
+its own.
+
+Full details, including the exact text you sign: [docs/PRIVACY.md](docs/PRIVACY.md).
+
 ## FAQ
 
 **Does pathiel trade on its own?**
@@ -231,7 +274,9 @@ the keys and state gone.
 | [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md) | account setup, permissions, prompts from first read to first trade |
 | [docs/BUILDER_FEE.md](docs/BUILDER_FEE.md) | the fee: rate, approval, enforcement, how to stop |
 | [docs/strategy/OIL_RULES.md](docs/strategy/OIL_RULES.md) | the rules every oil bracket must pass, and what is not known |
-| [docs/overhaul/MCP.md](docs/overhaul/MCP.md) | all 60 tools |
+| [docs/overhaul/MCP.md](docs/overhaul/MCP.md) | all 64 tools |
+| [docs/PRIVACY.md](docs/PRIVACY.md) | the research pool: what is public, what is not, how to join, leave and come back |
+| [Scoreboard](https://julian-dev28.github.io/pathiel/scoreboard/) | the research pool's public, graded results |
 | [SECURITY.md](SECURITY.md) | where keys live, what pathiel never does, how to report a problem |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | dev setup, the test gate, style rules |
 | [CHANGELOG.md](CHANGELOG.md) | what changed per version |
