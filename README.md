@@ -3,7 +3,7 @@
 **An AI trading agent for Hyperliquid: Claude trades perps from Claude Code, with an exact stop and target on every order.**
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Version 0.5.0](https://img.shields.io/badge/version-0.5.0-informational.svg)](CHANGELOG.md)
+[![Version 0.6.0](https://img.shields.io/badge/version-0.6.0-informational.svg)](CHANGELOG.md)
 [![MCP server](https://img.shields.io/badge/MCP-65_tools-6f42c1.svg)](docs/overhaul/MCP.md)
 [![Claude Code plugin](https://img.shields.io/badge/Claude_Code-plugin-d97757.svg)](#install-in-30-seconds)
 [![CI](https://github.com/Julian-dev28/pathiel/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Julian-dev28/pathiel/actions/workflows/ci.yml)
@@ -61,7 +61,7 @@ registry as `io.github.Julian-dev28/pathiel`.
 
 ```bash
 docker run -i --rm --user "$(id -u):$(id -g)" -v "$HOME/.pathiel:/data" \
-  ghcr.io/julian-dev28/pathiel-mcp:0.5.0
+  ghcr.io/julian-dev28/pathiel-mcp:0.6.0
 ```
 
 To build it yourself: `docker build -f Dockerfile.mcp -t pathiel-mcp .`

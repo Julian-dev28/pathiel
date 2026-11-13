@@ -6,6 +6,11 @@ All notable changes to pathiel. The format follows
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-13
+
+Connect your Hyperliquid wallet with one signature, and a website. Notes:
+[docs/RELEASE_NOTES_v0.6.0.md](docs/RELEASE_NOTES_v0.6.0.md).
+
 ### Added
 
 - Connect your Hyperliquid wallet with one signature: the `wallet_connect`
@@ -240,7 +245,8 @@ builder fee, and listing metadata for the MCP directories. Release notes:
 - First Claude Code plugin release: the MCP server, the desk-tick skill and
   `/pathiel:setup`, installed from this repo. Mainnet only.
 
-[Unreleased]: https://github.com/Julian-dev28/pathiel/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/Julian-dev28/pathiel/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/Julian-dev28/pathiel/releases/tag/v0.6.0
 [0.5.0]: https://github.com/Julian-dev28/pathiel/releases/tag/v0.5.0
 [0.4.1]: https://github.com/Julian-dev28/pathiel/releases/tag/v0.4.1
 [0.4.0]: https://github.com/Julian-dev28/pathiel/releases/tag/v0.4.0
