@@ -304,7 +304,13 @@ def _clean_env() -> dict:
     GIT_INDEX_FILE (and GIT_DIR in a worktree), which would point the clone's
     git at the real repo's index."""
     import os
-    return {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    # An identity for the throwaway clone's commits, by environment: CI has no
+    # git identity, and writing one with `git config` once leaked into the
+    # real repo (2026-11-13). These variables change no repository state.
+    env.update(GIT_AUTHOR_NAME="pathiel test", GIT_AUTHOR_EMAIL="test@example.invalid",
+               GIT_COMMITTER_NAME="pathiel test", GIT_COMMITTER_EMAIL="test@example.invalid")
+    return env
 
 
 def _git(cwd: Path, *args: str) -> str:
