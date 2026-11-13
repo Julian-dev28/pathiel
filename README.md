@@ -15,9 +15,9 @@
 
 ## What it does
 
-pathiel is a free Claude Code plugin and MCP server: 64 tools that read Hyperliquid markets and your account, and place orders.
-Every trade is one bracket: an entry, a stop and a target, sized from your risk profile (3x and 1% of equity per trade by default).
-Desk briefs for oil and metals give Claude a written call to trade from; nothing trades unless you ask.
+pathiel is a free, open-source Hyperliquid MCP server and Claude Code plugin: 64 tools that read Hyperliquid perpetual futures (perps) markets and your account, and place orders, from Claude Code, Claude Desktop, Cursor or any MCP client.
+Every trade is one bracket order: an entry, a stop-loss and a take-profit target, sized from your risk profile (3x and 1% of equity per trade by default).
+Desk briefs for crude oil (Brent and WTI) and metals (gold and silver) on Hyperliquid's HIP-3 markets give Claude a written call to trade from; nothing trades unless you ask.
 
 ## Install in 30 seconds
 
@@ -228,9 +228,19 @@ Full details, including the exact text you sign: [docs/PRIVACY.md](docs/PRIVACY.
 
 ## FAQ
 
-**Does pathiel trade on its own?**
-No. Claude places an order when you ask for one in the session, and Claude
-Code asks before each live-money call. `/loop 15m /pathiel:desk-tick oil`
+**How do I connect Claude to Hyperliquid?**
+Install pathiel as a Claude Code plugin with the three lines in
+[Install in 30 seconds](#install-in-30-seconds). Market data works at once
+with no key; add an API wallet key to `~/.pathiel/.env.local` to trade.
+Claude Desktop, Cursor and other MCP clients use the launcher or the
+container described in [Other MCP clients](#other-mcp-clients). No
+Anthropic API key is needed: the one model step, the desk thesis behind
+`desk_refresh`, runs through your local Claude Code CLI.
+
+**Is pathiel a Hyperliquid trading bot?**
+No, and it never trades on its own. It is an MCP server that gives Claude
+tools: Claude places an order when you ask for one in the session, and
+Claude Code asks before each live-money call. `/loop 15m /pathiel:desk-tick oil`
 re-prompts Claude on a timer, only while that session stays open.
 
 **Can it withdraw my money?**
@@ -251,10 +261,6 @@ pathiel in `/mcp`. The oil desk trades WTI (`xyz:CL`) there.
 **Is there an edge?**
 None is demonstrated. The desk briefs are a structured, written call with
 levels, not a forecast. `desk_track_record` grades every call in the open.
-
-**Does it need an Anthropic API key?**
-No. The one model step, the desk thesis behind `desk_refresh`, runs through
-your local Claude Code CLI. Every other tool is plain code.
 
 **How do I remove it?**
 Revoke the API wallet in the Hyperliquid app (More, API), then
