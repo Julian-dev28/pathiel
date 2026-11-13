@@ -24,3 +24,6 @@ hyperliquid-python-sdk>=0.23.0
 eth-account>=0.13.0
 msgpack>=1.1.0
 prometheus-client>=0.20
+# Finlight real-time oil/geopolitics news (services/intel/sources/finlight.py); the
+# demo never opens it, but services/intel imports the SDK models when a key is set.
+finlight-client==2.4.0

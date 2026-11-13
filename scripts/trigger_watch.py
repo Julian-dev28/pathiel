@@ -57,6 +57,17 @@ for a long) does not hold that side's entries, so the watcher still wakes
 the tick on the entry rule; an alert against the side or of unknown
 direction holds as before. The headline step itself is unchanged: every
 alert wakes the tick and makes the thesis due, whatever its direction.
+
+Since 2026-11-14 (operator: headline lag "from about 120s to seconds") a
+Finlight stream (services/intel/finlight_watch.py, sources/finlight.py)
+runs in a daemon thread when FINLIGHT_API_KEY is set: WebSocket first, REST
+polling when the plan has none. A pushed headline that matches Stage 1
+(PATTERNS plus data/oil_triggers.json) wakes this loop from its minute
+sleep at once; the pass drains it through the SAME news_alerts / record /
+fire path, with the Stage 2 score (event_score) and the book guard
+(book_guard) riding along on the alert and in
+$PATHIEL_STATE_DIR/intel/finlight_events.jsonl. No key, an import error or
+a dead stream: the watcher runs on RSS exactly as before.
 """
 from __future__ import annotations
 
@@ -354,6 +365,7 @@ def watch(*, once: bool, cooldown_min: float, sleep: Callable[[float], None] = t
 
     from services.accounts import signer_status
     signer_checked = 0.0
+    finlight = _start_finlight()
 
     while True:
         now = clock()
@@ -389,10 +401,13 @@ def watch(*, once: bool, cooldown_min: float, sleep: Callable[[float], None] = t
             except Exception:  # noqa: BLE001 - no mid this minute
                 pass
         hits = headline_pass(targets, now, hl_state, price_hist, mids, prime=prime)
+        hits += _finlight_pass(finlight, targets, now, hl_state, prime)
         hl_state["hist"] = price_hist
         HW.save_state(hl_state)
         parts.append("headlines: primed (first run, nothing alerts)" if prime
                      else f"headlines: {len(hits)} hit(s)" if hits else "headlines: quiet")
+        if finlight is not None:
+            parts.append(_finlight_status(finlight))
         prime = False
         if hits:
             kept = HW.record([a for _d, a in hits])
@@ -473,7 +488,48 @@ def watch(*, once: bool, cooldown_min: float, sleep: Callable[[float], None] = t
         if once:
             print(" | ".join(parts), flush=True)
             return 0
-        sleep(60)
+        _wait(finlight, sleep, 60)
+
+
+def _start_finlight() -> Any:
+    """The Finlight runner, or None: no key, or anything at all failed."""
+    try:
+        from services.intel.finlight_watch import start_runner
+        return start_runner()
+    except Exception as e:  # noqa: BLE001 - the stream is optional; RSS still runs
+        _log(f"{_utc()} finlight not started: {type(e).__name__}")
+        return None
+
+
+def _finlight_pass(runner: Any, targets: List[Tuple[str, str, str]], now_s: float, state: Dict[str, Any],
+                   prime: bool) -> List[Tuple[str, Dict[str, Any]]]:
+    if runner is None:
+        return []
+    try:
+        from services.intel.finlight_watch import finlight_pass
+        return finlight_pass(runner, targets, now_s, state, prime=prime)
+    except Exception as e:  # noqa: BLE001
+        _log(f"{_utc()} finlight pass failed: {type(e).__name__}")
+        return []
+
+
+def _finlight_status(runner: Any) -> str:
+    try:
+        return runner.status_line()
+    except Exception:  # noqa: BLE001
+        return "finlight: status unavailable"
+
+
+def _wait(runner: Any, sleep: Callable[[float], None], seconds: float) -> None:
+    """The minute between passes. With a Finlight runner the wait is cut
+    short by a Stage 1 hit (runner.wait); without one, plain sleep."""
+    if runner is None:
+        sleep(seconds)
+        return
+    try:
+        runner.wait(seconds)
+    except Exception:  # noqa: BLE001
+        sleep(seconds)
 
 
 def _slot(desk_slot_mod: Any, desk: str) -> str:
