@@ -29,7 +29,9 @@ approval in place.
 2. Restore the fee copy: README "Builder fee" sections, the `plugin.json` and
    `marketplace.json` descriptions, `commands/setup.md` (the disclosure and
    step 5), `docs/GETTING_STARTED.md`, `SECURITY.md`,
-   `config/public/env.local.example` and the top of this page. The 0.4.0 text
+   `config/public/env.local.example`, the research pool's "not a fee waiver"
+   lines (README, `commands/share.md`, `docs/PRIVACY.md`) and the top of
+   this page. The 0.4.0 text
    is in git history. `tests/test_public_copy.py`, `tests/test_plugin.py` and
    `tests/test_listing_metadata.py` pick their checks by the switch and fail
    until the copy matches it.

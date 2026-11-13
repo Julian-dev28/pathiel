@@ -6,6 +6,55 @@ All notable changes to pathiel. The format follows
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-13
+
+The opt-in research pool and its public scoreboard. Notes:
+[docs/RELEASE_NOTES_v0.5.0.md](https://github.com/Julian-dev28/pathiel/blob/main/docs/RELEASE_NOTES_v0.5.0.md).
+
+### Added
+
+- Opt-in research pool: register a Hyperliquid address with one signed
+  statement and pathiel grades its public fills on the pool coins
+  (`xyz:BRENTOIL`, `xyz:CL`, `xyz:SILVER`, `xyz:GOLD`) with the same harness
+  the project runs on its own trades. Nothing is uploaded; only fills after
+  the join count.
+- Four MCP tools: `pool_status`, `pool_report`, `pool_join`, `pool_leave`.
+  Listed on a public install only (64 tools total); the maintainer's own
+  checkout is unchanged at 60, and the pool tools refuse outright
+  (`operator_install`) if ever called there.
+- `/pathiel:share`: walks a user through joining or leaving, shows the exact
+  statement before it signs anything, and opens the pull request.
+- A public scoreboard (static HTML and JSON, served from `docs/scoreboard/`
+  by GitHub Pages) with graded per-member rows, published at least 24 hours
+  late. [docs/PRIVACY.md](https://github.com/Julian-dev28/pathiel/blob/main/docs/PRIVACY.md) says what is public, what is
+  not, and how to leave or come back.
+- A read-only pull request check (`.github/workflows/pool-members.yml`)
+  verifies every signed member and leave file offline and against
+  Hyperliquid's own agent-approval reads.
+
+### Changed
+
+- `.dockerignore` lets `docs/scoreboard/` into the Docker build context
+  (the `docs/` exclusion otherwise removes it); `Dockerfile.mcp` now ships
+  `pool/` and `docs/scoreboard/` so `pool_status` has the member list and
+  the scoreboard counts inside a container.
+
+### Security
+
+- `pool_join` and `pool_leave` sign a plain text statement, nothing else:
+  no order, no transfer, no fee or payment is authorized, and the key is
+  never printed or written anywhere.
+- The membership pull request check is read-only (`contents: read`) and
+  refuses any change that would bring an account back into the pool without
+  a new signed join newer than every statement the repository ever held
+  for it (deleting a leave file does not work).
+- The four pool MCP tools refuse before touching any pool code whenever
+  the process is not a public install (`contracts.runtime.is_public()`),
+  regardless of whether an MCP client calls a listed tool name: a pool
+  tool dispatched on the maintainer's own mainnet checkout used to run
+  for real, including signing a join/leave statement with the
+  maintainer's configured trading key.
+
 ## [0.4.1] - 2026-11-13
 
 pathiel is free: the builder fee is waived. Notes:
@@ -137,7 +186,8 @@ builder fee, and listing metadata for the MCP directories. Release notes:
 - First Claude Code plugin release: the MCP server, the desk-tick skill and
   `/pathiel:setup`, installed from this repo. Mainnet only.
 
-[Unreleased]: https://github.com/Julian-dev28/pathiel/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/Julian-dev28/pathiel/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/Julian-dev28/pathiel/releases/tag/v0.5.0
 [0.4.1]: https://github.com/Julian-dev28/pathiel/releases/tag/v0.4.1
 [0.4.0]: https://github.com/Julian-dev28/pathiel/releases/tag/v0.4.0
 [0.3.0]: https://github.com/Julian-dev28/pathiel/commit/ae26611

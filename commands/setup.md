@@ -100,7 +100,7 @@ the chat; the user types keys into files and prompts on their own machine.
    before the env file existed. After creating or editing
    `~/.pathiel/.env.local`, tell the user to reconnect pathiel in `/mcp`
    (or restart Claude Code). Then confirm in `/mcp` that the `pathiel`
-   server shows as connected with 60 tools. If it does not, the error is in
+   server shows as connected with 64 tools. If it does not, the error is in
    the MCP panel; the usual cause is step 1 not having finished.
 
 7. **Prove it.** Call `get_price` with `{coin: "BTC"}`, then `state`. The
