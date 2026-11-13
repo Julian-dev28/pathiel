@@ -20,6 +20,13 @@ All notable changes to pathiel. The format follows
 - `scripts/seo_rank.py` and a weekly read-only **SEO rank** workflow: pathiel's
   GitHub search rank on nine stranger queries. Baseline in
   `docs/seo/github_rank.jsonl`.
+- `.github/workflows/release.yml`: publishing a GitHub release builds the MCP
+  image natively on amd64 and arm64, smoke-tests each, pushes `<version>` and
+  `latest`, and publishes `server.json` to the official MCP registry with
+  GitHub OIDC. It is the one workflow allowed to write (`packages`,
+  `id-token`, job-scoped); `scripts/supply_chain_check.py` refuses it if it
+  gains a push or pull request trigger, and refuses those scopes anywhere
+  else.
 - `docs/LISTINGS.md`: every place pathiel is listed, and the copy for the
   forms only the maintainer can submit.
 

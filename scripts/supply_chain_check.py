@@ -37,6 +37,29 @@ WORM_FILENAMES = re.compile(
 
 _SHA_PIN = re.compile(r"^[\w.-]+/[\w.-]+(/[\w./-]+)?@[0-9a-f]{40}$")
 
+# One workflow may write, and only what publishing a release needs: packages
+# (push the MCP image to ghcr.io) and id-token (GitHub OIDC login to the MCP
+# registry). Both must sit on a job, never in the top-level block, and the
+# file may run only on a published release or a manual dispatch, so no push
+# or pull request can ever reach a write token. Added 2026-11-12 with
+# .github/workflows/release.yml.
+_WRITE_ALLOWED = {"release.yml": {"packages", "id-token"}}
+_RELEASE_TRIGGERS = {"release", "workflow_dispatch"}
+_JOB_INDENT = 6   # jobs: > <job>: > permissions: > <scope>: write
+
+
+def _triggers(text: str) -> set[str]:
+    import yaml
+    data = yaml.safe_load(text) or {}
+    on = data.get("on", data.get(True))   # YAML 1.1 reads a bare `on` as True
+    if isinstance(on, str):
+        return {on}
+    if isinstance(on, list):
+        return {str(t) for t in on}
+    if isinstance(on, dict):
+        return {str(t) for t in on}
+    return set()
+
 
 def _workflow_files() -> list[Path]:
     return sorted(WORKFLOWS.glob("*.y*ml"))
@@ -61,8 +84,16 @@ def check_workflows() -> list[str]:
                 problems.append(f"{rel}:{line_no}: pip install outside the hashed lock")
         if not re.search(r"(?m)^permissions:", text):
             problems.append(f"{rel}: no top-level permissions block")
-        if re.search(r"(?m)^\s*\w[\w-]*:\s*write\s*$", text):
-            problems.append(f"{rel}: grants a write permission")
+        allowed = _WRITE_ALLOWED.get(wf.name, set())
+        for m in re.finditer(r"(?m)^(\s*)(\w[\w-]*):\s*write\s*$", text):
+            indent, scope = len(m.group(1)), m.group(2)
+            if scope not in allowed:
+                problems.append(f"{rel}: grants a write permission ({scope})")
+            elif indent < _JOB_INDENT:
+                problems.append(f"{rel}: write permission {scope} outside a job")
+        if allowed and not _triggers(text) <= _RELEASE_TRIGGERS:
+            problems.append(f"{rel}: holds write permissions but runs on "
+                            f"{sorted(_triggers(text) - _RELEASE_TRIGGERS)}")
         if "pull_request_target" in text:
             problems.append(f"{rel}: uses pull_request_target")
     return problems
