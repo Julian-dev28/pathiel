@@ -3,7 +3,7 @@ name: SEO rank
 # Weekly: where pathiel ranks in GitHub search for the queries a stranger
 # types when looking for an AI trading agent (scripts/seo_rank.py). The table
 # lands in the run summary. Read only: the search API needs no write scope,
-# and nothing is committed. docs/LISTINGS.md says what the numbers mean.
+# and nothing is committed. The baseline is in docs/seo/github_rank.jsonl.
 
 on:
   schedule:

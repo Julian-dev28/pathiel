@@ -72,7 +72,7 @@ jobs:
           EOF
 
       # The Claude plugin directory tracks the `plugin` branch, not main
-      # (docs/LISTINGS.md). Refuse to ship a version whose bundle was not
+      # (scripts/build_plugin_bundle.py). Refuse to ship a version whose bundle was not
       # published there first, byte for byte: same git tree.
       - name: The plugin branch holds this version's bundle
         run: |
