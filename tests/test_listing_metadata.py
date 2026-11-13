@@ -3,10 +3,14 @@ Smithery (smithery.yaml), Glama (glama.json) and the Claude Code marketplace
 (.claude-plugin/).
 
 Nothing here submits anything. Each check is a rule a registry or a user
-relies on: one version everywhere, testnet as the default network in every
-listing, the fee and the testnet default in the manifest descriptions, and no
-key or secret declared in any listing (keys live only in the user's own env
-file).
+relies on: one version everywhere, mainnet as the default network with
+testnet as the opt-in (0.4.0), the fee, the default and the opt-in in the
+manifest descriptions, discovery keywords, and no key or secret declared in
+any listing (keys live only in the user's own env file).
+
+smithery.yaml belongs to another unit. Its network default is checked for
+internal consistency (schema default, example, command fallback agree), not
+pinned to a value here.
 
 Offline, no network.
 
@@ -34,6 +38,12 @@ GLAMA_SCHEMA_URL = "https://glama.ai/mcp/schemas/server.json"
 # The registry schema's name pattern: reverse-DNS namespace, one slash, server name.
 SERVER_NAME_RE = re.compile(r"^[a-zA-Z0-9.-]+/[a-zA-Z0-9._-]+$")
 REPO_URL = "https://github.com/Julian-dev28/pathiel"
+PUBLIC_DEFAULT_NETWORK = "mainnet"
+NETWORKS = ["mainnet", "testnet"]
+# Discovery: the terms a user types into a plugin or MCP directory search.
+DISCOVERY_KEYWORDS = {"hyperliquid", "trading", "perps", "mcp", "claude-code", "risk-management",
+                      "oil", "gold"}
+MARKET_CATEGORY = "finance"
 IMAGE = "ghcr.io/julian-dev28/pathiel-mcp"
 
 # Anything named like a credential. Listing files declare none: a registry or
@@ -143,11 +153,13 @@ def server_json_rules() -> List[Tuple[str, bool]]:
         ("name is io.github.Julian-dev28/pathiel", d.get("name") == "io.github.Julian-dev28/pathiel"),
         ("title is pathiel", d.get("title") == "pathiel"),
         ("description is 1 to 100 chars", 1 <= len(desc) <= 100),
-        ("description says testnet by default", "testnet by default" in desc.lower()),
+        ("description names mainnet and the testnet opt-in",
+         "mainnet" in desc.lower() and "testnet opt-in" in desc.lower()),
+        ("description names the exact stop", "exact stop" in desc.lower()),
         ("version is the package version", d.get("version") == package_version()),
         ("repository is the GitHub repo", d.get("repository") == {"url": REPO_URL, "source": "github"}),
         ("websiteUrl is the README public-install anchor",
-         d.get("websiteUrl") == f"{REPO_URL}#public-install-read-this-before-you-trade"),
+         d.get("websiteUrl") == f"{REPO_URL}#before-you-trade"),
         ("exactly one package", len(pkgs) == 1),
         ("package is oci", pkg.get("registryType") == "oci"),
         ("package identifier is the image tagged with the version",
@@ -158,31 +170,43 @@ def server_json_rules() -> List[Tuple[str, bool]]:
         ("volume argument mounts {pathiel_home} at /data", vol.get("value") == "{pathiel_home}:/data"),
         ("pathiel_home is a required filepath",
          home_var.get("format") == "filepath" and home_var.get("isRequired") is True),
-        ("PATHIEL_NETWORK defaults to testnet", net.get("default") == "testnet"),
-        ("PATHIEL_NETWORK choices are testnet and mainnet", net.get("choices") == ["testnet", "mainnet"]),
+        ("PATHIEL_NETWORK defaults to mainnet", net.get("default") == PUBLIC_DEFAULT_NETWORK),
+        ("PATHIEL_NETWORK choices are mainnet and testnet", net.get("choices") == NETWORKS),
         ("PATHIEL_NETWORK is not secret", net.get("isSecret") is False),
         ("PATHIEL_NETWORK is the only environment variable", set(envs) == {"PATHIEL_NETWORK"}),
     ]
 
 
-def network_defaults() -> List[Tuple[str, bool]]:
-    """Every listing file's network default, as (file, testnet?)."""
-    pkg = oci_package()
-    net = {e.get("name"): e for e in pkg.get("environmentVariables") or []}.get("PATHIEL_NETWORK") or {}
+def smithery_network() -> Dict[str, Any]:
+    """smithery.yaml's network as declared in its three places."""
     start = _yaml(SMITHERY_YAML).get("startCommand") or {}
     prop = ((start.get("configSchema") or {}).get("properties") or {}).get("network") or {}
     fn = str(start.get("commandFunction") or "")
-    example = start.get("exampleConfig") or {}
+    m = re.search(r"PATHIEL_NETWORK\s*:\s*config\.network\s*\|\|\s*'(\w+)'", fn)
+    return {"enum": prop.get("enum"), "default": prop.get("default"),
+            "fallback": m.group(1) if m else None,
+            "example": (start.get("exampleConfig") or {}).get("network")}
+
+
+def network_defaults() -> List[Tuple[str, bool]]:
+    """Each listing's network rule, as (rule, ok): the files this unit owns
+    say mainnet by default and testnet opt-in; smithery.yaml agrees with
+    itself."""
+    pkg = oci_package()
+    net = {e.get("name"): e for e in pkg.get("environmentVariables") or []}.get("PATHIEL_NETWORK") or {}
+    smithery = smithery_network()
     plugin = _json(PLUGIN_JSON)["description"].lower()
     market = _json(MARKET_JSON)["plugins"][0]["description"].lower()
     return [
-        ("server.json PATHIEL_NETWORK", net.get("default") == "testnet"),
-        ("smithery.yaml configSchema", prop.get("default") == "testnet"),
-        ("smithery.yaml commandFunction fallback",
-         re.search(r"PATHIEL_NETWORK\s*:\s*config\.network\s*\|\|\s*'testnet'", fn) is not None),
-        ("smithery.yaml exampleConfig", example.get("network") == "testnet"),
-        ("plugin.json description", "testnet by default" in plugin),
-        ("marketplace.json plugin description", "testnet by default" in market),
+        ("server.json PATHIEL_NETWORK default is mainnet", net.get("default") == PUBLIC_DEFAULT_NETWORK),
+        ("smithery.yaml offers both networks", sorted(smithery["enum"] or []) == sorted(NETWORKS)),
+        ("smithery.yaml default, fallback and example agree",
+         smithery["default"] in NETWORKS
+         and smithery["default"] == smithery["fallback"] == smithery["example"]),
+        ("plugin.json description: mainnet by default, testnet opt-in",
+         "mainnet by default" in plugin and "testnet opt-in" in plugin),
+        ("marketplace.json description: mainnet by default, testnet opt-in",
+         "mainnet by default" in market and "testnet opt-in" in market),
     ]
 
 
@@ -234,9 +258,9 @@ def test_secret_check_catches_planted_keys():
     assert "commandFunction env 'HYPERLIQUID_PRIVATE_KEY'" in joined, hits
 
 
-def test_network_defaults_to_testnet_in_every_listing_file():
+def test_network_defaults_in_every_listing_file():
     failed = [f for f, ok in network_defaults() if not ok]
-    assert not failed, f"not testnet by default: {failed}"
+    assert not failed, f"network rules broken: {failed}"
 
 
 def test_smithery_yaml_shape():
@@ -248,11 +272,11 @@ def test_smithery_yaml_shape():
     assert schema["type"] == "object"
     assert set(schema["properties"]) == {"network"}, "configSchema takes the network and nothing else"
     net = schema["properties"]["network"]
-    assert net["enum"] == ["testnet", "mainnet"] and net["default"] == "testnet"
+    assert sorted(net["enum"]) == sorted(NETWORKS) and net["default"] in NETWORKS
     fn = start["commandFunction"]
     assert "'/app/scripts/pathiel-mcp'" in fn and "PATHIEL_NETWORK" in fn
     assert not re.search(r"(PRIVATE_KEY|_KEY\b|SECRET|TOKEN|MASTER)", fn), fn
-    assert start["exampleConfig"] == {"network": "testnet"}
+    assert start["exampleConfig"] == {"network": net["default"]}
 
 
 def test_glama_json_shape():
@@ -260,7 +284,14 @@ def test_glama_json_shape():
     assert d == {"$schema": GLAMA_SCHEMA_URL, "maintainers": ["Julian-dev28"]}
 
 
-def test_plugin_and_marketplace_descriptions_disclose_fee_and_testnet():
+def test_smithery_consistency_check_fails_on_a_split_default():
+    """The consistency rule is only proof if it can fail."""
+    smithery = smithery_network()
+    split = dict(smithery, fallback="mainnet" if smithery["default"] == "testnet" else "testnet")
+    assert not (split["default"] == split["fallback"] == split["example"])
+
+
+def test_plugin_and_marketplace_descriptions_disclose_fee_and_network():
     from contracts import runtime
 
     fee = runtime.fee_rate_str(runtime.DEFAULT_BUILDER_FEE_TENTHS_BP)
@@ -268,10 +299,21 @@ def test_plugin_and_marketplace_descriptions_disclose_fee_and_testnet():
                         ("marketplace.json", _json(MARKET_JSON)["plugins"][0]["description"])):
         low = desc.lower()
         assert "60 MCP tools" in desc, label
-        assert "testnet by default" in low, label
+        assert "exact stop and target" in low, label
+        assert "mainnet by default" in low and "testnet opt-in" in low, label
         assert "read-only without a key" in low, label
         assert f"{fee} builder fee" in desc, f"{label} does not name the {fee} builder fee"
         assert "approve" in low, f"{label} does not say the fee needs approval"
+
+
+def test_manifests_carry_discovery_keywords_and_category():
+    plugin, market = _json(PLUGIN_JSON), _json(MARKET_JSON)
+    entry = market["plugins"][0]
+    assert DISCOVERY_KEYWORDS <= set(plugin["keywords"]), plugin["keywords"]
+    assert plugin["keywords"] == entry["keywords"], "plugin.json and marketplace.json keywords drift"
+    assert all(k == k.lower() and " " not in k for k in plugin["keywords"])
+    assert entry["category"] == MARKET_CATEGORY
+    assert plugin["description"] == entry["description"], "one description in both manifests"
 
 
 def test_manifest_key_set_unchanged():

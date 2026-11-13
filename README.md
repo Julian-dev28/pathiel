@@ -1,589 +1,276 @@
-# Pathiel
+# pathiel
 
-> A headless trading desk on Hyperliquid. Claude places every trade
-> through an MCP server (`scripts/pathiel-mcp-server.py`, 60 tools over
-> stdio); there is no autonomous bot and no standing process that trades on
-> its own. Pure Python, FastAPI dashboard. A public install starts on
-> testnet; the maintainer's own checkout trades real money.
+**Let Claude trade Hyperliquid perps from Claude Code, with an exact stop and target on every order.**
 
-## Read this first
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Version 0.4.0](https://img.shields.io/badge/version-0.4.0-informational.svg)](CHANGELOG.md)
+[![MCP server](https://img.shields.io/badge/MCP-60_tools-6f42c1.svg)](docs/overhaul/MCP.md)
+[![Claude Code plugin](https://img.shields.io/badge/Claude_Code-plugin-d97757.svg)](#install-in-30-seconds)
+[![CI](https://github.com/Julian-dev28/pathiel/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Julian-dev28/pathiel/actions/workflows/ci.yml)
 
-- **New here?** [`docs/GETTING_STARTED.md`](docs/GETTING_STARTED.md) walks
-  through setup, permissions, and the prompts that take you from reading
-  the oil call to placing and tracking a trade.
-- **Headless since 2026-10-23.** The autonomous scan/research/execute
-  engine, the seven strategy books it ran, and the DSL exit loop are all
-  deleted. Claude is the only trader on the wallet, calling `place_bracket`
-  and `bracket_sweep` through the MCP server. See **What was removed**
-  below.
-- **One position per account.** The operator's live risk profile
-  (`.agent-config.json`) sets `max_open_positions: 1`. `place_bracket`
-  refuses to stack a second position or a second resting order on the same
-  coin (`pathiel/agents/bracket.py`).
-- **The trading loop is a Claude Code skill, not a script.** `.claude/skills/desk-tick/SKILL.md`,
-  run on a schedule (`/loop 15m /desk-tick oil`, 30 minutes for metals, ai
-  and gas). Nothing trades between ticks; nothing trades if no Claude
-  session is running the tick.
-- **No kill switch, no status pill, no operator-token UI.** All three were
-  removed from the Desk and Thesis pages 2026-10-24 because nothing updated
-  the pill and the switch did not touch the one trading path left. Live-money
-  calls (`place_bracket`, `bracket_sweep`, `close_position`, `set_leverage`,
-  `cancel_order`) are marked destructive in the MCP tool list, so an MCP
-  client asks before each call.
+> **Real money.** A public install runs on Hyperliquid mainnet. With no key
+> it only reads; once you add a key, orders are real. Read
+> [Before you trade](#before-you-trade) first. Practice on testnet with one
+> line: `PATHIEL_NETWORK=testnet`.
 
-## Public install: read this before you trade
+## What it does
 
-**What it does.** pathiel lets Claude read Hyperliquid perps markets
-(prices, candles, order books, funding, a written desk brief) and place
-bracket orders with an exact stop and target on your own account. It runs
-on your machine with your own key; nothing trades unless you ask Claude to.
+pathiel is a free Claude Code plugin and MCP server: 60 tools that read Hyperliquid markets and your account, and place orders.
+Every trade is one bracket: an entry, a stop and a target, sized from your risk profile (3x and 1% of equity per trade by default).
+Desk briefs for oil and metals give Claude a written call to trade from; nothing trades unless you ask.
 
-**Three modes.** The mode follows from what is in `~/.pathiel/.env.local`:
+## Install in 30 seconds
 
-| you have | mode | what works |
-|---|---|---|
-| no key | read-only | every read tool; write tools answer that no key is configured |
-| an API wallet key | testnet (the default) | everything, with test funds on Hyperliquid testnet |
-| a key and `PATHIEL_NETWORK=mainnet` | mainnet | everything, with real money |
-
-State (theses, journals, caches) is kept per network, so testnet and
-mainnet never share it. Testnet needs its own API wallet, created and
-approved in the Hyperliquid testnet app.
-
-**Builder fee.** pathiel adds a Hyperliquid builder fee of 0.01% of
-notional per fill, 0.02% a round trip (in and out), on every fill pathiel
-routes for a public install. That is 1 basis point, on top of Hyperliquid's
-own trading fee. It goes to the project's builder address. If no builder
-address is configured, no fee is attached. The maintainer's own checkout
-never attaches one.
-
-**Approving the fee.** The fee applies only after you approve it once with
-your master wallet. Run `/pathiel:setup`, or follow
-[docs/BUILDER_FEE.md](docs/BUILDER_FEE.md). Declining is fine: orders are
-then placed with no builder fee, and everything else works the same.
-
-**How the fee is enforced.** Hyperliquid itself rejects any order whose
-builder fee is above the max you approved. pathiel asks you to approve
-exactly the rate it charges, 0.01%, so a higher rate would need a new
-signature from you. Hyperliquid caps a perp builder fee at 0.1%. pathiel
-never blocks an order over the fee: with no approval, or one below the
-rate, the order goes out without it and the tool output says so.
-
-**Risk.** Leveraged perps can lose the whole account, fast. A public
-install starts at most 3x leverage, risking 1% of equity at the stop, one
-position at a time. The profile's daily loss figure is shown, not
-enforced. There is no demonstrated edge and no return is promised: the
-live audit of 2026-11-12 graded 36 thesis calls with the direction right
-32% of the time, and 19 closed trades whose average result cannot be told
-apart from zero. This is software, not financial advice. You decide every
-trade and carry its result.
-
-**Restricted jurisdictions.** Hyperliquid's terms bar use from restricted
-jurisdictions, including by US persons. The current list is in
-Hyperliquid's terms. pathiel does not check where you are; that is on you.
-
-### Other MCP clients
-
-Claude Code users install the plugin (see "Install as a Claude Code
-plugin" below). Any other MCP client takes the same public path in one of
-two ways: from a clone of this repo, register the launcher
-`scripts/pathiel-mcp` as the server command, or run the container:
-
-```bash
-docker run -i --rm --user "$(id -u):$(id -g)" -v "$HOME/.pathiel:/data" ghcr.io/julian-dev28/pathiel-mcp:0.4.0
-```
-
-Both read keys and config from `~/.pathiel` and start on testnet.
-
-### What changed in 0.4.0
-
-Plugin installs now default to testnet. If you traded mainnet through the
-plugin before 0.4.0, add `PATHIEL_NETWORK=mainnet` to
-`~/.pathiel/.env.local` to keep trading mainnet. A fresh install gets the
-public risk profile above, and the builder fee applies once approved.
-
-## Desks: one market, one thesis, one decision
-
-A desk is one market with its own instruments, news queries, policy watch,
-catalyst calendar, leverage ladder and thesis journal. Six are registered in
-`services/strategies/desks/*.py`; four are active (`.agent-config.json`'s
-`active_desks`):
-
-| desk | file | status | primary instrument |
-|---|---|---|---|
-| oil | `oil.py` | active, flagship | `xyz:BRENTOIL` (Brent; WTI and natgas tracked alongside) |
-| metals | `metals.py` | active | gold / silver |
-| ai | `ai.py` | active | AI-adjacent equities |
-| gas | `gas.py` | active | natural gas |
-| btc | `btc.py` | registered, off | BTC |
-| top5 | `top5.py` | registered, off | top 5 crypto by volume |
-| indices | `indices.py` | registered, off | broad indices |
-
-An off desk still has a working route (`/desk/{id}`) and a working
-`desk_brief` call; it is just not on the Desk page and nothing ticks it.
+In Claude Code:
 
 ```
-services/strategies   desk registry, deterministic analytics, journal, grader, HTTP routes
-services/intel        news, policy, EIA, FRED, CBOE, EDGAR, positioning, prediction markets (zero LLM)
-services/thesis       the only LLM step: writes the thesis, rejects any number not in the data
-services/llm          gateway to the local Claude Code CLI, not a hosted API
-contracts/strategies  the shared models every service above speaks
-```
-
-Intel sources (`services/intel/sources/`): `news.py` (deterministic
-relevance and bull/bear/neutral stance scoring in `services/intel/scoring.py`),
-`eia.py` (crude stocks, nat gas storage), `fred.py` (rates, macro series),
-`cboe.py`, `edgar.py`, `positioning.py` (CFTC COT), `predictions.py`
-(Polymarket/Kalshi), `policy.py` (bills, Federal Register, OFAC). Every
-source degrades to "skipped" rather than failing the brief when its key is
-missing; `scripts/intel_keys.py` reports which of `EIA_API_KEY`,
-`FRED_API_KEY` and `CONGRESS_API_KEY` are set and where to get each free.
-
-`services/thesis` writes the thesis: `prompt.py` builds the prompt,
-`validator.py` rejects any number the LLM invented and enforces a 1.5R
-minimum payoff (`DEFAULT_MIN_R = 1.5`) plus a stop on real market structure,
-`render.py::quick_fields` turns a thesis into the handful of fields the Desk
-page's call card and the MCP `desk_brief` quick mode both render from, so
-the card and the text never say two different things.
-
-Grading runs hourly inside `pathiel/server.py` (`PATHIEL_GRADE_LOOP=0` turns
-it off, `PATHIEL_GRADE_INTERVAL_MIN` sets the interval, default 60). It
-expires due theses and scores real account fills against each call
-(`services/strategies/trades.py`). Your own calls (the Thesis page's "make
-your own call" form) are graded the same way, so the track record shows you
-against the machine.
-
-```bash
-python -m services.strategies list
-python -m services.strategies brief oil
-python -m services.strategies grade
-```
-
-## Risk: the live profile and the rules place_bracket enforces
-
-> Maintainer path: this runs mainnet with the tracked repo config (20x, whole-equity sizing). It is not the public install.
-
-This section describes the maintainer's own live profile. A public install
-starts on the public profile instead: at most 3x, 1% of equity at the stop,
-one position (see "Public install" above). The rules `place_bracket`
-enforces below hold for both.
-
-`contracts/risk/models.py` is contract `1.1.0`. `RiskProfile.risk_per_trade_pct`
-and `.daily_loss_limit_pct` go up to 100 (100 = no cap), widened 2026-10-23
-so the operator can opt all the way out of the per-trade and daily caps. The
-operator's own live profile:
-
-```json
-{
-  "preset": "auto",
-  "risk_per_trade_pct": 100,
-  "daily_loss_limit_pct": 100,
-  "max_leverage": 20,
-  "max_open_positions": 1,
-  "allow_min_order_bump": true,
-  "max_bumped_risk_pct": 100
-}
-```
-
-One position, full stake, up to 20x. `pathiel/agents/bracket.py` enforces
-the rest:
-
-- `slot_taken_by` refuses a second position or resting entry while the
-  account's one slot is held by another coin.
-- `check_leverage` is the 20x rule: the stop must sit inside half the
-  distance to liquidation at the requested leverage, or the tool refuses.
-- `check_levels` refuses any bracket paying under 2R to its target (1.5R
-  until 2026-10-30; `bracket.DEFAULT_MIN_R`, see `docs/strategy/OIL_RULES.md`).
-- **The whole equity, every position** (operator, 2026-10-27). Sizing holds
-  nothing back but the opening taker fee: margin + fee = equity
-  (`services/risk/derive.py::margin_after_open_fee`, 4.5 bps, the account's
-  published taker rate; at 20x that leaves 0.9% of equity, the fee itself).
-  There was a 10% floor until 2026-10-26 and a 2% fee reserve until 10-27.
-- **Top-ups** (`place_bracket ... add: true`): with a position open, one add
-  on the same side, at a stop no wider than the resting one, sized as
-  full-port minus what is held and capped by the free margin. The brief's
-  "Your size" sizes at the same leverage `place_bracket` uses (the profile's
-  20x, not the thesis's own suggestion), so the tick's top-up rule compares
-  like with like.
-- **One stop and one target per position.** Each fill gets its own stop and
-  target; `bracket.consolidate_protection` folds stops (and targets) at one
-  price into a single order for the whole size, placing the new order
-  before cancelling the old ones so the position is never unprotected.
-  Targets at different prices are a scale-out and stay. `bracket_sweep`
-  runs it on every covered position, a market top-up right after its fill.
-- **Targets rest as limits, stops fire at market.** A take-profit triggers a
-  limit at the target itself, so a winning exit never sells below it; the
-  stop stays a market order so it always fills. The sweep re-places any
-  older market target as a limit.
-- **Stops never move.** No breakeven, no trail. Once placed, a stop stays
-  where it is until it fills or the position closes.
-
-## The trading loop
-
-`.claude/skills/desk-tick/SKILL.md` is the loop, run on a 15-minute cron
-(`/loop 15m /desk-tick oil`). Oil is the only active desk since 2026-10-26
-(`active_desks: ["oil"]`); the other desks' ticks and trading are off. No
-edge is demonstrated: the live audit of 2026-11-12 graded 36 thesis calls
-with the direction right 32% of the time, and 19 closed trades whose
-average result cannot be told apart from zero. The rules alone are in
-[docs/strategy/OIL_RULES.md](docs/strategy/OIL_RULES.md). Each tick, in
-order:
-
-1. **Slot check** (`scripts/desk_slot.py`): if another desk's coin holds the
-   account's one slot, log and stop. No brief, no levels, no MCP calls.
-2. **`desk_brief`** (quick mode): the current call. `scripts/thesis_due.py`
-   says when to `desk_refresh` (a new thesis on Fable 5.1, about $1): once a
-   day, after an API, EIA or OPEC release the thesis listed, after a position
-   closes, and when the mid has moved 1.5% or more since it was written; never
-   inside an hour of the last one. A flat or WAIT thesis never closes an open
-   position; that position keeps its own stop and target.
-3. **`bracket_sweep`**: cancel a stranded sibling order, confirm an open
-   position is covered by a stop, and fold one-per-fill stops and targets
-   into one pair.
-4. **Levels** (`scripts/oil_levels.py`): mid, last closed 1h candle, 8h/24h/48h
-   range, ATR14, 15m micro range; `--check ENTRY STOP TP --lev 20` judges one
-   level against the R gate and the 20x line.
-5. **One decision**: hold, top up at the thesis entry, cancel a stale resting
-   entry, or place one new bracket anchored on structure. No setup, no trade.
-6. **One log line** to `/tmp/oil-loop/progress.log`.
-
-## Install as a Claude Code plugin
-
-The public way to run pathiel, with no checkout and no local web server:
-Claude in the terminal is the trader, Hyperliquid's own app is the dashboard.
-Read "Public install" above first.
-
-```
-/plugin install pathiel --marketplace Julian-dev28/pathiel
+/plugin marketplace add Julian-dev28/pathiel
+/plugin install pathiel@pathiel
 /pathiel:setup
 ```
 
-Or from a shell: `claude plugin marketplace add Julian-dev28/pathiel` then
-`claude plugin install pathiel@pathiel`.
+From a shell instead:
 
-`/pathiel:setup` (the steps are in `commands/setup.md`):
+```bash
+claude plugin marketplace add Julian-dev28/pathiel
+claude plugin install pathiel@pathiel
+```
 
-1. builds a private Python environment under the plugin data dir, kept
-   across updates;
-2. creates `~/.pathiel/.env.local` from the public env template for you to
-   fill in, and seeds `~/.pathiel/.agent-config.json` from the public config
-   template (3x, 1% at the stop, one position). Both templates are named in
-   `commands/setup.md`; the maintainer's tracked `.agent-config.json` is
-   never copied;
-3. checks the keys without printing them, then runs a status check that
-   says which network you are on, whether a key is set, and the builder
-   fee with its approval state;
-4. shows the fee and the one command that approves it, which you run in
-   your own terminal;
-5. connects the MCP server.
+Claude Code v2.1.275 or later also takes the first two lines as one:
+`/plugin install pathiel --marketplace Julian-dev28/pathiel`. If Claude Code
+says `Run /reload-plugins to apply`, do that, then run `/pathiel:setup`.
 
-With no key, pathiel runs read-only, which is enough for reading
-markets. With a key it trades testnet until you add
-`PATHIEL_NETWORK=mainnet` to `~/.pathiel/.env.local`. After that:
+`/pathiel:setup` shows the fee and the risks, builds a private Python
+environment, creates `~/.pathiel/.env.local` (mode 600) for your keys, seeds
+the default risk profile, checks the install without printing any key, and
+connects the MCP server. The steps are in `commands/setup.md`.
 
-| you type | what happens |
+You need Claude Code, Python 3.11 or later, and for trading a Hyperliquid
+account with an API wallet. Reading markets needs no account.
+[docs/GETTING_STARTED.md](docs/GETTING_STARTED.md) walks through the
+account setup.
+
+### Other MCP clients
+
+Cursor, Claude Desktop, Pathiel Agent and any other MCP client register the
+launcher `scripts/pathiel-mcp` from a clone as the server command, or run the
+container built from `Dockerfile.mcp`:
+
+```bash
+docker build -f Dockerfile.mcp -t pathiel-mcp .
+docker run -i --rm --user "$(id -u):$(id -g)" -v "$HOME/.pathiel:/data" pathiel-mcp
+```
+
+Both are the public install: keys and config come from `~/.pathiel`, with
+the same default network, profile and fee rules as the plugin. Starting
+`scripts/pathiel-mcp-server.py` directly, or accepting the repo `.mcp.json`
+when you open a clone in Claude Code, is the maintainer path (see
+[Maintainer setup](#maintainer-setup)).
+
+## First prompts to try
+
+Paste these into Claude Code once `/mcp` shows `pathiel` connected.
+
+| you type | what answers |
 |---|---|
-| `desk_brief {desk: "oil"}` (or ask Claude for the oil call) | the current thesis, with "Your size" for your account |
-| `/pathiel:desk-tick oil` | one tick of the loop: slot, brief, sweep, levels, one decision, one log line |
-| `/loop 15m /pathiel:desk-tick oil` | the loop for this session |
-| `place_bracket {...}` | one order with an exact stop and target, sized by your risk profile; Claude asks before every live-money call |
+| What's the oil desk's call right now? | `desk_brief`: direction, entry, stop, target, the R it pays, and "Your size" |
+| Show me BTC's order book and funding. | `get_l2_book`, `get_funding_rate` |
+| What's my balance and what's open? | `account_overview` |
+| What are my risk limits? | `risk_limits` |
+| Size a long on gold with the stop under today's low. | `risk_size_trade` |
+| Dry-run that as a bracket. | `place_bracket` with `dry_run: true`: judged and sized, nothing sent |
+| Place it. | `place_bracket`: **live money**, Claude Code asks you first |
+| Run one oil desk tick. | `/pathiel:desk-tick oil`: brief, sweep, levels, one decision |
 
-Where things live for a plugin install:
+## What Claude can do
 
-| what | where | why |
+`scripts/pathiel-mcp-server.py` exposes 60 tools over stdio. The full table,
+generated from the server's own tool list, is
+[docs/overhaul/MCP.md](docs/overhaul/MCP.md).
+
+| group | tools | examples |
 |---|---|---|
-| keys | `~/.pathiel/.env.local` (0600) | the plugin root is a cache Claude Code replaces on update; keys never go there and never leave your machine |
-| network switch | `PATHIEL_NETWORK` in `~/.pathiel/.env.local` | next to the key, so the `config` tool cannot flip it; unset means testnet |
-| state (theses, journals, intel cache) | under `~/.pathiel`, one state folder per network | same reason; testnet and mainnet never share state |
-| config (risk profile, active desks) | `~/.pathiel/.agent-config.json` | seeded from the public template |
-| Python environment | `$CLAUDE_PLUGIN_DATA/venv` | rebuilt only when `requirements.lock` changes |
+| Desks | 6 | `desk_list`, `desk_brief`, `desk_refresh`, `desk_track_record` |
+| Account, risk and config | 6 | `account_overview`, `risk_limits`, `risk_size_trade`, `state`, `config` |
+| Orders (live money) | 6 | `place_bracket`, `bracket_sweep`, `set_target`, `close_position`, `set_leverage`, `cancel_order` |
+| Market data | 19 | `get_price`, `get_candles`, `get_l2_book`, `get_funding_rate`, `market_list_instruments` |
+| Account history | 21 | `get_open_orders`, `get_trade_history`, `get_user_fills_by_time`, `get_portfolio_pnl` |
+| Wallet reads | 2 | `connected_wallets`, `wallet_account` |
 
-The web Desk page (`python -m pathiel.server`) is not part of the plugin.
-It needs a checkout: see "Running it" below.
+`connected_wallets` and `wallet_account` read other addresses and nothing
+else. The server signs with one key, yours, so it has no path to place,
+close or resize an order on any other account; `connected_wallets` says so
+in its own output (`can_this_server_trade_them: false`).
 
-For maintainers: `skills/desk-tick/SKILL.md` and `agents/desk-tick.md` are
-generated from the project copies under `.claude/` by
-`scripts/build_plugin_skill.py` (the gate fails when a copy is stale). The
-skill does the slot check and launches the `desk-tick` agent, which carries
-the whole tick procedure and is pinned to Opus at medium effort so a
-15-minute loop does not spend the session's own model. `scripts/pathiel-mcp`
-and `scripts/pathiel-py` are the plugin's entry points, and `claude plugin
-validate .` checks the manifests.
+The oil desk is the one active desk on a fresh install. It trades Brent
+(`xyz:BRENTOIL`) on mainnet, and WTI (`xyz:CL`) on testnet, where Brent is
+not listed. The metals desk (gold, silver) is registered and off by default;
+`desk_brief` still reads it. The rules each bracket must pass are in
+[docs/strategy/OIL_RULES.md](docs/strategy/OIL_RULES.md).
 
-## MCP server
+## Before you trade
 
-`scripts/pathiel-mcp-server.py` exposes **60 tools over stdio**. The full
-table, regenerated by `scripts/mcp_tool_table.py` from the server's own
-`TOOLS` list, lives in `docs/overhaul/MCP.md`.
+### Networks and modes
 
-The plugin starts it through the launcher `scripts/pathiel-mcp`. Other
-clients (Cursor, Claude Desktop, Pathiel Agent) register
-`scripts/pathiel-mcp` or the container (see "Other MCP clients" above);
-both are the public path. The repo `.mcp.json` and a direct
-`scripts/pathiel-mcp-server.py` launch are the maintainer path:
+The mode follows from what is in `~/.pathiel/.env.local`:
+
+| you have | mode | what works |
+|---|---|---|
+| no key | read-only, mainnet (the default) data | every read tool; order tools answer that no key is configured |
+| an API wallet key | mainnet (the default) | everything, with real money |
+| a key and `PATHIEL_NETWORK=testnet` | testnet | everything, with test funds; the oil desk trades WTI (`xyz:CL`) |
+
+State (theses, journals, caches) is kept per network, so testnet and mainnet
+never share it. Testnet needs its own API wallet, created and approved in the
+testnet app. The network is read once when the server starts: after editing
+the env file, reconnect pathiel in `/mcp`.
+
+### How the safety works
+
+- **An exact stop on every order.** `place_bracket` is the one entry path:
+  entry, stop and target together. It refuses a bracket that pays under 2R,
+  and a stop that sits outside half the distance to liquidation. A market
+  entry fills first and its stop goes on right after; if the venue refuses
+  that stop, the output says `FILLED WITHOUT A STOP` and `bracket_sweep`
+  checks every open position for one.
+- **Default profile: 3x, 1%, one position.** At most 3x leverage, 1% of
+  equity at the stop per trade (up to 2% only when the venue's minimum order
+  size forces it), one position at a time. `set_leverage` refuses above the
+  cap. You change the profile with the `config` tool or in
+  `~/.pathiel/.agent-config.json`; nothing raises it for you.
+- **Read-only without a key.** No key, no orders. The API wallet key can
+  trade and can never withdraw.
+- **Testnet when you want it.** `PATHIEL_NETWORK=testnet` in
+  `~/.pathiel/.env.local` switches to test funds.
+- **Claude Code asks before each live-money call.** The six order tools,
+  and `config`, are marked destructive, so Claude Code asks you before each
+  call unless you allow the tool for good. Nothing runs in the background:
+  no bot, no scheduler. The `/loop` desk tick trades only while your session runs it.
+
+### Builder fee
+
+pathiel is free. It adds a Hyperliquid builder fee of 0.01% of notional per
+fill, 0.02% a round trip (in and out), to every fill pathiel routes for you,
+once you approve it. That is 1 basis point on top of Hyperliquid's own
+trading fee, paid to the project's builder address
+`0x2c2e4efF574B3Fd9879AdeF9c5CAC6fD7C916985`. On a 2,000 USD position the
+round trip costs 0.40 USD. The maintainer's own checkout never attaches one.
+
+### Approving the fee
+
+The fee applies only after you approve it once with your master wallet:
+`/pathiel:setup` prints the command, a dry run by default, which you run in
+your own terminal. Details: [docs/BUILDER_FEE.md](docs/BUILDER_FEE.md).
+Declining is fine: if you never approve, orders go out with no builder fee
+and everything else works the same.
+
+### How Hyperliquid enforces the fee
+
+Hyperliquid itself rejects any order whose builder fee is above the max you
+approved. pathiel asks you to approve exactly the rate it charges, 0.01%, so
+a higher rate would need a new signature from you. Hyperliquid caps a perp
+builder fee at 0.1%. pathiel never blocks an order over the fee: with no
+approval the order goes out without it, and the tool output says so.
+
+### Risk
+
+Leveraged perps can lose the whole account, fast. The default profile limits
+how much one trade can lose at its stop; it does not limit gaps, slippage or
+a run of losses. The profile's daily loss figure is shown, not enforced.
+There is no demonstrated edge and no return is promised. This is software,
+not financial advice. You decide every trade and carry its result.
+
+### Restricted jurisdictions
+
+Hyperliquid's terms bar use from restricted jurisdictions, including by US
+persons. The current list is in Hyperliquid's terms. pathiel does not check
+where you are; staying within the rules where you live is on you.
+
+## FAQ
+
+**Does pathiel trade on its own?**
+No. Claude places an order when you ask for one in the session, and Claude
+Code asks before each live-money call. `/loop 15m /pathiel:desk-tick oil`
+re-prompts Claude on a timer, only while that session stays open.
+
+**Can it withdraw my money?**
+No. pathiel signs with an API wallet, which Hyperliquid lets trade and never
+withdraw. Your master key is never stored; the one step that needs it (the
+fee approval) asks for it at a hidden prompt in your own terminal.
+
+**Do I have to pay the builder fee?**
+No. Skip the approval and every order goes out without it. To stop after
+approving, set `PATHIEL_BUILDER_FEE_TENTHS_BP=0` in `~/.pathiel/.env.local`
+and reconnect.
+
+**How do I practice without real money?**
+Add `PATHIEL_NETWORK=testnet` to `~/.pathiel/.env.local`, create an API
+wallet in the testnet app (app.hyperliquid-testnet.xyz), and reconnect
+pathiel in `/mcp`. The oil desk trades WTI (`xyz:CL`) there.
+
+**Is there an edge?**
+None is demonstrated. The desk briefs are a structured, written call with
+levels, not a forecast. `desk_track_record` grades every call in the open.
+
+**Does it need an Anthropic API key?**
+No. The one model step, the desk thesis behind `desk_refresh`, runs through
+your local Claude Code CLI. Every other tool is plain code.
+
+**How do I remove it?**
+Revoke the API wallet in the Hyperliquid app (More, API), then
+`claude plugin uninstall pathiel@pathiel` and delete `~/.pathiel` if you want
+the keys and state gone.
+
+## Docs
+
+| doc | for |
+|---|---|
+| [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md) | account setup, permissions, prompts from first read to first trade |
+| [docs/BUILDER_FEE.md](docs/BUILDER_FEE.md) | the fee: rate, approval, enforcement, how to stop |
+| [docs/strategy/OIL_RULES.md](docs/strategy/OIL_RULES.md) | the rules every oil bracket must pass, and what is not known |
+| [docs/overhaul/MCP.md](docs/overhaul/MCP.md) | all 60 tools |
+| [SECURITY.md](SECURITY.md) | where keys live, what pathiel never does, how to report a problem |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | dev setup, the test gate, style rules |
+| [CHANGELOG.md](CHANGELOG.md) | what changed per version |
+
+## Maintainer setup
 
 > Maintainer path: this runs mainnet with the tracked repo config (20x, whole-equity sizing). It is not the public install.
 
-Opening a clone of this repo in Claude Code offers the repo `.mcp.json`
-server; accepting it is the maintainer path, not the public install.
-
-| Tool | Description |
-|---|---|
-| `desk_list` | Every desk's one-line card: tagline, primary coin, mid, latest call |
-| `desk_brief` | One desk's current call; quick mode is short markdown, full mode is the structured brief |
-| `desk_refresh` | Write a new thesis (news, then one local model call); skipped unless stale or forced |
-| `desk_submit_call` | Record your own trade call, journaled alongside the machine's theses |
-| `desk_track_record` | Graded-thesis track record (hit rate, mean Brier, mean return) plus the account's fills and realized P&L: closed thesis windows from disk, the open window summed live (`open_window`) |
-| `desk_grade` | Grade expired theses, then accounts' trades against each call |
-| `account_overview` | Active account's equity, where it sits (every dex), positions, can-trade |
-| `accounts` | Registered accounts, which is active |
-| `risk_limits` | Positions at once, $ per stop-out, the daily loss figure (shown, not enforced), max leverage |
-| `risk_size_trade` | Size one trade for this account: size, margin, $ at risk, payoff, liquidation |
-| `place_bracket` | **Live money.** One entry with exact stop and target, sized by the risk profile (the maintainer's: the whole equity less the opening fee), refuses under 2R or a taken slot; `add: true` tops an open position up to full size |
-| `bracket_sweep` | **Live money.** Cancel a stranded sibling order, confirm stop coverage, fold one-per-fill stops/targets at one price into a single pair |
-| `close_position` | **Live money.** Close a coin through the reduce-only close helper |
-| `set_leverage` | **Live money.** Set leverage, keeping the position's own margin type |
-| `cancel_order` | **Live money.** Cancel one resting order by id |
-| `connected_wallets` | Wallets that signed in to the dashboard, read-only by construction |
-| `wallet_account` | Read-only Hyperliquid state for any address |
-
-`connected_wallets` and `wallet_account` report on wallets that signed in to
-the dashboard. This server signs orders with its own key and holds no other,
-so there is no path by which it places, closes or resizes an order on a
-visitor's account; `connected_wallets` says so in its own response
-(`can_this_server_trade_them: false`).
-
-## Dashboard
-
-`python -m pathiel.server`, three pages:
-
-| Path | Page | What it shows |
-|---|---|---|
-| `/` | Desk | The active desk's call as a card (from `quick_fields`), a banner when the call drifts from the open position, one row per wallet with entry/mark/P&L in dollars/ROE % (return on margin, as Hyperliquid prints it)/R/leverage/margin/liquidation/stop/target (a flat watch-only wallet gets no row), a 20x box that shows the open position's own entry, leverage, venue liquidation and stop once one is open (`pathiel/static/position_line.js`), the call's plan otherwise, the wallet's resting bracket entries with their stop and target (an unfilled entry holds the account's one slot, so it is shown even when there is no position), Levels, headlines and catalysts, the loop log, the track record |
-| `/desk/{id}` | Thesis | The full reading room for one desk: the call, a leverage picker (5/10/20x, same 20x line as `/`), scenarios, bull vs bear, what changes the call, desk school, track record, make-your-own-call |
-| `/account` | Account | Connect or switch a Hyperliquid account, risk preset with a live preview |
-
-The leverage line reads "Stop clears 20x liquidation" or "Stop too close for
-20x" depending on `check_leverage`'s verdict. Pages poll with `pollEvery`
-(`pathiel/static/pathiel.js`); the next poll waits for the last answer, and
-a hidden or prerendered tab stops polling and resumes on
-`visibilitychange`/`prerenderingchange` (`tests/test_page_polling.py`).
-
-## Venue budget
-
-`pathiel/client/rate_limit.py` is a token bucket shared by every outbound
-Hyperliquid call. The server runs at 200 burst + 8 weight/s (`scripts/restart.sh`),
-sized for one headless desk plus the MCP server's own reads; Hyperliquid's
-own ceiling is 1,200 weight/min. Every request is labelled
-`<type><<module.function>` by the first caller frame outside
-`pathiel.client`, so `GET /api/health/system` -> `hl_budget` shows weight
-granted and refused per request type and caller. Check this first when a
-page shows dashes instead of numbers.
-
-No request handler blocks the server's event loop: every handler that calls
-Hyperliquid, the model, or the exchange is a plain `def` (FastAPI's thread
-pool) rather than `async def`; `tests/test_no_blocking_on_the_event_loop.py`
-checks every route module.
-
-## The account
-
-There is no sign-in gate for the operator's own box. The account is the
-agent wallet in `.env.local` (`~/.pathiel/.env.local` for the plugin):
-`HYPERLIQUID_WALLET_ADDRESS` and `HYPERLIQUID_PRIVATE_KEY` for an agent
-wallet created in the Hyperliquid app (More, API), `HYPERLIQUID_MASTER_ADDRESS`
-for the account it acts for. An agent key can trade and can never withdraw;
-the master key stays in your wallet. The Account page shows it as the
-active account and lets you pick a risk preset with a live preview.
-
-The browser wallet picker (connect, API key, watch an address) was removed
-on 2026-10-25; `docs/WALLET_UI_RESTORE.md` has what it was and how to bring
-it back. `services/accounts/positions.py` skips any dex holding under
-`DUST_USD` ($1) with no position, so a wallet spread across six dexes reads
-one dex instead of six; a failed read never reports as a flat account, and
-the last good snapshot serves while a fresh one is fetched.
-
-### Sizing any account, $10 to $100k
-
-Sizing comes from four plain settings: risk per trade, daily pause, max
-leverage and max positions. A preset picked from equity fills them in, and
-`services/risk/derive.py` derives everything else:
-
-| preset | equity | risk / trade | daily pause | max leverage | positions |
-|---|---|---|---|---|---|
-| starter | under $1k | 3% | 8% | 10x | 1 |
-| small | $1k-$10k | 2% | 6% | 8x | up to 3 |
-| standard | $10k-$50k | 1.5% | 5% | 6x | up to 6 |
-| pro | $50k+ | 1% | 4% | 5x | up to 10 |
-
-The operator's own account runs a custom profile outside this table (risk
-100%, daily pause 100%, 20x, one position), not one of the four presets.
-Three guarantees hold for every preset and for custom settings,
-property-tested from $5 to $100k (`services/risk/tests/test_derive.py`):
-
-1. A trade never plans to risk more than the daily pause.
-2. The daily pause always fits one minimum-size trade, or a $15 account
-   could never trade at all.
-3. Max positions times the worst stop-out fits inside the daily pause.
-
-Old configs migrate automatically into a custom profile, shown as "Custom
-(from your old settings)" on `/account`. A checkout with no saved profile
-starts on "auto". A public install starts on the public profile instead:
-custom, 1% risk per trade, 3% daily figure, at most 3x, one position.
-
-The daily pause is a sizing input: the guarantees above use it to bound
-what one trade can plan to lose. Nothing stops trading for the day when
-losses reach it.
-
-## Configuration
-
-Two files, and they bootstrap differently:
-
-| File | Ships with repo? | You... | Read |
-|---|---|---|---|
-| `.agent-config.json` | Yes, tracked | edit it (don't create) | fresh on every trade, no restart |
-| `.env.local` | No, gitignored | create it: `cp .env.local.example .env.local` | at process start, restart to apply |
-
-`.agent-config.json` today carries 8 top-level keys: `mode`, `enable_hip3`,
-`coin_allowlist`, `coin_blocklist`, `hip3_dex_allowlist`, `hip3_dex_blocklist`,
-`risk_profile` and `active_desks`. Everything the old scan/research/execute
-engine read (sizing fractions, gate thresholds, DSL exit tuning) is gone with
-that engine, and the `ai_brain` provider block went with the brain module on
-2026-10-25.
-
-### `.env.local`: credentials
+This is how the maintainer runs pathiel on his own account, from a checkout.
+It is not the public install and its numbers are not the defaults.
 
 ```bash
-HYPERLIQUID_WALLET_ADDRESS=0x...   # required: the agent wallet that signs orders
-HYPERLIQUID_PRIVATE_KEY=0x...      # required: that wallet's key
-HYPERLIQUID_MASTER_ADDRESS=0x...   # optional: set for an agent-wallet setup
-
-# services/intel: every one of these is optional; a missing key skips that
-# source cleanly rather than failing the brief. Run scripts/intel_keys.py to
-# see which are set.
-EIA_API_KEY=...        # free, eia.gov/opendata/register.php
-FRED_API_KEY=...       # free, fred.stlouisfed.org/docs/api/api_key.html
-CONGRESS_API_KEY=...   # free, api.congress.gov/sign-up/
-
-# PATHIEL_LLM_MODEL=...          # optional: pin the model services/llm hands the
-                                 # local Claude Code CLI; there is no LLM API key
+git clone https://github.com/Julian-dev28/pathiel
+cd pathiel
+cp .env.local.example .env.local
+scripts/restart.sh          # FastAPI Desk page on http://localhost:8000/ and the log rotator
+scripts/restart.sh status
 ```
 
-`.env.local.example` at the repo root lists the same keys with the sign-up
-URL for each; `scripts/intel_keys.py` says which are set.
+- **MCP server.** The repo `.mcp.json` starts
+  `scripts/pathiel-mcp-server.py` directly, with no install marker, so it
+  runs mainnet on the tracked `.agent-config.json`. Opening a clone in
+  Claude Code offers that server; accepting it is the maintainer path, not
+  the public install. Other clients that want the public path register
+  `scripts/pathiel-mcp`.
+- **Risk profile.** The tracked config sets 20x, the whole equity per
+  position less the opening fee, one position. The rules `place_bracket`
+  enforces (2R minimum, stop inside half the distance to liquidation, one
+  slot) hold on both paths.
+- **Desk loop.** `.claude/skills/desk-tick/SKILL.md` on `/loop 15m /desk-tick oil`.
+  `scripts/build_plugin_skill.py` generates the plugin copies under
+  `skills/` and `agents/`; the gate fails when a copy is stale.
+- **Gate.** `PATHIEL_STATE_DIR=$(mktemp -d) .venv/bin/python -m pytest -q`,
+  offline, run by `scripts/hooks/pre-commit` (`scripts/install_hooks.sh`
+  wires it in). `scripts/mcp_tool_table.py` regenerates the tool table;
+  `.venv/bin/python scripts/mcp_smoke.py` is a live, read-only MCP smoke.
+- **Keys.** `scripts/preflight_secrets.py` checks the env file without
+  printing it; `docs/SECRETS.md` lists every secret and how to rotate it.
 
-## Security
+More: [CONTRIBUTING.md](CONTRIBUTING.md) for the code layout,
+[SECURITY.md](SECURITY.md) for the hardening checks.
 
-What leaves the machine and what does not, and the checks that enforce it.
+## License
 
-| rule | how it is enforced |
-|---|---|
-| Keys live in one file the operator owns: `.env.local` in a checkout, `~/.pathiel/.env.local` for a plugin install, mode 0600, gitignored. Precedence: `PATHIEL_ENV_FILE`, then the checkout, then home | `scripts/_state_env.py` is the one loader; `tests/test_plugin.py` pins the precedence |
-| The trading key is an agent wallet, never the master key. `HYPERLIQUID_MASTER_PRIVATE_KEY` exists only for `scripts/treasury.py` on the operator's machine | `scripts/preflight_secrets.py` fails on a master key in a deploy, on a missing required key, on a world-readable env file, on a tracked env file, and on any secret value found in the git index |
-| No LLM API key anywhere. The one model call (the desk thesis writer) goes through the local Claude Code CLI; a container cannot write a thesis and says so | `services/llm`; the brain module that held hosted-provider keys was deleted 2026-10-25 |
-| Live-money MCP tools (`place_bracket`, `bracket_sweep`, `close_position`, `set_leverage`, `cancel_order`, `config` with arguments) run only on an explicit ask in the conversation; one position per account; stop inside half the distance to liquidation | the MCP server's instructions, `pathiel/agents/bracket.py`, `services/risk` |
-| Nothing secret in the image, the k8s ConfigMap or any tracked file; the k8s Secret is created from the operator's shell | `DEPLOY.md`, `k8s/secret.example.yaml`, `tests/test_deploy_config.py` |
-| The test gate makes no network calls and starts from an empty venue cache, so a warm cache on one machine cannot hide a leak CI would hit | `conftest.py` refuses every non-loopback host and errors the test at teardown |
-| Dependencies are pinned in `requirements.lock` with hashes; CI and the image install from it with `--require-hashes`. There is no Node in the repo since 2026-10-25 | `.github/workflows/ci.yml`, `scripts/supply_chain_check.py` |
-
-| Desk writes (`POST /api/desks/{id}/theses`, `/refresh`) and the loop log are gated: local mode, else the deployment's operator. Local mode needs a loopback peer, a loopback Host and a loopback Origin, which closes DNS rebinding | `services/strategies/api.py`, `services/auth/integration.py`; `tests/test_http_hardening.py` |
-| No wildcard CORS; bodies capped at 1 MiB; API docs off on any deployment; `/metrics` can require a bearer token | `pathiel/server.py` (`PATHIEL_CORS_ORIGINS`, `PATHIEL_MAX_BODY_BYTES`, `PATHIEL_API_DOCS`, `PATHIEL_METRICS_TOKEN`) |
-| The image runs as uid 10001 and never as root; the entrypoint drops privileges before the app starts | `Dockerfile`, `docker-entrypoint.sh`, `tests/test_deploy_config.py` |
-| Writes off the operator's machine need a signed-in operator; there is no shared token. On a deployment nobody becomes operator by signing in first, the role is granted with `scripts/grant_operator.py` | `pathiel/dashboard.py`, `k8s/configmap.yaml`; `tests/test_operator_auth.py`, `tests/test_risk_panel.py` |
-
-The inventory of every secret, who reads it and how to rotate it is
-`docs/SECRETS.md`. The supply-chain and web-service review of 2026-10-25,
-with every finding, its fix and what is still open, is
-`docs/security/SUPPLY_CHAIN_2026-10-25.md`.
-
-## Running it
-
-> Maintainer path: this runs mainnet with the tracked repo config (20x, whole-equity sizing). It is not the public install.
-
-```bash
-scripts/restart.sh          # stop + start the FastAPI server and the log rotator
-scripts/restart.sh status   # what's running
-```
-
-The MCP server is not managed by `restart.sh`: it is a transient stdio
-process Claude Code spawns on each tool call, not a long-running daemon.
-There is no autonomous trading loop or scheduler process any more; the
-desk-tick skill is what re-prompts Claude on an interval, and it does
-nothing while no Claude session is running it.
-
-```bash
-PATHIEL_STATE_DIR=$(mktemp -d) .venv/bin/python -m pytest -q   # gate: offline, ~2,700 tests
-pytest -m online        # read-only tests against the live Hyperliquid API
-pytest -m browser       # Playwright e2e for every page
-.venv/bin/python scripts/mcp_smoke.py   # live, read-only MCP smoke
-```
-
-The gate suite runs in `scripts/hooks/pre-commit` on every commit
-(`scripts/install_hooks.sh` to wire it in): no absolute paths bound to one
-machine, staged Python parses, ruff is clean, then the full offline suite.
-Hooks are never skipped with `--no-verify`; a failing hook gets fixed.
-`conftest.py` refuses any host that is not loopback, so the default lane
-can place no orders by construction.
-
-## What was removed
-
-Two waves, both 2026-10-23, both operator decisions, both documented in
-full:
-
-- **The seven autonomous strategy books** and the claims registry that
-  coordinated them. `docs/overhaul/HEADLESS_2026-10-23.md`.
-- **The autonomous engine itself**: the scan/research/execute loop, the 11
-  risk gates, the DSL exit engine, the trade-ledger memory, the scheduler.
-  Claude is the only trader left, placing every order through
-  `place_bracket`/`bracket_sweep`/`close_position`. Same doc, wave 2
-  section.
-- **The bot-watching dashboard pages** (`/activity`, `/news`, `/trends`,
-  `/analytics`, the `/desks` grid): nothing left to watch once the books
-  and the engine were gone. `docs/overhaul/DESK_UI_2026-10-23.md`.
-- **The kill switch, the status pill, the operator-token popover**: removed
-  from the Desk and Thesis pages 2026-10-24, same commit that turned the
-  call into a card.
-
-## Project structure
-
-```
-pathiel/
-├── pathiel/
-│   ├── server.py                  # FastAPI app, page routes, health, grading loop
-│   ├── dashboard.py                # Desk and Account page handlers, payload builders
-│   ├── state.py                    # shared state-directory resolver
-│   ├── agents/
-│   │   ├── bracket.py              # place_bracket, bracket_sweep, close_position, the 20x rule
-│   │   ├── book_params.py           # the sizing-floor resolver place_bracket still prices against
-│   │   ├── capital_flows.py         # deposits/withdrawals, flow-neutral drawdown
-│   │   └── hyperfeed.py             # market data for the MCP market_* tools, funding regime
-│   ├── client/
-│   │   ├── hl_client.py             # Hyperliquid REST client
-│   │   ├── exchange.py              # order placement, leverage setting
-│   │   ├── account_snapshot.py      # shared, cached account reads
-│   │   └── rate_limit.py            # the venue token bucket
-│   └── templates/, static/          # oil_desk.html/.js, desk.html, account.html
-├── services/
-│   ├── strategies/                  # desk registry, analytics, journal, grader, trade grading
-│   ├── thesis/                      # prompt, validator, render (the one LLM step)
-│   ├── intel/                       # news, EIA, FRED, CBOE, EDGAR, positioning, predictions
-│   ├── llm/                         # gateway to the local Claude Code CLI
-│   ├── risk/                        # RiskProfile -> derive_limits, presets
-│   ├── accounts/                    # registry, vault, positions, credentials
-│   └── auth/                        # SIWE sessions, operator role
-├── contracts/                       # shared pydantic models (risk, strategies, accounts)
-├── scripts/
-│   ├── pathiel-mcp-server.py        # MCP server (stdio, 60 tools)
-│   ├── desk_slot.py, oil_levels.py  # desk-tick's own tools
-│   ├── restart.sh                   # server + log rotator
-│   └── mcp_tool_table.py            # regenerates docs/overhaul/MCP.md
-├── docs/overhaul/                   # the headless-desk and desk-ui removal writeups
-└── tests/                           # pytest: offline gate, online, browser, live e2e
-```
-
-## Built with
-
-- FastAPI, vanilla HTML/CSS/JS (no frontend framework)
-- Hyperliquid Python SDK
-- `services/llm`, a gateway to the local Claude Code CLI, the project's one
-  sanctioned path to an LLM
-- Pydantic contracts (`contracts/`) as the shared schema between services
+MIT. See [LICENSE](LICENSE).
