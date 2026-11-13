@@ -246,7 +246,7 @@ def test_plugin_and_marketplace_descriptions_disclose_fee_and_network():
     for label, desc in (("plugin.json", _json(PLUGIN_JSON)["description"]),
                         ("marketplace.json", _json(MARKET_JSON)["plugins"][0]["description"])):
         low = desc.lower()
-        assert "64 MCP tools" in desc, label
+        assert "65 MCP tools" in desc, label
         assert "exact stop and target" in low, label
         assert "mainnet by default" in low and "testnet opt-in" in low, label
         assert "read-only without a key" in low, label

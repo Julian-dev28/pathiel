@@ -9,7 +9,7 @@
     {
       "name": "pathiel",
       "source": "./",
-      "description": "AI trading agent for Hyperliquid: Claude trades perps with an exact stop and target on every order. 64 MCP tools: desk briefs for oil and metals, bracket orders, risk sizing (3x, 1% per trade, one position by default), account reads. Mainnet by default, testnet opt-in, read-only without a key. Free: no builder fee.",
+      "description": "AI trading agent for Hyperliquid: Claude trades perps with an exact stop and target on every order. 65 MCP tools: desk briefs for oil and metals, bracket orders, risk sizing (3x, 1% per trade, one position by default), account reads. Mainnet by default, testnet opt-in, read-only without a key. Free: no builder fee.",
       "category": "finance",
       "keywords": ["hyperliquid", "trading", "perps", "mcp", "claude-code", "risk-management", "oil", "gold", "ai-agent", "trading-agent", "ai-trading"]
     }

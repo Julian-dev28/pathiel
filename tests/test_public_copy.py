@@ -493,11 +493,11 @@ def test_readme_no_longer_claims_mode_off_or_an_edge():
 
 def test_readme_keeps_tool_count_and_getting_started_link():
     readme = _read("README.md")
-    assert "64 tools over stdio" in readme
+    assert "65 tools over stdio" in readme
     assert "docs/GETTING_STARTED.md" in readme
     for tool in ("place_bracket", "bracket_sweep", "close_position", "set_leverage",
                  "cancel_order", "connected_wallets", "wallet_account", "desk_brief",
-                 "pool_status", "pool_report", "pool_join", "pool_leave"):
+                 "pool_status", "pool_report", "pool_join", "pool_leave", "wallet_connect"):
         assert f"`{tool}`" in readme, tool
 
 

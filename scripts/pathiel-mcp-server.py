@@ -64,6 +64,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import contracts.runtime as runtime  # noqa: E402
 import contracts.pool as pool_contract  # noqa: E402 - stdlib only at import, safe at operator start
+import contracts.wallet_connect as wallet_connect_contract  # noqa: E402 - stdlib only, as above
 from pathiel import __version__
 from pathiel.agents.config_store import read_agent_config
 from pathiel.client.hl_client import fetch_account_state, resolve_user_address
@@ -185,7 +186,7 @@ def _public_trading_line() -> str:
         reason = "no key could be read"
     if reason:
         return ("Trading: read-only. No key is configured, so the six live-money tools refuse; "
-                "every read works. /pathiel:setup adds an API wallet key.")
+                "every read works. wallet_connect adds a key with one wallet signature.")
     return "Trading: enabled. An API wallet key is configured for this network."
 
 
@@ -1089,6 +1090,10 @@ LIVE_MONEY_TOOLS = frozenset({"close_position", "set_leverage", "cancel_order",
                               "place_bracket", "bracket_sweep", "set_target"})
 LIVE_CONFIG_TOOLS = frozenset({"config"})
 LOCAL_WRITE_TOOLS = frozenset({"desk_refresh", "desk_submit_call", "desk_grade"})
+# Writes trading credentials to the user's env file (wallet_connect, public
+# installs only): destructive, so the client asks first, but no order and no
+# transfer, so never LIVE MONEY.
+ACCOUNT_SETUP_TOOLS = frozenset({wallet_connect_contract.TOOL_NAME})
 
 
 def _annotate_tools(tools: List[Dict[str, Any]]) -> None:
@@ -1103,6 +1108,8 @@ def _annotate_tools(tools: List[Dict[str, Any]]) -> None:
                 tool["description"] = "LIVE MONEY: acts on the real account. " + tool["description"]
         elif name in LIVE_CONFIG_TOOLS:
             ann = {"destructiveHint": True, "idempotentHint": True}
+        elif name in ACCOUNT_SETUP_TOOLS:
+            ann = {"destructiveHint": True}
         elif name in LOCAL_WRITE_TOOLS:
             ann = {"destructiveHint": False}
         else:
@@ -1436,6 +1443,12 @@ def _tool_handlers() -> Dict[str, Any]:
     for _pool_tool_name in pool_contract.MCP_HANDLERS:
         tool_handlers[_pool_tool_name] = pool_contract.mcp_handler(_pool_tool_name)
 
+    # Wallet connect: wired on every install like the pool tools, listed on a
+    # public one only. mcp_handler() refuses on the operator's checkout
+    # (operator_install) before importing services.accounts.connect_wallet,
+    # so the maintainer's .env.local can never be written through it.
+    tool_handlers[wallet_connect_contract.TOOL_NAME] = wallet_connect_contract.mcp_handler()
+
     # Hidden aliases: old tool names from before the 2026-10-17 consolidation,
     # dispatched to the handler that now covers them but no longer listed in
     # TOOLS (tools/list). Every existing client that calls one of these by
@@ -1514,6 +1527,7 @@ TOOL_CLASSES: Dict[str, frozenset] = {
     "market_read": MARKET_READ_TOOLS, "account_read": ACCOUNT_READ_TOOLS,
     "local_read": LOCAL_READ_TOOLS, "live_money": LIVE_MONEY_TOOLS,
     "live_config": LIVE_CONFIG_TOOLS, "local_write": LOCAL_WRITE_TOOLS,
+    "account_setup": ACCOUNT_SETUP_TOOLS,
 }
 
 # ── research pool: four tools, public installs only ─────────────────────────
@@ -1538,6 +1552,17 @@ TOOL_CLASSES["local_write"] = LOCAL_WRITE_TOOLS
 _annotate_tools(POOL_TOOLS)   # pool_join/pool_leave land in LOCAL_WRITE_TOOLS above, not
                               # LIVE_MONEY_TOOLS: destructiveHint false, never in LIVE_MONEY_TOOLS.
 
+# ── wallet connect: one tool, public installs only ──────────────────────────
+# Listed in server_tools() before the pool tools, only when runtime.is_public().
+# Never in TOOLS, so the operator's tools/list stays byte-identical at 60.
+if wallet_connect_contract.MCP_TOOL_CLASS != "account_setup":
+    raise RuntimeError("wallet_connect: unknown MCP_TOOL_CLASS "
+                       f"{wallet_connect_contract.MCP_TOOL_CLASS!r}")
+WALLET_CONNECT_TOOLS: List[Dict[str, Any]] = [copy.deepcopy(wallet_connect_contract.MCP_TOOL)]
+_annotate_tools(WALLET_CONNECT_TOOLS)   # ACCOUNT_SETUP_TOOLS: destructiveHint true
+# Every tool a public install lists that the operator's TOOLS does not.
+PUBLIC_ONLY_TOOLS: List[Dict[str, Any]] = WALLET_CONNECT_TOOLS + POOL_TOOLS
+
 # An account read that is a what-if when any of these arguments is given: it
 # needs no account then.
 _ACCOUNT_READ_WHAT_IF: Dict[str, Tuple[str, ...]] = {
@@ -1557,10 +1582,11 @@ def _check_tool_classes() -> List[str]:
     and bracket_sweep while a position is open. The gate tests still fail on
     any problem (tests/test_mcp_public_mode.py).
 
-    Checks TOOLS + POOL_TOOLS together: the pool tools are never in TOOLS
-    itself (the operator's tools/list stays byte-identical), but they must
-    still land in exactly one class, same as every other tool."""
-    names = [t["name"] for t in TOOLS] + [t["name"] for t in POOL_TOOLS]
+    Checks TOOLS + PUBLIC_ONLY_TOOLS together: the pool tools and
+    wallet_connect are never in TOOLS itself (the operator's tools/list stays
+    byte-identical), but they must still land in exactly one class, same as
+    every other tool."""
+    names = [t["name"] for t in TOOLS] + [t["name"] for t in PUBLIC_ONLY_TOOLS]
     problems = []
     for name in names:
         homes = [k for k, s in TOOL_CLASSES.items() if name in s]
@@ -1569,7 +1595,7 @@ def _check_tool_classes() -> List[str]:
     listed = set(names)
     for k, s in TOOL_CLASSES.items():
         for name in sorted(s - listed):
-            problems.append(f"{name}: in {k} but not in TOOLS or POOL_TOOLS")
+            problems.append(f"{name}: in {k} but not in TOOLS or PUBLIC_ONLY_TOOLS")
     for alias, target in ALIASES.items():
         if target not in listed:
             problems.append(f"alias {alias} -> {target}: not a TOOLS name")
@@ -1618,8 +1644,9 @@ _PUBLIC_TOOLS: "List[Dict[str, Any]] | None" = None
 def server_tools() -> List[Dict[str, Any]]:
     """tools/list. TOOLS itself on the operator's install (60, byte-identical).
     On a public one, a deep copy with _PUBLIC_DESCRIPTION_OVERRIDES applied
-    (same names, order, inputSchema and annotations as TOOLS) plus the four
-    research-pool tools appended with the contract's own descriptions: 64."""
+    (same names, order, inputSchema and annotations as TOOLS), then
+    wallet_connect and the four research-pool tools, each with its contract's
+    own description: 65."""
     global _PUBLIC_TOOLS
     if not runtime.is_public():
         return TOOLS
@@ -1629,7 +1656,7 @@ def server_tools() -> List[Dict[str, Any]]:
             override = _PUBLIC_DESCRIPTION_OVERRIDES.get(tool["name"])
             if override is not None:
                 tool["description"] = override
-        _PUBLIC_TOOLS = tools + copy.deepcopy(POOL_TOOLS)
+        _PUBLIC_TOOLS = tools + copy.deepcopy(PUBLIC_ONLY_TOOLS)
     return _PUBLIC_TOOLS
 
 
@@ -1682,7 +1709,7 @@ def _profile_leverage_cap() -> "float | None":
 
 def _user_given(canon: str, args: Dict[str, Any]) -> bool:
     """True when the call names its own address and the tool honors it."""
-    tool = next((t for t in TOOLS + POOL_TOOLS if t["name"] == canon), None)
+    tool = next((t for t in TOOLS + PUBLIC_ONLY_TOOLS if t["name"] == canon), None)
     props = ((tool or {}).get("inputSchema") or {}).get("properties") or {}
     for key in ("user", "address"):
         if key in props and str(args.get(key) or "").strip():

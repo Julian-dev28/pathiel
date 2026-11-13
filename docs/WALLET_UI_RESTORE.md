@@ -1,5 +1,10 @@
 # The wallet connect UI: what it was, how to bring it back, how to test it
 
+Plugin installs got a no-npm successor on 2026-11-13: `wallet_connect`
+(`services/accounts/connect_wallet.py`), a one-shot vanilla JS page served
+by the standard library that signs the same `approveAgent`. Read it before
+restoring this modal.
+
 Removed 2026-10-25. Operator: "delete it ... if this gets removed, make a doc
 on how to restore and test it in the future, seems cool but for now i just
 want the personal trading thing."

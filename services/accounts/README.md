@@ -17,7 +17,8 @@ agent key places trades and can never withdraw.
 | `env.py` | `$PATHIEL_STATE_DIR` resolution — self-contained, mirrors `services/intel/env.py` |
 | `registry.py` | `accounts.json`: labels, addresses, mode, source, which one is active |
 | `vault.py` | Agent private keys, encrypted at rest (`eth_account`'s keystore format), one file per account id |
-| `agent_approval.py` | The `approveAgent` EIP-712 flow: typed data, signature recovery, the (real, never-called-by-tests) `/exchange` submission |
+| `agent_approval.py` | The `approveAgent` EIP-712 flow: typed data (mainnet and testnet), signature recovery, the wire payload, the (real, never-called-by-tests) `/exchange` submission |
+| `connect_wallet.py` | The plugin's "connect your Hyperliquid wallet" flow: agent key made locally, one-shot signing page on 127.0.0.1, approveAgent posted once, confirmed by `/info`, written to the env file. MCP tool `wallet_connect`, CLI `scripts/connect_wallet.py`; contract `contracts/wallet_connect` |
 | `hl_verify.py` | Read-only Hyperliquid `/info` checks (`extraAgents`, `userRole`) |
 | `pending.py` | In-memory `prepare` → `confirm` handshake, single-use |
 | `credentials.py` | `get_trading_credentials()` — what `pathiel/client/exchange.py` actually signs orders with |

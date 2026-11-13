@@ -135,11 +135,11 @@ def test_check_tool_classes_has_no_problems_with_the_pool_wired_in():
     assert M._check_tool_classes() == []
 
 
-# ── public tools/list: 64, the pool's own descriptions ──────────────────────
+# ── public tools/list: 65, the pool's own descriptions ──────────────────────
 
-def test_public_tools_list_has_64_names_with_pool_tools_last(no_key):
+def test_public_tools_list_has_65_names_with_pool_tools_last(no_key):
     listed = no_key.rpc("tools/list")["result"]["tools"]
-    assert len(listed) == 64
+    assert len(listed) == 65
     assert [t["name"] for t in listed][-4:] == POOL_TOOL_NAMES
     by_name = {t["name"]: t for t in listed}
     for contract_tool in pool_contract.MCP_TOOLS:

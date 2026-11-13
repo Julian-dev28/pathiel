@@ -4,10 +4,14 @@ Typed-data construction mirrors `hyperliquid.utils.signing.sign_agent` /
 `sign_user_signed_action` / `user_signed_payload` from the installed SDK
 (`.venv/lib/python3.13/site-packages/hyperliquid/utils/signing.py`) exactly —
 same domain, same `HyperliquidTransaction:ApproveAgent` type, same
-`signatureChainId`, same mainnet `hyperliquidChain`. Mainnet only:
-`submit_approve_agent` refuses before posting when contracts.runtime resolves
-any other network (a public install that set PATHIEL_NETWORK=testnet;
-approve the API wallet in the Hyperliquid testnet app there).
+`signatureChainId`, same `hyperliquidChain`. `build_typed_data` and
+`build_exchange_payload` take the chain ('Mainnet' or 'Testnet', the SDK's two
+values; `hyperliquid_chain_for` maps a contracts.runtime network to it) and
+default to 'Mainnet', so every existing caller signs exactly what it did.
+`submit_approve_agent` (the dashboard route) stays mainnet only: it refuses
+before posting when contracts.runtime resolves any other network. The plugin's
+wallet connect flow (services/accounts/connect_wallet.py) builds its own
+payload for the resolved network and posts it once.
 
 Two things never happen outside a mocked test, per
 docs/overhaul/SWARM_RULES.md section 10 (this wave's extra live-money rule):
@@ -48,6 +52,20 @@ DEFAULT_WALLET_SIGNATURE_CHAIN_ID = 42161
 
 PRIMARY_TYPE = "HyperliquidTransaction:ApproveAgent"
 
+# hyperliquid.utils.signing.sign_user_signed_action: "Mainnet" if is_mainnet
+# else "Testnet". It names the venue the action is for and stops a testnet
+# signature from being replayed on mainnet (and the reverse).
+HYPERLIQUID_CHAINS = {"mainnet": "Mainnet", "testnet": "Testnet"}
+
+
+def hyperliquid_chain_for(network: str) -> str:
+    """'Mainnet' or 'Testnet' for a contracts.runtime network name. Raises
+    ValueError on anything else: a typo must never sign for mainnet."""
+    try:
+        return HYPERLIQUID_CHAINS[str(network)]
+    except KeyError:
+        raise ValueError(f"unknown network {network!r}; expected mainnet or testnet") from None
+
 # The SDK's sign_agent() passes exactly these 4 fields as the typed struct.
 APPROVE_AGENT_FIELDS = [
     {"name": "hyperliquidChain", "type": "string"},
@@ -71,7 +89,8 @@ def new_nonce_ms() -> int:
 
 
 def build_typed_data(agent_address: str, nonce_ms: int, agent_name: str = AGENT_NAME,
-                     signature_chain_id: int | None = None) -> Dict[str, Any]:
+                     signature_chain_id: int | None = None,
+                     hyperliquid_chain: str = "Mainnet") -> Dict[str, Any]:
     """The exact object the connected wallet signs with `eth_signTypedData_v4`.
 
     The SDK's own in-memory action dict carries two extra keys at the point it
@@ -85,7 +104,12 @@ def build_typed_data(agent_address: str, nonce_ms: int, agent_name: str = AGENT_
     them out here is therefore not a divergence from the SDK's signature at
     all, and it keeps what the wallet shows the user to exactly the 4 fields
     that matter: chain, agent address, agent name, nonce.
+
+    `hyperliquid_chain` is 'Mainnet' (the default, every existing caller) or
+    'Testnet'; anything else raises ValueError.
     """
+    if hyperliquid_chain not in HYPERLIQUID_CHAINS.values():
+        raise ValueError(f"hyperliquid_chain must be Mainnet or Testnet, got {hyperliquid_chain!r}")
     chain_id = int(signature_chain_id) if signature_chain_id else int(SIGNATURE_CHAIN_ID_HEX, 16)
     return {
         "domain": {
@@ -100,7 +124,7 @@ def build_typed_data(agent_address: str, nonce_ms: int, agent_name: str = AGENT_
         },
         "primaryType": PRIMARY_TYPE,
         "message": {
-            "hyperliquidChain": "Mainnet",
+            "hyperliquidChain": hyperliquid_chain,
             "agentAddress": agent_address,
             "agentName": agent_name,
             "nonce": nonce_ms,
@@ -135,6 +159,35 @@ def _split_signature(signature_hex: str) -> Dict[str, Any]:
     return {"r": to_hex(r_int), "s": to_hex(s_int), "v": v_int}
 
 
+def build_exchange_payload(agent_address: str, agent_name: str, nonce_ms: int,
+                           signature_hex: str, signature_chain_id: int | None = None,
+                           hyperliquid_chain: str = "Mainnet") -> Dict[str, Any]:
+    """The `/exchange` body for an already-signed approveAgent, in the wire
+    shape the installed SDK's `Exchange.approve_agent` posts: the action
+    carries `signatureChainId` and `hyperliquidChain` because
+    `sign_user_signed_action` adds both to the action in place before
+    `_post_action` sends it. Signs nothing and sends nothing."""
+    if hyperliquid_chain not in HYPERLIQUID_CHAINS.values():
+        raise ValueError(f"hyperliquid_chain must be Mainnet or Testnet, got {hyperliquid_chain!r}")
+    action = {
+        "type": "approveAgent",
+        "agentAddress": agent_address,
+        "agentName": agent_name,
+        "nonce": nonce_ms,
+        # Must equal the domain chainId the wallet signed, or Hyperliquid
+        # recovers a different signer and rejects the approval.
+        "signatureChainId": hex(int(signature_chain_id)) if signature_chain_id else SIGNATURE_CHAIN_ID_HEX,
+        "hyperliquidChain": hyperliquid_chain,
+    }
+    return {
+        "action": action,
+        "nonce": nonce_ms,
+        "signature": _split_signature(signature_hex),
+        "vaultAddress": None,
+        "expiresAfter": None,
+    }
+
+
 def submit_approve_agent(agent_address: str, agent_name: str, nonce_ms: int,
                           signature_hex: str, signature_chain_id: int | None = None) -> Dict[str, Any]:
     """Submit the ALREADY-SIGNED approveAgent action to Hyperliquid's
@@ -162,21 +215,6 @@ def submit_approve_agent(agent_address: str, agent_name: str, nonce_ms: int,
     """
     if _runtime.network() != "mainnet":
         raise RuntimeError("wallet approval through the dashboard is mainnet only")
-    action = {
-        "type": "approveAgent",
-        "agentAddress": agent_address,
-        "agentName": agent_name,
-        "nonce": nonce_ms,
-        # Must equal the domain chainId the wallet signed, or Hyperliquid
-        # recovers a different signer and rejects the approval.
-        "signatureChainId": hex(int(signature_chain_id)) if signature_chain_id else SIGNATURE_CHAIN_ID_HEX,
-        "hyperliquidChain": "Mainnet",
-    }
-    payload = {
-        "action": action,
-        "nonce": nonce_ms,
-        "signature": _split_signature(signature_hex),
-        "vaultAddress": None,
-        "expiresAfter": None,
-    }
+    payload = build_exchange_payload(agent_address, agent_name, nonce_ms, signature_hex,
+                                     signature_chain_id=signature_chain_id)
     return _http_post_strict("/exchange", payload)
