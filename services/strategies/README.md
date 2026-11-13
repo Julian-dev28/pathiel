@@ -183,7 +183,11 @@ does both).
 
 Each primary instrument gets one `LadderRung` per `(leverage, side)` in
 `spec.leverage_ladder`, filtered to leverages the venue actually allows
-(`leverage <= max_leverage`). Each rung runs ONE path-dependent simulation
+(`leverage <= max_leverage`). On a public install (`PATHIEL_INSTALL=public`)
+`desks.get_spec` first cuts the ladder to the risk profile's `max_leverage`,
+adding 2x and 3x when fewer than two rungs survive, so the public 3x profile
+sees 2x/3x and never a rung it would refuse. The operator's install gets the
+desk's own ladder. Each rung runs ONE path-dependent simulation
 over every historical horizon-day window (daily bars, intraday low/high as
 the liquidation/stop proxy), with the suggested stop (60% of the liquidation
 distance) ACTIVE throughout — see the long comment on

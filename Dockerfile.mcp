@@ -1,0 +1,70 @@
+# pathiel MCP server as a container, for MCP registries and clients that run
+# servers as images. The public code path: the same launcher as the Claude Code
+# plugin (scripts/pathiel-mcp), so a container starts on Hyperliquid MAINNET
+# with the public default risk profile (3x, 1% a trade, one position) and
+# read-only until a key is given. With a key it trades REAL MONEY.
+#
+#   docker build -f Dockerfile.mcp -t pathiel-mcp .
+#   docker run -i --rm -v pathiel-data:/data pathiel-mcp                      # read-only, mainnet
+#   docker run -i --rm -v pathiel-data:/data -e PATHIEL_NETWORK=testnet \
+#     -e HYPERLIQUID_WALLET_ADDRESS -e HYPERLIQUID_PRIVATE_KEY -e HYPERLIQUID_MASTER_ADDRESS \
+#     pathiel-mcp                                                               # testnet trading
+#
+# Testnet (test money) is one explicit opt-in: -e PATHIEL_NETWORK=testnet, or
+# the line PATHIEL_NETWORK=testnet in /data/.env.local.
+#
+# No key is ever baked in: .dockerignore keeps every .env file and the
+# maintainer's .agent-config.json out of the build context. Keys and state
+# live on the /data volume (or come in as -e variables).
+#
+# Not the dashboard image: that is Dockerfile (mainnet, operator config).
+
+# Same base as Dockerfile, pinned by digest. Bump both together.
+FROM python:3.11-slim@sha256:b7a9e5f6a93d6d4a31f129bbd4bdee69efccb6ded0fb230d78aafaf37af98377
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_NO_CACHE_DIR=1
+
+# The public install kind (contracts/runtime) and where the launcher builds
+# the venv: CLAUDE_PLUGIN_DATA is the plugin's data dir, so the image reuses
+# the plugin's own venv logic unchanged.
+ENV PATHIEL_INSTALL=public \
+    CLAUDE_PLUGIN_DATA=/opt/pathiel-data
+
+# The server runs as this user, never as root.
+RUN groupadd --system --gid 10001 pathiel \
+ && useradd --system --uid 10001 --gid pathiel --home-dir /data --shell /usr/sbin/nologin pathiel
+
+WORKDIR /app
+
+# Each directory on its own line: a COPY with several directory sources
+# copies their contents, not the directories.
+COPY requirements.lock pyproject.toml ./
+COPY pathiel/ pathiel/
+COPY contracts/ contracts/
+COPY services/ services/
+COPY scripts/ scripts/
+COPY config/ config/
+
+# Build the venv (hash-checked requirements.lock) at image build time, so the
+# first MCP start is instant. The throwaway PATHIEL_HOME keeps the build's
+# seeded config and state out of the image.
+RUN PATHIEL_HOME=/tmp/pathiel-build /app/scripts/pathiel-mcp --bootstrap \
+ && rm -rf /tmp/pathiel-build \
+ && chmod -R a+rX /opt/pathiel-data /app \
+ && mkdir -p /data \
+ && chown pathiel:pathiel /data
+
+# Keys (.env.local), the seeded .agent-config.json and state live here.
+ENV PATHIEL_HOME=/data \
+    HOME=/data
+VOLUME /data
+
+USER pathiel
+
+LABEL io.modelcontextprotocol.server.name="io.github.Julian-dev28/pathiel"
+
+# MCP over stdio. Run with docker run -i.
+ENTRYPOINT ["/app/scripts/pathiel-mcp"]

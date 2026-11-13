@@ -46,11 +46,14 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
+from contracts import runtime
 from contracts.strategies.models import DataPoint, DeskSpec, Instrument
 from services.intel import cache, http_client
 from services.intel.textnorm import stable_id
 
-HL_INFO_URL = "https://api.hyperliquid.xyz/info"
+# The resolved network's /info URL (contracts/runtime), read once at import.
+# Unset: mainnet, https://api.hyperliquid.xyz/info, the same as before 0.4.0.
+HL_INFO_URL = runtime.info_url()
 FUNDING_LOOKBACK_DAYS = 30
 MIN_FUNDING_SAMPLES_FOR_PCTL = 24 * 5  # 5 days of hourly samples, minimum
 FUNDING_PCTL_CROWDED = 0.90

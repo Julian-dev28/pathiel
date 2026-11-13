@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import stat
 import subprocess
@@ -78,18 +79,44 @@ def test_the_mcp_server_runs_through_the_plugin_wrapper():
     assert PLUGIN_ENV.is_file()
 
 
+def _without_print_commands(text: str) -> str:
+    """The file minus the body of pathiel_print_commands: the one function
+    that writes stdout on purpose (`scripts/pathiel-mcp --commands`, which
+    exits before the server starts; pinned below and in
+    tests/test_public_launcher.py)."""
+    out, skipping = [], False
+    for line in text.splitlines():
+        if line.startswith("pathiel_print_commands() {"):
+            skipping = True
+        elif skipping and line == "}":
+            skipping = False
+        elif not skipping:
+            out.append(line)
+    return "\n".join(out)
+
+
 def test_the_wrappers_parse_and_keep_stdout_clean_for_the_mcp_transport():
     """`bash -n` on all three, and every echo goes to stderr: one stray byte on
     stdout before the exec breaks the MCP handshake."""
     for path in (PLUGIN_ENV, MCP_WRAPPER, PY_WRAPPER):
         subprocess.run(["bash", "-n", str(path)], check=True)
-        for line in path.read_text().splitlines():
+        for line in _without_print_commands(path.read_text()).splitlines():
             s = line.strip()
             if s.startswith(("echo", "printf")) and "sha256" not in s:
                 assert ">&2" in s, f"{path.name}: writes to stdout: {s}"
     text = MCP_WRAPPER.read_text()
     assert "exec " in text and "pathiel-mcp-server.py" in text
     assert "--bootstrap" in text
+    # The stdout writer runs only behind --commands, which exits before exec.
+    prepare = PLUGIN_ENV.read_text().split("pathiel_prepare() {", 1)[1].split("\n}", 1)[0]
+    assert "pathiel_print_commands" not in prepare
+    assert "pathiel_print_commands" not in PY_WRAPPER.read_text()
+    branch = text.split('if [ "${1:-}" = "--commands" ]; then', 1)
+    assert len(branch) == 2, "pathiel-mcp has no --commands branch"
+    assert text.count("pathiel_print_commands") == 1
+    body = branch[1].split("fi", 1)[0]
+    assert "pathiel_print_commands" in body and "exit 0" in body
+    assert branch[1].index("exit 0") < branch[1].index("exec ")
 
 
 def test_the_wrappers_put_keys_and_state_outside_the_plugin_root():
@@ -198,11 +225,151 @@ def test_the_tick_agent_runs_on_opus_at_medium_effort():
 def test_the_setup_command_names_files_that_exist_and_never_prints_a_key():
     text = (ROOT / "commands" / "setup.md").read_text()
     assert text.startswith("---\ndescription:")
-    for rel in (".env.local.example", "scripts/preflight_secrets.py", "scripts/mcp_smoke.py",
+    for rel in ("config/public/env.local.example", "scripts/public_status.py",
                 "scripts/pathiel-mcp", "scripts/pathiel-py"):
         assert rel in text and (ROOT / rel).exists(), rel
-    assert "--bootstrap" in text and "chmod 600" in text and "/mcp" in text
-    assert "Never print the value of any key" in text
+    # Owned by the builder-approval unit: named here, may land in another commit.
+    assert "scripts/approve_builder_fee.py" in text
+    for needle in ("--bootstrap", "--commands", "chmod 600", "/mcp", "app.hyperliquid-testnet.xyz",
+                   "Never print the value of any key"):
+        assert needle in text, needle
+    # A fresh install is not "mode OFF" (config.mode gates nothing), and setup
+    # never runs the maintainer's checks against the live venue.
+    assert "mode OFF" not in text
+    assert "preflight_secrets.py" not in text and "mcp_smoke.py" not in text
+    # The operator's template carries operator notes; the plugin seeds its own.
+    assert "${CLAUDE_PLUGIN_ROOT}/.env.local.example" not in text
+
+
+def test_setup_shows_the_disclosure_before_any_key_and_never_runs_the_sign_line():
+    # One line of prose: line breaks and blockquote markers folded to spaces.
+    text = re.sub(r"\s*\n\s*(>\s*)?", " ", (ROOT / "commands" / "setup.md").read_text())
+    first_key = text.index("HYPERLIQUID_PRIVATE_KEY")
+    for needle in ("testnet", _per_fill(), "not financial advice", "US persons", "approve"):
+        assert needle in text and text.index(needle) < first_key, needle
+    assert "Never run the `approve-sign` command yourself" in text
+    assert "never ask for" in text.lower()
+
+
+def _per_fill() -> str:
+    """The disclosure needle, from the one config point (contracts.runtime)."""
+    import contracts.runtime as runtime
+    return f"{runtime.fee_rate_str(runtime.DEFAULT_BUILDER_FEE_TENTHS_BP)} of notional per fill"
+
+
+def test_setup_fee_figures_follow_the_default_fee():
+    """Every fee figure in setup.md comes from DEFAULT_BUILDER_FEE_TENTHS_BP:
+    a change to the default with stale copy fails here, not in front of a
+    user who is about to approve."""
+    import contracts.runtime as runtime
+    fee = runtime.DEFAULT_BUILDER_FEE_TENTHS_BP
+    text = re.sub(r"\s*\n\s*(>\s*)?", " ", (ROOT / "commands" / "setup.md").read_text())
+    per_fill = re.findall(r"([0-9.]+%) of notional per fill", text)
+    assert per_fill and set(per_fill) == {runtime.fee_rate_str(fee)}, per_fill
+    round_trip = re.findall(r"([0-9.]+%) for a round trip", text)
+    assert round_trip == [runtime.fee_rate_str(2 * fee)], round_trip
+    bps = re.findall(r"\(([0-9.]+) basis points?", text)
+    assert bps and all(float(b) == fee / 10 for b in bps), bps
+
+
+def test_setup_says_to_reconnect_after_the_env_file_changes():
+    """The MCP server reads keys and the network once at start, before setup
+    writes the env file. Setup must send the user to /mcp to reconnect, and
+    must check `state` against the status lines before calling it done."""
+    text = re.sub(r"\s+", " ", (ROOT / "commands" / "setup.md").read_text())
+    step6 = text[text.index("6. **Connect the tools.**"):text.index("7. **Prove it.**")]
+    assert "reconnect pathiel in `/mcp`" in step6 and "restart Claude Code" in step6
+    assert "~/.pathiel/.env.local" in step6
+    assert step6.index("reconnect") < step6.index("60 tools")
+    step7 = text[text.index("7. **Prove it.**"):text.index("8. **Say what is next.**")]
+    assert "match the `network` and `trading` lines" in step7
+    assert "reconnect pathiel in `/mcp`" in step7
+
+
+def test_setup_says_the_fee_approval_is_per_network():
+    """An approval signed on the testnet default does not cover mainnet;
+    without this line a user who switches later pays no fee and never knows."""
+    text = re.sub(r"\s+", " ", (ROOT / "commands" / "setup.md").read_text())
+    step2 = text[text.index("2. **Choose a mode"):text.index("3. **The env file.**")]
+    step5 = text[text.index("5. **Builder fee approval"):text.index("6. **Connect the tools.**")]
+    assert "does not carry over" in step2 and "`approve-sign`" in step2
+    assert "The approval is per network" in step5
+    assert "testnet does not cover mainnet" in step5
+
+
+def test_setup_copy_has_no_claims_or_banned_style(copy_lint):
+    text = (ROOT / "commands" / "setup.md").read_text()
+    assert copy_lint.claim_hits(text) == []
+    assert copy_lint.style_hits(text) == []
+
+
+def test_the_public_env_template_carries_no_real_value():
+    """/pathiel:setup copies config/public/env.local.example to
+    ~/.pathiel/.env.local. Every assignment is empty, mainnet is a comment,
+    and the master private key has no line at all."""
+    text = (ROOT / "config" / "public" / "env.local.example").read_text()
+    assignments = [line for line in text.splitlines() if line and not line.startswith("#")]
+    assert assignments == ["HYPERLIQUID_WALLET_ADDRESS=", "HYPERLIQUID_PRIVATE_KEY=",
+                           "HYPERLIQUID_MASTER_ADDRESS="]
+    assert "HYPERLIQUID_MASTER_PRIVATE_KEY" not in text
+    assert "# PATHIEL_NETWORK=testnet" in text and "REAL MONEY" in text and "MAINNET" in text
+    assert "Never add your main account's private key" in text
+    assert "different API wallets" in text and "app.hyperliquid-testnet.xyz" in text
+    assert not re.search(r"0x[0-9a-fA-F]{40}", text), "no address of any kind"
+    for line in text.splitlines():
+        if "=" in line and not line.lstrip("# ").startswith(("PATHIEL_NETWORK=",)):
+            name, _, value = line.lstrip("# ").partition("=")
+            if re.fullmatch(r"[A-Z_]+", name.strip()):
+                assert value.strip() == "", line
+
+
+def test_dockerfile_mcp_is_static_sound():
+    """Static only: Docker cannot build in the gate. Same pinned base as
+    Dockerfile, the public install kind, the launcher as entrypoint, every
+    copied source present and inside the build context, no key or operator
+    config in it, a non-root user, and every package the server imports."""
+    text = (ROOT / "Dockerfile.mcp").read_text()
+    lines = [line.strip() for line in text.splitlines() if line.strip() and not line.startswith("#")]
+    base = next(line for line in (ROOT / "Dockerfile").read_text().splitlines() if line.startswith("FROM "))
+    base_image = base.split()[1]
+    assert "@sha256:" in base_image
+    assert [line for line in lines if line.startswith("FROM ")] == [f"FROM {base_image}"]
+
+    env_text = " ".join(line for line in lines)
+    assert "PATHIEL_INSTALL=public" in env_text and "CLAUDE_PLUGIN_DATA=/opt/pathiel-data" in env_text
+    assert "PATHIEL_HOME=/data" in env_text
+    assert lines[-1] == 'ENTRYPOINT ["/app/scripts/pathiel-mcp"]'
+    assert 'LABEL io.modelcontextprotocol.server.name="io.github.Julian-dev28/pathiel"' in lines
+    assert "VOLUME /data" in lines
+    users = [line for line in lines if line.startswith("USER ")]
+    assert users and users[-1] != "USER root" and users[-1] != "USER 0"
+    assert "PATHIEL_HOME=/tmp/pathiel-build /app/scripts/pathiel-mcp --bootstrap" in text
+    assert "chmod -R a+rX /opt/pathiel-data /app" in text
+    assert "PATHIEL_NETWORK" not in env_text, \
+        "the image must not pick a network; testnet is the launcher's default"
+
+    copies = [line.split()[1:-1] for line in lines if line.startswith("COPY ")]
+    sources = [src for group in copies for src in group]
+    ignored = (ROOT / ".dockerignore").read_text().splitlines()
+    for src in sources:
+        assert (ROOT / src).exists(), src
+        assert not src.startswith((".env", ".agent-config")), src
+        assert src.rstrip("/") not in ignored and src not in ignored, f"{src} is in .dockerignore"
+    for group in copies:
+        dirs = [s for s in group if s.endswith("/")]
+        assert len(dirs) <= 1, f"COPY {' '.join(group)} would flatten directories"
+    for needed in ("requirements.lock", "pyproject.toml", "pathiel/", "contracts/", "services/",
+                   "scripts/", "config/"):
+        assert needed in sources, needed
+    assert not any(s in (".", "./") for s in sources), "never COPY the whole context"
+
+    # Every top-level package the MCP server imports is in the image.
+    server = (ROOT / "scripts" / "pathiel-mcp-server.py").read_text()
+    for pkg in set(re.findall(r"^\s*(?:from|import) (pathiel|services|contracts)\b", server, re.M)):
+        assert f"{pkg}/" in sources, pkg
+    # The keys and the operator's config stay out of the build context.
+    for pattern in (".env.local", ".agent-config.json"):
+        assert pattern in ignored, pattern
 
 
 def test_the_env_template_carries_no_real_value():
@@ -256,3 +423,27 @@ def test_desk_loops_window_keeps_the_live_cron_offsets_and_one_watcher():
     assert "`10,25,40,55 * * * *`, prompt `/desk-tick metals`" in text
     assert "pgrep -f scripts/trigger_watch.py" in text
     assert "--model opus" in text  # protect the Fable meter
+
+
+def test_setup_says_mainnet_is_the_real_money_default_and_offers_testnet():
+    """Decision 2026-11-12: a fresh install trades real money by default.
+    Setup says so before any key, offers the one testnet line for practice,
+    and names the WTI stand-in for Brent there. It never tells the user to
+    add a mainnet line (there is none to add)."""
+    text = re.sub(r"\s*\n\s*(>\s*)?", " ", (ROOT / "commands" / "setup.md").read_text())
+    first_key = text.index("HYPERLIQUID_PRIVATE_KEY")
+    for needle in ("**mainnet** by default", "**real money**", "`PATHIEL_NETWORK=testnet`",
+                   "WTI (`xyz:CL`)"):
+        assert needle in text and text.index(needle) < first_key, needle
+    assert "PATHIEL_NETWORK=mainnet" not in text
+    assert "starts on the Hyperliquid **testnet**" not in text
+    step2 = text[text.index("2. **Choose a mode"):text.index("3. **The env file.**")]
+    assert "**Mainnet trading** (the default network)" in step2
+    assert "**Testnet trading** (practice)" in step2
+
+
+def test_the_env_template_offers_the_testnet_line_commented():
+    text = (ROOT / "config" / "public" / "env.local.example").read_text()
+    assert "# PATHIEL_NETWORK=testnet" in text
+    assert "PATHIEL_NETWORK=mainnet" not in text
+    assert "MAINNET unless this file says otherwise" in text and "WTI (xyz:CL)" in text

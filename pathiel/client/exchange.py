@@ -17,7 +17,7 @@ from __future__ import annotations
 import logging
 import math
 import os
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 # Hyperliquid rejects any order below $10 notional. Target a small buffer above
 # it so the IOC price offset and mark-vs-limit rounding can't dip under.
@@ -31,8 +31,9 @@ from hyperliquid.utils.signing import (
     TriggerOrderType,
 )
 
+import contracts.runtime as _runtime
+from pathiel.client import hl_client as _hl_client
 from pathiel.client.hl_client import (
-    HL_API,
     _http_post,
     fetch_hl_candles,
     resolve_user_address,
@@ -40,6 +41,12 @@ from pathiel.client.hl_client import (
 from pathiel.client.http_session import SDK_TIMEOUT_S, _set_session_timeout
 
 logger = logging.getLogger(__name__)
+
+
+def _api() -> str:
+    """The venue URL this process talks to: hl_client.HL_API, read at call time
+    (it follows contracts/runtime; see hl_client)."""
+    return _hl_client.HL_API
 
 # ── Environment ────────────────────────────────────────────────────────────────
 
@@ -151,7 +158,7 @@ def _resolve_identity() -> Tuple[str, str, Optional[str], bool]:
 
 
 _exchange_instance = None  # Singleton instance
-_exchange_identity_key: Optional[Tuple[str, str, Optional[str]]] = None
+_exchange_identity_key: Optional[Tuple[str, str, Optional[str], str]] = None
 
 
 def _resolve_perp_dexs() -> Optional[List[str]]:
@@ -192,9 +199,17 @@ def _make_exchange() -> Exchange:
     message's text and this function's raise-not-return behavior.
     """
     global _exchange_instance, _exchange_identity_key
+    # Public installs: the env file was loaded after pathiel.client was
+    # imported (or PATHIEL_NETWORK changed under a running process), so
+    # HL_API froze to a different network than the one the user chose.
+    # Signing then would post to the wrong venue: refuse instead.
+    if _runtime.is_public() and _api() != _runtime.api_url():
+        raise RuntimeError(
+            f"network changed after start: this process talks to {_api()} but "
+            f"PATHIEL_NETWORK now resolves to {_runtime.api_url()}; restart pathiel")
     key_hex, main_address, agent_address, is_agent = _resolve_identity()
 
-    identity_key = (key_hex, main_address, agent_address)
+    identity_key = (key_hex, main_address, agent_address, _api())
     if _exchange_instance is not None and _exchange_identity_key == identity_key:
         return _exchange_instance
 
@@ -221,7 +236,7 @@ def _make_exchange() -> Exchange:
     # SDK behaves exactly as before.
     _exchange_instance = _set_session_timeout(Exchange(
         wallet=acct,
-        base_url=HL_API,
+        base_url=_api(),
         account_address=account_address,
         perp_dexs=_resolve_perp_dexs(),
         timeout=SDK_TIMEOUT_S,
@@ -237,12 +252,14 @@ def _get_info() -> Info:
     """Get (or lazily create) the shared HTTP-only Info client.
 
     skip_ws=True: the callers only use REST methods (meta, all_mids, l2,
-    fills, ...), so no WebSocket connection is opened.
+    fills, ...), so no WebSocket connection is opened. base_url follows the
+    runtime network (the SDK default is mainnet).
     """
     global _info_instance
     if _info_instance is None:
-        _info_instance = _set_session_timeout(Info(skip_ws=True, perp_dexs=_resolve_perp_dexs(),
-                                                    timeout=SDK_TIMEOUT_S))
+        _info_instance = _set_session_timeout(Info(base_url=_api(), skip_ws=True,
+                                                   perp_dexs=_resolve_perp_dexs(),
+                                                   timeout=SDK_TIMEOUT_S))
     return _info_instance
 
 
@@ -470,6 +487,199 @@ def get_all_hl_mids(include_hip3: bool = False) -> Dict[str, float]:
         except Exception as e:
             logger.warning(f"[get_all_hl_mids] HIP-3 dex enumeration failed: {e}")
     return out
+
+
+# ── Public install: read-only tier, listing state, builder fee ────────────────
+#
+# Everything in this section is a no-op on the operator's install (no
+# PATHIEL_INSTALL=public): trading_block_reason() is None, _order_builder() is
+# None before it reads anything, and _send_order() then calls the SDK exactly
+# once and returns its reply unchanged. contracts/runtime decides which install
+# this is; docs/overhaul/PUBLIC_PLUGIN_2026-11-12.md has the design.
+
+READ_ONLY_NO_KEY = ("read-only mode: no key configured (HYPERLIQUID_PRIVATE_KEY is not set). "
+                    "Every read tool works. To trade, run /pathiel:setup and add an API "
+                    "wallet key to ~/.pathiel/.env.local.")
+
+
+def trading_block_reason() -> Optional[str]:
+    """Why a write tool must not run, or None. Only a public install with no
+    usable credential is blocked (read-only tier); the operator's install
+    keeps its existing per-function errors."""
+    try:
+        if not _runtime.is_public():
+            return None
+        return None if _has_usable_credential() else READ_ONLY_NO_KEY
+    except Exception:   # noqa: BLE001 - a broken registry read is "no key"
+        return READ_ONLY_NO_KEY
+
+
+def coin_listing(coin: str) -> str:
+    """'listed', 'delisted' (on this network's meta with isDelisted), 'not_listed'
+    (no such coin, or its HIP-3 dex is not registered here, including a
+    network that lists no HIP-3 dex at all) or 'unknown' (the read failed).
+    Testnet has a different universe: xyz:BRENTOIL is delisted there. Never
+    raises."""
+    try:
+        if ":" in coin:
+            dex = coin.split(":", 1)[0]
+            from pathiel.client.universe import hip3_dex_registry
+            registered = hip3_dex_registry()
+            if registered is None:
+                return "unknown"
+            if dex not in registered:
+                return "not_listed"
+            universe = _cached_universe(dex=dex)
+        else:
+            universe = _cached_universe()
+        if not universe:
+            return "unknown"
+        for u in universe:
+            if isinstance(u, dict) and u.get("name") == coin:
+                return "delisted" if u.get("isDelisted") else "listed"
+        return "not_listed"
+    except Exception as e:   # noqa: BLE001
+        logger.warning(f"[coin_listing] {coin}: {e}")
+        return "unknown"
+
+
+def _order_builder() -> Optional[Dict[str, Any]]:
+    """The builder dict for the next order, or None. None at once on the
+    operator's install: no identity read, no builder import. On a public
+    install: builder.builder_for_order(main account), which is cache only.
+    Never raises."""
+    if not _runtime.is_public():
+        return None
+    try:
+        from pathiel.client import builder as _builder
+        try:
+            account = _resolve_identity()[1]
+        except Exception:   # noqa: BLE001 - no key: builder_for_order says no_account
+            account = ""
+        return _builder.builder_for_order(account)
+    except Exception as e:   # noqa: BLE001 - builder state never fails an order
+        logger.info(f"[builder] not attached: {type(e).__name__}: {e}")
+        return None
+
+
+def _statuses(result: Any) -> Any:
+    resp = result.get("response") if isinstance(result, dict) else None
+    data = resp.get("data") if isinstance(resp, dict) else None
+    return data.get("statuses") if isinstance(data, dict) else None
+
+
+def _nothing_placed(result: Any) -> bool:
+    """True iff the venue placed nothing: an action-level status other than
+    'ok', or 'ok' with every leg an error. A resting, filled or string status
+    ('waitingForFill'), an 'ok' with no statuses, or a non-dict is False."""
+    if not isinstance(result, dict):
+        return False
+    if result.get("status") != "ok":
+        return True
+    statuses = _statuses(result)
+    return (isinstance(statuses, list) and len(statuses) > 0
+            and all(isinstance(st, dict) and "error" in st for st in statuses))
+
+
+def _error_texts(result: Any) -> List[str]:
+    """The venue's error strings in a nothing-placed reply: the action-level
+    response, or every leg's error. [] when there is none to read."""
+    if not isinstance(result, dict):
+        return []
+    if result.get("status") != "ok":
+        resp = result.get("response")
+        return [str(resp)] if resp not in (None, "") else []
+    statuses = _statuses(result)
+    if not isinstance(statuses, list):
+        return []
+    return [str(st.get("error")) for st in statuses if isinstance(st, dict) and "error" in st]
+
+
+def _worth_resending(first: Any) -> bool:
+    """A nothing-placed builder order is resent unless every error in it is a
+    known Hyperliquid refusal unrelated to the builder (an IOC that did not
+    match, margin, price, size, ...). Builder wording or anything unknown is
+    resent: the venue's builder text is not pinned, and a stop must never be
+    lost to builder state."""
+    from pathiel.client import builder as _builder
+    texts = _error_texts(first)
+    return not texts or not all(_builder.is_known_venue_error(t) for t in texts)
+
+
+def _builder_note(decision: Optional[Dict[str, Any]], attached: bool,
+                  retried: bool = False, reason_code: Optional[str] = None) -> Dict[str, Any]:
+    fee = _runtime.builder_fee_tenths_bp()
+    return {
+        "attached": attached,
+        "fee_tenths_bp": fee,
+        "fee_rate": _runtime.fee_rate_str(fee),
+        "address": _runtime.builder_address(),
+        "reason_code": reason_code or (decision or {}).get("reason_code") or "none",
+        "retried_without_builder": retried,
+    }
+
+
+def _send_order(send: Callable[[Optional[Dict[str, Any]]], Any]) -> Tuple[Any, Optional[Dict[str, Any]]]:
+    """Send one order action through `send(builder)` and return (reply, note).
+
+    No builder (always the case on the operator's install): send(None) once,
+    reply unchanged. Note is None on the operator's install.
+
+    Builder attached: an exception propagates and is never retried (a timeout
+    is ambiguous: the order may have landed). If the venue placed nothing,
+    send once more without the builder, unless every error is a known
+    Hyperliquid refusal that has nothing to do with the builder (an IOC that
+    did not match, margin, price, size; builder.KNOWN_VENUE_ERRORS). That
+    reply is returned as is after one SDK call, with no cooldown: a second
+    IOC would be a market order nobody asked for, and the fee was not the
+    cause. Builder wording or an unknown error is resent: the builder is on
+    the signed action, so nothing rested or filled and a resend cannot double
+    place. The cooldown (builder.note_rejection) starts only when the resend
+    placed something or the first reply names the builder. At most two SDK
+    calls."""
+    public = _runtime.is_public()
+    if not public:
+        return send(None), None
+    try:
+        from pathiel.client import builder as _builder
+        _builder.clear_thread_decision()
+    except Exception:   # noqa: BLE001
+        _builder = None
+    b = _order_builder()
+    decision = None
+    try:
+        decision = _builder.thread_decision() if _builder is not None else None
+    except Exception:   # noqa: BLE001
+        decision = None
+    if b is None:
+        result = send(None)
+        if _builder is not None:
+            _builder.count("without_builder")
+        return result, _builder_note(decision, attached=False)
+    first = send(b)
+    if not _nothing_placed(first):
+        _builder.count("with_builder")
+        return first, _builder_note(decision, attached=True)
+    if not _worth_resending(first):
+        # The venue's own refusal (no match, margin, price...): nothing was
+        # placed, so nothing is charged; no resend, no cooldown.
+        _builder.count("refused")
+        return first, _builder_note(decision, attached=False, reason_code="venue_refused")
+    second = send(None)
+    _builder.count("retried")
+    _builder.count("without_builder")
+    if not _nothing_placed(second) or _builder.is_builder_rejection(first):
+        _builder.note_rejection((decision or {}).get("account") or "", str(first))
+    logger.warning(f"[builder] order with the builder fee placed nothing ({str(first)[:200]}); "
+                   f"resent without it")
+    return second, _builder_note(decision, attached=False, retried=True,
+                                 reason_code="resent_without_builder")
+
+
+def _bkw(b: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """builder= for an SDK call only when a builder is attached, so the
+    operator's call is exactly the call it always was."""
+    return {"builder": b} if b is not None else {}
 
 
 # ── Order placement ────────────────────────────────────────────────────────────
@@ -751,14 +961,15 @@ def place_hl_order(
         
         # SDK expects float for both size and price (signature: limit_px: float).
         # price_str was already rounded to HL's tick + sigfig rules, so float() is safe.
-        result = exchange.order(
+        result, note = _send_order(lambda b: exchange.order(
             coin,
             is_buy,
             float(size_str),
             float(price_str),
             order_type,
             reduce_only=reduce_only,
-        )
+            **_bkw(b),
+        ))
 
         parsed = _parse_order_result(result)
         if not parsed.get("ok"):
@@ -768,6 +979,8 @@ def place_hl_order(
                 f"[place_hl_order] {coin} {'BUY' if is_buy else 'SELL'} "
                 f"size={size_str} px={price_str} REJECTED: {parsed.get('error')}"
             )
+        if note is not None:
+            parsed["builder"] = note
         return parsed
     except Exception as e:
         logger.error(f"Failed to place order for {coin}: {e}")
@@ -825,16 +1038,20 @@ def place_hl_trigger_order(
 
         # A stop fills at market on trigger (limit_px is a reference); a target
         # rests as a limit at limit_px = the target.
-        result = exchange.order(
+        result, note = _send_order(lambda b: exchange.order(
             coin,
             is_buy,
             float(size_str),
             trigger_f,
             order_type,
             reduce_only=True,
-        )
+            **_bkw(b),
+        ))
 
-        return _parse_order_result(result, accept_resting=True)
+        parsed = _parse_order_result(result, accept_resting=True)
+        if note is not None:
+            parsed["builder"] = note
+        return parsed
     except Exception as e:
         logger.error(f"Failed to place trigger order for {coin}: {e}")
         return {"ok": False, "error": str(e)}
@@ -865,13 +1082,16 @@ def place_hl_limit_order(
         _, sz_dec, _ = get_coin_index(coin)
         price_str = _round_price_for_hl(limit_px, sz_dec, is_perp=True, is_buy=not is_buy)
         size_str = f"{size:.{sz_dec}f}"
-        result = _make_exchange().order(
+        exchange = _make_exchange()
+        result, note = _send_order(lambda b: exchange.order(
             coin, is_buy, float(size_str), float(price_str),
-            OrderType(limit={"tif": "Gtc"}), reduce_only=reduce_only)
+            OrderType(limit={"tif": "Gtc"}), reduce_only=reduce_only, **_bkw(b)))
         parsed = _parse_order_result(result, accept_resting=True)
         if not parsed.get("ok"):
             logger.warning(f"[place_hl_limit_order] {coin} {'BUY' if is_buy else 'SELL'} "
                            f"size={size_str} px={price_str} REJECTED: {parsed.get('error')}")
+        if note is not None:
+            parsed["builder"] = note
         return parsed
     except Exception as e:
         logger.error(f"Failed to place limit order for {coin}: {e}")
@@ -915,9 +1135,14 @@ def place_hl_bracket_order(coin: str, is_buy: bool, size: float, entry_px: float
         ]
         logger.info(f"[place_hl_bracket_order] {coin} {'BUY' if is_buy else 'SELL'} {size_f} "
                     f"@ {entry_f} sl={stop_f} tp={tp_f}")
-        result = _make_exchange().bulk_orders(reqs, grouping="normalTpsl")
+        exchange = _make_exchange()
+        result, note = _send_order(
+            lambda b: exchange.bulk_orders(reqs, grouping="normalTpsl", **_bkw(b)))
         if not (isinstance(result, dict) and result.get("status") == "ok"):
-            return {"ok": False, "error": str(result)}
+            out_err: Dict[str, Any] = {"ok": False, "error": str(result)}
+            if note is not None:
+                out_err["builder"] = note
+            return out_err
         statuses = result.get("response", {}).get("data", {}).get("statuses", [])
         legs = []
         for st in statuses[:3]:
@@ -931,6 +1156,8 @@ def place_hl_bracket_order(coin: str, is_buy: bool, size: float, entry_px: float
                "tp": legs[2], "px": {"entry": entry_f, "stop": stop_f, "tp": tp_f}, "size": size_f}
         if not out["ok"]:
             out["error"] = "; ".join(str(leg.get("error")) for leg in legs if not leg.get("ok"))
+        if note is not None:
+            out["builder"] = note
         return out
     except Exception as e:
         logger.error(f"Failed to place bracket for {coin}: {e}")

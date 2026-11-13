@@ -8,6 +8,17 @@ import os
 import pathlib
 
 _ENV_FILE = pathlib.Path(__file__).parent / ".env.local"
+
+# Runtime contract (contracts/runtime): install kind, network and builder fee.
+# A shell that exports PATHIEL_INSTALL=public or PATHIEL_NETWORK=testnet, or an
+# .env.local that sets them, would flip every test to the public path and point
+# hl_client.HL_API at another venue. Every gate test starts from the operator's
+# defaults (operator, mainnet); tests that need another setting monkeypatch it.
+# Popped here, before any pathiel import freezes HL_API, and skipped below.
+_RUNTIME_ENV = ("PATHIEL_INSTALL", "PATHIEL_NETWORK", "PATHIEL_BUILDER_ADDRESS",
+                "PATHIEL_BUILDER_FEE_TENTHS_BP")
+for _k in _RUNTIME_ENV:
+    os.environ.pop(_k, None)
 # Wallet private keys are loaded ONLY for the real-money e2e run
 # (PATHIEL_E2E=1, `pytest -m live`). Gate and online tests are offline or
 # read-only and never need them; with them loaded, one failing assertion that
@@ -20,6 +31,8 @@ if _ENV_FILE.exists():
         if _line and not _line.startswith("#") and "=" in _line:
             _k, _, _v = _line.partition("=")
             _k = _k.strip()
+            if _k in _RUNTIME_ENV:
+                continue
             if "PRIVATE_KEY" in _k.upper() and not _LOAD_PRIVATE_KEYS:
                 # Pin it EMPTY rather than skipping it: server.py, the MCP
                 # server, services/*/env.py and scripts/_state_env.py all load
@@ -64,6 +77,41 @@ def _fresh_account_snapshot():
     account_snapshot.reset()
     yield
     account_snapshot.reset()
+
+
+@pytest.fixture(autouse=True)
+def _builder_isolation(monkeypatch):
+    """pathiel.client.builder keeps one approval cache, cooldown map and
+    counter set per process; no test may see another's. Its background
+    approval reads never start a thread in a test: _spawn appends the job to
+    a list instead (the builder_jobs fixture), and a test that wants a read to
+    land calls the job itself."""
+    from pathiel.client import builder
+    builder.reset()
+    jobs: list = []
+    monkeypatch.setattr(builder, "_spawn", jobs.append)
+    yield jobs
+    builder.reset()
+
+
+@pytest.fixture(autouse=True)
+def _listing_isolation():
+    """services.strategies.listing caches coin_listing answers per process
+    (testnet only); one test's fake venue must never answer the next."""
+    import sys
+    mod = sys.modules.get("services.strategies.listing")
+    if mod is not None:
+        mod.reset()
+    yield
+    mod = sys.modules.get("services.strategies.listing")
+    if mod is not None:
+        mod.reset()
+
+
+@pytest.fixture
+def builder_jobs(_builder_isolation):
+    """Background approval reads scheduled during this test, not yet run."""
+    return _builder_isolation
 
 
 # ── Gate tests are offline ──────────────────────────────────────────────────

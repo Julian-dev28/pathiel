@@ -33,9 +33,59 @@ SKILL_RULES = (
     ("`python3 scripts/desk_slot.py", f"`{PY} scripts/desk_slot.py", 1),
     ("`subagent_type` `desk-tick`", "`subagent_type` `pathiel:desk-tick`", 1),
     ("(`.claude/agents/desk-tick.md`)", "(the plugin's `agents/desk-tick.md`)", 1),
+    # Public copy (2026-11-12): no operator share split, no research-doc
+    # pointers (the plugin links nothing that carries return figures).
+    ("reverted the\nsame night, see docs/overhaul/BACKTEST_RESULTS_2026-10-25.md).",
+     "reverted the\nsame night).", 1),
+    ("(since\n   2026-10-31: oil 90%, metals 10%; metals = gold since 2026-11-05)",
+     "(config\n   `desk_equity_share`; metals = gold since 2026-11-05)", 1),
 )
 
 AGENT_RULES = (
+    # Public copy (2026-11-12). These run first, while the source still says
+    # `python3 scripts/...`, so the interpreter rules below keep their counts.
+    # No operator leverage or share numbers: a plugin install reads its own
+    # from `risk_limits` (a fresh one is 3x) and place_bracket caps and fits
+    # leverage by itself. No research-doc pointers: the rules stay inline.
+    ("tried hourly for one\nevening, the backtest showed it giving up about half the journaled return,\n"
+     "back to 15m the same night)",
+     "tried hourly for one\nevening, back to 15m the same night)", 1),
+    ("(config\n`desk_equity_share`: oil 90%, metals 10%)",
+     "(config\n`desk_equity_share`)", 1),
+    ("Leverage up to the risk profile's `max_leverage`\n"
+     "(20x since 2026-10-24; `place_bracket` caps it and runs the 20x rule: the\n"
+     "stop must use under half the distance to liquidation). Brent, gold and\n"
+     "silver fit their leverage (Brent and silver since 2026-11-04, gold since\n"
+     "2026-11-05): a stop too far for 20x trades at 15x,\n"
+     "never lower (`next_trade.LEVERAGE_FIT`); `place_bracket` does it by itself,\n"
+     "so never pass `leverage` on a new entry.",
+     "Leverage up to the `max_leverage` that\n"
+     "`risk_limits` reports (a fresh install is 3x; `place_bracket` caps it and\n"
+     "runs the liquidation rule: the stop must use under half the distance to\n"
+     "liquidation). Brent, gold and silver fit their leverage to the stop\n"
+     "(`next_trade.LEVERAGE_FIT`); `place_bracket` caps and fits it by itself,\n"
+     "so never pass `leverage` on a new entry. On testnet the oil desk trades\n"
+     "WTI (xyz:CL) as the Brent stand-in and its brief says so first; a tool\n"
+     "says plainly when a coin is not tradable there: log `action=NONE` with\n"
+     "that message and stop.", 1),
+    ("`python3 scripts/oil_levels.py --check ENTRY STOP TP --lev 20` judges a\n"
+     "   level: the R gate and the 20x line.",
+     "`python3 scripts/oil_levels.py --check ENTRY STOP TP --lev L` judges a\n"
+     "   level: the R gate and the liquidation line, where L is the\n"
+     "   `max_leverage` that `risk_limits` reports.", 1),
+    ("`python3 scripts/oil_levels.py --coin COIN --next SIDE --thesis-entry ENTRY`\n"
+     "     (gold: add `--max-lev 25`; SIDE and ENTRY are the brief's call).",
+     "`python3 scripts/oil_levels.py --coin COIN --next SIDE --thesis-entry ENTRY --risk-lev L`\n"
+     "     (gold: add `--max-lev 25`; L is the `max_leverage` that `risk_limits`\n"
+     "     reports; SIDE and ENTRY are the brief's call).", 1),
+    ("\n     edge; docs/strategy/OIL_STRATEGY.md):", "\n     edge):", 1),
+    ("2026-11-02 on silver (docs/strategy/SILVER_STOP_FLOOR_TEST_2026-11-02.md)\n",
+     "2026-11-02 on silver\n", 1),
+    ("so the floor binds on nearly every gold tick;\n"
+     "         docs/strategy/GOLD_STRATEGY_TEST_2026-11-05.md);",
+     "so the floor binds on nearly every gold tick);", 1),
+    ("the 20x line passes at the\n     leverage it fitted",
+     "the liquidation line passes at\n     the leverage it fitted", 1),
     ("`python3 scripts/desk_slot.py", f"`{PY} scripts/desk_slot.py", 1),
     ("`python3 scripts/oil_levels.py", f"`{PY} scripts/oil_levels.py", 3),
     ("`python3 scripts/thesis_due.py", f"`{PY} scripts/thesis_due.py", 1),

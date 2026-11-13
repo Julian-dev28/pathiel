@@ -24,21 +24,21 @@ would not help, because this process never touches those routes.
 ## Starting the MCP Server
 
 ```bash
-python scripts/pathiel-mcp-server.py
+scripts/pathiel-mcp
 ```
 
-It auto-loads `.env.local` from the project root, so credentials must be set
-there (see Environment Variables below).
+That is the public launcher: it reads keys from `~/.pathiel/.env.local`, uses
+the public 3x risk profile and mainnet unless `PATHIEL_NETWORK=testnet` is
+set. Do not point another client at `scripts/pathiel-mcp-server.py` directly:
+that is the maintainer path (mainnet, the tracked 20x config).
 
 ## Pathiel Agent config.yaml
 
 ```yaml
 mcp_servers:
   pathiel:
-    command: python
-    args:
-      - /absolute/path/to/pathiel/scripts/pathiel-mcp-server.py
-    cwd: /absolute/path/to/pathiel   # so .env.local resolves
+    command: /absolute/path/to/pathiel/scripts/pathiel-mcp
+    args: []
     timeout: 120
 ```
 

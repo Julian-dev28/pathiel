@@ -24,11 +24,22 @@ scripts/pathiel-mcp (the Claude Code plugin, which builds its own venv and
 points PATHIEL_ENV_FILE and PATHIEL_STATE_DIR at ~/.pathiel).
 Automatically loads the operator's env file (see scripts/_state_env.py).
 Live smoke over the real transport: python scripts/mcp_smoke.py
+
+Public install (PATHIEL_INSTALL=public, exported by the plugin launcher and
+the container; contracts/runtime decides): the same tools behind a gate at the
+MCP boundary (_public_gate: read-only tier with no key, no-account answers,
+the profile's leverage cap, entries refused on coins this network does not
+list, desk_refresh without the claude CLI) and with network and builder fee
+added to the outputs (_public_decorate). The operator's path never runs either.
+See "public install" below ALIASES.
 """
 
+import copy
 import json
 import math
 import queue
+import re
+import shutil
 import sys
 import os
 import threading
@@ -51,6 +62,7 @@ _state_env.load_env_local(os.path.dirname(_SCRIPTS_DIR))
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import contracts.runtime as runtime  # noqa: E402
 from pathiel import __version__
 from pathiel.agents.config_store import read_agent_config
 from pathiel.client.hl_client import fetch_account_state, resolve_user_address
@@ -134,6 +146,87 @@ Start here
 Coins: main-dex perps by name (BTC, ETH). HIP-3 perps as dex:SYMBOL (xyz:BRENTOIL = Brent, the oil desk's price; xyz:CL = WTI; xyz:GOLD; xyz:NATGAS).
 
 LIVE MONEY: place_bracket, bracket_sweep, set_target, close_position, set_leverage, cancel_order act on the real account, and config with arguments rewrites the live trading config. Call them only when the operator asked for that exact action in this conversation. Every other tool only reads (desk_refresh, desk_submit_call and desk_grade write the desk journal; desk_grade never places or touches an order, it only grades what already happened)."""
+
+# Public install (contracts/runtime: PATHIEL_INSTALL=public, set only by the
+# plugin launcher and the container): a stranger's Claude reads this instead.
+# Built per call because the network, the key and the builder address are the
+# user's. Never mentions the operator's dashboard, his 20x profile or his desk
+# shares. MAX_PUBLIC_INSTRUCTIONS_CHARS keeps it inside the operator's budget.
+MAX_PUBLIC_INSTRUCTIONS_CHARS = 2500
+
+
+def _public_network_line(net: str) -> str:
+    """Mainnet is the default (2026-11-12); testnet is the user's opt-in."""
+    if net == "testnet":
+        return ("Network: testnet (test funds). "
+                "The oil desk trades WTI (xyz:CL) here as the stand-in for Brent.")
+    return ("Network: mainnet. REAL MONEY: orders use the account's real funds. "
+            "To practise with test funds: PATHIEL_NETWORK=testnet in ~/.pathiel/.env.local, then reconnect.")
+
+
+def _public_start_notice(net: str) -> str:
+    """The one stderr line a public install prints at start, naming the network."""
+    if net == "testnet" and runtime.network_is_invalid():
+        return ("pathiel: public install on Hyperliquid testnet because the PATHIEL_NETWORK line "
+                "is not mainnet or testnet. Fix it in ~/.pathiel/.env.local and reconnect.")
+    if net == "testnet":
+        return ("pathiel: public install on Hyperliquid testnet (test funds). The oil desk "
+                "trades WTI (xyz:CL) as the Brent stand-in.")
+    return ("pathiel: public install on Hyperliquid MAINNET: with a key, orders use real money. "
+            "Set PATHIEL_NETWORK=testnet in ~/.pathiel/.env.local to practise.")
+
+
+def _public_trading_line() -> str:
+    try:
+        from pathiel.client.exchange import trading_block_reason
+        reason = trading_block_reason()
+    except Exception:   # noqa: BLE001 - an import failure reads as no key
+        reason = "no key could be read"
+    if reason:
+        return ("Trading: read-only. No key is configured, so the six live-money tools refuse; "
+                "every read works. /pathiel:setup adds an API wallet key.")
+    return "Trading: enabled. An API wallet key is configured for this network."
+
+
+def _public_fee_sentence() -> str:
+    address = runtime.builder_address()
+    fee = runtime.builder_fee_tenths_bp()
+    if not address or fee <= 0:
+        return "Builder fee: not configured. Orders carry no builder fee."
+    return (f"Builder fee: {runtime.fee_rate_str(fee)} of notional per fill, to {address}, "
+            "charged only after the user approves it once with the master key "
+            "(scripts/approve_builder_fee.py). Hyperliquid enforces the approval; without it "
+            "orders go out with no fee. state shows the approval.")
+
+
+def _public_instructions() -> str:
+    net = runtime.network()
+    text = f"""pathiel: a Hyperliquid perps desk that Claude trades through these tools. {_public_network_line(net)} {_public_trading_line()} Not financial advice: the user decides every trade and can lose money.
+
+Default risk profile: 3x max leverage, 1% of equity at risk at the stop, one position at a time. set_leverage is capped by the profile's max_leverage. Change it with the config tool (risk_profile) or ~/.pathiel/.agent-config.json.
+
+Start here
+- state: network, trading status, builder fee, equity, positions.
+- desk_list, then desk_brief {{desk}}: the desk's call as short markdown, with "Your size".
+- desk_refresh {{desk}} writes a NEW thesis (news + one local Claude Code call, about a minute). Needs the claude CLI on PATH.
+- risk_limits / risk_size_trade: what this account may trade and how big. Size every trade with risk_size_trade, never by hand.
+- place_bracket {{coin, entry_px, stop_px, tp_px}}: one entry with an exact stop and target, sized by the profile. dry_run=true checks it without placing. bracket_sweep {{coin}} after every close.
+- Market reads (get_price, get_candles, get_l2_book, get_funding_rate, market_*) need no key and no account.
+
+Coins: main-dex perps by name (BTC, ETH). HIP-3 perps as dex:SYMBOL (xyz:GOLD). Testnet lists fewer live markets than mainnet: a coin that is delisted or missing on this network is refused for new entries (xyz:BRENTOIL is delisted on testnet, so the oil desk trades xyz:CL, WTI, there). Closes are never refused.
+
+{_public_fee_sentence()}
+
+LIVE MONEY: place_bracket, bracket_sweep, set_target, close_position, set_leverage, cancel_order act on the account on {net}, and config with arguments rewrites the trading config. Call them only when the user asked for that exact action in this conversation. Every other tool only reads (desk_refresh, desk_submit_call and desk_grade write the local desk journal)."""
+    return text[:MAX_PUBLIC_INSTRUCTIONS_CHARS]
+
+
+def server_instructions() -> str:
+    """The MCP initialize instructions: SERVER_INSTRUCTIONS, byte for byte, on
+    the operator's install; the public text on a public one."""
+    if not runtime.is_public():
+        return SERVER_INSTRUCTIONS
+    return _public_instructions()
 
 
 # Tools definition
@@ -1091,6 +1184,10 @@ def handle_wallet_account(params: Dict[str, Any]) -> str:
             address = active.main_address if active else ""
         except Exception:
             address = ""
+    if not address and runtime.is_public():
+        # a public install's address with no key (watch only) is no registry
+        # account; it is still the address the user configured
+        address = resolve_user_address() or ""
     if not address:
         store = _auth_store()
         try:
@@ -1368,6 +1465,545 @@ ALIASES: Dict[str, str] = {
     "get_leverage": "get_max_leverage",
 }
 
+
+# ── public install: tool classes, gates, output decoration ──────────────────
+#
+# Everything below runs only when runtime.is_public() (PATHIEL_INSTALL=public,
+# exported by scripts/_plugin_env.sh and Dockerfile.mcp). The operator's stack
+# (.mcp.json, no env block) never calls _public_gate, _public_decorate or
+# builder.warm, gets SERVER_INSTRUCTIONS and TOOLS unchanged, and every
+# handler's output byte for byte (tests/test_mcp_operator_unchanged.py).
+#
+# The gate sits at the MCP boundary (_call_tool), so code that calls a handler
+# directly skips it; pathiel.client.exchange's own credential checks stay the
+# second layer for writes.
+
+# Venue market data: needs no key and no account.
+MARKET_READ_TOOLS = frozenset({
+    "market_get_asset_data", "market_get_funding_regime", "market_list_instruments",
+    "get_price", "get_candles", "get_l2_book", "get_predicted_funding", "get_asset_context",
+    "get_price_history", "get_assets", "get_coin_info", "get_all_mids", "get_24h_stats",
+    "get_funding_rate", "get_open_interest", "get_server_time", "get_price_impact",
+    "get_max_leverage",
+})
+# One account's venue state: needs an address (a `user`/`address` argument
+# where the tool takes one, else the configured account).
+ACCOUNT_READ_TOOLS = frozenset({
+    "wallet_account", "get_open_orders", "get_user_fees", "get_trade_history", "get_user_state",
+    "get_withdrawals", "get_deposits", "get_transfers", "get_max_trade_size",
+    "get_portfolio_status", "get_order_by_oid", "get_account_summary", "get_asset_positions",
+    "get_portfolio_pnl", "get_risk_metrics", "get_historical_funding", "get_api_rate_limits",
+    "get_user_orders_history", "get_withdrawal_status", "get_liquidation_price",
+    "get_user_fills_by_time", "get_historical_orders", "query_order_by_cloid",
+    "account_overview", "risk_limits", "risk_size_trade",
+})
+# Local state, or reads that already answer sensibly with no account.
+LOCAL_READ_TOOLS = frozenset({
+    "state", "connected_wallets", "accounts", "desk_list", "desk_brief", "desk_track_record",
+})
+
+TOOL_CLASSES: Dict[str, frozenset] = {
+    "market_read": MARKET_READ_TOOLS, "account_read": ACCOUNT_READ_TOOLS,
+    "local_read": LOCAL_READ_TOOLS, "live_money": LIVE_MONEY_TOOLS,
+    "live_config": LIVE_CONFIG_TOOLS, "local_write": LOCAL_WRITE_TOOLS,
+}
+
+# An account read that is a what-if when any of these arguments is given: it
+# needs no account then.
+_ACCOUNT_READ_WHAT_IF: Dict[str, Tuple[str, ...]] = {
+    "risk_limits": ("equity_usd",),
+    "risk_size_trade": ("equity_usd",),
+    "get_liquidation_price": ("leverage", "is_long"),
+}
+
+
+def _check_tool_classes() -> List[str]:
+    """Every tool in exactly one class, every alias onto a listed tool. Runs at
+    import: a tool added without a class would reach a public user ungated.
+
+    Raises only on a public install. The operator's install (.mcp.json) logs
+    the problems to stderr and keeps starting: the classes gate public users
+    only, so a missed class must never cost the operator his close_position
+    and bracket_sweep while a position is open. The gate tests still fail on
+    any problem (tests/test_mcp_public_mode.py)."""
+    names = [t["name"] for t in TOOLS]
+    problems = []
+    for name in names:
+        homes = [k for k, s in TOOL_CLASSES.items() if name in s]
+        if len(homes) != 1:
+            problems.append(f"{name}: in {homes or 'no class'}")
+    listed = set(names)
+    for k, s in TOOL_CLASSES.items():
+        for name in sorted(s - listed):
+            problems.append(f"{name}: in {k} but not in TOOLS")
+    for alias, target in ALIASES.items():
+        if target not in listed:
+            problems.append(f"alias {alias} -> {target}: not a TOOLS name")
+        if alias in listed:
+            problems.append(f"alias {alias} is also a TOOLS name")
+    if problems:
+        message = "pathiel-mcp-server tool classes are wrong: " + "; ".join(problems)
+        if runtime.is_public():
+            raise RuntimeError(message)
+        print(f"[pathiel-mcp] WARNING (public installs would refuse to start): {message}",
+              file=sys.stderr)
+    return problems
+
+
+_check_tool_classes()
+
+
+def _canonical(name: str) -> str:
+    return ALIASES.get(name, name)
+
+
+NO_ACCOUNT_MSG = ("no account configured: set HYPERLIQUID_WALLET_ADDRESS in ~/.pathiel/.env.local "
+                  "(run /pathiel:setup). Market reads work without one.")
+
+# Tool descriptions a public user would read as "this machine has a web
+# dashboard" (it does not) or "pathiel stops trading after a daily loss" (it
+# does not). server_tools() swaps them in; names and schemas never change.
+_PUBLIC_DESCRIPTION_OVERRIDES: Dict[str, str] = {
+    "connected_wallets": (
+        "Wallets that signed in to pathiel's local sign-in store, newest first (empty on a "
+        "plugin install). READ-ONLY: this server signs with its own key, so it can never place, "
+        "close or size an order on any wallet listed here. Feed an address to wallet_account below."),
+    "accounts": (
+        "Hyperliquid accounts registered in pathiel (API keys, watch-only), which one is active, "
+        "and which address trades. Set the trading account in ~/.pathiel/.env.local "
+        "(run /pathiel:setup)."),
+    "risk_limits": (
+        "What the account may trade under its risk profile: positions at once, $ lost per "
+        "stop-out, the daily loss figure (shown, not enforced), max leverage. "
+        "equity_usd/preset = what-if."),
+}
+_PUBLIC_FORBIDDEN_TOOL_WORDS = ("dashboard", "account tab", "desk page", "localhost", "daily pause")
+_PUBLIC_TOOLS: "List[Dict[str, Any]] | None" = None
+
+
+def server_tools() -> List[Dict[str, Any]]:
+    """tools/list. TOOLS itself on the operator's install. On a public one, a
+    deep copy with _PUBLIC_DESCRIPTION_OVERRIDES applied: same names, order,
+    inputSchema and annotations."""
+    global _PUBLIC_TOOLS
+    if not runtime.is_public():
+        return TOOLS
+    if _PUBLIC_TOOLS is None:
+        tools = copy.deepcopy(TOOLS)
+        for tool in tools:
+            override = _PUBLIC_DESCRIPTION_OVERRIDES.get(tool["name"])
+            if override is not None:
+                tool["description"] = override
+        _PUBLIC_TOOLS = tools
+    return _PUBLIC_TOOLS
+
+
+def _as_flag(v: Any) -> bool:
+    return v is True or str(v).strip().lower() in ("1", "true", "yes", "y")
+
+
+def _trading_account() -> str:
+    """The main address orders are signed for (what the builder cache keys on),
+    else the configured read address, else ''. Never raises."""
+    try:
+        from pathiel.client.exchange import _resolve_identity
+        return _resolve_identity()[1] or ""
+    except Exception:   # noqa: BLE001 - no key: fall back to the read address
+        pass
+    try:
+        return resolve_user_address() or ""
+    except Exception:   # noqa: BLE001
+        return ""
+
+
+def _warm_builder() -> None:
+    """Start a background approval read when one is due. Never blocks."""
+    try:
+        from pathiel.client import builder
+        builder.warm(_trading_account() or None)
+    except Exception:   # noqa: BLE001 - builder state never fails a call
+        pass
+
+
+def _network_note(coin: str, status: str) -> str:
+    net = runtime.network()
+    hint = ("Testnet lists fewer live markets than mainnet: pick a listed coin "
+            "(market_list_instruments), or switch networks in ~/.pathiel/.env.local."
+            if net == "testnet" else "Pick a listed coin (market_list_instruments).")
+    return f"{coin} is not tradable on {net} ({status}). {hint}"
+
+
+def _profile_leverage_cap() -> "float | None":
+    """The saved risk profile's max leverage. Unset on an auto preset: the
+    highest any auto tier allows (the starter tier), so the gate never refuses
+    what the profile would allow at some equity."""
+    from pathiel.agents.config_store import read_risk_profile
+    profile = read_risk_profile()
+    if profile.max_leverage is not None:
+        return float(profile.max_leverage)
+    from services.risk.presets import resolve_profile
+    return resolve_profile(profile, 0.0)[1].max_leverage
+
+
+def _user_given(canon: str, args: Dict[str, Any]) -> bool:
+    """True when the call names its own address and the tool honors it."""
+    tool = next((t for t in TOOLS if t["name"] == canon), None)
+    props = ((tool or {}).get("inputSchema") or {}).get("properties") or {}
+    for key in ("user", "address"):
+        if key in props and str(args.get(key) or "").strip():
+            return True
+    return False
+
+
+def _public_gate(name: str, args: Dict[str, Any]) -> Optional[str]:
+    """JSON error text that answers the call instead of its handler, or None.
+    Public installs only. Rules, on _canonical(name), in order:
+      1. a live-money tool (except a place_bracket dry run) with no usable key
+         gets the read-only payload; otherwise the builder cache is warmed;
+      2. set_leverage above the risk profile's max_leverage is refused;
+      3. place_bracket, set_target and set_leverage on a coin delisted or not
+         listed on this network are refused; closes, cancels and sweeps never;
+      4. an account read with no address anywhere says so instead of erroring;
+      5. desk_refresh without the claude CLI fails fast."""
+    canon = _canonical(name)
+    if canon in LIVE_MONEY_TOOLS:
+        dry = canon == "place_bracket" and _as_flag(args.get("dry_run"))
+        if not dry:
+            from pathiel.client.exchange import trading_block_reason
+            reason = trading_block_reason()
+            if reason is not None:
+                return json.dumps({"ok": False, "read_only": True, "network": runtime.network(),
+                                   "tool": name, "error": reason})
+        _warm_builder()
+    if canon == "set_leverage":
+        try:
+            wanted = float(args.get("leverage", 5))
+        except (TypeError, ValueError):
+            wanted = None
+        cap = _profile_leverage_cap() if wanted is not None else None
+        if wanted is not None and cap is not None and wanted > cap:
+            return json.dumps({
+                "ok": False, "network": runtime.network(), "leverage": wanted, "max_leverage": cap,
+                "error": (f"leverage {wanted:g}x is above the risk profile cap of {cap:g}x "
+                          "(risk_profile.max_leverage). Raise the cap first with the config tool "
+                          "or ~/.pathiel/.agent-config.json if you mean it.")})
+    if canon in ("place_bracket", "set_target", "set_leverage"):
+        coin = _norm_coin(str(args.get("coin") or ""))
+        if coin:
+            from pathiel.client.exchange import coin_listing
+            status = coin_listing(coin)
+            if status in ("delisted", "not_listed"):
+                note = _network_note(coin, status)
+                return json.dumps({"ok": False, "coin": coin, "placed": False,
+                                   "network": runtime.network(), "network_note": note,
+                                   "error": note})
+    if canon in ACCOUNT_READ_TOOLS:
+        what_if = any(args.get(k) not in (None, "") for k in _ACCOUNT_READ_WHAT_IF.get(canon, ()))
+        if not what_if and not _user_given(canon, args):
+            try:
+                address = resolve_user_address() or ""
+            except Exception:   # noqa: BLE001
+                address = ""
+            if not address:
+                return json.dumps({"error": NO_ACCOUNT_MSG, "no_account": True})
+    if canon == "desk_refresh":
+        from services.llm.config import claude_binary
+        if shutil.which(claude_binary()) is None:
+            return json.dumps({
+                "error": ("desk_refresh needs the Claude Code CLI (claude) on PATH to write a "
+                          "thesis and it was not found. Install Claude Code or set "
+                          "CLAUDE_CLI_COMMAND. desk_brief still shows the last thesis."),
+                "desk": str(args.get("desk") or "").strip()})
+    return None
+
+
+def _fee_estimate(notional_usd: float, fee_tenths_bp: int) -> float:
+    """The builder fee on `notional_usd`: fee in tenths of a basis point, so
+    f=10 is 0.01% and $250 costs $0.025."""
+    return round(float(notional_usd) * int(fee_tenths_bp) / 100000.0, 4)
+
+
+def _builder_notes(obj: Any) -> List[Dict[str, Any]]:
+    """Every builder note pathiel.client.exchange put on an order result
+    (key 'builder', with 'attached' and 'reason_code'), anywhere in obj."""
+    found: List[Dict[str, Any]] = []
+    stack = [obj]
+    while stack:
+        cur = stack.pop()
+        if isinstance(cur, dict):
+            note = cur.get("builder")
+            if isinstance(note, dict) and "attached" in note and "reason_code" in note:
+                found.append(note)
+            stack.extend(v for k, v in cur.items() if k != "builder")
+        elif isinstance(cur, list):
+            stack.extend(cur)
+    return found
+
+
+def _order_notional(canon: str, obj: Dict[str, Any]) -> "float | None":
+    """The notional the call's orders carry, when the output says."""
+    try:
+        if canon == "place_bracket":
+            v = (obj.get("sizing") or {}).get("notional_usd")
+            return float(v) if v is not None else None
+        if canon == "close_position":
+            res = obj.get("result") or {}
+            if res.get("total_sz") is not None and res.get("avg_px") is not None:
+                return float(res["total_sz"]) * float(res["avg_px"])
+            return None
+        if canon == "set_target":
+            if obj.get("size") is not None and obj.get("tp_px") is not None:
+                return float(obj["size"]) * float(obj["tp_px"])
+            return None
+        if canon == "bracket_sweep":
+            merged = (obj.get("consolidated") or {}).get("merged") or []
+            if merged:
+                return sum(float(m.get("size") or 0) * float(m.get("px") or 0) for m in merged)
+            return None
+    except (TypeError, ValueError):
+        return None
+    return None
+
+
+_NOT_AN_ORDER = frozenset({"set_leverage", "cancel_order"})
+_FEE_DETAIL = {
+    "resent_without_builder": ("Hyperliquid placed nothing for the order with the builder fee, "
+                               "so it was sent again without it"),
+    "not_an_order": "this action places no order, so it carries no builder fee",
+    "venue_refused": ("Hyperliquid refused the order for a reason of its own (not the builder "
+                      "fee) and placed nothing, so no fee was charged"),
+}
+
+
+def builder_counters() -> Dict[str, int]:
+    """pathiel.client.builder's order counters (with_builder, without_builder,
+    retried, refused), read from the cache view. {} when unreadable. No I/O."""
+    try:
+        from pathiel.client import builder
+        return dict(builder.builder_status(_trading_account() or None, refresh=False)
+                    .get("counters") or {})
+    except Exception:   # noqa: BLE001
+        return {}
+
+
+def _builder_fee_block(canon: str, obj: Dict[str, Any],
+                       counters_before: Optional[Dict[str, int]] = None) -> Dict[str, Any]:
+    """{charged, rate, address, reason, detail, est_usd?} for a live-money output.
+
+    What the orders of this call carried comes from the builder notes
+    pathiel.client.exchange puts on order results when the tool returns them
+    (place_bracket, close_position). set_target and bracket_sweep return a
+    summary without the order results, so for them it comes from the change in
+    builder's process-wide order counters across the call. Two live-money
+    calls running at once on one public install can blur that second source;
+    the order itself is never affected."""
+    from pathiel.client import builder
+    fee = runtime.builder_fee_tenths_bp()
+    block: Dict[str, Any] = {"charged": False, "rate": runtime.fee_rate_str(fee),
+                             "address": runtime.builder_address() or None}
+    notes = _builder_notes(obj)
+    delta: Dict[str, int] = {}
+    if not notes and counters_before is not None:
+        after = builder_counters()
+        delta = {k: int(after.get(k, 0)) - int(counters_before.get(k, 0))
+                 for k in ("with_builder", "without_builder", "retried", "refused")}
+    if notes:
+        charged = any(bool(n.get("attached")) for n in notes)
+        codes = [str(n.get("reason_code") or "none") for n in notes]
+        reason = ("approved" if charged else
+                  "resent_without_builder" if "resent_without_builder" in codes else codes[0])
+        block["charged"] = charged
+        block["reason"] = reason
+        block["detail"] = _FEE_DETAIL.get(reason) or builder.REASONS.get(reason, reason)
+    elif any(v > 0 for v in delta.values()):
+        charged = delta["with_builder"] > 0
+        if charged:
+            reason = "approved"
+        elif delta["retried"] > 0:
+            reason = "resent_without_builder"
+        elif delta["refused"] > 0 and delta["without_builder"] == 0:
+            reason = "venue_refused"
+        else:
+            reason = str(builder.last_decision(_trading_account()).get("reason_code") or "none")
+        block["charged"] = charged
+        block["reason"] = reason
+        block["detail"] = _FEE_DETAIL.get(reason) or builder.REASONS.get(reason, reason)
+    elif canon in _NOT_AN_ORDER:
+        block["reason"] = "not_an_order"
+        block["detail"] = _FEE_DETAIL["not_an_order"]
+    else:
+        status = builder.builder_status(_trading_account() or None, refresh=False)
+        block["reason"] = "no_order_placed"
+        block["detail"] = ("no order was sent in this call. Next order: "
+                           + str(status.get("reason") or status.get("reason_code")))
+    notional = _order_notional(canon, obj)
+    if notional is not None:
+        block["est_usd"] = _fee_estimate(notional, fee) if block["charged"] else 0.0
+    return block
+
+
+# Cache views after which `state` reads the approval once more itself, so a
+# user who just signed approve-sign sees it at once.
+_STATE_REREAD = frozenset({"cache_cold", "not_approved", "approval_read_failed"})
+
+
+def _install_block() -> Dict[str, Any]:
+    """Who is running, on which network, whether trading is on, the fee.
+
+    The fee comes from the cache view. When that view shows the fee enabled
+    but no approval yet, state reads the approval once (builder_status
+    refresh=True: one bounded read, at most builder.HARD_DEADLINE_S). Only
+    state does this; order paths never read."""
+    from pathiel.client import builder
+    from pathiel.client.exchange import trading_block_reason
+    reason = trading_block_reason()
+    account = _trading_account() or None
+    status = builder.builder_status(account, refresh=False)
+    if account and status.get("enabled") and status.get("reason_code") in _STATE_REREAD:
+        status = builder.builder_status(account, refresh=True)
+    net = runtime.network()
+    return {
+        "kind": runtime.install_kind(),
+        "network": net,
+        "network_explicit": runtime.network_is_explicit(),
+        "network_notice": _public_start_notice(net).removeprefix("pathiel: "),
+        "trading": "read_only" if reason else "enabled",
+        "read_only_reason": reason,
+        "builder_fee": {k: status.get(k) for k in (
+            "enabled", "address", "fee_tenths_bp", "fee_rate", "approved_tenths_bp",
+            "attaches", "reason_code", "reason")},
+    }
+
+
+_DAILY_LOSS_NOTE = ("Daily loss figure: -${:,.2f}. Informational only: pathiel does not stop "
+                    "trading for you.")
+_PUBLIC_WORDING: Tuple[Tuple["re.Pattern[str]", str], ...] = (
+    (re.compile(r"(?:in )?the dashboard's Account tab", re.I), "in ~/.pathiel/.env.local (run /pathiel:setup)"),
+    (re.compile(r"(?:in )?the Account tab(?: in the dashboard)?", re.I),
+     "in ~/.pathiel/.env.local (run /pathiel:setup)"),
+    (re.compile(r"Account tab", re.I), "~/.pathiel/.env.local (run /pathiel:setup)"),
+    (re.compile(r"(?:,? or )?PUT /api/\S+", re.I), ""),
+    (re.compile(r"\bthe dashboard\b", re.I), "pathiel's local sign-in"),
+    (re.compile(r"\bdashboard\b", re.I), "local sign-in"),
+    (re.compile(r"\bdaily pause\b", re.I), "daily loss figure"),
+    (re.compile(r"\bstops for the day\b", re.I), "shows a daily loss figure"),
+)
+_REWORDED_TOOLS = frozenset({"wallet_account", "accounts", "account_overview", "connected_wallets",
+                             "risk_limits"})
+
+
+def _reword(value: Any) -> Any:
+    """Every string in value with the dashboard and pause wording replaced."""
+    if isinstance(value, str):
+        for rx, repl in _PUBLIC_WORDING:
+            value = rx.sub(repl, value)
+        return value
+    if isinstance(value, list):
+        return [_reword(v) for v in value]
+    if isinstance(value, dict):
+        return {k: _reword(v) for k, v in value.items()}
+    return value
+
+
+def _desk_network_note(desk_id: str) -> "str | None":
+    """network_note when the desk's primary instrument is delisted or not
+    listed on this network and has no testnet substitute (get_spec has
+    already swapped the oil desk's xyz:BRENTOIL for xyz:CL on testnet; the
+    brief itself says so through desks.substitution_note)."""
+    if not desk_id:
+        return None
+    from pathiel.client.exchange import coin_listing
+    from services.strategies.desks import get_spec
+    spec = get_spec(desk_id)
+    if not spec or not spec.instruments:
+        return None
+    coin = next((i.coin for i in spec.instruments if i.role == "primary"), spec.instruments[0].coin)
+    status = coin_listing(coin)
+    if status in ("delisted", "not_listed"):
+        return (_network_note(coin, status) + " The brief's levels may be stale or empty; "
+                "the thesis still reads, but this desk cannot open a trade here.")
+    return None
+
+
+def _desk_substitution_note(desk_id: str) -> "str | None":
+    """'Testnet: this desk trades WTI (xyz:CL) as the stand-in for Brent ...'
+    when this network swaps the desk's instrument, else None. None at once on
+    mainnet (no venue read), so the operator's brief is unchanged."""
+    if not desk_id or not runtime.network() == "testnet":
+        return None
+    try:
+        from services.strategies.desks import registry_spec, substitution_note
+        return substitution_note(registry_spec(desk_id))
+    except Exception:   # noqa: BLE001 - the brief answers without the note
+        return None
+
+
+def _public_decorate(name: str, args: Dict[str, Any], text: str,
+                     counters_before: Optional[Dict[str, int]] = None) -> str:
+    """A handler's output, with what a public user needs added. Public
+    installs only. Text that is not a JSON object comes back unchanged.
+    counters_before: builder_counters() taken just before the handler ran."""
+    try:
+        obj = json.loads(text)
+    except (TypeError, ValueError):
+        return text
+    if not isinstance(obj, dict):
+        return text
+    canon = _canonical(name)
+    if canon in LIVE_MONEY_TOOLS:
+        obj["network"] = runtime.network()
+        obj["builder_fee"] = _builder_fee_block(canon, obj, counters_before)
+    elif canon == "state":
+        obj["install"] = _install_block()
+    elif canon == "desk_brief":
+        note = _desk_network_note(str(args.get("desk") or "").strip())
+        if note:
+            obj["network_note"] = note
+    elif canon in MARKET_READ_TOOLS and obj.get("error"):
+        # A HIP-3 coin whose dex or market this network does not list: say
+        # so instead of the raw venue error (a 422 on allMids, "unknown coin").
+        coin = _norm_coin(str(args.get("coin") or ""))
+        if ":" in coin:
+            from pathiel.client.exchange import coin_listing
+            status = coin_listing(coin)
+            if status in ("delisted", "not_listed"):
+                note = _network_note(coin, status)
+                obj["venue_error"] = obj["error"]
+                obj["error"] = note
+                obj["network_note"] = note
+    if canon == "risk_limits":
+        notes = obj.get("notes")
+        if isinstance(notes, list):
+            limit = _fnum(obj.get("daily_loss_limit_usd"))
+            obj["notes"] = [_DAILY_LOSS_NOTE.format(limit)
+                            if isinstance(n, str) and n.startswith("Daily pause after") else n
+                            for n in notes]
+        if "change_it" in obj:
+            obj["change_it"] = ("the config tool (risk_profile), or edit "
+                                "~/.pathiel/.agent-config.json.")
+    if canon == "accounts" and "manage" in obj:
+        obj["manage"] = ("set the trading account in ~/.pathiel/.env.local (run /pathiel:setup); "
+                         "add a watch-only address with wallet_account {address}.")
+    if canon in _REWORDED_TOOLS:
+        obj = _reword(obj)
+    return json.dumps(obj, default=str)
+
+
+def _operator_checkout_notice(root: str, env: "Dict[str, str] | Any") -> Optional[str]:
+    """One stderr line for someone who launched the server straight from a
+    checkout with no env file of their own: that path is the maintainer's
+    (mainnet, the repo's tracked 20x config). None on a public install, when
+    <root>/.env.local exists (the operator's checkout), or when
+    PATHIEL_ENV_FILE is set."""
+    if runtime.is_public(env):
+        return None
+    if os.path.isfile(os.path.join(root, ".env.local")):
+        return None
+    if str(env.get("PATHIEL_ENV_FILE") or "").strip():
+        return None
+    return ("pathiel: maintainer mode from a checkout (mainnet, the repo tracked config). "
+            "Public users: install the plugin or start scripts/pathiel-mcp.")
+
 # Protocol versions this server speaks. The tools surface is identical across
 # them, so a client asking for any of these gets its own version echoed back;
 # anything else gets the newest, which the spec lets the client reject.
@@ -1420,14 +2056,38 @@ def _call_tool(name: Any, args: Any) -> Dict[str, Any]:
     if not isinstance(args, dict):
         return {"content": [{"type": "text", "text": json.dumps(
             {"error": "arguments must be an object"})}], "isError": True}
-    try:
-        text = handler(args)
-    except Exception as e:
-        traceback.print_exc(file=sys.stderr)
-        sys.stderr.flush()
-        text = json.dumps({"error": f"{type(e).__name__}: {e}", "tool": name})
-    if not isinstance(text, str):
-        text = json.dumps(text, default=str)
+    public = runtime.is_public()
+    gated: Optional[str] = None
+    if public:
+        try:
+            gated = _public_gate(name, args)
+        except Exception as e:   # noqa: BLE001
+            traceback.print_exc(file=sys.stderr)
+            sys.stderr.flush()
+            if _canonical(name) in LIVE_MONEY_TOOLS or _canonical(name) in LIVE_CONFIG_TOOLS:
+                # fail closed for writes: a broken safety check never lets one through
+                gated = json.dumps({"ok": False, "network": runtime.network(), "tool": name,
+                                    "error": f"public safety check failed ({type(e).__name__}: {e}); "
+                                             "nothing was sent"})
+    if gated is not None:
+        text = gated
+    else:
+        counters_before = (builder_counters()
+                           if public and _canonical(name) in LIVE_MONEY_TOOLS else None)
+        try:
+            text = handler(args)
+        except Exception as e:
+            traceback.print_exc(file=sys.stderr)
+            sys.stderr.flush()
+            text = json.dumps({"error": f"{type(e).__name__}: {e}", "tool": name})
+        if not isinstance(text, str):
+            text = json.dumps(text, default=str)
+        if public:
+            try:
+                text = _public_decorate(name, args, text, counters_before)
+            except Exception:   # noqa: BLE001 - decoration never loses the handler's answer
+                traceback.print_exc(file=sys.stderr)
+                sys.stderr.flush()
     is_error = _payload_is_error(text)
     return {"content": [{"type": "text", "text": _guard_output(name, text)}],
             "isError": is_error}
@@ -1466,12 +2126,12 @@ def dispatch_message(msg: Any) -> "Dict[str, Any] | None":
             "protocolVersion": version,
             "capabilities": {"tools": {}},
             "serverInfo": {"name": "pathiel", "version": __version__},
-            "instructions": SERVER_INSTRUCTIONS,
+            "instructions": server_instructions(),
         })
     if method == "ping":
         return _result_msg(msg_id, {})
     if method == "tools/list":
-        return _result_msg(msg_id, {"tools": TOOLS})
+        return _result_msg(msg_id, {"tools": server_tools()})
     if method == "tools/call":
         name = params.get("name")
         try:
@@ -3058,9 +3718,13 @@ def handle_desk_brief(params: Dict[str, Any]) -> str:
     except Exception as e:
         return json.dumps({"error": str(e), "desk": desk_id})
     sizing = _thesis_sizing(brief)
+    substitute = _desk_substitution_note(desk_id)   # None on mainnet
     if mode == "full":
-        return json.dumps({"desk": desk_id, "mode": "full", "your_size": sizing,
-                           "brief": _compact_brief(brief)})
+        out_full = {"desk": desk_id, "mode": "full", "your_size": sizing,
+                    "brief": _compact_brief(brief)}
+        if substitute:
+            out_full["testnet_substitute"] = substitute
+        return json.dumps(out_full)
     try:
         # FIXED 2026-10-18: the real renderer requires a thesis, so a desk
         # that had never been refreshed crashed here ('NoneType' object has
@@ -3071,14 +3735,19 @@ def handle_desk_brief(params: Dict[str, Any]) -> str:
             markdown = _render_quick(brief.thesis, brief.analytics, mode)
     except Exception as e:
         return json.dumps({"error": f"render failed: {type(e).__name__}: {e}", "desk": desk_id})
+    if substitute:
+        markdown = f"**{substitute}**\n\n" + markdown
     if sizing and sizing.get("reason"):
         markdown += "\nYour size: " + sizing["reason"]
     live_rule = _live_rule(desk_id, brief)
     if live_rule.get("line"):
         markdown += "\n" + live_rule["line"]
-    return json.dumps({"desk": desk_id, "mode": "quick", "markdown": markdown,
-                       "stale": brief.stale, "your_size": sizing,
-                       "live_rule": live_rule.get("next")})
+    out = {"desk": desk_id, "mode": "quick", "markdown": markdown,
+           "stale": brief.stale, "your_size": sizing,
+           "live_rule": live_rule.get("next")}
+    if substitute:
+        out["testnet_substitute"] = substitute
+    return json.dumps(out)
 
 
 def _live_rule(desk_id: str, brief: Any) -> Dict[str, Any]:
@@ -3088,7 +3757,16 @@ def _live_rule(desk_id: str, brief: Any) -> Dict[str, Any]:
         from pathiel.agents.config_store import read_agent_config
         from services.strategies.api import desk_next_trade
         from services.strategies.next_trade import live_rule_line
-        lev = float(((read_agent_config() or {}).get("risk_profile") or {}).get("max_leverage") or 20)
+        if runtime.is_public():
+            # A public profile with no saved max_leverage must not fall back
+            # to the maintainer's 20x in the brief's live-rule line.
+            from services.risk.presets import PUBLIC_DEFAULT_PROFILE
+            try:
+                lev = _profile_leverage_cap() or PUBLIC_DEFAULT_PROFILE.max_leverage
+            except Exception:  # noqa: BLE001 - an unreadable profile gets the public cap
+                lev = PUBLIC_DEFAULT_PROFILE.max_leverage
+        else:
+            lev = float(((read_agent_config() or {}).get("risk_profile") or {}).get("max_leverage") or 20)
         nt = _bounded(desk_next_trade, desk_id, lev, brief=brief)
         line = live_rule_line(nt)
         from services.strategies.desks import get_spec
@@ -3312,6 +3990,14 @@ def _risk_inputs():
 def _live_equity() -> float:
     from services.accounts.summary import get_active_summary
     summary = get_active_summary(max_age_s=0)   # a tool result is acted on: always a new read
+    if summary.equity_usd is None and runtime.is_public():
+        # Public install with an address and no key (watch only): the accounts
+        # registry has no account then, so read the address itself. Strict: a
+        # failed read raises, it never reads as $0.
+        address = resolve_user_address()
+        if address:
+            state = fetch_account_state(address, include_hip3=True, strict=True) or {}
+            return float(state.get("equity") or 0.0)
     if summary.equity_usd is None:
         raise RuntimeError("could not read the active account's equity"
                            + (": " + "; ".join(summary.blockers) if summary.blockers else ""))
@@ -3748,8 +4434,24 @@ def handle_desk_grade(params: Dict[str, Any]) -> str:
         return json.dumps({"error": str(e), "desk": desk_id})
 
 
-if __name__ == "__main__":
+def main() -> None:
+    """Entry point: the maintainer-path notice, the builder warm-up on a
+    public install, then the stdio loop."""
+    notice = _operator_checkout_notice(os.path.dirname(_SCRIPTS_DIR), os.environ)
+    if notice:
+        sys.stderr.write(notice + "\n")
+        sys.stderr.flush()
+    if runtime.is_public():
+        # Once per start: which network, so a fresh install's real-money
+        # default is never a surprise. The operator's launch prints nothing.
+        sys.stderr.write(_public_start_notice(runtime.network()) + "\n")
+        sys.stderr.flush()
+        _warm_builder()   # background read; the first order after start may still miss it
     run()
+
+
+if __name__ == "__main__":
+    main()
     # A tool call that timed out may still hold a worker thread; the client
     # is gone (stdin closed), so leave without joining it.
     sys.stderr.flush()

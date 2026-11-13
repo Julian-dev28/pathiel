@@ -1,0 +1,58 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.Julian-dev28/pathiel",
+  "title": "pathiel",
+  "description": "Trade Hyperliquid perps with an exact stop and target on every order. Mainnet; testnet opt-in.",
+  "version": "0.4.0",
+  "repository": {
+    "url": "https://github.com/Julian-dev28/pathiel",
+    "source": "github"
+  },
+  "websiteUrl": "https://github.com/Julian-dev28/pathiel#before-you-trade",
+  "packages": [
+    {
+      "registryType": "oci",
+      "identifier": "ghcr.io/julian-dev28/pathiel-mcp:0.4.0",
+      "transport": {
+        "type": "stdio"
+      },
+      "runtimeHint": "docker",
+      "runtimeArguments": [
+        {
+          "type": "named",
+          "name": "-i",
+          "description": "Keep stdin open: the server speaks MCP over stdio."
+        },
+        {
+          "type": "named",
+          "name": "--rm",
+          "description": "Remove the container when the client disconnects."
+        },
+        {
+          "type": "named",
+          "name": "-v",
+          "value": "{pathiel_home}:/data",
+          "description": "Mount the folder that holds your pathiel env file, config and state.",
+          "isRequired": true,
+          "variables": {
+            "pathiel_home": {
+              "description": "Absolute path to your pathiel folder, usually ~/.pathiel. Keys stay in its .env.local and never go in this config.",
+              "format": "filepath",
+              "isRequired": true
+            }
+          }
+        }
+      ],
+      "environmentVariables": [
+        {
+          "name": "PATHIEL_NETWORK",
+          "description": "Hyperliquid network: mainnet (the default; real money once a key is set) or testnet (test funds).",
+          "default": "mainnet",
+          "choices": ["mainnet", "testnet"],
+          "isRequired": false,
+          "isSecret": false
+        }
+      ]
+    }
+  ]
+}

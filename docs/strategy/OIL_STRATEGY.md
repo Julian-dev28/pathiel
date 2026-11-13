@@ -1,5 +1,7 @@
 # Oil desk strategy: the old rules and the 2026-10-30 switch
 
+> Research log, not a performance record. The figures below are backtests over windows of 12 to 50 days. Live audit, 2026-11-12: 36 graded thesis calls, direction right 32% of the time; 19 closed trades, average result not distinguishable from zero. No edge is demonstrated. Nothing here is a forecast. The rules alone are in OIL_RULES.md.
+
 On 2026-10-30 the oil desk stopped resting a limit at the 8-hour low and
 started buying at the market when price sits low enough in the 24-hour range
 to pay 2R. On our 9 journaled theses the new rules make 18.7% a day in the
@@ -74,42 +76,12 @@ Every change was backtested before it went live (operator rule since
 | 2026-10-24 | 20x leverage, about $64 in the account | Operator's call; 10x was the safer option offered |
 | 2026-10-23 | Brent through Claude only; `place_bracket` with a 1.5R floor | The old bot could take the margin a manual trade needed |
 
-## ROI
+## Backtest summary
 
-Backtest, $64 start, 15-minute ticks, size-aware slippage, fees and
-funding. "With thesis" = the 9 journaled theses, 2026-10-18 to 2026-10-30
-(11.8 days). "No thesis" = always long. Per day is the compounding daily
-rate; per week is (1 + per day)^7 - 1.
-
-| Setup | Per day | Per week | $64 ends | Trades / won | Max drawdown |
-|---|---|---|---|---|---|
-| Old rules, with thesis | 11.2% | 110% | $224.63 | 8 / 62% | 30% |
-| Old rules, no thesis, same 11.8 days | 8.1% | 72% | $160.31 | 10 / 50% | 35% |
-| **New rules, with thesis** | **18.7%** | **233%** | **$487.66** | 8 / 75% | 29% |
-| New rules, no thesis, same 11.8 days | 18.7% | 233% | $487.66 | 8 / 75% | 29% |
-| New rules at 15x, with thesis | 14.7% | 160% | $322.49 | 8 / 75% | 22% |
-| New rules at 10x, with thesis | 10.2% | 97% | $201.93 | 8 / 75% | 16% |
-
-Under the new rules the thesis changed no trade in these 11.8 days: every
-thesis was long, Brent rose, and no invalidation printed. Its job is the
-days it says flat or short, which this window did not have.
-
-No thesis, longer windows (always long):
-
-| Window | Old rules per day | New rules per day | New rules max drawdown |
-|---|---|---|---|
-| Last 30 days | +1.01% | +9.48% | 67% |
-| Last 50 days | -4.88% (98% drawdown) | +4.67% | 87% |
-| First half of the 50 (Sep 11 to Oct 5, Brent flat to down) | -12.21% | -0.37% | |
-| Second half of the 50 (Oct 5 to Oct 30, Brent up) | +3.05% | +9.96% | |
-
-There were no theses before 2026-10-18, so a 50-day "with thesis" run cannot
-be made.
-
-Live account: funded to about $64 when the 20x desk started (2026-10-24);
-$97.62 equity on 2026-10-30 00:15Z, of which $25.40 is the open long's
-unrealized profit. Monthly and compounding projections in USD are in
-`ROI.md` (gitignored).
+The 2026-10-30 sweep compared the old rules (a resting limit at the 8h low, 1.5R) with the new ones (market entry, 24h range, 2R),
+with and without the journaled theses, on Brent over 11.8 days with theses and 30 and 50 days without.
+The windows were short and the thesis window was one-directional (every thesis long, Brent rising), so the ranking is not evidence of an edge.
+The removed tables are in git history at commit 2816df7.
 
 ## Why the new rules win
 

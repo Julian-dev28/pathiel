@@ -26,6 +26,7 @@ from typing import TYPE_CHECKING, Any, Dict, Iterable, List, Optional, Set, Tupl
 
 import requests
 
+import contracts.runtime as _runtime
 from pathiel.client.http_session import SDK_TIMEOUT_S, _set_session_timeout, wrap_session_retry
 from pathiel.client.rate_limit import (HL_LIMITER as _HL_LIMITER, carry_priority as _carry_priority,
                                        endpoint_weight as _endpoint_weight, in_background as _in_background)
@@ -37,7 +38,20 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-HL_API = "https://api.hyperliquid.xyz"
+# The venue URL follows the runtime contract (contracts/runtime): mainnet by
+# default on every install (a public one since 2026-11-12), and whatever
+# PATHIEL_NETWORK names. Read once at import: one network per process. Every
+# caller reads this module global at call time, so nothing else holds a copy.
+HL_API = _runtime.api_url()
+
+# A maintainer running testnet from the operator checkout would otherwise write
+# testnet theses, candles and ledgers into the live state directory (the repo
+# .env.local sets PATHIEL_STATE_DIR). Refuse unless the state dir says testnet.
+if (not _runtime.is_public() and _runtime.network() == "testnet"
+        and "testnet" not in os.environ.get("PATHIEL_STATE_DIR", "").lower()):
+    raise RuntimeError(
+        "testnet from a maintainer checkout needs its own state dir: "
+        "set PATHIEL_STATE_DIR to a path that contains 'testnet'")
 _MS_PER_CANDLE: Dict[str, int] = {
     "1m": 60_000,
     "5m": 300_000,
@@ -88,7 +102,8 @@ def init_info() -> None:
             from hyperliquid.info import Info
             # skip_ws=True prevents blocking WS connect + meta fetch
             # We already have meta from HTTP above
-            _info_instance = Info(skip_ws=True, meta=perp_meta, spot_meta=spot_meta, timeout=SDK_TIMEOUT_S)
+            _info_instance = Info(base_url=HL_API, skip_ws=True, meta=perp_meta,
+                                  spot_meta=spot_meta, timeout=SDK_TIMEOUT_S)
             _set_session_timeout(_info_instance)
             logger.info("[hl] Info client initialized (HTTP-only, 10s timeout)")
         except Exception as e:

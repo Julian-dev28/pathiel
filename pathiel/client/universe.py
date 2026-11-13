@@ -52,18 +52,28 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+import contracts.runtime as _runtime
 from pathiel import compat
 from pathiel.client.hl_client import _http_post
 
 logger = logging.getLogger(__name__)
 
+
+def _cache_dir_for(base: Path, network: str) -> Path:
+    """Where the universe cache lives for `network`. Mainnet keeps today's
+    path; testnet gets its own subfolder, so a testnet meta (different coins,
+    different indexes, a delisted xyz:BRENTOIL) is never served on mainnet or
+    the other way round."""
+    return base / "testnet" if network == "testnet" else base
+
+
 # A warm cache under the old name is still a warm cache.
 # PATHIEL_UNIVERSE_CACHE_DIR overrides the location (the test gate points it at
 # an empty temp dir so a warm cache on one machine cannot hide a network
 # call that every clean CI runner then makes; found 2026-10-25).
-_CACHE_DIR = Path(os.environ.get("PATHIEL_UNIVERSE_CACHE_DIR") or compat.legacy_path(
+_CACHE_DIR = _cache_dir_for(Path(os.environ.get("PATHIEL_UNIVERSE_CACHE_DIR") or compat.legacy_path(
     str(Path.home() / ".pathiel" / "universe_cache"),
-    str(Path.home() / ".pathiel" / "universe_cache")))
+    str(Path.home() / ".pathiel" / "universe_cache"))), _runtime.network())
 _CACHE_DIR.mkdir(parents=True, exist_ok=True)
 _UNIVERSE_CACHE_PATH = _CACHE_DIR / "meta.json"
 _SPOT_CACHE_PATH = _CACHE_DIR / "spot_meta.json"
@@ -132,16 +142,57 @@ def _fetch_perp_meta(force_refresh: bool = False) -> Tuple[Dict[str, Any], Dict[
 
 
 def list_hip3_dexes(force_refresh: bool = False) -> List[str]:
+    """The HIP-3 dexes this process works with.
+
+    Mainnet: every registered dex, exactly registered_hip3_dexes().
+
+    Testnet: only the dexes named in config `hip3_dex_allowlist`, minus
+    `hip3_dex_blocklist`, that are registered there. Testnet lists hundreds of
+    throwaway dexes (278 on 2026-11-12); walking them all for equity and mids
+    would spend the rate budget on test markets nobody trades. An empty
+    allowlist on testnet means no HIP-3 dex, and so does an unreadable config.
+    """
+    dexes = registered_hip3_dexes(force_refresh)
+    if _runtime.network() != "testnet":
+        return dexes
+    try:
+        from pathiel.agents.config_store import read_agent_config
+        cfg = read_agent_config() or {}
+    except Exception as e:   # noqa: BLE001 - an unreadable config never widens testnet
+        logger.warning(f"[universe] testnet: config unreadable ({e}); no HIP-3 dex")
+        return []
+    allow = [d for d in (cfg.get("hip3_dex_allowlist") or []) if d]
+    block = {d for d in (cfg.get("hip3_dex_blocklist") or []) if d}
+    registered = set(dexes)
+    return [d for d in dict.fromkeys(allow) if d in registered and d not in block]
+
+
+def registered_hip3_dexes(force_refresh: bool = False) -> List[str]:
     """Names of all non-null HIP-3 perp dexes registered on Hyperliquid.
 
     First entry of /info?perpDexs is null (the main HL perp dex); the rest
-    are HIP-3 sub-dexes. Cached for 24h.
+    are HIP-3 sub-dexes. Cached for 24h. [] both when the read failed and
+    when the venue lists no HIP-3 dex; hip3_dex_registry() tells them apart.
     """
+    return _read_perp_dexs(force_refresh)[0]
+
+
+def hip3_dex_registry(force_refresh: bool = False) -> Optional[List[str]]:
+    """registered_hip3_dexes(), but None when the list could not be read at
+    all (no reply and no cached list). [] means the venue answered and lists
+    no HIP-3 dex: a network without them (a testnet could drop xyz)."""
+    dexes, read_ok = _read_perp_dexs(force_refresh)
+    return dexes if (dexes or read_ok) else None
+
+
+def _read_perp_dexs(force_refresh: bool) -> Tuple[List[str], bool]:
+    """(dex names, the venue answered or a cached list served)."""
     cache = _load_json_cached(_PERP_DEXS_CACHE_PATH, _CACHE_TTL_SECS) if not force_refresh else None
     if cache:   # an empty cached list is never trusted — see below
-        return cache
-    raw = _http_post("/info", {"type": "perpDexs"}) or []
-    dexes = [d["name"] for d in raw if isinstance(d, dict) and d.get("name")]
+        return cache, True
+    raw = _http_post("/info", {"type": "perpDexs"})
+    read_ok = isinstance(raw, list)
+    dexes = [d["name"] for d in (raw or []) if isinstance(d, dict) and d.get("name")]
     if not dexes:
         # A degraded/empty response must NOT be cached as "no dexes exist":
         # on 2026-07-17 one empty read got cached for 24h, silently dropping
@@ -152,10 +203,10 @@ def list_hip3_dexes(force_refresh: bool = False) -> List[str]:
         stale = _load_json_cached(_PERP_DEXS_CACHE_PATH, ttl_secs=10 * 365 * 86_400)
         if stale:
             logger.warning("[universe] perpDexs returned empty — serving stale dex list")
-            return stale
-        return dexes
+            return stale, True
+        return dexes, read_ok
     _save_json_cached(_PERP_DEXS_CACHE_PATH, dexes)
-    return dexes
+    return dexes, True
 
 
 def _fetch_hip3_meta(dex: str, force_refresh: bool = False) -> Tuple[Dict[str, Any], Dict[str, Any]]:

@@ -17,6 +17,7 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import ValidationError
 
+import contracts.runtime as _runtime
 from contracts.risk.models import RiskProfile
 from pathiel.agents import universe as _universe
 
@@ -27,10 +28,25 @@ logger = logging.getLogger(__name__)
 # Go up 3 levels: agents/ → pathiel/ → pathiel/
 # Override with PATHIEL_AGENT_CONFIG_FILE when deploying behind a mounted volume.
 _CONFIG_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-CONFIG_PATH = os.environ.get(
-    "PATHIEL_AGENT_CONFIG_FILE",
-    os.path.join(_CONFIG_DIR, ".agent-config.json"),
-)
+
+
+def _default_config_path() -> str:
+    """Where the config lives when PATHIEL_AGENT_CONFIG_FILE is unset.
+
+    Operator install (contracts/runtime): the repo's tracked file, as always.
+    Public install: $PATHIEL_HOME/.agent-config.json, else
+    ~/.pathiel/.agent-config.json. Never the repo file: a stranger's clone
+    carries the operator's 20x whole-equity config there. The launcher
+    (scripts/_plugin_env.sh) sets PATHIEL_AGENT_CONFIG_FILE anyway; this is
+    the fallback for a public process started some other way.
+    """
+    if _runtime.is_public():
+        home = os.environ.get("PATHIEL_HOME") or os.path.join(os.path.expanduser("~"), ".pathiel")
+        return os.path.join(home, ".agent-config.json")
+    return os.path.join(_CONFIG_DIR, ".agent-config.json")
+
+
+CONFIG_PATH = os.environ.get("PATHIEL_AGENT_CONFIG_FILE", _default_config_path())
 
 DEFAULT_CONFIG: Dict[str, Any] = {
     "mode": "OFF",
@@ -195,19 +211,35 @@ def read_risk_profile(config: Optional[Dict[str, Any]] = None) -> RiskProfile:
     breaks the schema) degrades to migration rather than taking the
     executor down — the same fail-safe rule read_agent_config() already
     follows for the config file itself.
+
+    PUBLIC INSTALL (PATHIEL_INSTALL=public, contracts/runtime): step 3 and the
+    malformed-value case give services.risk.presets.public_default_profile()
+    (3x, 1% a trade, one position) instead of auto or a migration. A public
+    install whose seeding failed, or whose file was hand-broken, still sizes
+    with the conservative profile. A config that carries legacy sizing keys
+    still migrates, as on the operator path. The operator path is unchanged.
     """
     cfg = config if config is not None else read_agent_config()
     raw = cfg.get("risk_profile")
+    public = _runtime.is_public()
     if not isinstance(raw, dict) and not _has_legacy_sizing(cfg):
         # A fresh install has no old settings: the auto preset, not a
         # "custom" profile reverse-engineered from built-in defaults (live
         # e2e 2026-10-17: a brand-new user saw "Custom (from your old
         # settings)" with a 25% bump cap).
+        if public:
+            from services.risk.presets import public_default_profile
+            return public_default_profile()
         return RiskProfile()
     if isinstance(raw, dict):
         try:
             return RiskProfile.model_validate(raw)
         except ValidationError as e:
+            if public:
+                from services.risk.presets import public_default_profile
+                logger.warning(f"[config] risk_profile failed to validate ({e}); "
+                               "using the public default profile")
+                return public_default_profile()
             logger.warning(f"[config] risk_profile failed to validate ({e}); "
                            "migrating legacy keys instead")
     from services.risk.migrate import migrate_legacy

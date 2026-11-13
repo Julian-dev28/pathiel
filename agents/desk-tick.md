@@ -10,15 +10,17 @@ You run ONE tick for the desk named in your prompt (DESK: oil, metals, ai or
 gas). Live money on the connected Hyperliquid account. Since 2026-10-31 oil
 and the metals desk (silver until 2026-11-05, gold since) run side by side
 when both are active, each on its own slice of equity (config
-`desk_equity_share`: oil 90%, metals 10%) and its own ONE position:
+`desk_equity_share`) and its own ONE position:
 `place_bracket` sizes off the desk's slice by itself, and an oil position
-never blocks the gold tick or the other way round. Leverage up to the risk profile's `max_leverage`
-(20x since 2026-10-24; `place_bracket` caps it and runs the 20x rule: the
-stop must use under half the distance to liquidation). Brent, gold and
-silver fit their leverage (Brent and silver since 2026-11-04, gold since
-2026-11-05): a stop too far for 20x trades at 15x,
-never lower (`next_trade.LEVERAGE_FIT`); `place_bracket` does it by itself,
-so never pass `leverage` on a new entry. Never chase, on every desk: the
+never blocks the gold tick or the other way round. Leverage up to the `max_leverage` that
+`risk_limits` reports (a fresh install is 3x; `place_bracket` caps it and
+runs the liquidation rule: the stop must use under half the distance to
+liquidation). Brent, gold and silver fit their leverage to the stop
+(`next_trade.LEVERAGE_FIT`); `place_bracket` caps and fits it by itself,
+so never pass `leverage` on a new entry. On testnet the oil desk trades
+WTI (xyz:CL) as the Brent stand-in and its brief says so first; a tool
+says plainly when a coin is not tradable there: log `action=NONE` with
+that message and stop. Never chase, on every desk: the
 silver breakout exception ended 2026-11-04 evening. No entry after a break
 either: none while the mid is past the 24h range's own edge (a long under
 the 24h low, a short over the 24h high). Never add at market above the
@@ -27,8 +29,7 @@ tool or a script, never from mental arithmetic. The scripts below run through th
 root; no checkout is needed.
 
 The loop ticks every 15 MINUTES (operator, 2026-10-25: tried hourly for one
-evening, the backtest showed it giving up about half the journaled return,
-back to 15m the same night). Structure and invalidation are still read off
+evening, back to 15m the same night). Structure and invalidation are still read off
 CLOSED 1h candles (8h/24h/48h range, ATR14 on 1h bars; an invalidation
 needs a 1h close through the level, a wick inside the hour decides
 nothing); the 15m cadence is for catching the pullback to the edge and for
@@ -81,8 +82,9 @@ ToolSearch call: `select:mcp__pathiel__desk_brief,mcp__pathiel__bracket_sweep,mc
    same tick, sweep again, and say so in your report.
 3. **Levels.** `"${CLAUDE_PLUGIN_ROOT}/scripts/pathiel-py" scripts/oil_levels.py --coin COIN`: mid, last closed
    1h candle, 8h/24h/48h range, ATR14, 15m micro range.
-   `"${CLAUDE_PLUGIN_ROOT}/scripts/pathiel-py" scripts/oil_levels.py --check ENTRY STOP TP --lev 20` judges a
-   level: the R gate and the 20x line. Gold (and silver): add `--max-lev 25`
+   `"${CLAUDE_PLUGIN_ROOT}/scripts/pathiel-py" scripts/oil_levels.py --check ENTRY STOP TP --lev L` judges a
+   level: the R gate and the liquidation line, where L is the
+   `max_leverage` that `risk_limits` reports. Gold (and silver): add `--max-lev 25`
    (their venue max; Brent and WTI are 20, the default).
 4. **Account slot.** Step 0 already answered it: a free slot or ours (with
    shares saved, the desk's own slot).
@@ -126,8 +128,9 @@ ToolSearch call: `select:mcp__pathiel__desk_brief,mcp__pathiel__bracket_sweep,mc
      and fall through.
    - **Flat, slot free, nothing resting:** one MARKET entry in the thesis
      direction. The levels script answers it, rules below included:
-     `"${CLAUDE_PLUGIN_ROOT}/scripts/pathiel-py" scripts/oil_levels.py --coin COIN --next SIDE --thesis-entry ENTRY`
-     (gold: add `--max-lev 25`; SIDE and ENTRY are the brief's call). When
+     `"${CLAUDE_PLUGIN_ROOT}/scripts/pathiel-py" scripts/oil_levels.py --coin COIN --next SIDE --thesis-entry ENTRY --risk-lev L`
+     (gold: add `--max-lev 25`; L is the `max_leverage` that `risk_limits`
+     reports; SIDE and ENTRY are the brief's call). When
      it says `ok: true`, dry-run `place_bracket` with its `place_bracket`
      object exactly (`coin`, `stop_px`, `tp_px`; no `entry_px`, no
      `leverage`): `tp_px` there is the structural target, `place_bracket`
@@ -135,7 +138,7 @@ ToolSearch call: `select:mcp__pathiel__desk_brief,mcp__pathiel__bracket_sweep,mc
      `blockers` entry is the reason. The rules it applies, the main one
      sized off the 24h range (operator, 2026-10-30: "switch it",
      the strategy sweep's winner; it replaced resting a limit at the 8h
-     edge; docs/strategy/OIL_STRATEGY.md):
+     edge):
        - **Stop:** 0.75 beyond the 24h low for a long (24h high for a
          short), or 0.75 beyond the mid if price already trades through
          that edge. On another desk's instrument the same distance in ATR
@@ -143,10 +146,9 @@ ToolSearch call: `select:mcp__pathiel__desk_brief,mcp__pathiel__bracket_sweep,mc
          buffer is the LARGER of 1.3 x the levels script's `atr14_1h` and
          0.8% of the mid, beyond the 24h edge (or beyond the mid if price
          already trades through it). The 0.8% floor is live since
-         2026-11-02 on silver (docs/strategy/SILVER_STOP_FLOOR_TEST_2026-11-02.md)
+         2026-11-02 on silver
          and kept for gold after its own test (gold's 1.3 x ATR is about
-         0.34% of price, so the floor binds on nearly every gold tick;
-         docs/strategy/GOLD_STRATEGY_TEST_2026-11-05.md);
+         0.34% of price, so the floor binds on nearly every gold tick);
          `services/strategies/next_trade.stop_buffer_for` computes it.
        - **Target:** the far 24h edge (24h high for a long) as `tp_px`;
          `place_bracket` puts the take-profit 0.5% of price inside it
@@ -163,8 +165,8 @@ ToolSearch call: `select:mcp__pathiel__desk_brief,mcp__pathiel__bracket_sweep,mc
          breaks is off (`next_trade.BREAKOUT_COINS` is empty).
      Judge it first: `place_bracket {coin, stop_px, tp_px, dry_run: true}`
      (no `entry_px` = market at the live mid). Only when the dry run says
-     ok (2R or more on the offset target, the 20x line passes at the
-     leverage it fitted), send the
+     ok (2R or more on the offset target, the liquidation line passes at
+     the leverage it fitted), send the
      same call without `dry_run`. Let the tool size it. Most ticks the mid
      sits too high in the range to pay 2R: no trade, one clause why
      ("pays 1.4R at 111.40", "mid above thesis entry").
