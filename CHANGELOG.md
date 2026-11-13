@@ -6,6 +6,16 @@ All notable changes to pathiel. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- The plugin starts its server as `bash scripts/pathiel-mcp.sh`, a name that
+  matches its interpreter as the plugin directory asks.
+  `scripts/pathiel-mcp` stays as a one-line shim for other MCP clients and
+  the container.
+- The plugin bundle no longer ships `CHANGELOG.md`; links to it point at
+  GitHub. The directory held it for naming the icon file and for an old
+  install line.
+
 ### Removed
 
 - `docs/LISTINGS.md`, the maintainer's listing notes and form answers. They

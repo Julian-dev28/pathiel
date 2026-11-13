@@ -74,7 +74,7 @@ def test_the_mcp_server_runs_through_the_plugin_wrapper():
     # The directory asks for the interpreter by name (START_FILE_AS_PROGRAM):
     # bash starts the launcher, the launcher is the first argument.
     assert server["command"] == "bash"
-    assert server["args"] == ["${CLAUDE_PLUGIN_ROOT}/scripts/pathiel-mcp"]
+    assert server["args"] == ["${CLAUDE_PLUGIN_ROOT}/scripts/pathiel-mcp.sh"]
     for path in (MCP_WRAPPER, PY_WRAPPER):
         assert path.is_file(), path
         assert path.stat().st_mode & stat.S_IXUSR, f"{path.name} is not executable"
@@ -106,7 +106,14 @@ def test_the_wrappers_parse_and_keep_stdout_clean_for_the_mcp_transport():
             s = line.strip()
             if s.startswith(("echo", "printf")) and "sha256" not in s:
                 assert ">&2" in s, f"{path.name}: writes to stdout: {s}"
-    text = MCP_WRAPPER.read_text()
+    # scripts/pathiel-mcp is a shim to the launcher, scripts/pathiel-mcp.sh
+    # (2026-11-13: the directory wants the file name to match bash).
+    shim = MCP_WRAPPER.read_text()
+    assert [ln for ln in shim.splitlines() if ln and not ln.startswith("#")] == \
+        ['exec bash "$(cd "$(dirname "$0")" && pwd)/pathiel-mcp.sh" "$@"']
+    launcher = MCP_WRAPPER.with_name("pathiel-mcp.sh")
+    subprocess.run(["bash", "-n", str(launcher)], check=True)
+    text = launcher.read_text()
     assert "exec " in text and "pathiel-mcp-server.py" in text
     assert "--bootstrap" in text
     # The stdout writer runs only behind --commands, which exits before exec.
