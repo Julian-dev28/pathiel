@@ -33,7 +33,9 @@ window"). Start it from the repo root:
 2. **Price watcher.** `pgrep -f scripts/trigger_watch.py`. If one is
    already running (another window owns it), do not start a second one.
    Otherwise run in the background (Bash, `run_in_background: true`):
-   `mkdir -p /tmp/trigger-watch && python3 scripts/trigger_watch.py 2>>/tmp/trigger-watch/stderr.log`
+   `mkdir -p /tmp/trigger-watch && .venv/bin/python scripts/trigger_watch.py 2>>/tmp/trigger-watch/stderr.log`
+   (the venv carries `finlight-client`; system python3 does not, and the
+   Finlight news thread would silently stay off)
 3. Say one line: which crons exist (ids) and whether this window owns the
    watcher. Then wait.
 

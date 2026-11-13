@@ -1,0 +1,12 @@
+{
+  "_doc": "Stage 1 trigger phrases for the oil desk's streaming headlines (services/intel/headline_watch.match_headline(..., triggers=True)). Operator, 2026-11-14. Case-insensitive whole-phrase matches; plural s allowed. Applied only to a provider stream whose query already narrows to oil/geopolitics (sources/finlight.py), never to the broad RSS feeds: a bare 'sanctions' or 'refinery' in a Google News wrap is routine (live smoke 2026-11-05), inside the Finlight oil query it is the event.",
+  "chokepoints_maritime": [
+    "Strait of Hormuz", "Bab el-Mandeb", "Red Sea", "UKMTO", "tanker", "vessel struck", "seized", "blockade"
+  ],
+  "supply_policy": [
+    "OPEC", "OPEC+", "Aramco", "Ras Tanura", "SPR", "sanctions", "export ban"
+  ],
+  "geopolitics": [
+    "CENTCOM", "ceasefire", "peace talks", "truce", "airstrike", "missile", "refinery"
+  ]
+}

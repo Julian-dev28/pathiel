@@ -67,6 +67,7 @@ def _stub(monkeypatch, tmp_path, mids, held="", news=None):
     monkeypatch.setattr(W, "fetch_odds", lambda desk: [])
     monkeypatch.setattr(W, "fetch_posts", lambda: [])          # the Trump archive and the official
     monkeypatch.setattr(W, "fetch_official", lambda: [])       # feeds: services/intel/tests/test_sources_social.py
+    monkeypatch.setattr(W, "_start_finlight", lambda: None)    # the Finlight stream: services/intel/tests/test_finlight_watch.py
     monkeypatch.setattr(_state_env, "load_env_local", lambda root: None)
     monkeypatch.setattr(cs, "read_agent_config", lambda: {
         "active_desks": ["oil"], "desk_equity_share": {"oil": 1.0}, "risk_profile": {"max_leverage": 20}})

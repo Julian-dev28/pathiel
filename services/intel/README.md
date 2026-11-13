@@ -166,6 +166,62 @@ only: counts, newest age, which items would alert). Tests:
 `tests/test_sources_social.py`, fixtures `trumpstruth_feed.xml` (12 real
 posts), `whitehouse_news.xml`, `state_press_releases.xml`.
 
+### Finlight stream (`sources/finlight.py`, since 2026-11-14)
+
+Operator: cut the headline lag "from about 120s to seconds". Finlight
+(finlight.me, the official `finlight-client` 2.4.0 SDK) pushes oil and
+geopolitics headlines into the SAME pipeline as every other headline:
+`headline_watch.news_alerts` (dedup by title, 45-minute age, trusted
+source, `text_direction`), `record`, the watcher's `{"fire": "oil",
+"reason": "headline"}` line, `thesis_due` and the one-sided blackout. There
+is no second system that could disagree with the live one.
+
+| piece | file | what it does |
+|---|---|---|
+| provider contract | `sources/providers.py` | `BaseNewsProvider` (async `run(on_item, stop)`, `fetch_recent`), `normalize_item` to the `news_alerts` row plus `provider`, `sentiment`, `sentiment_confidence`, `entities`, `received_at`. A Tree News or X/Telegram adapter subclasses it. |
+| Finlight adapter | `sources/finlight.py` | WebSocket first (query `(oil OR crude OR WTI OR Brent OR OPEC OR tanker OR "Strait of Hormuz" OR "Red Sea" OR UKMTO OR ceasefire OR "peace talks" OR refinery)`, `includeEntities`); on a plan or permission refusal (HTTP 401/403, close 1008/4002, an error naming the plan, no admit in 20 s) an async REST poll of `POST /v2/articles`; reconnect with backoff 0.5 s to 30 s; dedup by link; the mode is logged (`mode=ws` / `mode=rest (reason)`). The key (`FINLIGHT_API_KEY`) is read from the environment and scrubbed from every error string (`redact`). |
+| Stage 1 triggers | `data/oil_triggers.json`, `headline_watch.match_headline(..., triggers=True)` | the operator's three lists (chokepoints and maritime, supply and policy, geopolitics) matched AFTER the existing `PATTERNS`, only for provider items; the RSS path is byte-for-byte what it was. 0.003 ms a call (test: under 5 ms). |
+| Stage 2 | `event_score.py` | strict JSON `{event_type, expected_oil_direction, confidence_score, is_confirmed}`; `rule_score` (no LLM: cue lists for the type, `text_direction` then a first-cue rule for the sign, Finlight sentiment agreement, `trusted_source`, confirmation vs rumor cues) is the default and the fallback; `model_score` only when `EVENT_SCORER_URL` names a LOCAL Ollama or OpenAI-compatible endpoint (loopback, private or `.local` host, checked before any request), validated, any failure or timeout falls back. The blackout's direction is still `text_direction`'s; the Stage 2 JSON rides on the alert as `stage2`. |
+| book guard | `book_guard.py` | `confidence_score >= 0.75`: the xyz:BRENTOIL and xyz:CL L2 books through `pathiel.client.hl_client._http_post` (the venue rate budget, l2Book weight 2): spread in bps and the slippage of `FINLIGHT_BOOK_NOTIONAL_USD` (default 2,500) each way. Read only. |
+| event log | `event_log.py` | one line per Stage 1 hit in `$PATHIEL_STATE_DIR/intel/finlight_events.jsonl` (provider, mode, title, source, published, sentiment, entities, Stage 1 label, Stage 2 JSON, latency published to received and received to scored, book); a `FINLIGHT ...` console line; a Discord/Slack/Telegram POST only when `ALERT_WEBHOOK_URL` is set. |
+| wiring | `finlight_watch.py`, `scripts/trigger_watch.py` | a daemon thread owns the provider; a pushed title that matches Stage 1 wakes the watcher from its minute sleep at once (`runner.wait`); the pass drains the queue through `news_alerts(triggers=True)`, enriches each hit and hands it to the existing record/fire path. The source is primed on its first drain (`state["primed_sources"]`). No key, an import error, a dead thread or a raising runner: the watcher runs on RSS exactly as before (`tests/test_finlight_watch.py`). |
+
+Rate limits, read from finlight.me/pricing on 2026-11-14: the plans are
+MONTHLY quotas (5,000 requests free, 10,000 / 50,000 / 150,000 paid) and
+the free plan has no WebSocket. A 15 s REST poll is 172,800 requests a
+month, over every plan, so `FINLIGHT_POLL_S=15` is a request, not a
+promise: `effective_poll_s` floors it at a 31-day month over 90% of
+`FINLIGHT_REST_MONTHLY_CAP` (default 5,000: 576 s, about 10 minutes; set
+the cap to the plan's number and a 150,000 plan allows 20 s). Seconds of
+lag need the WebSocket, which needs a paid plan; on the free plan Finlight
+is a second RSS-grade source, not a faster one, and the mode line says so.
+A 429 doubles the interval up to 5 minutes. Finlight sources arrive as
+domains (`reuters.com`); `trusted_source` matches them as words, so an
+outlet not in `TRUSTED_SOURCES` is learned and dropped like any RSS item.
+
+What the key's plan delivers decides everything above. Measured on the
+operator's key, 2026-11-13 20:40Z, and matching finlight.me/pricing: the
+free "Launchpad" plan has a 12-hour data delay (newest article created
+08:25Z), no sentiment, no entities and no WebSocket (handshake HTTP 403).
+A 12-hour-old headline never passes `news_alerts`' 45-minute age filter,
+so on the free plan the stream alerts on nothing, costs nothing but its
+10-minute polls, and the watcher's status line reads `finlight: rest (N
+received, newest published 731 min old (DELAYED plan))`. Pro Light
+($29/month) removes the delay and adds the WebSocket and entities;
+sentiment starts at Pro Standard ($99/month). The rule scorer works
+without sentiment (it only moves confidence by 0.1).
+
+Smoke test (live, read only, never prints the key):
+`.venv/bin/python scripts/finlight_smoke.py` probes the WebSocket for 20 s,
+runs one REST fetch, pushes the mock headline "Tanker struck by missile in
+Strait of Hormuz, UKMTO confirms" through Stage 1 and 2, and reads the
+Brent and WTI books. Eval: `python -m services.intel.evals.eval_event_score`
+scores 30 real past headlines (`evals/labels_events.json`) for direction
+(pass at 90%, scored 100%), event type (pass at 80%, scored 87%) and never a
+noise headline over the book guard. Tests: `tests/test_finlight.py`,
+`tests/test_event_score.py`, `tests/test_book_guard.py`,
+`tests/test_finlight_watch.py`, `tests/test_eval_event_score.py`.
+
 ## Hard numbers, and the crowding flags
 
 `IntelPacket.datapoints: List[DataPoint]` (contract 1.2.0, additive) is
