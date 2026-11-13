@@ -82,13 +82,20 @@ def _oil_levels_url(monkeypatch, network: str) -> str:
         monkeypatch.delenv("PATHIEL_NETWORK", raising=False)
     seen = []
 
-    class _Done:
-        stdout = "[]"
+    class _Resp:
+        def read(self):
+            return b"[]"
 
-    monkeypatch.setattr(mod.subprocess, "run", lambda argv, **kw: (seen.append(argv), _Done())[1])
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    monkeypatch.setattr(mod.urllib.request, "urlopen",
+                        lambda req, **kw: (seen.append(req.full_url), _Resp())[1])
     mod._post({"type": "allMids"})
-    urls = [a for argv in seen for a in argv if a.startswith("https://")]
-    return urls[0] if len(urls) == 1 else ""
+    return seen[0] if len(seen) == 1 else ""
 
 
 def run(monkeypatch, public_env, copy_lint) -> list:

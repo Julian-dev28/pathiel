@@ -11,6 +11,7 @@ from the bundle alone as from the checkout.
 from __future__ import annotations
 
 import ast
+import fnmatch
 import importlib.util
 import json
 import re
@@ -85,7 +86,9 @@ EVALS_ALLOWED = frozenset({"services/strategies/evals/__init__.py",
 
 def flagged_paths(paths) -> list:
     """Bundle paths the 2026-11-13 directory review flagged on the repo root."""
-    return [p for p in paths if p in BANNED_EXACT or p.startswith(BANNED_PREFIX)
+    return [p for p in paths if p in BANNED_EXACT
+            or (p.startswith(BANNED_PREFIX) and p not in B.LISTING_FILES
+                and not any(fnmatch.fnmatch(p, pat) for pat in B.REPO_DATA))
             or "/tests/" in p
             or ("/evals/" in p and p not in EVALS_ALLOWED)
             or ("/fixtures/" in p and not p.startswith("contracts/"))]
@@ -309,7 +312,35 @@ def _git(cwd: Path, *args: str) -> str:
                           text=True, env=_clean_env()).stdout.strip()
 
 
-def test_publish_is_idempotent_fast_forward_and_check_catches_drift(tmp_path):
+def _refs(repo: Path) -> str:
+    return subprocess.run(["git", "for-each-ref", "--format=%(refname) %(objectname)"], cwd=repo,
+                          capture_output=True, text=True, env=_clean_env()).stdout
+
+
+@pytest.fixture
+def real_refs_unchanged():
+    """No test here may move a ref of the real repo, hook or no hook."""
+    before = _refs(ROOT)
+    yield
+    assert _refs(ROOT) == before, "a bundle test changed a ref in the real repo"
+
+
+@pytest.mark.parametrize("var", B.HOOK_ENV)
+def test_publish_refuses_inside_a_git_hook(tmp_path, var, real_refs_unchanged):
+    """Regression, 2026-11-13: run by the pre-commit hook, the publish test's
+    throwaway clone inherited GIT_DIR and wrote a `plugin` branch into the
+    real repo. Point the variable at a decoy repo: nothing may land there."""
+    decoy = tmp_path / "decoy"
+    subprocess.run(["git", "init", "-q", str(decoy)], check=True, env=_clean_env())
+    env = dict(_clean_env(), **{var: str(decoy / ".git") if var != "GIT_INDEX_FILE"
+                                else str(decoy / ".git" / "index")})
+    proc = subprocess.run([sys.executable, str(SCRIPT), "publish", "--ref", "HEAD"], cwd=ROOT,
+                          capture_output=True, text=True, env=env)
+    assert proc.returncode != 0 and "publish refused" in proc.stderr and var in proc.stderr
+    assert _refs(decoy) == ""
+
+
+def test_publish_is_idempotent_fast_forward_and_check_catches_drift(tmp_path, real_refs_unchanged):
     clone = tmp_path / "clone"
     head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT, check=True, capture_output=True,
                           text=True).stdout.strip()
@@ -326,6 +357,12 @@ def test_publish_is_idempotent_fast_forward_and_check_catches_drift(tmp_path):
         return subprocess.run(run + list(args), cwd=clone, capture_output=True, text=True,
                               env=_clean_env())
 
+    # The clone may already see origin/plugin (the real repo publishes); with
+    # or without it, publish must leave the local branch at the bundle.
+    if _git(clone, "branch", "-r", "--list", "origin/plugin"):
+        assert bundle("publish").stdout.strip() == _git(clone, "rev-parse", "plugin")
+        _git(clone, "branch", "-D", "plugin")
+        _git(clone, "update-ref", "-d", "refs/remotes/origin/plugin")
     first = bundle("publish").stdout.strip()
     assert first and _git(clone, "rev-parse", "plugin") == first
     assert _git(clone, "rev-parse", "plugin^{tree}") == bundle("tree").stdout.strip()
@@ -355,3 +392,89 @@ def test_the_release_workflow_refuses_a_version_whose_bundle_is_not_published():
     wf = (ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
     assert "python3 scripts/build_plugin_bundle.py check --ref HEAD --against origin/plugin" in wf
     assert "refs/heads/plugin:refs/remotes/origin/plugin" in wf
+
+
+# ── the shipped Markdown ────────────────────────────────────────────────────
+
+def _bt(text, shipped=("README.md", "LICENSE"), repo=("README.md", "LICENSE", "docs/A.md")):
+    return B.bundle_text("README.md", text, set(shipped), set(repo))
+
+
+def test_an_omitted_block_becomes_one_line_to_its_section_on_github():
+    text = ("a\n<!-- bundle:omit -->\n### Other MCP clients\n\n```bash\ndocker run x\n```\n"
+            "<!-- /bundle:omit -->\nb\n")
+    assert _bt(text) == ("a\nOther MCP clients: see [the README on GitHub]"
+                         "(https://github.com/Julian-dev28/pathiel#other-mcp-clients).\nb\n")
+
+
+def test_a_marker_named_in_prose_is_not_a_marker():
+    text = "Blocks marked `<!-- bundle:omit -->` are dropped. So is `<!-- /bundle:omit -->`.\n"
+    assert _bt(text) == text
+
+
+@pytest.mark.parametrize("bad, why", [
+    ("<!-- bundle:omit -->\n## X\n", "without"),
+    ("x\n<!-- /bundle:omit -->\n", "without"),
+    ("<!-- bundle:omit -->\n## X\n<!-- bundle:omit -->\n<!-- /bundle:omit -->\n", "nested"),
+    ("<!-- bundle:omit -->\nno heading\n<!-- /bundle:omit -->\n", "heading"),
+])
+def test_a_malformed_omit_block_stops_the_build(bad, why):
+    with pytest.raises(SystemExit, match=why):
+        _bt(bad)
+
+
+def test_links_to_files_the_bundle_lacks_point_at_github():
+    text = "[L](LICENSE) [A](docs/A.md#x) [D](docs/) [W](https://x.y) [H](#top)"
+    assert _bt(text) == ("[L](LICENSE) [A](https://github.com/Julian-dev28/pathiel/blob/main/docs/A.md#x) "
+                         "[D](https://github.com/Julian-dev28/pathiel/tree/main/docs) [W](https://x.y) [H](#top)")
+
+
+def test_the_root_readme_marks_the_container_and_maintainer_blocks():
+    text = (ROOT / "README.md").read_text(encoding="utf-8")
+    assert text.count(B.OMIT_START) == text.count(B.OMIT_END) == 2
+    for block in text.split(B.OMIT_START)[1:]:
+        body = block.split(B.OMIT_END)[0]
+        assert "docker run" in body or "git clone" in body
+
+
+def test_the_bundle_readme_has_no_install_commands_and_no_dead_links(built, paths):
+    shipped = set(paths)
+    for p in B.TRANSFORMED:
+        text = (built / p).read_text(encoding="utf-8")
+        assert not B._MARKER.search(text), p
+        for m in re.finditer(r"\]\((?!https?://|mailto:|#)([^)\s#]+)", text):
+            assert m.group(1) in shipped, f"{p}: dead link {m.group(1)}"
+    readme = (built / "README.md").read_text(encoding="utf-8")
+    for needle in ("docker run", "git clone", "docker build"):
+        assert needle not in readme, needle
+
+
+def test_the_bundle_readme_keeps_every_disclosure(built):
+    spec = importlib.util.spec_from_file_location("_bundle_public_copy", ROOT / "tests" / "test_public_copy.py")
+    copy = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(copy)
+    results = copy.disclosure_results((built / "README.md").read_text(encoding="utf-8"))
+    assert [label for label, ok, _ in results if not ok] == [] and len(results) == 7
+
+
+def _call(server: Path, public_env, name: str, args: dict) -> dict:
+    msgs = [{"jsonrpc": "2.0", "id": 1, "method": "initialize",
+             "params": {"protocolVersion": "2025-06-18", "capabilities": {}}},
+            {"jsonrpc": "2.0", "id": 2, "method": "tools/call",
+             "params": {"name": name, "arguments": args}}]
+    proc = subprocess.run([sys.executable, str(server)],
+                          input="".join(json.dumps(m) + "\n" for m in msgs),
+                          capture_output=True, text=True, timeout=90, env=public_env(),
+                          cwd=str(public_env.env_file.parent))
+    assert proc.returncode == 0 and "Traceback" not in proc.stderr, proc.stderr[-2000:]
+    out = {json.loads(ln).get("id"): json.loads(ln) for ln in proc.stdout.splitlines()}
+    return out[2]["result"]
+
+
+def test_the_pool_data_ships_and_pool_status_answers_the_same_from_the_bundle(built, paths, public_env):
+    for p in ("pool/house.json", "docs/scoreboard/scoreboard.json"):
+        assert p in paths, p
+    assert not any(p.startswith("docs/scoreboard/") and not p.endswith(".json") for p in paths)
+    got = _call(built / "scripts" / "pathiel-mcp-server.py", public_env, "pool_status", {})
+    want = _call(ROOT / "scripts" / "pathiel-mcp-server.py", public_env, "pool_status", {})
+    assert got == want and not got.get("isError"), got

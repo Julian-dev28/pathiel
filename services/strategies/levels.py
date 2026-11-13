@@ -5,8 +5,8 @@ page (`GET /api/desks/oil/levels`) and the oil-tick skill's CLI share one
 implementation instead of two copies drifting apart. The script stays as a
 thin CLI that imports these functions; nothing here does its own network
 I/O — `fetch_candles`/`fetch_mid` (the HTTP leg) stay in the script, which
-is the only caller that needs curl-over-subprocess (no CA bundle in that
-environment — see the script's own docstring). The HTTP route instead reads
+is the only caller that needs its own CA bundle handling (the system
+python3 has none; see the script's own docstring). The HTTP route instead reads
 candles through `pathiel.client.hl_client`, which already has a working
 HTTPS client in-process.
 
