@@ -80,7 +80,7 @@ to overrule are repeated under Open questions.
 | D8 | Agent approval is checked once, when the pull request is checked, with the venue. The offline build trusts files on main after re-verifying their signatures. | API wallets expire and rotate. Rechecking at every build would drop members silently. |
 | D9 | A statement in a pull request must be at most 7 days old. | A signature cannot prove when it was made. This bounds how far a join can be backdated to pick up a good week. |
 | D10 | The maintainer's record is a house row (`pool/house.json`), counted from 2026-10-20. | The outcome starts at "19, the maintainer alone". Those trades came before any join could exist. The start date is the loss audit's, fixed before the pool was thought of, so it is not cherry-picked. See Open question 1. |
-| D11 | The pool tools are listed on public installs only. The operator's `tools/list` stays byte-identical; the operator uses `python -m services.pool`. | The operator path may not change, and its tools hash is pinned by a test. |
+| D11 | The pool tools are listed on public installs only, AND refuse outright (`operator_install`) if ever dispatched on a non-public one, regardless of whether the caller found the name in `tools/list`. The operator's `tools/list` stays byte-identical; the operator uses `python -m services.pool`. | The operator path may not change, and its tools hash is pinned by a test. Being unlisted is not the same as being refused: a raw `tools/call` for a pool tool name used to run for real on the operator's own mainnet checkout regardless of `tools/list` (fixed 2026-11-13, `contracts.pool.mcp_handler`); the refusal has to sit at the dispatch choke point, not the listing. |
 | D12 | Mainnet only. | Testnet fills are not a record. |
 | D13 | A graded trade is one with an R: its opening stop was found. A trade without a stop counts as closed, not graded. | Same rule as `services/review`. Every pathiel bracket has a stop, so pathiel trades grade. |
 | D14 | Going out of the pool needs no proof. Coming in needs a new signature: an address becomes active only through a join newer than every join and leave the repository holds or ever held for it (`reinstatement_problem`, code `reinstated`). | A scan reads the files that are there. Deleting a leave file would otherwise put the old join back in force, from the old `joined_at`, with a green check and no consent. |
@@ -718,9 +718,11 @@ Not wired: the daily review loop (Open question 5). Not bumped: the version.
 ## Restart
 
 Nothing in the live stack changes with this commit or with the units: no order
-path, no config, no MCP tool on the operator's server. After the integration
-merge, public installs see the four tools after reconnecting pathiel in `/mcp`.
-No sudo is involved.
+path, no config, and no pool tool runs on the operator's server -- not just
+unlisted there, but refused by `contracts.pool.mcp_handler` before it imports
+anything, on any install that is not `PATHIEL_INSTALL=public`. After the
+integration merge, public installs see the four tools after reconnecting
+pathiel in `/mcp`. No sudo is involved.
 
 ## Open questions
 
