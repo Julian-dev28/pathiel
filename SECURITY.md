@@ -38,8 +38,10 @@ withdraw or transfer funds. Revoke it in the app and it stops working at
 once. On a public install, `scripts/approve_api_wallet.py` refuses to run:
 API wallets are approved in the Hyperliquid app.
 
-**The master key** is needed for one thing: approving the builder fee with
-`scripts/approve_builder_fee.py`. On a public install:
+**The master key** is needed for one thing, and only if you choose it:
+revoking a builder fee approval given to pathiel 0.4.0 with
+`scripts/approve_builder_fee.py` (pathiel charges no fee now; see
+[docs/BUILDER_FEE.md](docs/BUILDER_FEE.md)). On a public install:
 
 - it is typed at a hidden prompt in your own terminal, and read from nowhere
   else;
@@ -71,6 +73,18 @@ local Claude Code CLI. pathiel holds no Anthropic or other model key.
   markets).
 - Declare a key in any listing file (`server.json`,
   `glama.json`, the plugin manifests). A test enforces it.
+
+## The research pool's signatures
+
+`pool_join` and `pool_leave` sign one EIP-191 text statement with the API
+wallet key, nothing else: no order, no transfer, no fee or payment, and it
+cannot be replayed as a Hyperliquid action (a different, typed format). On
+a public install the master key path is the same hidden prompt as the
+builder fee approval above, typed in your own terminal and read from
+nowhere else. One accepted gap, by design: an API wallet that signed a
+join can still sign that account's leave after you revoke it. That removes
+the account's published rows and nothing else; it moves no money and
+authorizes no trade. Details: [docs/PRIVACY.md](docs/PRIVACY.md).
 
 ## Checks that enforce this
 

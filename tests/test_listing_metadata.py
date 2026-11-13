@@ -186,7 +186,7 @@ def network_defaults() -> List[Tuple[str, bool]]:
 
 def test_versions_agree_everywhere():
     sources = version_sources()
-    assert {v for _, v in sources} == {"0.4.0"}, sources
+    assert {v for _, v in sources} == {"0.5.0"}, sources
     assert oci_package()["identifier"].endswith(":" + package_version())
 
 
@@ -246,12 +246,16 @@ def test_plugin_and_marketplace_descriptions_disclose_fee_and_network():
     for label, desc in (("plugin.json", _json(PLUGIN_JSON)["description"]),
                         ("marketplace.json", _json(MARKET_JSON)["plugins"][0]["description"])):
         low = desc.lower()
-        assert "60 MCP tools" in desc, label
+        assert "64 MCP tools" in desc, label
         assert "exact stop and target" in low, label
         assert "mainnet by default" in low and "testnet opt-in" in low, label
         assert "read-only without a key" in low, label
-        assert f"{fee} builder fee" in desc, f"{label} does not name the {fee} builder fee"
-        assert "approve" in low, f"{label} does not say the fee needs approval"
+        if runtime.BUILDER_FEE_WAIVED:
+            assert "free: no builder fee" in low, f"{label} does not say there is no fee"
+            assert "%" not in desc.replace("1% per trade", ""), f"{label} names a fee rate"
+        else:
+            assert f"{fee} builder fee" in desc, f"{label} does not name the {fee} builder fee"
+            assert "approve" in low, f"{label} does not say the fee needs approval"
 
 
 def test_manifests_carry_discovery_keywords_and_category():
@@ -269,8 +273,8 @@ def test_manifest_key_set_unchanged():
     assert set(plugin) == PLUGIN_KEYS
     assert set(market) == MARKET_KEYS
     assert len(market["plugins"]) == 1 and set(market["plugins"][0]) == MARKET_ENTRY_KEYS
-    assert plugin["mcpServers"] == {"pathiel": {"command": "${CLAUDE_PLUGIN_ROOT}/scripts/pathiel-mcp",
-                                                "args": []}}
+    assert plugin["mcpServers"] == {"pathiel": {"command": "bash",
+                                                "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/pathiel-mcp"]}}
     assert sorted(p.name for p in (ROOT / ".claude-plugin").iterdir()) == \
         ["icon.png", "marketplace.json", "plugin.json"]
 

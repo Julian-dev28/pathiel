@@ -1,5 +1,5 @@
 ---
-description: First-run setup for the pathiel plugin - show the network and the builder fee, build the Python environment, create ~/.pathiel/.env.local, check it, approve the fee if the user wants, connect the MCP server
+description: First-run setup for the pathiel plugin - show the network and the risks, build the Python environment, create ~/.pathiel/.env.local, check it, connect the MCP server
 ---
 
 # /pathiel:setup
@@ -17,13 +17,10 @@ the chat; the user types keys into files and prompts on their own machine.
    >   money, add one line, `PATHIEL_NETWORK=testnet`, to
    >   `~/.pathiel/.env.local`. On testnet the oil desk trades WTI (`xyz:CL`)
    >   as the stand-in for Brent, which testnet does not list.
-   > - Builder fee: orders pathiel places for you can carry a Hyperliquid
-   >   builder fee of **0.01% of notional per fill** (1 basis point; 0.02% for
-   >   a round trip), paid to the pathiel builder address. It is charged only
-   >   after you approve it once with your own signature, and Hyperliquid
-   >   enforces the approved rate: it rejects any order with a higher fee. If
-   >   you never approve it, orders go out without it and everything still
-   >   works.
+   > - Fee: **none**. pathiel charges no fee and its orders carry no
+   >   Hyperliquid builder fee; you pay only Hyperliquid's own trading fee.
+   >   If that ever changes it ships as a new version, and Hyperliquid
+   >   charges nothing until you approve that exact rate yourself.
    > - Trading perpetual futures with leverage can lose all of the money in
    >   the account. pathiel is a tool, not financial advice, and it promises
    >   no return.
@@ -33,7 +30,7 @@ the chat; the user types keys into files and prompts on their own machine.
 
 1. **Build the environment** (idempotent, about a minute on the first run):
 
-       "${CLAUDE_PLUGIN_ROOT}/scripts/pathiel-mcp" --bootstrap
+       bash "${CLAUDE_PLUGIN_ROOT}/scripts/pathiel-mcp" --bootstrap
 
    It prints the Python it uses, the env file, the state directory, the
    config file and the network. A fresh install gets the public default risk
@@ -51,9 +48,7 @@ the chat; the user types keys into files and prompts on their own machine.
    - **Testnet trading** (practice): the user adds `PATHIEL_NETWORK=testnet`
      to the env file themselves (the template has the line, commented out),
      and an API wallet key from the testnet app. Test funds only. The oil
-     desk trades WTI (`xyz:CL`) there as the Brent stand-in. A builder fee
-     approval signed on testnet does not carry over: after switching back to
-     mainnet, rerun `--commands` and the `approve-sign` line (step 5).
+     desk trades WTI (`xyz:CL`) there as the Brent stand-in.
 
    Mainnet state lives in `~/.pathiel/state` (where pathiel 0.3.0 kept it),
    testnet state in `~/.pathiel/state-testnet`. Upgrading from 0.3.0 keeps
@@ -91,36 +86,21 @@ the chat; the user types keys into files and prompts on their own machine.
    Every line must be PASS or WARN. Show the user the `network` and
    `trading` lines. A FAIL names the problem; fix it and rerun.
 
-5. **Builder fee approval (optional).** Tell the user the exact rate again:
-   0.01% of notional per fill. Then get the commands for their own terminal:
-
-       "${CLAUDE_PLUGIN_ROOT}/scripts/pathiel-mcp" --commands
-
-   It prints three lines, `status`, `approve-dry` and `approve-sign`, each a
-   label, a tab, then a command with absolute paths. Both approve lines run
-   `scripts/approve_builder_fee.py`. Run the `approve-dry` command yourself
-   and show its output: it says what would be signed and signs nothing. Then give the user the `approve-sign` command **verbatim**
-   to paste into their own terminal. It asks for the main account's private
-   key at a hidden prompt there, signs the approval once and keeps the key
-   nowhere. Never run the `approve-sign` command yourself and never ask for
-   that key in the chat.
-
-   The approval is per network: it is signed on the network the env file
-   names when the line runs (mainnet unless it says
-   `PATHIEL_NETWORK=testnet`). Tell the user that an approval signed on
-   testnet does not cover mainnet; after switching to mainnet, rerun
-   `--commands` and the `approve-sign` line once more.
-
-   Skipping this step is fine: orders then carry no builder fee and
-   everything else works. The printed paths change after a plugin update;
-   rerun `--commands` for fresh ones instead of reusing an old line.
+5. **Builder fee: nothing to do.** pathiel charges no fee, so there is
+   nothing to approve and no master key to ask for. Never ask for the main
+   account's private key in the chat. If the user approved the 0.01% fee of
+   pathiel 0.4.0 and wants to revoke it, point them to "Revoking an old
+   approval" in `docs/BUILDER_FEE.md`: the `approve-dry` line that
+   `bash "${CLAUDE_PLUGIN_ROOT}/scripts/pathiel-mcp" --commands` prints, run
+   with `--max-fee-rate 0%` (`scripts/approve_builder_fee.py`), in their own
+   terminal.
 
 6. **Connect the tools.** The pathiel server reads the keys and the network
    once, when it starts, and it started with this Claude Code session,
    before the env file existed. After creating or editing
    `~/.pathiel/.env.local`, tell the user to reconnect pathiel in `/mcp`
    (or restart Claude Code). Then confirm in `/mcp` that the `pathiel`
-   server shows as connected with 60 tools. If it does not, the error is in
+   server shows as connected with 64 tools. If it does not, the error is in
    the MCP panel; the usual cause is step 1 not having finished.
 
 7. **Prove it.** Call `get_price` with `{coin: "BTC"}`, then `state`. The

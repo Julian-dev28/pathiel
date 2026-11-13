@@ -71,6 +71,14 @@ jobs:
           print(f"version {v}")
           EOF
 
+      # The Claude plugin directory tracks the `plugin` branch, not main
+      # (docs/LISTINGS.md). Refuse to ship a version whose bundle was not
+      # published there first, byte for byte: same git tree.
+      - name: The plugin branch holds this version's bundle
+        run: |
+          git fetch --no-tags --depth=1 origin "+refs/heads/plugin:refs/remotes/origin/plugin"
+          python3 scripts/build_plugin_bundle.py check --ref HEAD --against origin/plugin
+
   image:
     # One native build per architecture (no QEMU): 0.4.0 shipped amd64 and
     # arm64, and an amd64-only :latest would break Apple Silicon users.

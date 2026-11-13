@@ -23,6 +23,11 @@ from hyperliquid.utils import signing
 import contracts.runtime as runtime
 from pathiel.client import hl_client
 
+# The fee machinery as it runs when the fee is on; it is waived by default
+# since 2026-11-13 (contracts/runtime BUILDER_FEE_WAIVED). See tests/conftest.py fee_on.
+pytestmark = pytest.mark.usefixtures("fee_on")
+
+
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "approve_builder_fee.py"
 _spec = importlib.util.spec_from_file_location("approve_builder_fee", SCRIPT)
@@ -188,7 +193,7 @@ def test_public_dry_run_with_no_network_set_is_mainnet(master, monkeypatch, caps
 def test_dry_run_runs_standalone_in_a_public_env(public_env, network, want):
     acct = Account.create()
     env = public_env(PATHIEL_BUILDER_ADDRESS=BUILDER, HYPERLIQUID_MASTER_ADDRESS=acct.address,
-                     PATHIEL_NETWORK=network)
+                     PATHIEL_NETWORK=network, PATHIEL_BUILDER_FEE_TENTHS_BP="10")   # fee on
     proc = subprocess.run([sys.executable, str(SCRIPT), "--json"], cwd=str(ROOT), env=env,
                           capture_output=True, text=True, timeout=60, stdin=subprocess.DEVNULL)
     assert proc.returncode == 0, proc.stderr
@@ -523,3 +528,30 @@ def test_builder_fee_doc_rate_matches_the_runtime_default():
     assert f"`f = {fee}`" in text
     assert runtime.fee_rate_str(fee) in text
     assert runtime.fee_rate_str(2 * fee) in text      # the round trip
+
+
+# ── while the fee is waived (2026-11-13) ──────────────────────────────────────
+
+def test_waived_fee_refuses_to_approve_anything(public_env):
+    """No --max-fee-rate and a waived fee: nothing to sign, nothing sent."""
+    acct = Account.create()
+    env = public_env(HYPERLIQUID_MASTER_ADDRESS=acct.address)
+    for argv in (["--json"], ["--json", "--yes"]):
+        proc = subprocess.run([sys.executable, str(SCRIPT), *argv], cwd=str(ROOT), env=env,
+                              capture_output=True, text=True, timeout=60, stdin=subprocess.DEVNULL)
+        assert proc.returncode != 0
+        out = json.loads(proc.stdout.strip().splitlines()[-1])
+        assert "no builder fee right now" in out["error"] and "--max-fee-rate 0%" in out["error"]
+        assert "dry_run" not in out
+
+
+def test_waived_fee_still_lets_a_user_revoke_an_old_approval(public_env):
+    """Someone who approved 0.01% in 0.4.0 can still set it back to 0%."""
+    acct = Account.create()
+    env = public_env(HYPERLIQUID_MASTER_ADDRESS=acct.address)
+    proc = subprocess.run([sys.executable, str(SCRIPT), "--json", "--max-fee-rate", "0%"],
+                          cwd=str(ROOT), env=env, capture_output=True, text=True, timeout=60,
+                          stdin=subprocess.DEVNULL)
+    assert proc.returncode == 0, proc.stderr
+    out = json.loads(proc.stdout.strip().splitlines()[-1])
+    assert out["dry_run"] is True and out["max_fee_rate"] == "0%"

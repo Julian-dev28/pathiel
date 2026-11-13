@@ -21,17 +21,22 @@ closed 15m candles' range. Read-only; no key, no account.
 This is a thin CLI: the actual math (closed_only/atr/summarize/check) lives
 in services/strategies/levels.py, which the dashboard's
 GET /api/desks/oil/levels route also calls, so the two never drift apart.
-Only the network leg (curl-over-subprocess, needed because the system
-Python here has no CA bundle) stays in this file.
+Only the network leg stays in this file: a plain urllib POST. The system
+python3 the desk-tick agent runs has no CA bundle of its own (python.org's
+macOS build), so _ssl_context() loads certifi's, or the OS bundle when
+certifi is not installed. It used to shell out to a second program for the
+same reason; the plugin directory reads that as download-and-run, and
+urllib needs none.
 """
 from __future__ import annotations
 
 import argparse
 import json
 import os
-import subprocess
+import ssl
 import sys
 import time
+import urllib.request
 from typing import Any, Dict, List, Optional
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -45,11 +50,34 @@ from services.strategies.next_trade import (breakout_for, leverage_fit_for, next
 INFO_URL = runtime.info_url()
 
 
+# OS CA bundles, for a python3 without certifi: macOS and the BSDs, Debian and
+# Ubuntu, Fedora and RHEL.
+_SYSTEM_CA_FILES = ("/etc/ssl/cert.pem", "/etc/ssl/certs/ca-certificates.crt",
+                    "/etc/pki/tls/certs/ca-bundle.crt")
+
+
+def _ssl_context() -> ssl.SSLContext:
+    """The default context plus a CA bundle that exists: certifi's when it is
+    importable, else the first OS bundle on disk. Verification stays on."""
+    ctx = ssl.create_default_context()
+    try:
+        import certifi
+        ctx.load_verify_locations(certifi.where())
+        return ctx
+    except ImportError:
+        pass
+    for path in _SYSTEM_CA_FILES:
+        if os.path.isfile(path):
+            ctx.load_verify_locations(path)
+            break
+    return ctx
+
+
 def _post(body: Dict[str, Any]) -> Any:
-    # curl, not urllib: the system Python has no CA bundle on this machine.
-    out = subprocess.run(["curl", "-sS", "-m", "10", INFO_URL, "-H", "Content-Type: application/json",
-                          "-d", json.dumps(body)], capture_output=True, text=True, check=True)
-    return json.loads(out.stdout)
+    req = urllib.request.Request(INFO_URL, data=json.dumps(body).encode(), method="POST",
+                                 headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=10, context=_ssl_context()) as resp:
+        return json.loads(resp.read())
 
 
 def fetch_candles(coin: str, interval: str, hours: int, now_ms: Optional[int] = None) -> List[Dict[str, Any]]:

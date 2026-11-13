@@ -19,8 +19,9 @@ in the top 100 for 5.
 | Place | How | Status |
 |---|---|---|
 | GitHub repo description and topics | `gh repo edit` | Done 2026-11-12: "AI trading agent for Hyperliquid…", 16 topics |
-| Official MCP registry | `mcp-publisher publish` | Live: `io.github.Julian-dev28/pathiel` 0.4.0. The new description ships with the next version |
-| ghcr.io image | manual release, CONTRIBUTING.md | Live: `ghcr.io/julian-dev28/pathiel-mcp:0.4.0` |
+| Website (GitHub Pages) | `scripts/publish_site.py` to `gh-pages` | Live: https://julian-dev28.github.io/pathiel/ (landing page and scoreboard only) |
+| Official MCP registry | release.yml (GitHub OIDC) | Live: `io.github.Julian-dev28/pathiel` 0.5.0 (2026-11-13), new description included |
+| ghcr.io image | release.yml | Live: `ghcr.io/julian-dev28/pathiel-mcp:0.5.0` and `latest`, amd64 + arm64 |
 | punkpeye/awesome-mcp-servers | pull request | Open: [#19383](https://github.com/punkpeye/awesome-mcp-servers/pull/19383) |
 | sbs2001/awesome-hyperliquid | pull request | Open: [#68](https://github.com/sbs2001/awesome-hyperliquid/pull/68) |
 | Claude plugin directory | portal form, operator only | To submit |
@@ -37,9 +38,19 @@ bundle**. Rules: <https://claude.com/docs/plugins/submit.md>.
 
 Before you open it:
 
-1. `claude plugin validate .` from the repo root passes. The CLAUDE.md
-   warning is expected: that file is for people working on the repo, not
-   context for the plugin.
+1. The directory reviews the `plugin` branch, not `main`. That branch is
+   built by `scripts/build_plugin_bundle.py` and holds only what the plugin
+   runs. Given the repo root (2026-11-13), the review flagged the
+   maintainer's CLAUDE.md, the repo `.mcp.json`, `.claude/skills`, CI and VPS
+   scripts as if they shipped; none of those are on `plugin`.
+   `claude plugin validate --profile directory --strict` on a build of it
+   is clean (`tests/test_eval_plugin_bundle.py`). Two notes stay by design:
+   the server is local stdio, so it runs in Claude Code and Cowork, not on
+   claude.ai (STDIO_WEB_UNSUPPORTED), and a local server from an
+   unverified organization (LOCAL_CODE_MCP_SERVER, LOCAL_CODE_FILE_TYPE for
+   the Python it ships) is not refused yet. Decided 2026-11-13: accept those
+   notes. Only a hosted, read-only MCP server would clear them; build it if
+   the directory announces a date for refusing local servers.
 2. The icon is `.claude-plugin/icon.png`. The directory takes the icon only
    the first time the plugin is saved or submitted, so replace it before
    then if you want a different one. It is the PATHIEL wordmark, rendered
@@ -53,8 +64,8 @@ Form answers:
 | Field | Answer |
 |---|---|
 | Repository | `Julian-dev28/pathiel` |
-| Plugin path | leave empty (the plugin is the repo root) |
-| Branch | `main` |
+| Plugin path | leave empty (the `plugin` branch root is the plugin) |
+| Branch | `plugin` |
 | Reads or stores personal data? | It reads the user's Hyperliquid account (balances, positions, fills) and keeps a local journal under `~/.pathiel`. Nothing leaves the machine except calls to the Hyperliquid API and the public news and data feeds the desk briefs read. |
 | Sends data to other services? | Hyperliquid API (account reads, orders the user asks for); public market and news feeds (EIA, CFTC, prediction markets, news). No analytics, no telemetry. |
 | Retention | Local files only, kept until the user deletes `~/.pathiel`. |

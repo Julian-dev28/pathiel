@@ -1,8 +1,8 @@
 {
   "name": "pathiel",
   "displayName": "pathiel",
-  "version": "0.4.0",
-  "description": "AI trading agent for Hyperliquid: Claude trades perps with an exact stop and target on every order. 60 MCP tools: desk briefs for oil and metals, bracket orders, risk sizing (3x, 1% per trade, one position by default), account reads. Mainnet by default, testnet opt-in, read-only without a key. Optional 0.01% builder fee per fill, charged only if you approve it.",
+  "version": "0.5.0",
+  "description": "AI trading agent for Hyperliquid: Claude trades perps with an exact stop and target on every order. 64 MCP tools: desk briefs for oil and metals, bracket orders, risk sizing (3x, 1% per trade, one position by default), account reads. Mainnet by default, testnet opt-in, read-only without a key. Free: no builder fee.",
   "author": {
     "name": "Julian Martinez",
     "url": "https://github.com/Julian-dev28"
@@ -13,8 +13,8 @@
   "keywords": ["hyperliquid", "trading", "perps", "mcp", "claude-code", "risk-management", "oil", "gold", "ai-agent", "trading-agent", "ai-trading"],
   "mcpServers": {
     "pathiel": {
-      "command": "${CLAUDE_PLUGIN_ROOT}/scripts/pathiel-mcp",
-      "args": []
+      "command": "bash",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/pathiel-mcp"]
     }
   }
 }

@@ -245,7 +245,9 @@ class TestAnnotationsAndInstructions:
             assert ro == (t["name"] not in special), t["name"]
 
     def test_the_buckets_name_real_tools(self):
-        names = {t["name"] for t in M.TOOLS}
+        # LOCAL_WRITE_TOOLS also carries pool_join/pool_leave, listed only on
+        # a public install (M.POOL_TOOLS), never in the operator's M.TOOLS.
+        names = {t["name"] for t in M.TOOLS} | {t["name"] for t in M.POOL_TOOLS}
         assert (M.LIVE_MONEY_TOOLS | M.LIVE_CONFIG_TOOLS | M.LOCAL_WRITE_TOOLS) <= names
 
     def test_initialize_carries_short_instructions(self):

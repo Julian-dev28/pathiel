@@ -35,6 +35,11 @@ from hyperliquid.utils import signing
 import contracts.runtime as runtime
 from pathiel.client import hl_client
 
+# The fee machinery as it runs when the fee is on; it is waived by default
+# since 2026-11-13 (contracts/runtime BUILDER_FEE_WAIVED). See tests/conftest.py fee_on.
+pytestmark = pytest.mark.usefixtures("fee_on")
+
+
 ROOT = Path(__file__).resolve().parents[1]
 
 

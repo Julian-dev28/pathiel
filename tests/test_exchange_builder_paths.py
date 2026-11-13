@@ -26,6 +26,11 @@ from pathiel.agents import bracket
 from pathiel.client import builder
 from pathiel.client import exchange as ex
 
+# The fee machinery as it runs when the fee is on; it is waived by default
+# since 2026-11-13 (contracts/runtime BUILDER_FEE_WAIVED). See tests/conftest.py fee_on.
+pytestmark = pytest.mark.usefixtures("fee_on")
+
+
 ADDR = "0x" + "b1" * 20
 ACCT = "0x" + "a1" * 20
 

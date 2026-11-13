@@ -1,0 +1,8 @@
+{
+  "schema": 1,
+  "kind": "house",
+  "network": "mainnet",
+  "address": "0x2c2e4eff574b3fd9879adef9c5cac6fd7c916985",
+  "count_from": "2026-10-20T00:00:00Z",
+  "label": "maintainer"
+}

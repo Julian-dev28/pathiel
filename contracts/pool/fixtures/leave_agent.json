@@ -1,0 +1,10 @@
+{
+  "schema": 1,
+  "kind": "leave",
+  "network": "mainnet",
+  "address": "0x1f25fa78cf6aba9a5cb01fa921017e4d0dd288c7",
+  "signer": "0xd56c89350903501c0ec0192b3292bf2a29d3d3a4",
+  "left_at": "2026-11-13T12:00:00Z",
+  "message": "pathiel research pool: leave\nVersion: 1\nNetwork: hyperliquid-mainnet\nAccount: 0x1f25fa78cf6aba9a5cb01fa921017e4d0dd288c7\nSigner: 0xd56c89350903501c0ec0192b3292bf2a29d3d3a4\nLeft at: 2026-11-13T12:00:00Z\nProject: github.com/Julian-dev28/pathiel\n\nI ask pathiel to remove this account from the research pool.\nThe next scoreboard build drops this address and its graded results.\nNo trade, transfer, fee or payment is authorized by this statement.",
+  "signature": "0x9aa8952284069863ed7aee54e99464353706556b3c983584284beb44fc25d1cd252f71dd59a46fc55525416622968d01a7705fc8e418d7f34b7305abb382d0611c"
+}

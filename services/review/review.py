@@ -13,6 +13,7 @@ from services.review import ledger as LG
 from services.review import proposals as P
 from services.review import report as R
 from services.review import stats as S
+from services.review import thesis_match as TM
 from services.strategies.evals import loss_audit as LA
 
 # Each desk's primary (metals: gold since 2026-11-05). A thesis's 24h check
@@ -38,11 +39,11 @@ def run(bundle: Dict[str, Any], since_ms: int = LA.SINCE_MS, ledger_path: Option
     report_dir = report_dir or env.report_dir()
     as_of = LG.iso(bundle["as_of_ms"])
 
-    built = LG.build_records(bundle)
+    built = TM.build_records(bundle)
     upd = LG.update_ledger(ledger_path, built, as_of)
     recs = LG.ledger_records(ledger_path, since_ms)
 
-    theses = LG.theses_by_desk(bundle)
+    theses = TM.theses_by_desk(bundle)
     theses = {d: [t for t in ts if t.created_at_ms >= since_ms] for d, ts in theses.items()}
     raw_by_id = {str(t.get("id")): t for ts in (bundle.get("theses_raw") or {}).values() for t in ts}
     bars1h = {d: bundle["bars1h"].get(c, []) for d, c in DESK_COIN.items()}

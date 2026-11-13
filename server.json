@@ -3,7 +3,7 @@
   "name": "io.github.Julian-dev28/pathiel",
   "title": "pathiel",
   "description": "AI trading agent for Hyperliquid: exact stop and target on every order. Mainnet; testnet opt-in.",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "repository": {
     "url": "https://github.com/Julian-dev28/pathiel",
     "source": "github"
@@ -12,7 +12,7 @@
   "packages": [
     {
       "registryType": "oci",
-      "identifier": "ghcr.io/julian-dev28/pathiel-mcp:0.4.0",
+      "identifier": "ghcr.io/julian-dev28/pathiel-mcp:0.5.0",
       "transport": {
         "type": "stdio"
       },

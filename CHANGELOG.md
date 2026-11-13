@@ -6,8 +6,101 @@ All notable changes to pathiel. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- A landing page, https://julian-dev28.github.io/pathiel/ (`site/`): what
+  pathiel is, the install lines, the safety rules, the risks, and search
+  metadata (description, canonical, Open Graph, schema.org JSON-LD,
+  sitemap). It loads nothing from anywhere else.
+
 ### Changed
 
+- GitHub Pages serves the `gh-pages` branch, built by
+  `scripts/publish_site.py` from the landing page and `docs/scoreboard/`
+  only. It used to serve all of `docs/` from `main`, research docs included.
+
+## [0.5.0] - 2026-11-13
+
+The opt-in research pool and its public scoreboard. Notes:
+[docs/RELEASE_NOTES_v0.5.0.md](docs/RELEASE_NOTES_v0.5.0.md).
+
+### Added
+
+- Opt-in research pool: register a Hyperliquid address with one signed
+  statement and pathiel grades its public fills on the pool coins
+  (`xyz:BRENTOIL`, `xyz:CL`, `xyz:SILVER`, `xyz:GOLD`) with the same harness
+  the project runs on its own trades. Nothing is uploaded; only fills after
+  the join count.
+- Four MCP tools: `pool_status`, `pool_report`, `pool_join`, `pool_leave`.
+  Listed on a public install only (64 tools total); the maintainer's own
+  checkout is unchanged at 60, and the pool tools refuse outright
+  (`operator_install`) if ever called there.
+- `/pathiel:share`: walks a user through joining or leaving, shows the exact
+  statement before it signs anything, and opens the pull request.
+- A public scoreboard (static HTML and JSON, served from `docs/scoreboard/`
+  by GitHub Pages) with graded per-member rows, published at least 24 hours
+  late. [docs/PRIVACY.md](docs/PRIVACY.md) says what is public, what is
+  not, and how to leave or come back.
+- A read-only pull request check (`.github/workflows/pool-members.yml`)
+  verifies every signed member and leave file offline and against
+  Hyperliquid's own agent-approval reads.
+
+### Changed
+
+- `.dockerignore` lets `docs/scoreboard/` into the Docker build context
+  (the `docs/` exclusion otherwise removes it); `Dockerfile.mcp` now ships
+  `pool/` and `docs/scoreboard/` so `pool_status` has the member list and
+  the scoreboard counts inside a container.
+
+### Security
+
+- `pool_join` and `pool_leave` sign a plain text statement, nothing else:
+  no order, no transfer, no fee or payment is authorized, and the key is
+  never printed or written anywhere.
+- The membership pull request check is read-only (`contents: read`) and
+  refuses any change that would bring an account back into the pool without
+  a new signed join newer than every statement the repository ever held
+  for it (deleting a leave file does not work).
+- The four pool MCP tools refuse before touching any pool code whenever
+  the process is not a public install (`contracts.runtime.is_public()`),
+  regardless of whether an MCP client calls a listed tool name: a pool
+  tool dispatched on the maintainer's own mainnet checkout used to run
+  for real, including signing a join/leave statement with the
+  maintainer's configured trading key.
+
+## [0.4.1] - 2026-11-13
+
+pathiel is free: the builder fee is waived. Notes:
+[docs/RELEASE_NOTES_v0.4.1.md](docs/RELEASE_NOTES_v0.4.1.md).
+
+### Changed
+
+- **The builder fee is waived.** No order carries a Hyperliquid builder
+  code, including for users who approved the 0.4.0 fee; there is nothing to
+  approve, `/pathiel:setup` skips the approval step, and
+  `scripts/approve_builder_fee.py` refuses to sign anything but a 0%
+  revocation. One switch brings it back: `BUILDER_FEE_WAIVED` in
+  `contracts/runtime` (contract 1.2.0), with the steps in
+  `docs/BUILDER_FEE.md`.
+- The Claude plugin directory reviews a bundle, not the repo:
+  `scripts/build_plugin_bundle.py` publishes only the files the plugin runs
+  (166 of 908) to the `plugin` branch. The repo-root review had flagged
+  CLAUDE.md, `.mcp.json` declared twice, `.claude/skills`, and
+  download-and-run lines in docs, CI and VPS scripts that never ship.
+  `release.yml` refuses a version whose bundle is not on that branch.
+- `plugin.json` starts the server as `bash scripts/pathiel-mcp`, naming the
+  interpreter as the directory asks; `/pathiel:setup` does the same.
+- The bundle's README, SECURITY, CHANGELOG and `docs/BUILDER_FEE.md` ship
+  transformed: README blocks marked `<!-- bundle:omit -->` (the container
+  command, the maintainer clone setup) become one line linking that section
+  on GitHub, and links to files outside the bundle become GitHub URLs.
+- `scripts/oil_levels.py` posts with urllib (certifi's CA bundle, else the
+  OS one) instead of shelling out to curl, which the directory read as
+  download-and-run.
+- `build_plugin_bundle.py publish` refuses to run when `GIT_DIR`,
+  `GIT_INDEX_FILE`, `GIT_WORK_TREE` or `GIT_COMMON_DIR` is set: inside a git
+  hook those point at another repo, and a test's publish once wrote a
+  `plugin` branch into the real one that way.
 - Listing copy leads with what people search for: "AI trading agent for
   Hyperliquid" in the README headline, `plugin.json`, `marketplace.json` and
   `server.json` (the registry picks it up with the next version). New
@@ -29,6 +122,11 @@ All notable changes to pathiel. The format follows
   else.
 - `docs/LISTINGS.md`: every place pathiel is listed, and the copy for the
   forms only the maintainer can submit.
+
+### Security
+
+- `scripts/_plugin_env.sh` makes paths absolute without `eval`: a
+  `PATHIEL_HOME` holding `$(...)` is now kept as text, never run.
 
 ## [0.4.0] - 2026-11-12
 
@@ -101,6 +199,8 @@ builder fee, and listing metadata for the MCP directories. Release notes:
 - First Claude Code plugin release: the MCP server, the desk-tick skill and
   `/pathiel:setup`, installed from this repo. Mainnet only.
 
-[Unreleased]: https://github.com/Julian-dev28/pathiel/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/Julian-dev28/pathiel/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/Julian-dev28/pathiel/releases/tag/v0.5.0
+[0.4.1]: https://github.com/Julian-dev28/pathiel/releases/tag/v0.4.1
 [0.4.0]: https://github.com/Julian-dev28/pathiel/releases/tag/v0.4.0
 [0.3.0]: https://github.com/Julian-dev28/pathiel/commit/ae26611

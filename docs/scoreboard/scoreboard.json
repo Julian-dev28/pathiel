@@ -1,0 +1,67 @@
+{
+ "counts": {
+  "closed_trades": 0,
+  "edge": 0,
+  "graded_trades": 0,
+  "house": 1,
+  "independent_trades": 0,
+  "leak": 0,
+  "left": 0,
+  "members": 0,
+  "slices": 1,
+  "slices_at_min_n": 0
+ },
+ "cutoff": "2026-11-11T00:00:00Z",
+ "day": "2026-11-12",
+ "delay_hours": 24,
+ "members": [
+  {
+   "address": "0x2c2e4eff574b3fd9879adef9c5cac6fd7c916985",
+   "closed_trades": 0,
+   "explorer": "https://app.hyperliquid.xyz/explorer/address/0x2c2e4eff574b3fd9879adef9c5cac6fd7c916985",
+   "kind": "house",
+   "label": "NOISE",
+   "luck_median": null,
+   "luck_n": 0,
+   "mean_r": null,
+   "n": 0,
+   "p": null,
+   "r_hi": null,
+   "r_lo": null,
+   "short": "0x2c2e...6985",
+   "signer_role": null,
+   "since": "2026-10-20",
+   "win_hi": null,
+   "win_lo": null,
+   "win_rate": null,
+   "wins": 0
+  }
+ ],
+ "min_n_edge": 10,
+ "network": "mainnet",
+ "notes": [
+  "Graded results of public fills, at least 24 hours late. Not live positions, not advice.",
+  "No edge is demonstrated until a row with 10 or more independent trades says EDGE.",
+  "Rows are ordered by number of graded trades, not by result."
+ ],
+ "pool": [
+  {
+   "dim": "all",
+   "key": "all",
+   "label": "NOISE",
+   "mean_r": null,
+   "members": 0,
+   "n": 0,
+   "n_trades": 0,
+   "p": null,
+   "r_hi": null,
+   "r_lo": null,
+   "value": "all",
+   "win_hi": null,
+   "win_lo": null,
+   "win_rate": null,
+   "wins": 0
+  }
+ ],
+ "schema": 1
+}

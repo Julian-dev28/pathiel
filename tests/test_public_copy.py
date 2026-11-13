@@ -59,7 +59,8 @@ PUBLIC_COPY = [
     ".github/pull_request_template.md",
 ]
 # Owned by other units; linted when they exist.
-PUBLIC_COPY_WHEN_PRESENT = ["commands/setup.md", "docs/BUILDER_FEE.md"]
+PUBLIC_COPY_WHEN_PRESENT = ["commands/setup.md", "docs/BUILDER_FEE.md",
+                            "docs/PRIVACY.md", "commands/share.md", "pool/README.md"]
 
 MAINTAINER_WARNING = ("Maintainer path: this runs mainnet with the tracked repo config "
                       "(20x, whole-equity sizing). It is not the public install.")
@@ -94,13 +95,10 @@ SHELL_INSTALL_LINES = [
 # (label, marker, phrases the marker's block must hold). A block runs from its
 # marker to the next marker, or to the end of the section. Matching is on
 # whitespace-normalized text, so line wrapping never matters.
-DISCLOSURE_CHECKLIST: List[Tuple[str, str, List[str]]] = [
-    ("networks and modes", "### Networks and modes",
-     ["read-only", "mainnet (the default)", "PATHIEL_NETWORK=testnet", "~/.pathiel/.env.local",
-      "real money", "kept per network", "xyz:CL"]),
-    ("safety", "### How the safety works",
-     ["exact stop", "2R", "half the distance to liquidation", "3x", "1% of equity at the stop",
-      "one position", "Read-only without a key", "asks you before each call"]),
+# The fee entries follow the switch in contracts/runtime: waived since
+# 2026-11-13. The fee-on entries are the 0.4.0 copy, kept so turning the fee
+# back on fails here until the README says so again.
+FEE_ON_CHECKLIST: List[Tuple[str, str, List[str]]] = [
     ("builder fee", "### Builder fee",
      ["0.01% of notional per fill", "0.02% a round trip", "every fill pathiel routes",
       BUILDER_ADDRESS]),
@@ -109,6 +107,32 @@ DISCLOSURE_CHECKLIST: List[Tuple[str, str, List[str]]] = [
     ("enforcement", "### How Hyperliquid enforces the fee",
      ["rejects any order whose builder fee is above the max you approved",
       "exactly the rate it charges", "0.1%"]),
+]
+FEE_WAIVED_CHECKLIST: List[Tuple[str, str, List[str]]] = [
+    ("builder fee", "### Builder fee",
+     ["None. pathiel is free", "no order it places carries a Hyperliquid builder fee",
+      "nothing to approve"]),
+    ("if a fee comes back", "### If a fee ever comes back",
+     ["new version", "approve that exact rate", "rejects any order whose builder fee is above "
+      "the max you approved", "0.1%", "](docs/BUILDER_FEE.md)", "no longer charged"]),
+]
+
+
+def _fee_waived() -> bool:
+    from contracts import runtime
+    return bool(runtime.BUILDER_FEE_WAIVED)
+
+
+FEE_CHECKLIST = FEE_WAIVED_CHECKLIST if _fee_waived() else FEE_ON_CHECKLIST
+
+DISCLOSURE_CHECKLIST: List[Tuple[str, str, List[str]]] = [
+    ("networks and modes", "### Networks and modes",
+     ["read-only", "mainnet (the default)", "PATHIEL_NETWORK=testnet", "~/.pathiel/.env.local",
+      "real money", "kept per network", "xyz:CL"]),
+    ("safety", "### How the safety works",
+     ["exact stop", "2R", "half the distance to liquidation", "3x", "1% of equity at the stop",
+      "one position", "Read-only without a key", "asks you before each call"]),
+    *FEE_CHECKLIST,
     ("risk", "### Risk",
      ["lose the whole account", "daily loss figure is shown, not enforced", "no demonstrated edge",
       "no return is promised", "not financial advice"]),
@@ -244,11 +268,12 @@ def test_readme_disclosure_checklist():
     readme = _read("README.md")
     assert section(readme, PUBLIC_SECTION), f"README has no '{PUBLIC_SECTION}' section"
     results = disclosure_results(readme)
-    assert len(results) == 7
+    assert len(results) == len(DISCLOSURE_CHECKLIST)
     failed = {label: missing for label, ok, missing in results if not ok}
     assert not failed, f"README disclosure gaps: {failed}"
     flat = _flat(readme)
-    for must in ("0.01%", "US persons", "not financial advice"):
+    for must in ("0.01%" if not _fee_waived() else "None. pathiel is free", "US persons",
+                 "not financial advice"):
         assert must in flat, must
     assert re.search(r"\]\(docs/BUILDER_FEE\.md\)", readme), "no relative link to docs/BUILDER_FEE.md"
 
@@ -296,7 +321,7 @@ def test_readme_badges_are_static_or_point_at_a_real_workflow():
         m = re.match(r"https://github\.com/Julian-dev28/pathiel/actions/workflows/([\w.-]+)/badge\.svg", url)
         assert m, f"badge that may not resolve: {url}"
         assert (ROOT / ".github" / "workflows" / m.group(1)).is_file(), url
-    assert "version-0.4.0" in readme
+    assert "version-0.5.0" in readme
 
 
 def test_faq_has_five_to_seven_questions():
@@ -310,7 +335,8 @@ def test_disclosure_check_fails_on_a_stripped_readme():
     paragraph and the fee rate, and both must be reported."""
     readme = _read("README.md")
     stripped = readme.replace("### Restricted jurisdictions", "### Elsewhere")
-    stripped = stripped.replace("0.01% of", "a small fee of")
+    stripped = (stripped.replace("None. pathiel is free", "pathiel costs little") if _fee_waived()
+                else stripped.replace("0.01% of", "a small fee of"))
     failed = {label for label, ok, _ in disclosure_results(stripped) if not ok}
     assert {"restricted jurisdictions", "builder fee"} <= failed, failed
 
@@ -318,6 +344,18 @@ def test_disclosure_check_fails_on_a_stripped_readme():
 def test_fee_rate_in_readme_matches_the_runtime_default():
     from contracts import runtime
 
+    if runtime.BUILDER_FEE_WAIVED:
+        # Waived: no public file states a rate pathiel charges. The 0.01% of
+        # 0.4.0 may be named only as the past ("of pathiel 0.4.0", "under 0.4.0").
+        history = ("CHANGELOG.md", "docs/BUILDER_FEE.md")    # the past, and how the fee works when on
+        for rel in public_copy_files():
+            if rel in history or rel.startswith(("docs/RELEASE_NOTES_", "docs/AUDIT_")):
+                continue
+            for m in re.finditer(r"(\d+(?:\.\d+)?%) (?:builder fee|of notional per fill)",
+                                 _flat(_read(rel))):
+                assert m.group(1) == "0%", f"{rel} states a {m.group(1)} fee while it is waived"
+        assert "None. pathiel is free" in _flat(_read("README.md"))
+        return
     fee = runtime.DEFAULT_BUILDER_FEE_TENTHS_BP
     per_fill = runtime.fee_rate_str(fee)
     round_trip = runtime.fee_rate_str(2 * fee)
@@ -455,10 +493,11 @@ def test_readme_no_longer_claims_mode_off_or_an_edge():
 
 def test_readme_keeps_tool_count_and_getting_started_link():
     readme = _read("README.md")
-    assert "60 tools over stdio" in readme
+    assert "64 tools over stdio" in readme
     assert "docs/GETTING_STARTED.md" in readme
     for tool in ("place_bracket", "bracket_sweep", "close_position", "set_leverage",
-                 "cancel_order", "connected_wallets", "wallet_account", "desk_brief"):
+                 "cancel_order", "connected_wallets", "wallet_account", "desk_brief",
+                 "pool_status", "pool_report", "pool_join", "pool_leave"):
         assert f"`{tool}`" in readme, tool
 
 
@@ -514,15 +553,19 @@ def builder_address_problems(files: Dict[str, str]) -> List[str]:
 
 
 def test_builder_address_is_the_projects_and_never_the_signing_wallet():
-    for rel in ("README.md", "CHANGELOG.md", "docs/RELEASE_NOTES_v0.4.0.md",
-                "docs/AUDIT_MARKETPLACE_2026-11-12.md"):
+    # Waived: the README states no fee, so it need not name where one would go;
+    # docs/BUILDER_FEE.md still does.
+    named = ("docs/BUILDER_FEE.md",) if _fee_waived() else ("README.md",)
+    for rel in named + ("CHANGELOG.md", "docs/RELEASE_NOTES_v0.4.0.md",
+                        "docs/AUDIT_MARKETPLACE_2026-11-12.md"):
         assert BUILDER_ADDRESS in _read(rel), f"{rel} does not name the builder address"
     files = {rel: _read(rel) for rel in public_copy_files()}
     assert builder_address_problems(files) == []
 
 
 def test_builder_address_check_catches_the_signing_wallet():
-    planted = {"README.md": _read("README.md").replace(BUILDER_ADDRESS, OPERATOR_SIGNER)}
+    rel = "docs/BUILDER_FEE.md" if _fee_waived() else "README.md"
+    planted = {rel: _read(rel).replace(BUILDER_ADDRESS, OPERATOR_SIGNER)}
     assert any("signing wallet" in p for p in builder_address_problems(planted))
 
 

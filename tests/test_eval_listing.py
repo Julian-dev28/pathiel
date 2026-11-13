@@ -75,8 +75,9 @@ def run(copy_lint) -> List[dict]:
 
     disclosure = copy.disclosure_results(copy._read("README.md"))
     met = sum(1 for _, ok, _ in disclosure if ok)
-    rows.append(row("README disclosure checklist", f"{met}/{len(disclosure)}", "7/7",
-                    met == len(disclosure) == 7))
+    want = len(copy.DISCLOSURE_CHECKLIST)      # 7 with the fee on, 6 while it is waived
+    rows.append(row("README disclosure checklist", f"{met}/{len(disclosure)}", f"{want}/{want}",
+                    met == len(disclosure) == want))
 
     stale = sum(len(copy.stale_network_hits(copy._read(rel))) for rel in copy.NETWORK_OWNED)
     rows.append(row("stale network wording in owned files", stale, 0, stale == 0))

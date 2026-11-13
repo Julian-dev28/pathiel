@@ -50,8 +50,11 @@ def keyed(monkeypatch, tmp_path, builder_jobs):
 # ── classification ────────────────────────────────────────────────────────────
 
 def test_every_tool_is_classified_exactly_once():
-    names = [t["name"] for t in M.TOOLS]
-    assert len(names) == 60
+    """TOOLS (the operator's 60, never listed with the four pool tools) plus
+    POOL_TOOLS (listed on a public install only, 4 more): every one of the 64
+    lands in exactly one class."""
+    names = [t["name"] for t in M.TOOLS] + [t["name"] for t in M.POOL_TOOLS]
+    assert len(names) == 64
     for name in names:
         homes = [k for k, s in M.TOOL_CLASSES.items() if name in s]
         assert len(homes) == 1, (name, homes)
@@ -101,11 +104,15 @@ def test_the_shipped_classes_have_no_problems():
 # ── tools/list and instructions ───────────────────────────────────────────────
 
 def test_public_tools_list_same_names_and_schemas(no_key):
+    """The 60 operator-style tools, unchanged, plus the 4 research-pool tools
+    appended with the contract's own descriptions: 64 (tests/test_pool_mcp.py
+    covers the pool tools' own descriptions/classes/annotations in detail)."""
     listed = no_key.rpc("tools/list")["result"]["tools"]
+    operator_style = M.TOOLS + M.POOL_TOOLS
     assert listed is not M.TOOLS
-    assert len(listed) == 60
-    assert [t["name"] for t in listed] == [t["name"] for t in M.TOOLS]
-    for pub, op in zip(listed, M.TOOLS):
+    assert len(listed) == 64
+    assert [t["name"] for t in listed] == [t["name"] for t in operator_style]
+    for pub, op in zip(listed, operator_style):
         assert pub["inputSchema"] == op["inputSchema"]
         assert pub["annotations"] == op["annotations"]
         assert set(pub) == set(op)
@@ -122,16 +129,21 @@ def test_public_tools_list_has_no_dashboard_or_pause_wording(no_key):
     for tool in M.TOOLS:
         if any(w in tool["description"].lower() for w in E.FORBIDDEN_TOOL_WORDS):
             assert tool["name"] in M._PUBLIC_DESCRIPTION_OVERRIDES
-    assert len(json.dumps(listed)) <= len(json.dumps(M.TOOLS)) + 200
+    # the baseline includes the four research-pool tools appended on every
+    # public install (M.POOL_TOOLS); the +200 slop is for the overrides alone
+    assert len(json.dumps(listed)) <= len(json.dumps(M.TOOLS + M.POOL_TOOLS)) + 200
 
 
 SHIPPED_BUILDER = "0x2c2e4efF574B3Fd9879AdeF9c5CAC6fD7C916985"
 
 
 @pytest.mark.parametrize("case", ["no_key", "testnet_key", "mainnet_key", "builder_set",
-                                  "builder_unset", "builder_shipped"])
-def test_public_instructions_content_and_length(case, monkeypatch, tmp_path, builder_jobs):
-    kw = {"no_key": {}, "testnet_key": {"key": True}, "mainnet_key": {"key": True, "network": "mainnet"},
+                                  "builder_unset", "builder_shipped", "waived_shipped"])
+def test_public_instructions_content_and_length(case, monkeypatch, tmp_path, builder_jobs, request):
+    if case in ("builder_set", "builder_shipped"):
+        request.getfixturevalue("fee_on")            # the fee as it reads when switched on
+    kw = {"waived_shipped": {"key": True, "builder_address": None, "network": "mainnet"},
+          "no_key": {}, "testnet_key": {"key": True}, "mainnet_key": {"key": True, "network": "mainnet"},
           "builder_set": {"key": True, "builder_address": E.BUILDER},
           "builder_unset": {"key": True, "builder_address": ""},
           "builder_shipped": {"key": True, "builder_address": None, "network": "mainnet"}}[case]
@@ -140,7 +152,7 @@ def test_public_instructions_content_and_length(case, monkeypatch, tmp_path, bui
     low = text.lower()
     net = kw.get("network", "testnet")
     assert len(text) <= 2500
-    assert text.endswith("write the local desk journal).")      # never truncated
+    assert text.endswith("placing no order and moving no money).")      # never truncated
     assert f"network: {net}" in low
     assert "not financial advice" in low
     assert "3x max leverage" in text and "1% of equity at risk at the stop" in text
@@ -154,7 +166,7 @@ def test_public_instructions_content_and_length(case, monkeypatch, tmp_path, bui
     elif case == "builder_shipped":
         assert "0.01%" in text and SHIPPED_BUILDER.lower() in text and "approve" in low
     else:
-        assert "builder fee: not configured" in low
+        assert "builder fee: none" in low and "0.01%" not in text
     for word in ("localhost", "desk page", "/api/", "dashboard", "20x"):
         assert word not in low, word
     if net == "mainnet":
@@ -367,7 +379,7 @@ def test_a_broken_gate_fails_closed_for_writes_only(no_key, monkeypatch):
 
 # ── builder fee in live-money output ──────────────────────────────────────────
 
-def test_live_money_outputs_carry_network_and_builder_fee(keyed):
+def test_live_money_outputs_carry_network_and_builder_fee(fee_on, keyed):
     keyed.warm_builder()
     err, body = keyed.call("place_bracket", E.WRITE_ARGS["place_bracket"])
     assert not err, body
@@ -393,7 +405,24 @@ def test_live_money_outputs_carry_network_and_builder_fee(keyed):
     assert all(u.startswith(TESTNET_API_URL) for u in keyed.venue.urls)
 
 
-def test_cold_cache_output_says_not_charged(keyed):
+def test_waived_fee_sends_every_order_without_a_builder_code(keyed):
+    """Decision 2026-11-13: the fee is waived. Even with an approval cached,
+    no order on any of the four order tools carries a builder code, and the
+    output says so."""
+    keyed.warm_builder()
+    err, body = keyed.call("place_bracket", E.WRITE_ARGS["place_bracket"])
+    assert not err, body
+    fee = body["builder_fee"]
+    assert fee["charged"] is False and fee["rate"] == "0%" and fee["reason"] == "fee_zero"
+    E.seed_positions(keyed.venue)
+    for tool in ("close_position", "set_target", "bracket_sweep"):
+        err, body = keyed.call(tool, E.WRITE_ARGS[tool])
+        assert not err, (tool, body)
+        assert body["builder_fee"]["charged"] is False, (tool, body["builder_fee"])
+    assert keyed.sdk.orders and all(not o.get("builder") for o in keyed.sdk.orders)
+
+
+def test_cold_cache_output_says_not_charged(fee_on, keyed):
     err, body = keyed.call("place_bracket", E.WRITE_ARGS["place_bracket"])
     assert not err, body
     assert body["builder_fee"]["charged"] is False
@@ -402,7 +431,7 @@ def test_cold_cache_output_says_not_charged(keyed):
     assert keyed.sdk.orders and all(o["builder"] is None for o in keyed.sdk.orders)
 
 
-def test_not_approved_output_says_not_charged(monkeypatch, tmp_path, builder_jobs):
+def test_not_approved_output_says_not_charged(fee_on, monkeypatch, tmp_path, builder_jobs):
     h = E.install(monkeypatch, tmp_path, M, builder_jobs, key=True, builder_address=E.BUILDER,
                   max_builder_fee=5)
     h.warm_builder()
@@ -414,7 +443,7 @@ def test_not_approved_output_says_not_charged(monkeypatch, tmp_path, builder_job
     assert "approve_builder_fee.py" in body["builder_fee"]["detail"]
 
 
-def test_live_money_call_warms_the_builder_cache(keyed):
+def test_live_money_call_warms_the_builder_cache(fee_on, keyed):
     from pathiel.client import builder
     assert keyed.jobs == []
     keyed.call("set_leverage", {"coin": "BTC", "leverage": 2})
@@ -432,7 +461,7 @@ def test_builder_fee_estimate_math():
     assert M._fee_estimate(3041.72, 10) == 0.3042
 
 
-def test_dry_run_output_names_the_next_order(keyed):
+def test_dry_run_output_names_the_next_order(fee_on, keyed):
     keyed.warm_builder()
     err, body = keyed.call("place_bracket", {**E.WRITE_ARGS["place_bracket"], "dry_run": True})
     assert body["builder_fee"]["charged"] is False
@@ -443,7 +472,7 @@ def test_dry_run_output_names_the_next_order(keyed):
 
 # ── state, risk_limits, wording ───────────────────────────────────────────────
 
-def test_state_carries_the_install_block(keyed):
+def test_state_carries_the_install_block(fee_on, keyed):
     keyed.warm_builder()
     err, body = keyed.call("state")
     assert not err
@@ -473,7 +502,7 @@ def test_state_install_block_names_testnet_and_the_stand_in(no_key):
     assert "WTI (xyz:CL)" in notice
 
 
-def test_state_reads_a_new_approval_at_once(keyed):
+def test_state_reads_a_new_approval_at_once(fee_on, keyed):
     """Final review: docs/BUILDER_FEE.md says state sees a new approval at
     once. The cache said not_approved 20 s ago; the user signs; state must
     re-read and say the fee attaches now, not wait for the 60 s refresh."""
@@ -489,7 +518,7 @@ def test_state_reads_a_new_approval_at_once(keyed):
     assert fee["approved_tenths_bp"] == 10
 
 
-def test_state_does_not_reread_an_approved_cache(keyed, monkeypatch):
+def test_state_does_not_reread_an_approved_cache(fee_on, keyed, monkeypatch):
     keyed.warm_builder()
     from pathiel.client import builder
     calls = []
@@ -592,7 +621,7 @@ class TestStdioFreshHome:
             out[msg.get("id")] = msg
         return proc, out
 
-    def test_starts_and_lists_60_tools(self, public_env):
+    def test_starts_and_lists_64_tools(self, public_env):
         proc, out = self._session(public_env, {"method": "tools/list"})
         assert proc.returncode == 0, proc.stderr[-2000:]
         init = out[1]["result"]
@@ -600,7 +629,7 @@ class TestStdioFreshHome:
         assert "Network: mainnet. REAL MONEY" in init["instructions"]   # the default, 2026-11-12
         assert "Trading: read-only" in init["instructions"]
         tools = out[2]["result"]["tools"]
-        assert len(tools) == 60
+        assert len(tools) == 64
         assert not any("dashboard" in t["description"].lower() for t in tools)
         assert "maintainer mode" not in proc.stderr
         notices = [ln for ln in proc.stderr.splitlines() if ln.startswith("pathiel: public install")]

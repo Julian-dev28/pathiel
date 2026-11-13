@@ -37,11 +37,20 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence
 
 from pathiel.models.types import Candle
 
-from services.review import inputs as I
 from services.review import luck as L
 from services.strategies.backtest.desk_tick_sim import weekend_closed
 from services.strategies.evals import loss_audit as LA
-from services.strategies.evals.stop_cap_test import same_market
+
+# theses_by_desk/build_records moved to services/review/thesis_match.py
+# (2026-11-13): that is the one place in services/review that imports
+# services.strategies.evals.stop_cap_test (for same_market), which itself
+# reaches the rest of the backtest/eval chain -- desk_tick_backtest,
+# live_params, profit_lock_test, market_scout, strategy_sweep,
+# scenario_sweep, cross_market_backtest. services/pool/grade.py imports this
+# module for to_record/annotate_pairs/update_ledger/ledger_records, none of
+# which need any of that; keeping the split means grade.py's import never
+# drags that chain into the plugin bundle (scripts/build_plugin_bundle.py
+# walks every import reachable from the MCP server).
 
 SCHEMA = 2   # 2: trend_20d_pct and other_desk_side (2026-11-02)
 HOUR_MS = LA.HOUR_MS
@@ -176,37 +185,6 @@ def to_record(tr: Dict[str, Any], theses: Sequence[Any], bars1h: Sequence[Candle
     rec["settled"] = as_of_ms >= int(tr["exit_time"]) + SETTLE_MS
     rec["as_of"] = iso(as_of_ms)
     return {k: _r(v) for k, v in rec.items()}
-
-
-def theses_by_desk(bundle: Dict[str, Any]) -> Dict[str, List[Any]]:
-    dirs = bundle.get("theses_dirs") or {}
-    oil = I.thesis_directions(dirs.get("oil", ""))
-    metals = I.thesis_directions(dirs.get("metals", ""))
-    # The metals desk has traded silver (2026-10-31 to 11-05) and gold (one
-    # thesis before that, the primary since 11-05): keep every thesis whose
-    # entry sits at one of its coins' prices, so a gold call is never judged
-    # as a silver one or dropped.
-    bars = [(bundle.get("bars1h") or {}).get(c) or [] for c in ("xyz:SILVER", "xyz:GOLD")]
-    bars = [b for b in bars if b]
-    if metals and bars:
-        keep = {th.thesis_id for b in bars for th in same_market(metals, b)}
-        metals = [th for th in metals if th.thesis_id in keep]
-    return {"oil": oil, "metals": metals}
-
-
-def build_records(bundle: Dict[str, Any], since_ms: int = LA.SINCE_MS) -> List[Dict[str, Any]]:
-    """Every closed trade in `bundle` as a ledger record, oldest first. Pure
-    on the bundle."""
-    theses = theses_by_desk(bundle)
-    raw = {k: bundle[k] for k in I.RAW_KEYS}
-    rep = LA.run_audit(raw, bundle["bars5"], theses, since_ms)
-    out = []
-    for tr in rep["trades"]:
-        if tr["exit_time"] is None:
-            continue
-        out.append(to_record(tr, theses.get(tr["desk"], []), bundle["bars1h"].get(tr["coin"], []),
-                             bundle["bars5"].get(tr["coin"], []), bundle["as_of_ms"]))
-    return annotate_pairs(out)
 
 
 # ── the file (append only) ─────────────────────────────────────────────────
