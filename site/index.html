@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>pathiel: AI trading agent for Hyperliquid in Claude Code</title>
 <meta name="description" content="Free, open-source Hyperliquid MCP server and Claude Code plugin. Claude trades perps with an exact stop-loss and take-profit on every order.">
+<meta name="theme-color" content="#000000">
+<meta name="color-scheme" content="dark">
 <link rel="canonical" href="https://julian-dev28.github.io/pathiel/">
 <link rel="icon" type="image/png" href="icon.png">
 <meta property="og:type" content="website">
@@ -32,60 +34,323 @@
 }
 </script>
 <style>
-  :root { --bg: #000; --fg: #f2f2f2; --dim: #a8a8a8; --line: #2a2a2a; --warn: #ff6b5e; --code: #111; }
+  /* One file, no scripts, no web fonts, no outside requests (the CSP above).
+     Motion is CSS only: a load-in, a marquee, a pulse, and scroll-driven
+     reveals where the browser supports animation-timeline. All of it stops
+     under prefers-reduced-motion. */
+  :root {
+    --bg: #000;
+    --ink: #f5f5f7;
+    --ink-soft: #d6d6db;
+    --muted: #8e8e93;
+    --faint: #5e5e63;
+    --line: rgba(255, 255, 255, 0.1);
+    --accent: #4d90ff;
+    --accent-2: #ff6a3c;
+    --live: #2bb3a3;
+    --warn: #ff6b5e;
+    --glass: rgba(255, 255, 255, 0.05);
+    --glass-hi: rgba(255, 255, 255, 0.08);
+    --glass-line: rgba(255, 255, 255, 0.1);
+    --sans: "Geist", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    --serif: "Instrument Serif", ui-serif, "New York", "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    --mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    --ease: cubic-bezier(0.16, 1, 0.3, 1);
+  }
   * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--fg);
-         font: 17px/1.6 -apple-system, "Avenir Next", "Segoe UI", Roboto, sans-serif; }
-  main { max-width: 760px; margin: 0 auto; padding: 56px 16px 72px; }
-  .mark { font-weight: 600; letter-spacing: 0.32em; font-size: 15px; color: var(--dim); margin: 0 0 28px; }
-  h1 { font-size: 34px; line-height: 1.25; margin: 0 0 16px; }
-  h2 { font-size: 21px; margin: 44px 0 10px; border-top: 1px solid var(--line); padding-top: 28px; }
-  p, li { color: var(--fg); }
-  .lede { color: var(--dim); font-size: 19px; margin: 0 0 22px; }
-  .warn { border: 1px solid var(--warn); border-radius: 8px; padding: 12px 16px; }
-  .warn strong { color: var(--warn); }
-  pre { background: var(--code); border: 1px solid var(--line); border-radius: 8px;
-        padding: 14px 16px; overflow-x: auto; font-size: 15px; }
-  code { font-family: ui-monospace, Menlo, Consolas, monospace; }
-  a { color: var(--fg); }
-  ul { padding-left: 22px; }
-  footer { margin-top: 56px; color: var(--dim); font-size: 14px; border-top: 1px solid var(--line); padding-top: 20px; }
+  html { background: var(--bg); scroll-behavior: smooth; scroll-padding-top: 80px; }
+  body {
+    margin: 0; color: var(--ink); font: 16px/1.6 var(--sans);
+    background:
+      radial-gradient(55% 45% at 82% -8%, rgba(77, 144, 255, 0.12), transparent 60%),
+      radial-gradient(45% 38% at -5% 8%, rgba(255, 106, 60, 0.07), transparent 60%),
+      var(--bg);
+    background-attachment: fixed;
+    -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
+    overflow-x: hidden;
+  }
+  ::selection { background: var(--accent); color: #fff; }
+  a { color: inherit; }
+  code { font-family: var(--mono); font-size: 0.92em; }
+  .wrap { max-width: 1152px; margin: 0 auto; padding: 0 16px; }
+  @media (min-width: 640px) { .wrap { padding: 0 40px; } }
+  .serif { font-family: var(--serif); font-style: italic; font-weight: 400; letter-spacing: -0.01em; }
+  .blue { color: var(--accent); }
+  .eyebrow { font: 500 12px/1.4 var(--mono); text-transform: uppercase; letter-spacing: 0.18em; color: var(--muted); }
+
+  .glass {
+    background: var(--glass); border: 1px solid var(--glass-line); border-radius: 16px;
+    -webkit-backdrop-filter: blur(22px) saturate(180%); backdrop-filter: blur(22px) saturate(180%);
+    box-shadow: inset 0 1px rgba(255, 255, 255, 0.06), 0 20px 50px -20px rgba(0, 0, 0, 0.6);
+    transition: background 0.35s, border-color 0.35s, transform 0.35s var(--ease);
+  }
+  .glass.lift:hover { background: var(--glass-hi); border-color: rgba(255, 255, 255, 0.18); transform: translateY(-2px); }
+
+  /* ── header ─────────────────────────────────────────────────────────── */
+  header {
+    position: fixed; inset: 0 0 auto 0; z-index: 50;
+    background: rgba(0, 0, 0, 0.55); border-bottom: 1px solid var(--line);
+    -webkit-backdrop-filter: blur(16px) saturate(180%); backdrop-filter: blur(16px) saturate(180%);
+  }
+  .bar { display: flex; align-items: center; justify-content: space-between; height: 64px; }
+  .logo { font: 600 15px var(--mono); letter-spacing: -0.02em; text-decoration: none; }
+  .logo b { color: var(--accent); }
+  nav { display: none; gap: 28px; }
+  nav a { font: 500 12px var(--mono); text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); text-decoration: none; transition: color 0.2s; }
+  nav a:hover { color: var(--ink); }
+  @media (min-width: 820px) { nav { display: flex; } }
+  .pill {
+    display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; text-decoration: none;
+    font: 500 12px var(--mono); text-transform: uppercase; letter-spacing: 0.05em;
+    padding: 7px 16px; border: 1px solid rgba(245, 245, 247, 0.2); transition: background 0.2s, color 0.2s, border-color 0.2s;
+  }
+  .pill:hover { background: var(--ink); color: #000; }
+  .progress { height: 1px; background: var(--accent); transform-origin: 0 50%; transform: scaleX(0); }
+
+  /* ── hero ───────────────────────────────────────────────────────────── */
+  .hero { position: relative; min-height: 100svh; display: flex; flex-direction: column; justify-content: center; padding-top: 112px; padding-bottom: 64px; }
+  .hero::before {
+    content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none;
+    background-image:
+      linear-gradient(rgba(255, 255, 255, 0.045) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.045) 1px, transparent 1px);
+    background-size: 64px 64px;
+    -webkit-mask-image: radial-gradient(70% 60% at 50% 40%, #000, transparent 75%);
+    mask-image: radial-gradient(70% 60% at 50% 40%, #000, transparent 75%);
+  }
+  .status { display: flex; flex-wrap: wrap; gap: 10px 24px; justify-content: space-between; margin-bottom: 40px; }
+  .status span { display: inline-flex; align-items: center; gap: 10px; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--live); box-shadow: 0 0 0 0 rgba(43, 179, 163, 0.6); animation: ping 2s ease-out infinite; }
+  h1 {
+    margin: 0; max-width: 1040px; font-weight: 500; color: var(--ink);
+    font-size: clamp(2.3rem, 6vw, 5.2rem); line-height: 1; letter-spacing: -0.03em;
+  }
+  h1 .serif { letter-spacing: -0.02em; }
+  .hero-foot { margin-top: 48px; display: flex; flex-direction: column; gap: 28px; }
+  @media (min-width: 900px) { .hero-foot { flex-direction: row; align-items: flex-end; justify-content: space-between; } }
+  .lede { max-width: 520px; margin: 0; color: var(--ink-soft); font-size: 17px; line-height: 1.65; }
+  .cta { display: flex; flex-wrap: wrap; gap: 12px; }
+  .btn { border-radius: 999px; padding: 11px 22px; font-size: 14px; font-weight: 500; text-decoration: none; transition: background 0.2s, border-color 0.2s, color 0.2s; }
+  .btn.solid { background: var(--ink); color: #000; }
+  .btn.solid:hover { background: var(--accent); color: #fff; }
+  .btn.ghost { border: 1px solid rgba(245, 245, 247, 0.2); }
+  .btn.ghost:hover { border-color: rgba(245, 245, 247, 0.55); }
+  .warn {
+    margin: 40px 0 0; max-width: 760px; padding: 14px 18px; border-radius: 14px; font-size: 15px; color: var(--ink-soft);
+    background: rgba(255, 107, 94, 0.06); border: 1px solid rgba(255, 107, 94, 0.35);
+  }
+  .warn strong { color: var(--warn); font-weight: 600; }
+  .scroll { margin-top: 56px; display: flex; align-items: center; gap: 12px; font: 500 11px var(--mono); text-transform: uppercase; letter-spacing: 0.2em; color: var(--faint); }
+  .scroll i { display: block; width: 48px; height: 1px; background: var(--line); overflow: hidden; position: relative; }
+  .scroll i::after { content: ""; position: absolute; inset: 0; background: var(--accent); animation: sweep 2.4s var(--ease) infinite; }
+  .in { animation: rise 0.9s var(--ease) both; }
+  .d1 { animation-delay: 0.08s; } .d2 { animation-delay: 0.16s; } .d3 { animation-delay: 0.24s; } .d4 { animation-delay: 0.32s; }
+
+  /* ── marquee ────────────────────────────────────────────────────────── */
+  .ticker { border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); padding: 18px 0; overflow: hidden;
+    -webkit-mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent);
+    mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent); }
+  .track { display: flex; width: max-content; animation: marquee 48s linear infinite; }
+  .ticker:hover .track { animation-play-state: paused; }
+  .track span { white-space: nowrap; padding: 0 24px; font: 500 12px var(--mono); text-transform: uppercase; letter-spacing: 0.18em; color: var(--muted); }
+  .track span::after { content: "\2022"; color: var(--accent); margin-left: 48px; }
+
+  /* ── sections ───────────────────────────────────────────────────────── */
+  section.block { padding-top: 112px; }
+  .head { display: grid; gap: 14px; margin-bottom: 44px; }
+  @media (min-width: 900px) { .head { grid-template-columns: 220px 1fr; align-items: baseline; } }
+  .head .eyebrow b { color: var(--accent); font-weight: 500; margin-right: 10px; }
+  h2 { margin: 0; font-weight: 500; font-size: clamp(1.9rem, 4vw, 3rem); line-height: 1.05; letter-spacing: -0.025em; max-width: 760px; }
+  h3 { margin: 0 0 8px; font-size: 18px; font-weight: 500; letter-spacing: -0.01em; }
+  p { margin: 0 0 14px; }
+  .body { color: var(--ink-soft); max-width: 720px; }
+  .body p:last-child, .card p:last-child { margin-bottom: 0; }
+
+  .term { overflow: hidden; }
+  .term-top { display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+  .term-top i { width: 10px; height: 10px; border-radius: 50%; background: rgba(255, 255, 255, 0.14); }
+  .term-top span { margin-left: 10px; font: 500 11px var(--mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--faint); }
+  .term pre { margin: 0; padding: 20px 22px; overflow-x: auto; font-size: 15px; line-height: 1.9; color: var(--ink); }
+  @media (max-width: 480px) { .term pre { font-size: 12.5px; padding: 18px 16px; } }
+  .install { display: grid; gap: 20px; }
+  @media (min-width: 900px) { .install { grid-template-columns: 1.2fr 1fr; align-items: start; } }
+
+  .grid { display: grid; gap: 14px; grid-template-columns: 1fr; }
+  @media (min-width: 640px) { .grid { grid-template-columns: 1fr 1fr; } }
+  @media (min-width: 1000px) { .grid.three { grid-template-columns: repeat(3, 1fr); } }
+  .card { padding: 26px; color: var(--ink-soft); font-size: 15px; }
+  .card .n { display: block; margin-bottom: 26px; font: 500 12px var(--mono); color: var(--faint); letter-spacing: 0.1em; }
+  .card h3 { color: var(--ink); }
+
+  .stats { display: grid; gap: 14px; grid-template-columns: 1fr 1fr; }
+  @media (min-width: 900px) { .stats { grid-template-columns: repeat(4, 1fr); } }
+  .stat { padding: 24px 22px; }
+  .stat strong { display: block; font: italic 400 clamp(3rem, 7vw, 4.6rem)/1 var(--serif); letter-spacing: -0.02em; color: var(--ink); }
+  .stat span { display: block; margin-top: 12px; font: 500 11px/1.5 var(--mono); text-transform: uppercase; letter-spacing: 0.14em; color: var(--muted); }
+
+  .pool { display: grid; gap: 20px; padding: 32px; }
+  @media (min-width: 900px) { .pool { grid-template-columns: 1fr auto; align-items: center; } }
+  .pool p { color: var(--ink-soft); max-width: 640px; }
+  .arrow { display: inline-flex; align-items: center; gap: 10px; }
+  .arrow::after { content: "\2192"; transition: transform 0.3s var(--ease); }
+  .arrow:hover::after { transform: translateX(4px); }
+
+  .risk { padding: 32px; border-color: rgba(255, 107, 94, 0.3); background: rgba(255, 107, 94, 0.04); }
+  .risk p { color: var(--ink-soft); max-width: 760px; }
+
+  footer { margin-top: 144px; border-top: 1px solid var(--line); padding: 72px 0 48px; }
+  .sign { margin: 0 0 40px; font-weight: 500; font-size: clamp(2.2rem, 6vw, 4.6rem); line-height: 1; letter-spacing: -0.03em; }
+  .links { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 56px; }
+  .fine { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; color: var(--faint); font: 500 12px var(--mono); letter-spacing: 0.06em; text-transform: uppercase; }
+  .fine a { text-decoration: none; color: var(--muted); }
+  .fine a:hover { color: var(--ink); }
+
+  a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 6px; }
+
+  /* ── motion ─────────────────────────────────────────────────────────── */
+  @keyframes rise { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: none; } }
+  @keyframes marquee { to { transform: translateX(-50%); } }
+  @keyframes ping { 70% { box-shadow: 0 0 0 8px rgba(43, 179, 163, 0); } 100% { box-shadow: 0 0 0 0 rgba(43, 179, 163, 0); } }
+  @keyframes sweep { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
+  @keyframes grow { to { transform: scaleX(1); } }
+  @supports (animation-timeline: view()) {
+    .reveal { animation: rise linear both; animation-timeline: view(); animation-range: entry 0% cover 22%; }
+    .progress { animation: grow linear both; animation-timeline: scroll(root); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+    .progress { display: none; }
+  }
 </style>
 </head>
 <body>
-<main>
-  <p class="mark">PATHIEL</p>
-  <h1>An AI trading agent for Hyperliquid: Claude trades perps from Claude Code, with an exact stop and target on every order.</h1>
-  <p class="lede">pathiel is a free, open-source Hyperliquid MCP server and Claude Code plugin: 65 tools that read Hyperliquid perpetual futures markets and your account, and place orders, from Claude Code, Claude Desktop, Cursor or any MCP client.</p>
-  <p class="warn"><strong>Real money.</strong> pathiel runs on Hyperliquid mainnet. With no key it only reads; once you add a key, orders are real. Practice on testnet with one line: <code>PATHIEL_NETWORK=testnet</code>.</p>
+<header>
+  <div class="wrap bar">
+    <a class="logo" href="#top" aria-label="pathiel, back to top">pathiel<b>.</b></a>
+    <nav aria-label="Sections">
+      <a href="#install">Install</a>
+      <a href="#guardrails">Guardrails</a>
+      <a href="#numbers">Numbers</a>
+      <a href="#pool">Pool</a>
+      <a href="#risk">Risk</a>
+    </nav>
+    <a class="pill" href="https://github.com/Julian-dev28/pathiel">GitHub &#8599;</a>
+  </div>
+  <div class="progress" aria-hidden="true"></div>
+</header>
 
-  <h2>Install in Claude Code</h2>
+<main id="top">
+  <div class="wrap hero">
+    <div class="status eyebrow in">
+      <span><span class="dot" aria-hidden="true"></span>Hyperliquid mainnet</span>
+      <span>v0.6.0 &middot; MIT &middot; free</span>
+    </div>
+    <h1 class="in d1">An AI trading agent for Hyperliquid: Claude trades perps from Claude Code, with an <span class="serif blue">exact stop</span> and <span class="serif">target</span> on every order.</h1>
+    <div class="hero-foot in d2">
+      <p class="lede">pathiel is a free, open-source Hyperliquid MCP server and Claude Code plugin: 65 tools that read Hyperliquid perpetual futures markets and your account, and place orders, from Claude Code, Claude Desktop, Cursor or any MCP client.</p>
+      <div class="cta">
+        <a class="btn solid" href="#install">Install</a>
+        <a class="btn ghost" href="scoreboard/">Scoreboard</a>
+      </div>
+    </div>
+    <p class="warn in d3"><strong>Real money.</strong> pathiel runs on Hyperliquid mainnet. With no key it only reads; once you add a key, orders are real. Practice on testnet with one line: <code>PATHIEL_NETWORK=testnet</code>.</p>
+    <div class="scroll in d4" aria-hidden="true">Scroll <i></i></div>
+  </div>
+
+  <div class="ticker" aria-hidden="true">
+    <div class="track">
+      <span>65 MCP tools</span><span>Exact stop on every order</span><span>2R minimum</span><span>3x default leverage</span><span>One position at a time</span><span>No builder fee</span><span>HIP-3 oil and metals</span><span>Claude Code</span><span>Claude Desktop</span><span>Cursor</span><span>Open source</span>
+      <span>65 MCP tools</span><span>Exact stop on every order</span><span>2R minimum</span><span>3x default leverage</span><span>One position at a time</span><span>No builder fee</span><span>HIP-3 oil and metals</span><span>Claude Code</span><span>Claude Desktop</span><span>Cursor</span><span>Open source</span>
+    </div>
+  </div>
+
+  <section class="block wrap" id="install">
+    <div class="head reveal">
+      <p class="eyebrow"><b>01</b>Install</p>
+      <h2>Three lines in <span class="serif">Claude Code.</span></h2>
+    </div>
+    <div class="install">
+      <div class="glass term reveal">
+        <div class="term-top"><i></i><i></i><i></i><span>claude code</span></div>
 <pre><code>/plugin marketplace add Julian-dev28/pathiel
 /plugin install pathiel@pathiel
 /pathiel:setup</code></pre>
-  <p>Setup shows the network and the risks, builds a private Python environment and connects the MCP server. Reading markets needs no account; trading needs a Hyperliquid API wallet, which can trade and never withdraw.</p>
+      </div>
+      <div class="body reveal">
+        <p>Setup shows the network and the risks, builds a private Python environment and connects the MCP server.</p>
+        <p>Reading markets needs no account. To trade, connect your Hyperliquid wallet with one signature: it approves an API wallet, which can trade and never withdraw.</p>
+      </div>
+    </div>
+  </section>
 
-  <h2>What it does</h2>
-  <ul>
-    <li>Every trade is one bracket order: an entry, a stop-loss and a take-profit target, sized from your risk profile.</li>
-    <li>Default profile: at most 3x leverage, 1% of equity at risk at the stop, one position at a time.</li>
-    <li>Orders under 2R are refused, and so is a stop outside half the distance to liquidation.</li>
-    <li>Desk briefs for crude oil (Brent and WTI) and metals (gold and silver) on Hyperliquid's HIP-3 markets give Claude a written call to trade from.</li>
-    <li>Claude Code asks before each live-money call. Nothing trades in the background.</li>
-  </ul>
+  <section class="block wrap" id="guardrails">
+    <div class="head reveal">
+      <p class="eyebrow"><b>02</b>What it does</p>
+      <h2>Every trade is a bracket. <span class="serif">No exceptions.</span></h2>
+    </div>
+    <div class="grid three">
+      <div class="glass lift card reveal"><span class="n">/01</span><h3>One bracket order</h3><p>An entry, a stop-loss and a take-profit target, sized from your risk profile.</p></div>
+      <div class="glass lift card reveal"><span class="n">/02</span><h3>A small default</h3><p>At most 3x leverage, 1% of equity at risk at the stop, one position at a time.</p></div>
+      <div class="glass lift card reveal"><span class="n">/03</span><h3>Bad orders refused</h3><p>Orders under 2R are refused, and so is a stop outside half the distance to liquidation.</p></div>
+      <div class="glass lift card reveal"><span class="n">/04</span><h3>Desk briefs</h3><p>Crude oil (Brent and WTI) and metals (gold and silver) on Hyperliquid's HIP-3 markets, with a written call for Claude to trade from.</p></div>
+      <div class="glass lift card reveal"><span class="n">/05</span><h3>You approve each call</h3><p>Claude Code asks before each live-money call. Nothing trades in the background.</p></div>
+      <div class="glass lift card reveal"><span class="n">/06</span><h3>Any MCP client</h3><p>Claude Code, Claude Desktop, Cursor, or anything else that speaks MCP.</p></div>
+    </div>
+  </section>
 
-  <h2>Free</h2>
-  <p>pathiel charges no fee: no order it places carries a Hyperliquid builder fee, so you pay only Hyperliquid's own trading fee.</p>
+  <section class="block wrap" id="numbers">
+    <div class="head reveal">
+      <p class="eyebrow"><b>03</b>By the numbers</p>
+      <h2>Small defaults, <span class="serif">hard limits.</span></h2>
+    </div>
+    <div class="stats">
+      <div class="glass stat reveal"><strong>65</strong><span>MCP tools</span></div>
+      <div class="glass stat reveal"><strong>2R</strong><span>Minimum reward to risk</span></div>
+      <div class="glass stat reveal"><strong>3x</strong><span>Default max leverage</span></div>
+      <div class="glass stat reveal"><strong>$0</strong><span>pathiel fee</span></div>
+    </div>
+    <div class="body reveal" style="margin-top: 28px">
+      <p>pathiel charges no fee: no order it places carries a Hyperliquid builder fee, so you pay only Hyperliquid's own trading fee.</p>
+    </div>
+  </section>
 
-  <h2>Research pool</h2>
-  <p>Opt in with one signed statement and pathiel grades your public fills with the same fluke-or-edge harness it runs on its own trades. Results are published at least 24 hours late on the <a href="scoreboard/">scoreboard</a>. No payout or reward is tied to returns.</p>
+  <section class="block wrap" id="pool">
+    <div class="head reveal">
+      <p class="eyebrow"><b>04</b>Research pool</p>
+      <h2>Fluke or edge, <span class="serif">graded in public.</span></h2>
+    </div>
+    <div class="glass pool reveal">
+      <p>Opt in with one signed statement and pathiel grades your public fills with the same fluke-or-edge harness it runs on its own trades. Results are published at least 24 hours late on the scoreboard. No payout or reward is tied to returns.</p>
+      <a class="btn solid arrow" href="scoreboard/">Open the scoreboard</a>
+    </div>
+  </section>
 
-  <h2>Risk</h2>
-  <p>Leveraged perps can lose the whole account, fast. There is no demonstrated edge and no return is promised. This is software, not financial advice. Hyperliquid's terms bar use from restricted jurisdictions, including by US persons; pathiel does not check where you are.</p>
-
-  <footer>
-    <p><a href="https://github.com/Julian-dev28/pathiel">Source on GitHub</a> · <a href="https://github.com/Julian-dev28/pathiel#readme">README</a> · <a href="https://github.com/Julian-dev28/pathiel/blob/main/docs/GETTING_STARTED.md">Getting started</a> · <a href="scoreboard/">Scoreboard</a> · MIT license</p>
-  </footer>
+  <section class="block wrap" id="risk">
+    <div class="head reveal">
+      <p class="eyebrow"><b>05</b>Risk</p>
+      <h2>Read this <span class="serif">before you trade.</span></h2>
+    </div>
+    <div class="glass risk reveal">
+      <p>Leveraged perps can lose the whole account, fast. There is no demonstrated edge and no return is promised. This is software, not financial advice. Hyperliquid's terms bar use from restricted jurisdictions, including by US persons; pathiel does not check where you are.</p>
+    </div>
+  </section>
 </main>
+
+<footer>
+  <div class="wrap">
+    <p class="sign">Trade with a stop. <span class="serif blue">Every time.</span></p>
+    <div class="links">
+      <a class="pill" href="https://github.com/Julian-dev28/pathiel">Source</a>
+      <a class="pill" href="https://github.com/Julian-dev28/pathiel#readme">README</a>
+      <a class="pill" href="https://github.com/Julian-dev28/pathiel/blob/main/docs/GETTING_STARTED.md">Getting started</a>
+      <a class="pill" href="scoreboard/">Scoreboard</a>
+    </div>
+    <div class="fine">
+      <span>pathiel &middot; MIT license</span>
+      <a href="#top">Back to top &#8593;</a>
+    </div>
+  </div>
+</footer>
 </body>
 </html>
