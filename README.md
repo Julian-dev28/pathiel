@@ -195,6 +195,23 @@ Hyperliquid's terms bar use from restricted jurisdictions, including by US
 persons. The current list is in Hyperliquid's terms. pathiel does not check
 where you are; staying within the rules where you live is on you.
 
+### Your data
+
+pathiel runs on your computer and the project runs no server, so nothing is
+sent to the maintainer. No analytics, no telemetry. What does leave your
+machine:
+
+- **Hyperliquid API** (api.hyperliquid.xyz, or the testnet API): market and
+  account reads, the orders you ask for, the API wallet approval you sign.
+- **Public data feeds** the desk briefs read: EIA, FRED, CFTC, Congress and
+  the Federal Register, prediction markets and news. An optional API key
+  for one of them goes only to that feed.
+- **GitHub**, only if you join the research pool: the signed statement you
+  submit as a pull request.
+
+Keys, theses, the desk journal and your config stay in `~/.pathiel`.
+Details: [docs/PRIVACY.md](docs/PRIVACY.md).
+
 ## Research pool (opt-in)
 
 pathiel can grade your trades alongside everyone else's. You register your
