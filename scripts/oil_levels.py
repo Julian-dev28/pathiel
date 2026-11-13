@@ -67,7 +67,8 @@ def fetch_mid(coin: str) -> float:
 
 
 def next_order(coin: str, side: str, levels: Dict[str, Any], thesis_entry: Optional[float],
-               leverage: float, max_leverage: float) -> Dict[str, Any]:
+               leverage: float, max_leverage: float, thesis_age_min: Optional[float] = None,
+               entry_delay_min: Optional[float] = None) -> Dict[str, Any]:
     """next_trade() for `coin` off a summarize() answer, plus `place_bracket`
     args when it trades now (market: no entry_px; tp_px structural). Pure."""
     r24 = levels.get("range_24h") or {}
@@ -80,7 +81,8 @@ def next_order(coin: str, side: str, levels: Dict[str, Any], thesis_entry: Optio
     out = next_trade(side, float(mid), float(r24["low"]), float(r24["high"]), thesis_entry=thesis_entry,
                      leverage=leverage, coin_max_leverage=max_leverage, stop_buffer=buf,
                      leverage_fit=leverage_fit_for(coin),
-                     breakout=levels.get("breakout_24h") if breakout_for(coin) else None)
+                     breakout=levels.get("breakout_24h") if breakout_for(coin) else None,
+                     thesis_age_min=thesis_age_min, entry_delay_min=entry_delay_min)
     out["coin"] = coin
     if out.get("ok"):
         out["place_bracket"] = {"coin": coin, "stop_px": out["stop_px"], "tp_px": out["structure_tp_px"]}
@@ -97,6 +99,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--next", choices=("long", "short"), help="the live entry rule's answer for this side")
     ap.add_argument("--thesis-entry", type=float, help="with --next: the thesis entry (never-chase line)")
     ap.add_argument("--risk-lev", type=float, default=20.0, help="with --next: the risk profile's leverage (20)")
+    ap.add_argument("--thesis-age-min", type=float, help="with --next: minutes since the thesis was written "
+                    "(the entry delay reads it; off while the config has no oil_entry_delay_min)")
     a = ap.parse_args(argv)
     if a.check:
         print(json.dumps(check(*a.check, leverage=a.lev, max_leverage=a.max_lev)))
@@ -106,7 +110,9 @@ def main(argv: Optional[List[str]] = None) -> int:
                     fetch_mid(a.coin), now_ms)
     out["coin"] = a.coin
     if a.next:
-        out = next_order(a.coin, a.next, out, a.thesis_entry, a.risk_lev, a.max_lev)
+        from services.strategies.next_trade import entry_delay_for
+        out = next_order(a.coin, a.next, out, a.thesis_entry, a.risk_lev, a.max_lev,
+                         thesis_age_min=a.thesis_age_min, entry_delay_min=entry_delay_for(a.coin))
     print(json.dumps(out))
     return 0
 

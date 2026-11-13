@@ -211,6 +211,12 @@ the mid is already past the entry range's own edge (a long under the 24h
 low, a short over the 24h high: the 2026-11-02 Brent long bought 110.00
 under a 110.14 low). Refusals are counted in `Run.refused` ("delay",
 "side_age", "confirm_1h", "break"). (LOSS_AUDIT_2026-11-02.md.)
+`Params.entry_zone_frac` (2026-11-13, TRADE_ATTRIBUTION_2026-11-13.md: the
+real winners bought in the bottom third of the 24h range, the losers
+through the low or mid-range): in market mode, none unless the mid sits
+within this fraction of the entry range from the side's own edge (a long
+with (mid - low) / (high - low) <= frac, a short mirrored). Counted as
+"zone". None = off, every existing result byte-identical.
 
 Regime filter and range-scaled levels (2026-11-02)
 --------------------------------------------------
@@ -509,6 +515,7 @@ class Params:
     side_age_h: Optional[float] = None       # no new entry until the call's side has held N hours
     confirm_1h: bool = False                 # the last closed 1h candle must agree with the side
     no_break_entry: bool = False             # no market entry once the mid is past the entry range's own edge
+    entry_zone_frac: Optional[float] = None  # market entry only within this fraction of the entry range from its own edge (2026-11-13)
     # ── 2026-11-02 oil regime test (OIL_REGIME_TEST_2026-11-02.md; see
     # "Regime filter and range-scaled levels" above). Every default keeps
     # every existing result byte-identical (test_oil_regime_sim.py).
@@ -1473,6 +1480,26 @@ def pullback_setup(d: Direction, t: int, mid: float, lv: Dict[str, Any], closed_
             "call_id": d.regime_id, "leverage": lev}
 
 
+def zone_position(mid: float, lo: float, hi: float, side: str) -> Optional[float]:
+    """Where `mid` sits in the entry range from the side's own edge: 0 at a
+    long's low (a short's high), 1 at the far edge, under 0 past its own
+    edge, over 1 past the far one. None on a degenerate range. Pure; the
+    review ledger's `range_pos` with the same sign convention."""
+    if hi <= lo:
+        return None
+    pos = (mid - lo) / (hi - lo)
+    return pos if side == "long" else 1.0 - pos
+
+
+def zone_blocks(mid: float, lo: float, hi: float, side: str, frac: float) -> bool:
+    """`Params.entry_zone_frac`: True when the mid is further than `frac` of
+    the range from the side's own edge (a long above low + frac x range, a
+    short below high - frac x range). A mid past the edge (position under
+    0) is not this gate's business (`no_break_entry` is). Pure."""
+    pos = zone_position(mid, lo, hi, side)
+    return pos is not None and pos > frac + 1e-12
+
+
 def _setup(d: Direction, mid: float, lv: Dict[str, Any], params: Params,
           leverage: Optional[float] = None) -> Optional[Dict[str, Any]]:
     """The one setup a flat tick may take, or None (price not at the edge),
@@ -1493,6 +1520,9 @@ def _setup(d: Direction, mid: float, lv: Dict[str, Any], params: Params,
             return {"refused": "chase"}
         if params.no_break_entry and (mid < edge if is_long else mid > edge):
             return {"refused": "break"}
+        if params.entry_zone_frac is not None and zone_blocks(mid, lv["entry_low"], lv["entry_high"], d.side,
+                                                              params.entry_zone_frac):
+            return {"refused": "zone"}
         entry = mid
         struct = min(edge, mid) if is_long else max(edge, mid)
     else:

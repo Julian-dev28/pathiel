@@ -133,6 +133,80 @@ BREAKOUT_LOOKBACK_H = 24
 NO_BREAK_ENTRY = True
 BREAKOUT_STOP_H = 4
 
+# Entry delay (2026-11-13, TRADE_ATTRIBUTION_2026-11-13.md): no new entry in
+# the first N minutes of a thesis. On the real fills the entries taken
+# under a thesis older than 2h won 3 of 4 (+$70.68) and the ten taken
+# inside 2h of a rewrite won 4 (-$35.70); on the journal replay a 120 min
+# delay beat the live rule +$44.56 with 90/180 beside it, but 2.23R of the
+# 2.24R edge is one afternoon (11-04). OFF: None here, and the config key
+# `oil_entry_delay_min` unset. `entry_delay_for(coin)` reads the config so
+# the operator can turn it on without a code change; desk_tick_sim.Params.
+# entry_delay_min is the same rule in the simulator.
+ENTRY_DELAY_MIN: Optional[float] = None
+ENTRY_DELAY_CONFIG_KEY = "oil_entry_delay_min"
+ENTRY_DELAY_COINS = frozenset({"xyz:BRENTOIL", "xyz:CL"})
+
+
+def entry_delay(thesis_age_min: Optional[float], delay_min: Optional[float]) -> Dict[str, Any]:
+    """The entry delay at a tick: blocked while the thesis in force is
+    younger than `delay_min` minutes. A delay of None or <= 0 blocks
+    nothing; an unknown thesis age blocks nothing (the rule needs a fact,
+    not a guess). Pure."""
+    if delay_min is None or delay_min <= 0:
+        return {"blocked": False, "delay_min": delay_min, "thesis_age_min": thesis_age_min, "wait_min": 0.0,
+                "reason": "entry delay off"}
+    if thesis_age_min is None:
+        return {"blocked": False, "delay_min": delay_min, "thesis_age_min": None, "wait_min": 0.0,
+                "reason": "thesis age unknown: delay not applied"}
+    wait = max(0.0, float(delay_min) - float(thesis_age_min))
+    if wait <= 0:
+        return {"blocked": False, "delay_min": delay_min, "thesis_age_min": thesis_age_min, "wait_min": 0.0,
+                "reason": f"thesis {thesis_age_min:.0f} min old, past the {delay_min:g} min delay"}
+    return {"blocked": True, "delay_min": delay_min, "thesis_age_min": thesis_age_min, "wait_min": round(wait, 1),
+            "reason": f"thesis {thesis_age_min:.0f} min old: no entry in the first {delay_min:g} min of a call "
+                      f"({wait:.0f} min to go)"}
+
+
+def entry_delay_for(coin: str, config: Optional[Dict[str, Any]] = None) -> Optional[float]:
+    """The entry delay in force for `coin`: the config's
+    `oil_entry_delay_min` (oil coins only; read from .agent-config.json
+    when `config` is None), else ENTRY_DELAY_MIN. None = off."""
+    if coin not in ENTRY_DELAY_COINS:
+        return None
+    if config is None:
+        try:
+            from pathiel.agents.config_store import read_agent_config
+            config = read_agent_config()
+        except Exception:  # noqa: BLE001 - no config means the code default
+            config = {}
+    raw = (config or {}).get(ENTRY_DELAY_CONFIG_KEY)
+    if raw is None:
+        return ENTRY_DELAY_MIN
+    try:
+        val = float(raw)
+    except (TypeError, ValueError):
+        return ENTRY_DELAY_MIN
+    return val if val > 0 else None
+
+
+def thesis_age_minutes(created_at: Any, now_ms: Optional[int] = None) -> Optional[float]:
+    """Minutes from a thesis's `created_at` (a datetime or an ISO string, UTC
+    when naive) to `now_ms` (default: now). None when it cannot be read."""
+    import time as _time
+    from datetime import datetime, timezone
+    if created_at is None:
+        return None
+    try:
+        if isinstance(created_at, str):
+            created_at = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+        if created_at.tzinfo is None:
+            created_at = created_at.replace(tzinfo=timezone.utc)
+        t0 = created_at.timestamp() * 1000.0
+    except (AttributeError, ValueError, OverflowError):
+        return None
+    now = _time.time() * 1000.0 if now_ms is None else float(now_ms)
+    return round(max(0.0, now - t0) / 60_000.0, 1)
+
 
 def trend_gate(side: str, closes_1h: Sequence[float], span_h: int = 120) -> Dict[str, Any]:
     """The 5-day trend veto (2026-11-13), from CLOSED 1h closes, oldest
@@ -263,7 +337,9 @@ def next_trade(side: str, mid: float, low_24h: float, high_24h: float, *,
                offset_frac: Optional[float] = None,
                leverage_fit: Sequence[float] = (),
                breakout: Optional[Dict[str, float]] = None,
-               no_break: bool = NO_BREAK_ENTRY) -> Dict[str, Any]:
+               no_break: bool = NO_BREAK_ENTRY,
+               thesis_age_min: Optional[float] = None,
+               entry_delay_min: Optional[float] = ENTRY_DELAY_MIN) -> Dict[str, Any]:
     """The tick's next trade for a `side` thesis. `ok` is True when the tick
     would send the market order at `mid` right now. Every other answer says
     why not (`blockers`) and where it would trade (`trigger_px`).
@@ -272,12 +348,36 @@ def next_trade(side: str, mid: float, low_24h: float, high_24h: float, *,
     R (the backtest's PB_TRIGGERS, in its gate order: chase, then the
     leverage line, then R), the breakout is tried; `source: "breakout"`
     when it trades. `no_break` (NO_BREAK_ENTRY, live): no entry while the
-    mid is past the 24h range's own edge."""
+    mid is past the 24h range's own edge. `entry_delay_min` (ENTRY_DELAY_MIN,
+    off; `entry_delay_for(coin)` reads the config): no entry while the
+    thesis is younger than that, read off `thesis_age_min`; the delay is
+    judged last, on top of the main rule or the breakout, so the answer
+    still shows where the tick would trade once the delay has passed."""
     # Read the live offset at CALL time: a default bound at import froze
     # whatever bracket.TARGET_OFFSET_FRAC was when this module first loaded
     # (a test fixture's 0.0 leaked into test_trigger_watch that way).
     if offset_frac is None:
         offset_frac = _bracket.TARGET_OFFSET_FRAC
+    out = _next_trade(side, mid, low_24h, high_24h, thesis_entry=thesis_entry, leverage=leverage,
+                      coin_max_leverage=coin_max_leverage, stop_buffer=stop_buffer, min_r=min_r,
+                      offset_frac=offset_frac, leverage_fit=leverage_fit, breakout=breakout, no_break=no_break)
+    delay = entry_delay(thesis_age_min, entry_delay_min)
+    if delay["blocked"]:
+        out["ok"] = False
+        out["entry_delay"] = delay
+        out["blockers"] = [delay["reason"]] + list(out.get("blockers") or [])
+        out["verdict"] = f"waits: {delay['reason']}" + (
+            "" if not out.get("verdict") or out["verdict"].endswith("now") else f"; then {out['verdict']}")
+    elif entry_delay_min:
+        out["entry_delay"] = delay
+    return out
+
+
+def _next_trade(side: str, mid: float, low_24h: float, high_24h: float, *,
+                thesis_entry: Optional[float], leverage: float, coin_max_leverage: Optional[float],
+                stop_buffer: float, min_r: float, offset_frac: float, leverage_fit: Sequence[float],
+                breakout: Optional[Dict[str, float]], no_break: bool) -> Dict[str, Any]:
+    """`next_trade` before the entry delay: the main rule, then the breakout."""
     out = _main_rule(side, mid, low_24h, high_24h, thesis_entry=thesis_entry, leverage=leverage,
                      coin_max_leverage=coin_max_leverage, stop_buffer=stop_buffer, min_r=min_r,
                      offset_frac=offset_frac, leverage_fit=leverage_fit, no_break=no_break)
@@ -416,4 +516,5 @@ def live_rule_line(nt: Dict[str, Any]) -> str:
 __all__ = ["next_trade", "stop_buffer_for", "stop_buffer_floor_frac_for", "live_rule_line", "fit_leverage",
            "leverage_fit_for", "breakout_for", "breakout_levels", "breakout_trade", "trend_gate",
            "BRENT_STOP_BUFFER", "GOLD", "GOLD_STOP_BUFFER_FLOOR_FRAC", "LEVERAGE_FIT", "BREAKOUT_COINS",
-           "BREAKOUT_LOOKBACK_H", "BREAKOUT_STOP_H", "NO_BREAK_ENTRY"]
+           "BREAKOUT_LOOKBACK_H", "BREAKOUT_STOP_H", "NO_BREAK_ENTRY", "ENTRY_DELAY_MIN", "ENTRY_DELAY_CONFIG_KEY",
+           "entry_delay", "entry_delay_for", "thesis_age_minutes"]

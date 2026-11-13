@@ -81,9 +81,12 @@ SIGNER_REPEAT_S = 6 * 3600  # say it again this often while it stays broken
 
 def evaluate(side: Optional[str], thesis_entry: Optional[float], mid: Optional[float],
              levels: Dict[str, Any], coin: str, coin_max_leverage: Optional[float],
-             leverage: float) -> Dict[str, Any]:
+             leverage: float, thesis_age_min: Optional[float] = None,
+             entry_delay_min: Optional[float] = None) -> Dict[str, Any]:
     """Pure: would the tick trade `coin` at `mid` right now? Same answer as
-    GET /api/desks/{id}/next, with the mid refreshed between level reads."""
+    GET /api/desks/{id}/next, with the mid refreshed between level reads.
+    `thesis_age_min` / `entry_delay_min`: the entry delay (next_trade.
+    entry_delay; off while the config has no oil_entry_delay_min)."""
     from services.strategies.next_trade import breakout_for, leverage_fit_for, next_trade, stop_buffer_for
     r24 = levels.get("range_24h") or {}
     if side not in ("long", "short"):
@@ -97,7 +100,8 @@ def evaluate(side: Optional[str], thesis_entry: Optional[float], mid: Optional[f
                      thesis_entry=thesis_entry, leverage=leverage,
                      coin_max_leverage=coin_max_leverage, stop_buffer=buf,
                      leverage_fit=leverage_fit_for(coin),
-                     breakout=levels.get("breakout_24h") if breakout_for(coin) else None)
+                     breakout=levels.get("breakout_24h") if breakout_for(coin) else None,
+                     thesis_age_min=thesis_age_min, entry_delay_min=entry_delay_min)
     return out
 
 
@@ -449,8 +453,11 @@ def watch(*, once: bool, cooldown_min: float, sleep: Callable[[float], None] = t
             except Exception as e:  # noqa: BLE001 - one bad read waits for the next minute
                 parts.append(f"{desk}: read failed ({str(e)[:80]})")
                 continue
+            from services.strategies.next_trade import entry_delay_for, thesis_age_minutes
             res = evaluate(t.call.side if t else None, t.call.entry_px if t else None, mid,
-                           lv[1], coin, coin_max[coin], lev)
+                           lv[1], coin, coin_max[coin], lev,
+                           thesis_age_min=thesis_age_minutes(getattr(t, "created_at", None)) if t else None,
+                           entry_delay_min=entry_delay_for(coin))
             if res.get("ok"):
                 fired[desk] = now
                 _write_json(fired_path, fired)

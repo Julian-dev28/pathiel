@@ -76,6 +76,11 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     # One-weekend hold (services/strategies/weekend.hold_override; operator,
     # 2026-11-06). Empty = every oil weekend is flat.
     "weekend_override": {},
+    # Entry delay for the oil desk in minutes (services/strategies/next_trade.
+    # entry_delay_for; TRADE_ATTRIBUTION_2026-11-13.md). None = off: the tick
+    # may enter at any age of the thesis. 120 = no entry in a thesis's first
+    # two hours, the variant that beat the live rule on the journal replay.
+    "oil_entry_delay_min": None,
 }
 
 # 2026-10-23 (wave 2): every key the retired autonomous engine (scan/
