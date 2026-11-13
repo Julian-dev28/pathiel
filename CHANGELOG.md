@@ -8,6 +8,17 @@ All notable changes to pathiel. The format follows
 
 ### Changed
 
+- The Claude plugin directory reviews a bundle, not the repo:
+  `scripts/build_plugin_bundle.py` publishes only the files the plugin runs
+  (166 of 908) to the `plugin` branch. The repo-root review had flagged
+  CLAUDE.md, `.mcp.json` declared twice, `.claude/skills`, and
+  download-and-run lines in docs, CI and VPS scripts that never ship.
+  `release.yml` refuses a version whose bundle is not on that branch.
+- `plugin.json` starts the server as `bash scripts/pathiel-mcp`, naming the
+  interpreter as the directory asks; `/pathiel:setup` does the same.
+- `scripts/_plugin_env.sh` makes paths absolute without `eval`: a
+  `PATHIEL_HOME` holding `$(...)` is now kept as text, never run.
+
 - Listing copy leads with what people search for: "AI trading agent for
   Hyperliquid" in the README headline, `plugin.json`, `marketplace.json` and
   `server.json` (the registry picks it up with the next version). New

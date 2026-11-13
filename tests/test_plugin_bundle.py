@@ -1,0 +1,326 @@
+"""The plugin bundle (scripts/build_plugin_bundle.py): what the directory sees.
+
+The Claude plugin directory reads every file in the folder it is given. These
+tests pin that the bundle holds what the plugin runs and nothing it flagged
+on the whole-repo submission of 2026-11-13: no CLAUDE.md (ROOT_CLAUDE_MD), no
+repo .mcp.json (DECLARED_IN_TWO_PLACES, SERVER_START_LINE_NOT_ACCEPTED), no
+.claude/ (LOCAL_CODE_FILE_TYPE), no workflows, VPS scripts, docs or fixtures
+(RUNTIME_FETCH_EXEC); and that the server starts and lists the same tools
+from the bundle alone as from the checkout.
+"""
+from __future__ import annotations
+
+import ast
+import importlib.util
+import json
+import re
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+import pytest
+
+ROOT = Path(__file__).resolve().parents[1]
+SCRIPT = ROOT / "scripts" / "build_plugin_bundle.py"
+
+_spec = importlib.util.spec_from_file_location("build_plugin_bundle", SCRIPT)
+B = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(B)
+
+# Download-and-run shapes the directory's RUNTIME_FETCH_EXEC check is about.
+FETCH_EXEC = re.compile(
+    r"(curl|wget)\b[^\n]*\|\s*(sudo\s+)?(ba|z|da|k)?sh\b"
+    r"|\b(iex|Invoke-Expression)\b"
+    r"|\bsh\s+-c\s+[\"']?\$\((curl|wget)\b"
+    r"|\bbash\s+<\(\s*(curl|wget)\b",
+    re.IGNORECASE)
+
+
+# The staged files, not HEAD: the pre-commit gate runs before the commit it
+# checks exists. In CI and a clean checkout the index is HEAD.
+@pytest.fixture(scope="module")
+def files():
+    return B.ls_tree(B.INDEX)
+
+
+@pytest.fixture(scope="module")
+def paths(files):
+    return B.bundle_paths(files)
+
+
+@pytest.fixture(scope="module")
+def built(tmp_path_factory, paths):
+    out = tmp_path_factory.mktemp("bundle") / "pathiel"
+    assert B.build(B.INDEX, out) == paths
+    return out
+
+
+# ── what is in, what is out ─────────────────────────────────────────────────
+
+# ── checks, shared with tests/test_eval_plugin_bundle.py ────────────────────
+
+BANNED_EXACT = {"CLAUDE.md", "CLAUDE.local.md", ".mcp.json", ".lsp.json", "hooks/hooks.json",
+                ".claude-plugin/marketplace.json", "Dockerfile", "Dockerfile.mcp",
+                "DEPLOY.md", "CONTRIBUTING.md", "docker-entrypoint.sh", "vercel.json",
+                "scripts/seo_rank.py", ".agent-config.json", ".env.local.example"}
+BANNED_PREFIX = (".claude/", ".github/", "docs/", "tests/", "k8s/", "api/",
+                 "scripts/vps/", "scripts/hooks/")
+
+
+def flagged_paths(paths) -> list:
+    """Bundle paths the 2026-11-13 directory review flagged on the repo root."""
+    return [p for p in paths if p in BANNED_EXACT or p.startswith(BANNED_PREFIX)
+            or "/tests/" in p or "/evals/" in p
+            or ("/fixtures/" in p and not p.startswith("contracts/"))]
+
+
+def fetch_exec_hits(root: Path, paths) -> list:
+    hits = []
+    for p in paths:
+        data = (root / p).read_bytes()
+        if b"\0" in data:
+            continue
+        for n, line in enumerate(data.decode("utf-8", "replace").splitlines(), 1):
+            if FETCH_EXEC.search(line):
+                hits.append(f"{p}:{n}: {line.strip()[:120]}")
+    return hits
+
+
+def shell_files(root: Path, paths) -> list:
+    return [p for p in paths if p.endswith(".sh") or
+            (root / p).read_bytes().startswith(b"#!/usr/bin/env bash")]
+
+
+def shell_eval_hits(root: Path, paths) -> list:
+    hits = []
+    for p in shell_files(root, paths):
+        for n, ln in enumerate((root / p).read_text(encoding="utf-8").splitlines(), 1):
+            if re.search(r"(^|[;&|\s])eval\b", ln.split("#", 1)[0]):
+                hits.append(f"{p}:{n}")
+    return hits
+
+
+def unclassified_data(files) -> list:
+    return [p for p in files if p.startswith(B.CODE_TREES) and not p.endswith(".py")
+            and B.classify_data(p) is None]
+
+
+def test_nothing_the_directory_flagged_on_the_repo_root_is_in_the_bundle(paths):
+    assert flagged_paths(paths) == []
+
+
+def test_every_required_file_is_in_the_bundle(paths):
+    for p in B.LISTING_FILES + B.RUNTIME_FILES + B.ENTRY_SCRIPTS:
+        assert p in paths, p
+    for tree in B.CONTENT_TREES:
+        assert any(p.startswith(tree) for p in paths), tree
+
+
+def test_the_bundle_is_far_smaller_than_the_repo(files, paths):
+    # 166 of ~880 files at the time of writing. A bundle near the repo size
+    # means a rule stopped excluding.
+    assert len(paths) < len(files) / 3, (len(paths), len(files))
+
+
+def test_every_data_file_under_the_code_trees_is_classified(files):
+    unclassified = unclassified_data(files)
+    assert unclassified == [], ("add each to DATA_INCLUDE or DATA_EXCLUDE in "
+                                "scripts/build_plugin_bundle.py", unclassified)
+
+
+def test_every_script_the_plugin_content_names_ships_or_is_a_maintainer_tool(files, paths):
+    named = set()
+    for p in files:
+        if p.startswith(B.CONTENT_TREES) and p.endswith(".md"):
+            text = (ROOT / p).read_text(encoding="utf-8")
+            named |= set(re.findall(r"\bscripts/[A-Za-z0-9_][A-Za-z0-9_.-]*[A-Za-z0-9_]", text))
+    named = {n for n in named if n in files}
+    stray = sorted(n for n in named if n not in paths and n not in B.DEV_ONLY_SCRIPTS)
+    assert stray == [], ("a plugin file tells Claude to run a script the bundle does not ship; "
+                         "add it to ENTRY_SCRIPTS or DEV_ONLY_SCRIPTS", stray)
+
+
+def test_fetch_exec_pattern_catches_the_shapes_it_is_for():
+    for bad in ("curl -fsSL https://x.sh | bash", "wget -qO- u | sudo sh", "iex (irm u)",
+                "bash <(curl -s u)", 'sh -c "$(curl -fsSL u)"'):
+        assert FETCH_EXEC.search(bad), bad
+    for ok in ('subprocess.run(["curl", "-sS", url])', "curl -s http://localhost:8000/api/health"):
+        assert not FETCH_EXEC.search(ok), ok
+
+
+def test_no_bundled_text_file_downloads_and_runs_code(built, paths):
+    assert fetch_exec_hits(built, paths) == []
+
+
+def test_no_bundled_shell_file_uses_eval(built, paths):
+    shell = shell_files(built, paths)
+    assert "scripts/_plugin_env.sh" in shell and "scripts/pathiel-mcp" in shell
+    assert shell_eval_hits(built, paths) == []
+
+
+def test_the_bundle_declares_its_mcp_server_in_one_place_with_a_named_interpreter(built):
+    plugin = json.loads((built / ".claude-plugin" / "plugin.json").read_text())
+    assert plugin["mcpServers"] == {"pathiel": {
+        "command": "bash", "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/pathiel-mcp"]}}
+    assert not (built / ".mcp.json").exists()
+    assert sorted(p.name for p in (built / ".claude-plugin").iterdir()) == ["icon.png", "plugin.json"]
+
+
+def test_build_keeps_exec_bits(built):
+    for p in ("scripts/pathiel-mcp", "scripts/pathiel-py"):
+        assert (built / p).stat().st_mode & 0o100, p
+
+
+# ── the import closure ──────────────────────────────────────────────────────
+
+def _imports(path: str, src: str, names):
+    return B.imports_of(path, src.encode(), set(names))
+
+
+def test_closure_sees_lazy_imports_inside_functions():
+    names = {"services/a.py", "services/__init__.py", "services/b.py"}
+    got = _imports("services/a.py", "def f():\n    from services import b\n    return b\n", names)
+    assert "services/b.py" in got
+
+
+def test_closure_sees_dotted_module_strings_like_provider_paths():
+    names = {"services/intel/api.py", "services/intel/__init__.py"}
+    got = _imports("services/x.py", 'P = "services.intel.api:build_packet"\n', names)
+    assert got == {"services/intel/api.py"}
+    assert _imports("services/x.py", 'P = "services are down"\n', names) == set()
+
+
+def test_closure_resolves_relative_imports():
+    names = {"services/pool/a.py", "services/pool/b.py", "services/c.py"}
+    assert _imports("services/pool/a.py", "from . import b\n", names) == {"services/pool/b.py"}
+    assert _imports("services/pool/a.py", "from ..c import x\n", names) == {"services/c.py"}
+
+
+def test_closure_resolves_script_siblings_imported_by_bare_name():
+    names = {"scripts/_state_env.py", "scripts/x.py"}
+    assert _imports("scripts/x.py", "import _state_env\n", names) == {"scripts/_state_env.py"}
+
+
+def test_every_first_party_import_in_the_bundle_resolves_inside_it(built, paths):
+    """Independent of the closure code: parse every bundled module and check
+    each pathiel/services/contracts import names a bundled file."""
+    shipped = set(paths)
+    missing = []
+    for p in paths:
+        if not p.endswith(".py"):
+            continue
+        for node in ast.walk(ast.parse((built / p).read_bytes())):
+            mods = []
+            if isinstance(node, ast.Import):
+                mods = [a.name for a in node.names]
+            elif isinstance(node, ast.ImportFrom) and not node.level and node.module:
+                mods = [node.module]
+            for m in mods:
+                if m.split(".")[0] in B.PACKAGE_ROOTS:
+                    base = m.replace(".", "/")
+                    namespace = any(s.startswith(base + "/") for s in shipped)  # no __init__.py
+                    if f"{base}.py" not in shipped and f"{base}/__init__.py" not in shipped \
+                            and not namespace:
+                        missing.append(f"{p}: {m}")
+    assert missing == []
+
+
+# ── it runs ─────────────────────────────────────────────────────────────────
+
+def _tools(server: Path, public_env) -> list:
+    msgs = [{"jsonrpc": "2.0", "id": 1, "method": "initialize",
+             "params": {"protocolVersion": "2025-06-18", "capabilities": {}}},
+            {"jsonrpc": "2.0", "id": 2, "method": "tools/list"}]
+    proc = subprocess.run([sys.executable, str(server)],
+                          input="".join(json.dumps(m) + "\n" for m in msgs),
+                          capture_output=True, text=True, timeout=90, env=public_env(),
+                          cwd=str(public_env.env_file.parent))
+    assert proc.returncode == 0, proc.stderr[-2000:]
+    out = {json.loads(ln).get("id"): json.loads(ln) for ln in proc.stdout.splitlines()}
+    return sorted(t["name"] for t in out[2]["result"]["tools"])
+
+
+def test_the_server_lists_the_same_tools_from_the_bundle_alone(built, public_env):
+    from_bundle = _tools(built / "scripts" / "pathiel-mcp-server.py", public_env)
+    from_checkout = _tools(ROOT / "scripts" / "pathiel-mcp-server.py", public_env)
+    assert from_bundle == from_checkout and len(from_bundle) >= 60
+
+
+def test_every_bundled_module_imports_from_the_bundle_alone(built, paths, public_env):
+    """A lazy import the closure missed would only fail when a user calls that
+    tool; importing every shipped module up front catches it here."""
+    mods = [p[:-3].replace("/", ".").removesuffix(".__init__") for p in paths
+            if p.endswith(".py") and p.startswith(B.CODE_TREES)]
+    code = ("import importlib, sys\nsys.path.insert(0, sys.argv[1])\nbad = []\n"
+            "for m in sys.argv[2:]:\n"
+            "    try:\n        importlib.import_module(m)\n"
+            "    except Exception as e:\n        bad.append(f'{m}: {type(e).__name__}: {e}')\n"
+            "print('\\n'.join(bad))\n")
+    proc = subprocess.run([sys.executable, "-c", code, str(built), *mods], capture_output=True,
+                          text=True, timeout=120, env=public_env(), cwd=str(built))
+    assert proc.returncode == 0, proc.stderr[-2000:]
+    assert proc.stdout.strip() == "", proc.stdout
+
+
+# ── publish and check, on a throwaway clone ─────────────────────────────────
+
+def _clean_env() -> dict:
+    """The environment without GIT_*: inside the pre-commit hook git exports
+    GIT_INDEX_FILE (and GIT_DIR in a worktree), which would point the clone's
+    git at the real repo's index."""
+    import os
+    return {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+
+
+def _git(cwd: Path, *args: str) -> str:
+    return subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True,
+                          text=True, env=_clean_env()).stdout.strip()
+
+
+def test_publish_is_idempotent_fast_forward_and_check_catches_drift(tmp_path):
+    clone = tmp_path / "clone"
+    head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT, check=True, capture_output=True,
+                          text=True).stdout.strip()
+    subprocess.run(["git", "clone", "-q", "--shared", "--no-checkout", str(ROOT), str(clone)],
+                   check=True, env=_clean_env())
+    _git(clone, "checkout", "-q", "--detach", head)
+    _git(clone, "config", "user.email", "test@example.invalid")
+    _git(clone, "config", "user.name", "bundle test")
+    (clone / "scripts").mkdir(exist_ok=True)
+    shutil.copy(SCRIPT, clone / "scripts" / "build_plugin_bundle.py")  # this version, uncommitted
+    run = [sys.executable, str(clone / "scripts" / "build_plugin_bundle.py")]
+
+    def bundle(*args):
+        return subprocess.run(run + list(args), cwd=clone, capture_output=True, text=True,
+                              env=_clean_env())
+
+    first = bundle("publish").stdout.strip()
+    assert first and _git(clone, "rev-parse", "plugin") == first
+    assert _git(clone, "rev-parse", "plugin^{tree}") == bundle("tree").stdout.strip()
+    assert bundle("publish").stdout.strip() == first          # same source, no new commit
+    assert bundle("check", "--against", "plugin").returncode == 0
+
+    # A change to a bundled file: check fails until a new publish, which
+    # stacks on the old bundle (a fast-forward, never a rewrite).
+    readme = clone / "README.md"
+    readme.write_text(readme.read_text(encoding="utf-8") + "\nchanged\n", encoding="utf-8")
+    _git(clone, "commit", "-q", "-am", "change a bundled file")
+    stale = bundle("check", "--against", "plugin")
+    assert stale.returncode == 1 and "MISMATCH" in stale.stderr
+    second = bundle("publish").stdout.strip()
+    assert second != first and _git(clone, "rev-parse", f"{second}^") == first
+    assert bundle("check", "--against", "plugin").returncode == 0
+
+    # A change outside the bundle (the maintainer's CLAUDE.md) changes nothing.
+    t = clone / "CLAUDE.md"
+    t.write_text(t.read_text(encoding="utf-8") + "\nchanged\n", encoding="utf-8")
+    _git(clone, "commit", "-q", "-am", "change an unbundled file")
+    assert bundle("check", "--against", "plugin").returncode == 0
+    assert bundle("publish").stdout.strip() == second
+
+
+def test_the_release_workflow_refuses_a_version_whose_bundle_is_not_published():
+    wf = (ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
+    assert "python3 scripts/build_plugin_bundle.py check --ref HEAD --against origin/plugin" in wf
+    assert "refs/heads/plugin:refs/remotes/origin/plugin" in wf

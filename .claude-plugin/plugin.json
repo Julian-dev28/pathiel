@@ -13,8 +13,8 @@
   "keywords": ["hyperliquid", "trading", "perps", "mcp", "claude-code", "risk-management", "oil", "gold", "ai-agent", "trading-agent", "ai-trading"],
   "mcpServers": {
     "pathiel": {
-      "command": "${CLAUDE_PLUGIN_ROOT}/scripts/pathiel-mcp",
-      "args": []
+      "command": "bash",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/pathiel-mcp"]
     }
   }
 }

@@ -269,8 +269,8 @@ def test_manifest_key_set_unchanged():
     assert set(plugin) == PLUGIN_KEYS
     assert set(market) == MARKET_KEYS
     assert len(market["plugins"]) == 1 and set(market["plugins"][0]) == MARKET_ENTRY_KEYS
-    assert plugin["mcpServers"] == {"pathiel": {"command": "${CLAUDE_PLUGIN_ROOT}/scripts/pathiel-mcp",
-                                                "args": []}}
+    assert plugin["mcpServers"] == {"pathiel": {"command": "bash",
+                                                "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/pathiel-mcp"]}}
     assert sorted(p.name for p in (ROOT / ".claude-plugin").iterdir()) == \
         ["icon.png", "marketplace.json", "plugin.json"]
 

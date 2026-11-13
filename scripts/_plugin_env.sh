@@ -27,13 +27,15 @@ pathiel_warn() { echo "pathiel: warning: $*" >&2; }
 
 # Make a path absolute against the current directory. The launchers cd to
 # the plugin root before exec, so a relative PATHIEL_HOME would otherwise
-# point somewhere else once Python starts. Sets the named variable.
+# point somewhere else once Python starts. Sets the named variable, through
+# indirect expansion and printf -v (both Bash 3.1+), never eval: the value is
+# a user's path and must stay data.
 pathiel_absolutize() {
   local __name="$1" __value
-  eval "__value=\"\${$__name:-}\""
+  __value="${!__name:-}"
   case "$__value" in
     ""|/*) ;;
-    *) eval "$__name=\"\$PWD/\$__value\"" ;;
+    *) printf -v "$__name" '%s' "$PWD/$__value" ;;
   esac
 }
 
