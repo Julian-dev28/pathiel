@@ -296,7 +296,7 @@ def test_setup_says_to_reconnect_after_the_env_file_changes():
     step6 = text[text.index("6. **Connect the tools.**"):text.index("7. **Prove it.**")]
     assert "reconnect pathiel in `/mcp`" in step6 and "restart Claude Code" in step6
     assert "~/.pathiel/.env.local" in step6
-    assert step6.index("reconnect") < step6.index("64 tools")
+    assert step6.index("reconnect") < step6.index("65 tools")
     step7 = text[text.index("7. **Prove it.**"):text.index("8. **Say what is next.**")]
     assert "match the `network` and `trading` lines" in step7
     assert "reconnect pathiel in `/mcp`" in step7
@@ -467,3 +467,24 @@ def test_the_env_template_offers_the_testnet_line_commented():
     assert "# PATHIEL_NETWORK=testnet" in text
     assert "PATHIEL_NETWORK=mainnet" not in text
     assert "MAINNET unless this file says otherwise" in text and "WTI (xyz:CL)" in text
+
+
+def test_setup_offers_connect_your_wallet_first_and_paste_as_the_fallback():
+    """Step 3 (2026-11-13): wallet_connect first, the manual API wallet
+    paste second; the script twin ships in the bundle; a replace needs the
+    user's yes; testnet reconnects before connecting."""
+    text = re.sub(r"\s+", " ", (ROOT / "commands" / "setup.md").read_text())
+    step3 = text[text.index("3. **The env file.**"):text.index("4. **Check the install**")]
+    connect = step3.index("**Connect your wallet (recommended).**")
+    paste = step3.index("**Paste an API wallet (fallback),**")
+    assert connect < paste
+    assert "`wallet_connect`" in step3 and '{"status": true}' in step3
+    assert "scripts/connect_wallet.py" in step3 and "in the background" in step3
+    assert "`key_exists`" in step3 and "ask the user before" in step3 and '{"replace": true}' in step3
+    assert step3.index("`PATHIEL_NETWORK=testnet`") < connect and "reconnects pathiel in `/mcp`" in step3
+    assert "never withdraw" in step3 and "MAINNET in red" in step3
+    from importlib.util import module_from_spec, spec_from_file_location
+    spec = spec_from_file_location("_bpb_setup", ROOT / "scripts" / "build_plugin_bundle.py")
+    mod = module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    assert "scripts/connect_wallet.py" in mod.ENTRY_SCRIPTS

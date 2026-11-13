@@ -107,6 +107,7 @@ ENTRY_SCRIPTS = (
     "scripts/config_preset.py",      # pathiel_seed_config
     "scripts/public_status.py",      # /pathiel:setup
     "scripts/approve_builder_fee.py",  # /pathiel:setup
+    "scripts/connect_wallet.py",     # /pathiel:setup step 3 (wallet_connect is the MCP twin)
     "scripts/desk_slot.py",          # desk-tick
     "scripts/thesis_due.py",         # desk-tick
     "scripts/oil_levels.py",         # desk-tick
