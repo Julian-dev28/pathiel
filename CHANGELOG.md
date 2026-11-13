@@ -6,6 +6,11 @@ All notable changes to pathiel. The format follows
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-13
+
+The opt-in research pool and its public scoreboard. Notes:
+[docs/RELEASE_NOTES_v0.5.0.md](docs/RELEASE_NOTES_v0.5.0.md).
+
 ### Added
 
 - Opt-in research pool: register a Hyperliquid address with one signed
@@ -26,20 +31,6 @@ All notable changes to pathiel. The format follows
 - A read-only pull request check (`.github/workflows/pool-members.yml`)
   verifies every signed member and leave file offline and against
   Hyperliquid's own agent-approval reads.
-- `.claude-plugin/icon.png`, the plugin directory icon: the PATHIEL wordmark,
-  white on black, from `docs/brand/icon.svg`.
-- `scripts/seo_rank.py` and a weekly read-only **SEO rank** workflow: pathiel's
-  GitHub search rank on nine stranger queries. Baseline in
-  `docs/seo/github_rank.jsonl`.
-- `.github/workflows/release.yml`: publishing a GitHub release builds the MCP
-  image natively on amd64 and arm64, smoke-tests each, pushes `<version>` and
-  `latest`, and publishes `server.json` to the official MCP registry with
-  GitHub OIDC. It is the one workflow allowed to write (`packages`,
-  `id-token`, job-scoped); `scripts/supply_chain_check.py` refuses it if it
-  gains a push or pull request trigger, and refuses those scopes anywhere
-  else.
-- `docs/LISTINGS.md`: every place pathiel is listed, and the copy for the
-  forms only the maintainer can submit.
 
 ### Changed
 
@@ -47,6 +38,37 @@ All notable changes to pathiel. The format follows
   (the `docs/` exclusion otherwise removes it); `Dockerfile.mcp` now ships
   `pool/` and `docs/scoreboard/` so `pool_status` has the member list and
   the scoreboard counts inside a container.
+
+### Security
+
+- `pool_join` and `pool_leave` sign a plain text statement, nothing else:
+  no order, no transfer, no fee or payment is authorized, and the key is
+  never printed or written anywhere.
+- The membership pull request check is read-only (`contents: read`) and
+  refuses any change that would bring an account back into the pool without
+  a new signed join newer than every statement the repository ever held
+  for it (deleting a leave file does not work).
+- The four pool MCP tools refuse before touching any pool code whenever
+  the process is not a public install (`contracts.runtime.is_public()`),
+  regardless of whether an MCP client calls a listed tool name: a pool
+  tool dispatched on the maintainer's own mainnet checkout used to run
+  for real, including signing a join/leave statement with the
+  maintainer's configured trading key.
+
+## [0.4.1] - 2026-11-13
+
+pathiel is free: the builder fee is waived. Notes:
+[docs/RELEASE_NOTES_v0.4.1.md](docs/RELEASE_NOTES_v0.4.1.md).
+
+### Changed
+
+- **The builder fee is waived.** No order carries a Hyperliquid builder
+  code, including for users who approved the 0.4.0 fee; there is nothing to
+  approve, `/pathiel:setup` skips the approval step, and
+  `scripts/approve_builder_fee.py` refuses to sign anything but a 0%
+  revocation. One switch brings it back: `BUILDER_FEE_WAIVED` in
+  `contracts/runtime` (contract 1.2.0), with the steps in
+  `docs/BUILDER_FEE.md`.
 - The Claude plugin directory reviews a bundle, not the repo:
   `scripts/build_plugin_bundle.py` publishes only the files the plugin runs
   (166 of 908) to the `plugin` branch. The repo-root review had flagged
@@ -66,28 +88,32 @@ All notable changes to pathiel. The format follows
   `GIT_INDEX_FILE`, `GIT_WORK_TREE` or `GIT_COMMON_DIR` is set: inside a git
   hook those point at another repo, and a test's publish once wrote a
   `plugin` branch into the real one that way.
-- `scripts/_plugin_env.sh` makes paths absolute without `eval`: a
-  `PATHIEL_HOME` holding `$(...)` is now kept as text, never run.
 - Listing copy leads with what people search for: "AI trading agent for
   Hyperliquid" in the README headline, `plugin.json`, `marketplace.json` and
   `server.json` (the registry picks it up with the next version). New
   keywords: `ai-agent`, `trading-agent`, `ai-trading`.
 
+### Added
+
+- `.claude-plugin/icon.png`, the plugin directory icon: the PATHIEL wordmark,
+  white on black, from `docs/brand/icon.svg`.
+- `scripts/seo_rank.py` and a weekly read-only **SEO rank** workflow: pathiel's
+  GitHub search rank on nine stranger queries. Baseline in
+  `docs/seo/github_rank.jsonl`.
+- `.github/workflows/release.yml`: publishing a GitHub release builds the MCP
+  image natively on amd64 and arm64, smoke-tests each, pushes `<version>` and
+  `latest`, and publishes `server.json` to the official MCP registry with
+  GitHub OIDC. It is the one workflow allowed to write (`packages`,
+  `id-token`, job-scoped); `scripts/supply_chain_check.py` refuses it if it
+  gains a push or pull request trigger, and refuses those scopes anywhere
+  else.
+- `docs/LISTINGS.md`: every place pathiel is listed, and the copy for the
+  forms only the maintainer can submit.
+
 ### Security
 
-- `pool_join` and `pool_leave` sign a plain text statement, nothing else:
-  no order, no transfer, no fee or payment is authorized, and the key is
-  never printed or written anywhere.
-- The membership pull request check is read-only (`contents: read`) and
-  refuses any change that would bring an account back into the pool without
-  a new signed join newer than every statement the repository ever held
-  for it (deleting a leave file does not work).
-- The four pool MCP tools refuse before touching any pool code whenever
-  the process is not a public install (`contracts.runtime.is_public()`),
-  regardless of whether an MCP client calls a listed tool name: a pool
-  tool dispatched on the maintainer's own mainnet checkout used to run
-  for real, including signing a join/leave statement with the
-  maintainer's configured trading key.
+- `scripts/_plugin_env.sh` makes paths absolute without `eval`: a
+  `PATHIEL_HOME` holding `$(...)` is now kept as text, never run.
 
 ## [0.4.0] - 2026-11-12
 
@@ -160,6 +186,8 @@ builder fee, and listing metadata for the MCP directories. Release notes:
 - First Claude Code plugin release: the MCP server, the desk-tick skill and
   `/pathiel:setup`, installed from this repo. Mainnet only.
 
-[Unreleased]: https://github.com/Julian-dev28/pathiel/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/Julian-dev28/pathiel/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/Julian-dev28/pathiel/releases/tag/v0.5.0
+[0.4.1]: https://github.com/Julian-dev28/pathiel/releases/tag/v0.4.1
 [0.4.0]: https://github.com/Julian-dev28/pathiel/releases/tag/v0.4.0
 [0.3.0]: https://github.com/Julian-dev28/pathiel/commit/ae26611

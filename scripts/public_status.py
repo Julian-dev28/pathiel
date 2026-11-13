@@ -292,7 +292,7 @@ def check_builder(env: Mapping[str, str], online: bool) -> Check:
     if not runtime.is_public(env):
         return Check("PASS", "builder fee", "operator install: no builder fee on any order")
     if not address or fee <= 0:
-        return Check("PASS", "builder fee", "no builder address configured: orders carry no builder fee")
+        return Check("PASS", "builder fee", "none: pathiel charges no fee and orders carry no builder code")
     account = _account(env)
     if account and account.strip().lower() == address:
         return Check("PASS", "builder fee", f"the trading account is the builder address ({address}): "

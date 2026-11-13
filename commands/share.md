@@ -25,8 +25,8 @@ If the user asks to leave, or runs `/pathiel:share leave`, skip straight to
    > - What you get: your own graded report (fluke or edge on your trades,
    >   with ranges), and pool-level stats on which desks and setups hold up
    >   across members.
-   > - What it is not: not a fee waiver (the builder fee is already
-   >   optional, so sharing and going feeless offers nothing). No payout,
+   > - What it is not: not a fee waiver (pathiel charges no fee to anyone,
+   >   member or not, and joining never changes what you pay). No payout,
    >   refund or reward is ever tied to your returns. Not a copy-trading
    >   feed. No edge is demonstrated. Not financial advice.
    > - Mainnet only.

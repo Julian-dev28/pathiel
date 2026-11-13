@@ -148,10 +148,10 @@ GitHub's checks on it, and GitHub Pages are the whole system.
 
 ## No rewards tied to returns
 
-No payout, refund or reward is ever tied to your returns. Joining does not
-touch the builder fee, which is already optional either way: declining it
-costs nothing, and approving it costs the same whether you are in the pool
-or not.
+No payout, refund or reward is ever tied to your returns. Joining never
+changes what you pay: pathiel charges no fee to anyone right now, member or
+not, and if a fee ever returns it will be the same for members and
+everyone else.
 
 ## Who to ask
 

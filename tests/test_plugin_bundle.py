@@ -317,12 +317,22 @@ def _refs(repo: Path) -> str:
                           capture_output=True, text=True, env=_clean_env()).stdout
 
 
+def _repo_state(repo: Path) -> str:
+    """Every ref and the repo-local config: what a leaked GIT_DIR could change."""
+    config = subprocess.run(["git", "config", "--local", "--list"], cwd=repo,
+                            capture_output=True, text=True, env=_clean_env()).stdout
+    return _refs(repo) + "\n--config--\n" + config
+
+
 @pytest.fixture
 def real_refs_unchanged():
-    """No test here may move a ref of the real repo, hook or no hook."""
-    before = _refs(ROOT)
+    """No test here may move a ref of the real repo or touch its config, hook
+    or no hook. Regression, 2026-11-13: under the pre-commit hook the clone
+    test's `git config user.email` landed in the real .git/config, and 13
+    commits went out as "bundle test" (GitHub: Unverified)."""
+    before = _repo_state(ROOT)
     yield
-    assert _refs(ROOT) == before, "a bundle test changed a ref in the real repo"
+    assert _repo_state(ROOT) == before, "a bundle test changed a ref or the config of the real repo"
 
 
 @pytest.mark.parametrize("var", B.HOOK_ENV)
@@ -347,8 +357,6 @@ def test_publish_is_idempotent_fast_forward_and_check_catches_drift(tmp_path, re
     subprocess.run(["git", "clone", "-q", "--shared", "--no-checkout", str(ROOT), str(clone)],
                    check=True, env=_clean_env())
     _git(clone, "checkout", "-q", "--detach", head)
-    _git(clone, "config", "user.email", "test@example.invalid")
-    _git(clone, "config", "user.name", "bundle test")
     (clone / "scripts").mkdir(exist_ok=True)
     shutil.copy(SCRIPT, clone / "scripts" / "build_plugin_bundle.py")  # this version, uncommitted
     run = [sys.executable, str(clone / "scripts" / "build_plugin_bundle.py")]
@@ -454,7 +462,8 @@ def test_the_bundle_readme_keeps_every_disclosure(built):
     copy = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(copy)
     results = copy.disclosure_results((built / "README.md").read_text(encoding="utf-8"))
-    assert [label for label, ok, _ in results if not ok] == [] and len(results) == 7
+    assert [label for label, ok, _ in results if not ok] == []
+    assert len(results) == len(copy.DISCLOSURE_CHECKLIST)
 
 
 def _call(server: Path, public_env, name: str, args: dict) -> dict:

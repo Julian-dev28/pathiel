@@ -10,7 +10,7 @@ import os
 import ssl
 import certifi
 
-__version__ = "0.4.0"
+__version__ = "0.5.0"
 
 # Fix SSL cert verification on macOS (system Python lacks cacert.pem)
 if not os.environ.get("NO_SSL_FIX"):

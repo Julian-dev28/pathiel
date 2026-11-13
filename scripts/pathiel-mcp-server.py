@@ -193,7 +193,7 @@ def _public_fee_sentence() -> str:
     address = runtime.builder_address()
     fee = runtime.builder_fee_tenths_bp()
     if not address or fee <= 0:
-        return "Builder fee: not configured. Orders carry no builder fee."
+        return "Builder fee: none. pathiel charges no fee; orders carry no builder code."
     return (f"Builder fee: {runtime.fee_rate_str(fee)} of notional per fill, to {address}, "
             "charged only after the user approves it once with the master key "
             "(scripts/approve_builder_fee.py). Hyperliquid enforces the approval; without it "

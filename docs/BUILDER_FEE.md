@@ -1,9 +1,49 @@
 # Builder fee
 
-pathiel is free to install. On a public install it adds a small Hyperliquid
-builder fee to the orders it places for you, once you approve it. This page
-says what the fee is, what it costs, how you approve it, how Hyperliquid
-enforces it and how to turn it off.
+**Status: waived since pathiel 0.4.1 (2026-11-13).** pathiel charges no fee.
+No order it places carries a Hyperliquid builder fee, whether or not you
+approved one, and there is nothing to approve. You pay only Hyperliquid's own
+trading fee.
+
+## Revoking an old approval
+
+pathiel 0.4.0 asked users to approve 0.01%. That approval stays on
+Hyperliquid, but pathiel no longer attaches the fee, so it costs nothing. To
+remove it anyway, in your own terminal:
+
+1. `bash "<plugin root>/scripts/pathiel-mcp" --commands` prints an
+   `approve-dry` line. Run it with `--max-fee-rate 0%` added: a dry run that
+   signs and sends nothing.
+2. Run the same line with `--max-fee-rate 0% --yes`. It asks for your master
+   private key at a hidden prompt, signs a 0% approval and keeps the key
+   nowhere.
+
+The 0% approval follows Hyperliquid's action format but has not been tried on
+the live venue. Since nothing is charged, you lose nothing by leaving the old
+approval in place.
+
+## Turning the fee back on (maintainer)
+
+1. `contracts/runtime/__init__.py`: `BUILDER_FEE_WAIVED = False`. The default
+   rate becomes `LISTED_BUILDER_FEE_TENTHS_BP` (10, 0.01%).
+2. Restore the fee copy: README "Builder fee" sections, the `plugin.json` and
+   `marketplace.json` descriptions, `commands/setup.md` (the disclosure and
+   step 5), `docs/GETTING_STARTED.md`, `SECURITY.md`,
+   `config/public/env.local.example`, the research pool's "not a fee waiver"
+   lines (README, `commands/share.md`, `docs/PRIVACY.md`) and the top of
+   this page. The 0.4.0 text
+   is in git history. `tests/test_public_copy.py`, `tests/test_plugin.py` and
+   `tests/test_listing_metadata.py` pick their checks by the switch and fail
+   until the copy matches it.
+3. Bump the version, put the rate in the changelog and the release notes,
+   publish the plugin bundle and the release (CONTRIBUTING.md, Releasing).
+
+One thing to say in those notes: a user who approved 0.01% under 0.4.0 and
+never revoked it is charged again from the first order, with no new
+signature, because Hyperliquid's approval is still in place. A higher rate
+than the one they approved is rejected by Hyperliquid until they sign again.
+
+The rest of this page is how the fee works when it is on.
 
 ## What a builder fee is
 

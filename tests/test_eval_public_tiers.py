@@ -710,7 +710,9 @@ def _server():
     return SERVER_MODULE
 
 
-def test_eval_public_tiers(monkeypatch, tmp_path, builder_jobs, scorecard):
+def test_eval_public_tiers(fee_on, monkeypatch, tmp_path, builder_jobs, scorecard):
+    # fee_on: the B and D rows score the builder machinery as it runs when the
+    # fee is switched on; the waiver itself is tested in test_mcp_public_mode.
     s = _server()
     rows: List[Dict[str, Any]] = []
     with monkeypatch.context() as m:

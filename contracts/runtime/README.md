@@ -4,8 +4,11 @@ One place to ask "public or operator", "mainnet or testnet" and "which builder f
 Stdlib only, no pathiel or services imports. Every function reads the
 environment at call time; pass `env={...}` to test it with a plain dict.
 
-`CONTRACT_VERSION = "1.1.0"`. Bump it if a reader would break. 1.1.0
-(2026-11-12): a public install with no `PATHIEL_NETWORK` is on mainnet.
+`CONTRACT_VERSION = "1.2.0"`. Bump it if a reader would break. 1.2.0
+(2026-11-13): the builder fee is waived (`BUILDER_FEE_WAIVED = True`, so
+`DEFAULT_BUILDER_FEE_TENTHS_BP` is 0 and no order carries a builder code);
+`LISTED_BUILDER_FEE_TENTHS_BP` keeps the rate the fee returns at (10, 0.01%).
+1.1.0 (2026-11-12): a public install with no `PATHIEL_NETWORK` is on mainnet.
 
 ## Env contract
 

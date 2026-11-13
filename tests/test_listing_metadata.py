@@ -186,7 +186,7 @@ def network_defaults() -> List[Tuple[str, bool]]:
 
 def test_versions_agree_everywhere():
     sources = version_sources()
-    assert {v for _, v in sources} == {"0.4.0"}, sources
+    assert {v for _, v in sources} == {"0.5.0"}, sources
     assert oci_package()["identifier"].endswith(":" + package_version())
 
 
@@ -250,8 +250,12 @@ def test_plugin_and_marketplace_descriptions_disclose_fee_and_network():
         assert "exact stop and target" in low, label
         assert "mainnet by default" in low and "testnet opt-in" in low, label
         assert "read-only without a key" in low, label
-        assert f"{fee} builder fee" in desc, f"{label} does not name the {fee} builder fee"
-        assert "approve" in low, f"{label} does not say the fee needs approval"
+        if runtime.BUILDER_FEE_WAIVED:
+            assert "free: no builder fee" in low, f"{label} does not say there is no fee"
+            assert "%" not in desc.replace("1% per trade", ""), f"{label} names a fee rate"
+        else:
+            assert f"{fee} builder fee" in desc, f"{label} does not name the {fee} builder fee"
+            assert "approve" in low, f"{label} does not say the fee needs approval"
 
 
 def test_manifests_carry_discovery_keywords_and_category():
