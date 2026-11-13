@@ -46,7 +46,10 @@ Before you open it:
    is clean (`tests/test_eval_plugin_bundle.py`). Two notes stay by design:
    the server is local stdio, so it runs in Claude Code and Cowork, not on
    claude.ai (STDIO_WEB_UNSUPPORTED), and a local server from an
-   unverified organization (LOCAL_CODE_MCP_SERVER) is not refused yet.
+   unverified organization (LOCAL_CODE_MCP_SERVER, LOCAL_CODE_FILE_TYPE for
+   the Python it ships) is not refused yet. Decided 2026-11-13: accept those
+   notes. Only a hosted, read-only MCP server would clear them; build it if
+   the directory announces a date for refusing local servers.
 2. The icon is `.claude-plugin/icon.png`. The directory takes the icon only
    the first time the plugin is saved or submitted, so replace it before
    then if you want a different one. It is the PATHIEL wordmark, rendered
