@@ -99,3 +99,33 @@ Edit the source, then regenerate.
 
 Use the template. Keep one concern per pull request, say which install path
 it touches, and paste the gate's last line.
+
+## Releasing
+
+1. Bump the version in `server.json` (`version` and the image tag in
+   `packages[0].identifier`), `.claude-plugin/plugin.json` and
+   `pathiel/__init__.py`. `tests/test_listing_metadata.py` fails until all
+   three agree. Add the `CHANGELOG.md` entry and
+   `docs/RELEASE_NOTES_v<version>.md`.
+2. Merge to `main`, tag `v<version>`, publish a GitHub release from the tag
+   with the release notes as the body. Plugin users then get it with
+   `claude plugin update pathiel@pathiel`.
+3. Container, from a checkout of the tag (needs `gh` with `write:packages`
+   and Docker running):
+
+   ```bash
+   gh auth token | docker login ghcr.io -u Julian-dev28 --password-stdin
+   docker buildx build --platform linux/amd64,linux/arm64 -f Dockerfile.mcp \
+     --label org.opencontainers.image.source=https://github.com/Julian-dev28/pathiel \
+     -t ghcr.io/julian-dev28/pathiel-mcp:<version> \
+     -t ghcr.io/julian-dev28/pathiel-mcp:latest --push .
+   ```
+
+   Smoke-test it first: `docker run -i --rm <image>` must answer MCP
+   `initialize` with `serverInfo.version == <version>`, list 60 tools, and
+   refuse `place_bracket` as read-only with no key.
+4. Official MCP registry: `mcp-publisher login github` (device code), then
+   `mcp-publisher validate server.json` and `mcp-publisher publish
+   server.json`. The registry pulls the image to read its
+   `io.modelcontextprotocol.server.name` label, so the package must be
+   public.
