@@ -2,15 +2,19 @@
 
 One scorecard over the listing files and the public copy, measured against
 the outcome this unit exists for: a stranger who lands on any listing sees
-one version, testnet by default, the fee disclosed with its exact rate, the
-risks and the jurisdiction notice, no return claim anywhere one hop from the
-copy, and no path into the maintainer's mainnet setup without a warning.
+one version, mainnet by default with testnet as the opt-in, the fee disclosed
+with its exact rate and address, the risks and the jurisdiction notice, no
+return claim anywhere one hop from the copy, and no path into the
+maintainer's mainnet setup without a warning.
 
 Rows (every one must meet its target):
 
   version agreement                       3/3
   server.json rule checks                 N/N
+  listing network rules                   N/N
   README disclosure checklist             7/7
+  stale network wording in owned files    0
+  builder address problems                0
   claim hits in the PUBLIC_COPY reach set 0
   research-doc links in public copy       0
   clone instructions without the warning  0
@@ -65,16 +69,22 @@ def run(copy_lint) -> List[dict]:
                     passed == len(rules)))
 
     nets = meta.network_defaults()
-    testnet = sum(1 for _, ok in nets if ok)
-    rows.append(row("listing files default to testnet", f"{testnet}/{len(nets)}",
-                    f"{len(nets)}/{len(nets)}", testnet == len(nets)))
+    met_nets = sum(1 for _, ok in nets if ok)
+    rows.append(row("listing network rules (mainnet default, testnet opt-in)",
+                    f"{met_nets}/{len(nets)}", f"{len(nets)}/{len(nets)}", met_nets == len(nets)))
 
     disclosure = copy.disclosure_results(copy._read("README.md"))
     met = sum(1 for _, ok, _ in disclosure if ok)
     rows.append(row("README disclosure checklist", f"{met}/{len(disclosure)}", "7/7",
                     met == len(disclosure) == 7))
 
+    stale = sum(len(copy.stale_network_hits(copy._read(rel))) for rel in copy.NETWORK_OWNED)
+    rows.append(row("stale network wording in owned files", stale, 0, stale == 0))
+
     files = copy.public_copy_files()
+    addr = len(copy.builder_address_problems({rel: copy._read(rel) for rel in files}))
+    rows.append(row("builder address problems in public copy", addr, 0, addr == 0))
+
     reach = copy_lint.reach([ROOT / p for p in files])
     claims = sum(len(copy_lint.claim_hits(p.read_text(encoding="utf-8", errors="replace")))
                  for p in reach)

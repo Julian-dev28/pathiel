@@ -3,10 +3,12 @@ installing, and everything that copy links one hop away.
 
 Four promises, each pinned here:
 
-1. The README discloses what a public user must know before trading: what it
-   does, the three modes, the builder fee and its exact rate, how to approve
-   it, how Hyperliquid enforces it, the risk, and the restricted
-   jurisdictions (DISCLOSURE_CHECKLIST).
+1. The README discloses what a public user must know before trading: the
+   networks and modes (mainnet by default, testnet opt-in), how the safety
+   works, the builder fee with its exact rate and address, how to approve it,
+   how Hyperliquid enforces it, the risk, and the restricted jurisdictions
+   (DISCLOSURE_CHECKLIST), under "## Before you trade", which the banner at
+   the top of the README points to.
 2. No return claim anywhere a public reader lands: public copy and every
    repo doc it links (copy_lint.reach, one hop) have 0 claim hits, and public
    copy links no research doc that carries backtest figures. The live audit
@@ -29,6 +31,7 @@ Offline, no network. The one subprocess is `git grep` on the local index.
 """
 from __future__ import annotations
 
+import json
 import re
 import subprocess
 from pathlib import Path
@@ -47,6 +50,14 @@ PUBLIC_COPY = [
     "server.json",
     "smithery.yaml",
     "glama.json",
+    "CHANGELOG.md",
+    "SECURITY.md",
+    "CONTRIBUTING.md",
+    "docs/RELEASE_NOTES_v0.4.0.md",
+    "docs/AUDIT_MARKETPLACE_2026-11-12.md",
+    ".github/ISSUE_TEMPLATE/bug_report.md",
+    ".github/ISSUE_TEMPLATE/feature_request.md",
+    ".github/pull_request_template.md",
 ]
 # Owned by other units; linted when they exist.
 PUBLIC_COPY_WHEN_PRESENT = ["commands/setup.md", "docs/BUILDER_FEE.md"]
@@ -55,28 +66,54 @@ MAINTAINER_WARNING = ("Maintainer path: this runs mainnet with the tracked repo 
                       "(20x, whole-equity sizing). It is not the public install.")
 CLONE_WARNING_WINDOW = 15
 
-PUBLIC_SECTION = "## Public install: read this before you trade"
+PUBLIC_SECTION = "## Before you trade"
+PUBLIC_ANCHOR = "#before-you-trade"
+WHAT_IT_DOES = "## What it does"
+
+# The project's builder address (Julien, 2026-11-12). Public copy that names
+# the fee recipient names this one. contracts.runtime.DEFAULT_BUILDER_ADDRESS
+# must equal it once set.
+BUILDER_ADDRESS = "0x2c2e4efF574B3Fd9879AdeF9c5CAC6fD7C916985"
+# The maintainer's own API (signing) wallet. It was once given out as the fee
+# recipient by mistake; public copy must never name it.
+OPERATOR_SIGNER = "0xD46C20732c480f41f4603aEdBB0F73F6AF78eb5b"
+
+# The plugin install lines, checked against the Claude Code docs
+# (https://code.claude.com/docs/en/discover-plugins, 2026-11-12). The
+# marketplace registers under marketplace.json's "name", so the plugin is
+# pathiel@pathiel.
+INSTALL_LINES = [
+    "/plugin marketplace add Julian-dev28/pathiel",
+    "/plugin install pathiel@pathiel",
+    "/pathiel:setup",
+]
+SHELL_INSTALL_LINES = [
+    "claude plugin marketplace add Julian-dev28/pathiel",
+    "claude plugin install pathiel@pathiel",
+]
 
 # (label, marker, phrases the marker's block must hold). A block runs from its
 # marker to the next marker, or to the end of the section. Matching is on
 # whitespace-normalized text, so line wrapping never matters.
 DISCLOSURE_CHECKLIST: List[Tuple[str, str, List[str]]] = [
-    ("what it does", "**What it does.**", []),
-    ("three modes", "**Three modes.**",
-     ["read-only", "testnet (the default)", "PATHIEL_NETWORK=mainnet", "~/.pathiel/.env.local",
-      "real money", "kept per network"]),
-    ("builder fee", "**Builder fee.**",
-     ["0.01% of notional per fill", "0.02% a round trip", "every fill pathiel routes"]),
-    ("approval", "**Approving the fee.**",
+    ("networks and modes", "### Networks and modes",
+     ["read-only", "mainnet (the default)", "PATHIEL_NETWORK=testnet", "~/.pathiel/.env.local",
+      "real money", "kept per network", "xyz:CL"]),
+    ("safety", "### How the safety works",
+     ["exact stop", "2R", "half the distance to liquidation", "3x", "1% of equity at the stop",
+      "one position", "Read-only without a key", "asks you before each call"]),
+    ("builder fee", "### Builder fee",
+     ["0.01% of notional per fill", "0.02% a round trip", "every fill pathiel routes",
+      BUILDER_ADDRESS]),
+    ("approval", "### Approving the fee",
      ["/pathiel:setup", "](docs/BUILDER_FEE.md)", "Declining is fine", "no builder fee"]),
-    ("enforcement", "**How the fee is enforced.**",
+    ("enforcement", "### How Hyperliquid enforces the fee",
      ["rejects any order whose builder fee is above the max you approved",
       "exactly the rate it charges", "0.1%"]),
-    ("risk", "**Risk.**",
-     ["lose the whole account", "3x", "1% of equity at the stop", "one position",
-      "daily loss figure is shown, not enforced", "no demonstrated edge",
+    ("risk", "### Risk",
+     ["lose the whole account", "daily loss figure is shown, not enforced", "no demonstrated edge",
       "no return is promised", "not financial advice"]),
-    ("restricted jurisdictions", "**Restricted jurisdictions.**",
+    ("restricted jurisdictions", "### Restricted jurisdictions",
      ["restricted jurisdictions", "US persons", "Hyperliquid's terms",
       "does not check where you are"]),
 ]
@@ -144,10 +181,6 @@ def disclosure_results(readme: str) -> List[Tuple[str, bool, List[str]]]:
         later = [p for p in found if p > pos]
         block = body[pos:later[0] if later else len(body)]
         missing = [ph for ph in phrases if ph not in block]
-        if label == "what it does":
-            sentences = re.findall(r"[.!?](?:\s|$)", block[len(marker):].strip())
-            if len(sentences) != 2:
-                missing.append(f"two sentences (found {len(sentences)})")
         results.append((label, not missing, missing))
     return results
 
@@ -221,17 +254,63 @@ def test_readme_disclosure_checklist():
     assert re.search(r"\]\(docs/BUILDER_FEE\.md\)", readme), "no relative link to docs/BUILDER_FEE.md"
 
 
-def test_public_section_sits_directly_after_read_this_first():
-    headings = [line for line in _read("README.md").splitlines() if line.startswith("## ")]
-    i = headings.index("## Read this first")
-    assert headings[i + 1] == PUBLIC_SECTION, headings[:i + 3]
+def h2_headings(text: str) -> List[str]:
+    return [line for line in text.splitlines() if line.startswith("## ")]
+
+
+def test_readme_opens_with_pitch_banner_and_three_line_summary():
+    """A stranger sees the name, the one-line pitch, the real-money banner
+    pointing at the disclosures, then three lines on what it does."""
+    readme = _read("README.md")
+    lines = readme.splitlines()
+    assert lines[0] == "# pathiel"
+    pitch = next(line for line in lines[1:] if line.strip())
+    assert pitch.startswith("**") and "exact stop and target" in pitch, pitch
+    top = "\n".join(lines[:25])
+    assert "**Real money.**" in top and f"]({PUBLIC_ANCHOR})" in top
+    assert "PATHIEL_NETWORK=testnet" in _flat(top)
+    body = [line for line in section(readme, WHAT_IT_DOES).splitlines() if line.strip()]
+    assert len(body) == 3, body
+
+
+def test_readme_section_order_puts_disclosures_before_faq_and_maintainer_last():
+    headings = h2_headings(_read("README.md"))
+    for needed in (WHAT_IT_DOES, "## Install in 30 seconds", PUBLIC_SECTION, "## FAQ",
+                   "## Maintainer setup"):
+        assert needed in headings, (needed, headings)
+    assert headings.index(WHAT_IT_DOES) < headings.index("## Install in 30 seconds") \
+        < headings.index(PUBLIC_SECTION) < headings.index("## FAQ") \
+        < headings.index("## Maintainer setup"), headings
+    after = headings[headings.index("## Maintainer setup") + 1:]
+    assert after in ([], ["## License"]), f"only the license may follow the maintainer setup: {after}"
+
+
+def test_readme_badges_are_static_or_point_at_a_real_workflow():
+    """Badges must resolve: shields.io static badges, or the CI workflow that
+    exists in .github/workflows."""
+    readme = _read("README.md")
+    badges = re.findall(r"\[!\[[^\]]*\]\(([^)]+)\)\]", readme)
+    assert len(badges) >= 4, badges
+    for url in badges:
+        if url.startswith("https://img.shields.io/badge/"):
+            continue
+        m = re.match(r"https://github\.com/Julian-dev28/pathiel/actions/workflows/([\w.-]+)/badge\.svg", url)
+        assert m, f"badge that may not resolve: {url}"
+        assert (ROOT / ".github" / "workflows" / m.group(1)).is_file(), url
+    assert "version-0.4.0" in readme
+
+
+def test_faq_has_five_to_seven_questions():
+    faq = section(_read("README.md"), "## FAQ")
+    questions = re.findall(r"^\*\*[^*]+\?\*\*$", faq, re.MULTILINE)
+    assert 5 <= len(questions) <= 7, questions
 
 
 def test_disclosure_check_fails_on_a_stripped_readme():
     """The checklist is only proof if it can fail: drop the jurisdiction
     paragraph and the fee rate, and both must be reported."""
     readme = _read("README.md")
-    stripped = readme.replace("**Restricted jurisdictions.**", "**Elsewhere.**")
+    stripped = readme.replace("### Restricted jurisdictions", "### Elsewhere")
     stripped = stripped.replace("0.01% of", "a small fee of")
     failed = {label for label, ok, _ in disclosure_results(stripped) if not ok}
     assert {"restricted jurisdictions", "builder fee"} <= failed, failed
@@ -356,12 +435,16 @@ def test_direct_server_launch_is_marked_maintainer_only():
         if "pathiel-mcp-server.py" in text:
             assert MAINTAINER_WARNING in text, f"{rel} shows the direct server without the warning"
     readme = _read("README.md")
-    for heading in ("## MCP server", "## Running it",
-                    "## Risk: the live profile and the rules place_bracket enforces"):
-        assert MAINTAINER_WARNING in section(readme, heading), heading
+    maint = section(readme, "## Maintainer setup")
+    assert maint.lstrip().startswith("> " + MAINTAINER_WARNING), "warning must open the maintainer setup"
+    for topic in (".mcp.json", "20x", "whole equity"):
+        assert topic in _flat(maint), topic
     assert "can register the same server" not in readme
-    mcp = _flat(section(readme, "## MCP server"))
-    assert "scripts/pathiel-mcp`" in mcp and "maintainer path" in mcp
+    other = _flat(section(readme, "### Other MCP clients"))
+    assert "scripts/pathiel-mcp`" in other and "maintainer path" in other
+    # The maintainer's numbers appear only under the warning.
+    outside = _flat(readme.replace(maint, ""))
+    assert "whole-equity" not in outside.replace(MAINTAINER_WARNING, "")
 
 
 def test_readme_no_longer_claims_mode_off_or_an_edge():
@@ -383,3 +466,131 @@ def test_readme_keeps_tool_count_and_getting_started_link():
 @pytest.mark.parametrize("rel", PUBLIC_COPY)
 def test_every_public_copy_file_exists(rel):
     assert (ROOT / rel).is_file(), rel
+
+
+# ── 5. facts of 0.4.0: network, fee recipient, install lines ────────────────
+
+# Phrases of the 0.3.x/0.4.0-draft default (testnet). The files this unit owns
+# never state it; commands/setup.md, docs/BUILDER_FEE.md and smithery.yaml
+# belong to other units and are not checked here.
+STALE_NETWORK_PHRASES = ("testnet (the default)", "testnet by default", "starts on testnet",
+                         "PATHIEL_NETWORK=mainnet")
+NETWORK_OWNED = ["README.md", "docs/GETTING_STARTED.md", ".claude-plugin/plugin.json",
+                 ".claude-plugin/marketplace.json", "server.json", "CHANGELOG.md",
+                 "docs/RELEASE_NOTES_v0.4.0.md"]
+
+
+def stale_network_hits(text: str) -> List[str]:
+    flat = _flat(text).lower()
+    return [p for p in STALE_NETWORK_PHRASES if p.lower() in flat]
+
+
+def test_public_copy_says_mainnet_default_and_testnet_opt_in():
+    """0.4.0: a public install defaults to mainnet; testnet is the explicit
+    opt-in, PATHIEL_NETWORK=testnet."""
+    for rel in NETWORK_OWNED:
+        assert not stale_network_hits(_read(rel)), f"{rel} states the old default"
+    for rel in ("README.md", "docs/GETTING_STARTED.md", "docs/RELEASE_NOTES_v0.4.0.md"):
+        flat = _flat(_read(rel))
+        assert "PATHIEL_NETWORK=testnet" in flat, rel
+        assert "xyz:CL" in flat, f"{rel} should say the oil desk trades WTI on testnet"
+
+
+def test_stale_network_check_fails_on_the_old_wording():
+    assert stale_network_hits("A public install starts on testnet; add PATHIEL_NETWORK=mainnet.")
+    assert stale_network_hits("Testnet by default.")
+
+
+def builder_address_problems(files: Dict[str, str]) -> List[str]:
+    """Any public file naming the signing wallet, or a full address other than
+    BUILDER_ADDRESS."""
+    bad = []
+    for rel, text in files.items():
+        if OPERATOR_SIGNER.lower() in text.lower():
+            bad.append(f"{rel}: names the maintainer's signing wallet")
+        others = {a for a in re.findall(r"0x[0-9a-fA-F]{40}", text)
+                  if a.lower() != BUILDER_ADDRESS.lower()}
+        bad += [f"{rel}: names {a}" for a in sorted(others)]
+    return bad
+
+
+def test_builder_address_is_the_projects_and_never_the_signing_wallet():
+    for rel in ("README.md", "CHANGELOG.md", "docs/RELEASE_NOTES_v0.4.0.md",
+                "docs/AUDIT_MARKETPLACE_2026-11-12.md"):
+        assert BUILDER_ADDRESS in _read(rel), f"{rel} does not name the builder address"
+    files = {rel: _read(rel) for rel in public_copy_files()}
+    assert builder_address_problems(files) == []
+
+
+def test_builder_address_check_catches_the_signing_wallet():
+    planted = {"README.md": _read("README.md").replace(BUILDER_ADDRESS, OPERATOR_SIGNER)}
+    assert any("signing wallet" in p for p in builder_address_problems(planted))
+
+
+def test_builder_address_matches_the_runtime_default_once_set():
+    from contracts import runtime
+
+    configured = (runtime.DEFAULT_BUILDER_ADDRESS or "").strip()
+    if configured:
+        assert configured.lower() == BUILDER_ADDRESS.lower(), \
+            f"docs name {BUILDER_ADDRESS}, the runtime attaches {configured}"
+
+
+def test_install_lines_match_the_claude_code_docs():
+    readme = _read("README.md")
+    for line in INSTALL_LINES + SHELL_INSTALL_LINES:
+        assert line in readme, line
+    gs = _read("docs/GETTING_STARTED.md")
+    for line in INSTALL_LINES:
+        assert line in gs, line
+    market = json.loads(_read(".claude-plugin/marketplace.json"))
+    assert market["name"] == "pathiel" and market["plugins"][0]["name"] == "pathiel", \
+        "pathiel@pathiel assumes the marketplace and the plugin are both named pathiel"
+
+
+# ── 6. project docs ─────────────────────────────────────────────────────────
+
+def test_changelog_has_the_release_in_keep_a_changelog_form():
+    text = _read("CHANGELOG.md")
+    src = _read("pathiel/__init__.py")
+    version = re.search(r'^__version__\s*=\s*"([^"]+)"', src, re.MULTILINE).group(1)
+    entry = section(text, f"## [{version}]")
+    assert entry, f"CHANGELOG.md has no ## [{version}] entry"
+    for sub in ("### Added", "### Changed", "### Security"):
+        assert sub in entry, sub
+    assert "## [0.3.0]" in text
+    assert f"[{version}]: https://github.com/Julian-dev28/pathiel/releases/tag/v{version}" in text
+
+
+def test_security_policy_names_storage_and_the_private_report_path():
+    flat = _flat(_read("SECURITY.md"))
+    for must in ("~/.pathiel/.env.local", "hidden prompt", "never lets it withdraw",
+                 "https://github.com/Julian-dev28/pathiel/security/advisories/new",
+                 "## What pathiel never does", "Never include a private key"):
+        assert must in flat, must
+
+
+def test_contributing_states_the_gate_and_the_operator_path_rule():
+    flat = _flat(_read("CONTRIBUTING.md"))
+    for must in ("python -m pytest -q", "## The operator-path rule", "is_public()",
+                 "--no-verify", "No em dashes"):
+        assert must in flat, must
+
+
+def test_release_notes_cover_upgrade_fee_and_limits():
+    text = _read("docs/RELEASE_NOTES_v0.4.0.md")
+    for heading in ("## What you get", "## Upgrading from 0.3.0", "## Builder fee disclosure",
+                    "## Known limits"):
+        assert section(text, heading).strip(), heading
+    upgrade = _flat(section(text, "## Upgrading from 0.3.0"))
+    assert "defaults to mainnet" in upgrade and "nothing changes" in upgrade.lower()
+    assert "0.01% of notional per fill" in _flat(text)
+
+
+def test_audit_has_the_record_and_the_readme_does_not_link_it():
+    flat = _flat(_read("docs/AUDIT_MARKETPLACE_2026-11-12.md"))
+    for fact in ("32% over 36 graded calls", "0.81", "-0.56 to +1.55", "NOISE",
+                 "100 USDC", "PulseMCP", "mcp.so", "Smithery", "Glama", "Legal review"):
+        assert fact in flat, fact
+    assert "AUDIT_MARKETPLACE" not in _read("README.md"), \
+        "the audit carries the record; the README must not link it"
