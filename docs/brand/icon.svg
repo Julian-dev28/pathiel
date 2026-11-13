@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+<!-- pathiel listing icon: the PATHIEL wordmark. Render: qlmanage -t -s 1024 -o /tmp docs/brand/icon.svg -->
+  <rect width="1024" height="1024" fill="#000"/>
+  <g transform="translate(506,512) scale(1.55,1)">
+  <text x="0" y="0" dominant-baseline="central" text-anchor="middle"
+        font-family="Avenir Next" font-weight="600" font-size="114" letter-spacing="20" fill="#fff">PATHIEL</text></g>
+</svg>

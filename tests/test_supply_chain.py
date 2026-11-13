@@ -14,6 +14,7 @@ Python lock, the workflows and the repo itself.
 from __future__ import annotations
 
 import importlib.util
+import re
 from pathlib import Path
 
 import pytest
@@ -83,3 +84,57 @@ def test_python_pins_parse_the_hashed_lock():
     pins = sc.python_pins()
     assert pins, "requirements.lock parsed to no pins"
     assert "fastapi" in pins and "certifi" in pins
+
+
+# ── release.yml: the one workflow allowed to write (2026-11-12) ─────────────
+
+_RELEASE_OK = (
+    "on:\n  release:\n    types: [published]\n  workflow_dispatch:\n"
+    "permissions:\n  contents: read\n"
+    "jobs:\n  image:\n    runs-on: ubuntu-latest\n    permissions:\n"
+    "      contents: read\n      packages: write\n"
+    "  registry:\n    runs-on: ubuntu-latest\n    permissions:\n"
+    "      contents: read\n      id-token: write\n"
+)
+
+
+def _check_one(tmp_path, monkeypatch, name, text):
+    (tmp_path / name).write_text(text)
+    monkeypatch.setattr(sc, "ROOT", tmp_path)
+    monkeypatch.setattr(sc, "WORKFLOWS", tmp_path)
+    return sc.check_workflows()
+
+
+def test_release_workflow_may_write_packages_and_id_token(tmp_path, monkeypatch):
+    assert _check_one(tmp_path, monkeypatch, "release.yml", _RELEASE_OK) == []
+
+
+def test_the_same_writes_in_any_other_workflow_are_caught(tmp_path, monkeypatch):
+    found = "\n".join(_check_one(tmp_path, monkeypatch, "ci.yml", _RELEASE_OK))
+    assert "grants a write permission (packages)" in found
+    assert "grants a write permission (id-token)" in found
+
+
+@pytest.mark.parametrize("mutation,needle", [
+    (("      packages: write\n", "      contents: write\n"), "grants a write permission (contents)"),
+    (("permissions:\n  contents: read\n", "permissions:\n  packages: write\n"), "packages outside a job"),
+    (("  workflow_dispatch:\n", "  workflow_dispatch:\n  push:\n"), "runs on ['push']"),
+    (("  workflow_dispatch:\n", "  workflow_dispatch:\n  pull_request:\n"), "runs on ['pull_request']"),
+])
+def test_release_workflow_cannot_widen_its_writes(tmp_path, monkeypatch, mutation, needle):
+    text = _RELEASE_OK.replace(*mutation)
+    assert text != _RELEASE_OK
+    found = "\n".join(_check_one(tmp_path, monkeypatch, "release.yml", text))
+    assert needle in found, found
+
+
+def test_the_shipped_release_workflow_passes_and_pins_its_tools():
+    wf = sc.WORKFLOWS / "release.yml"
+    text = wf.read_text()
+    assert [p for p in sc.check_workflows() if "release.yml" in p] == []
+    assert re.search(r"MCP_PUBLISHER_SHA256: [0-9a-f]{64}\n", text)
+    assert "sha256sum -c" in text
+    assert "mcp-publisher login github-oidc" in text
+    # 0.4.0 shipped amd64 + arm64; a release must not shrink :latest to one.
+    assert "runner: ubuntu-24.04-arm" in text and "runner: ubuntu-24.04\n" in text
+    assert "linux/amd64 linux/arm64" in text
