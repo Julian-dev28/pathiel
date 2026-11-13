@@ -30,7 +30,7 @@ the chat; the user types keys into files and prompts on their own machine.
 
 1. **Build the environment** (idempotent, about a minute on the first run):
 
-       bash "${CLAUDE_PLUGIN_ROOT}/scripts/pathiel-mcp" --bootstrap
+       bash "${CLAUDE_PLUGIN_ROOT}/scripts/pathiel-mcp.sh" --bootstrap
 
    It prints the Python it uses, the env file, the state directory, the
    config file and the network. A fresh install gets the public default risk
@@ -116,7 +116,7 @@ the chat; the user types keys into files and prompts on their own machine.
    account's private key in the chat. If the user approved the 0.01% fee of
    pathiel 0.4.0 and wants to revoke it, point them to "Revoking an old
    approval" in `docs/BUILDER_FEE.md`: the `approve-dry` line that
-   `bash "${CLAUDE_PLUGIN_ROOT}/scripts/pathiel-mcp" --commands` prints, run
+   `bash "${CLAUDE_PLUGIN_ROOT}/scripts/pathiel-mcp.sh" --commands` prints, run
    with `--max-fee-rate 0%` (`scripts/approve_builder_fee.py`), in their own
    terminal.
 

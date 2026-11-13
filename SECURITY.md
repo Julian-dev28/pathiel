@@ -109,7 +109,7 @@ on this repo. Do not open a public issue for a security problem.
 Include what you found, how to reproduce it, and the version
 (`claude plugin list` shows it). Never include a private key, even a
 testnet one. The maintainer aims to reply within 7 days. Fixes ship as a patch
-release with a `Security` entry in [CHANGELOG.md](CHANGELOG.md).
+release with a `Security` entry in [CHANGELOG.md](https://github.com/Julian-dev28/pathiel/blob/main/CHANGELOG.md).
 
 If a key of yours may have leaked: revoke the API wallet in the Hyperliquid
 app (More, API) first, then report.

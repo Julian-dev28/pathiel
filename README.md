@@ -3,7 +3,7 @@
 **An AI trading agent for Hyperliquid: Claude trades perps from Claude Code, with an exact stop and target on every order.**
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Version 0.6.0](https://img.shields.io/badge/version-0.6.0-informational.svg)](CHANGELOG.md)
+[![Version 0.6.0](https://img.shields.io/badge/version-0.6.0-informational.svg)](https://github.com/Julian-dev28/pathiel/blob/main/CHANGELOG.md)
 [![MCP server](https://img.shields.io/badge/MCP-65_tools-6f42c1.svg)](https://github.com/Julian-dev28/pathiel/blob/main/docs/overhaul/MCP.md)
 [![Claude Code plugin](https://img.shields.io/badge/Claude_Code-plugin-d97757.svg)](#install-in-30-seconds)
 [![CI](https://github.com/Julian-dev28/pathiel/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Julian-dev28/pathiel/actions/workflows/ci.yml)
@@ -269,7 +269,7 @@ the keys and state gone.
 | [Scoreboard](https://julian-dev28.github.io/pathiel/scoreboard/) | the research pool's public, graded results |
 | [SECURITY.md](SECURITY.md) | where keys live, what pathiel never does, how to report a problem |
 | [CONTRIBUTING.md](https://github.com/Julian-dev28/pathiel/blob/main/CONTRIBUTING.md) | dev setup, the test gate, style rules |
-| [CHANGELOG.md](CHANGELOG.md) | what changed per version |
+| [CHANGELOG.md](https://github.com/Julian-dev28/pathiel/blob/main/CHANGELOG.md) | what changed per version |
 
 Maintainer setup: see [the README on GitHub](https://github.com/Julian-dev28/pathiel#maintainer-setup).
 
