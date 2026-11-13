@@ -1136,12 +1136,42 @@ def empty_scoreboard(as_of_ms: int) -> Dict[str, Any]:
 
 # ── glue ────────────────────────────────────────────────────────────────────
 
+# The one message every pool MCP tool gives back on a non-public install,
+# before importing anything from services.pool. See mcp_handler below.
+OPERATOR_INSTALL_MESSAGE = ("the research pool's MCP tools are public-install only "
+                            "(docs/overhaul/RESEARCH_POOL_2026-11-12.md D11); this process is the "
+                            "operator's own checkout. Use 'python -m services.pool <verb>' from a "
+                            "terminal instead.")
+
+
 def mcp_handler(name: str) -> Callable[[Dict[str, Any]], str]:
     """The handler for one pool tool, imported on first call so the MCP server
-    pays nothing for the pool until a pool tool is used."""
+    pays nothing for the pool until a pool tool is used.
+
+    Every call refuses first, before importing services.pool, when this
+    process is not a public install (contracts.runtime.is_public()): the four
+    pool tools are public-install only by design, and tools/list already
+    hides them from the operator's own checkout (server_tools() in
+    scripts/pathiel-mcp-server.py) -- but a listing is not a lock. This
+    function is the ONLY path _tool_handlers() wires any of the four
+    MCP_HANDLERS names to, on every install kind, so the refusal holds
+    regardless of how the tool is called (a different MCP client, a raw
+    tools/call, a future relaxation of what Claude Code will emit), not just
+    whether tools/list mentions it. Before this guard, a pool_join/pool_leave
+    call on the operator's own mainnet install reached services.pool.join's
+    real signing path (signing.identity()/sign_configured(), the SAME key
+    the live order path signs with) and would have written a real, signed
+    join or leave file.
+
+    The operator's own use of the pool (testing, or joining it) is the
+    terminal command this message names, `python -m services.pool <verb>`
+    (services/pool/join_cli.py and friends): that path never goes through
+    this function, so it is unaffected."""
     module, func = MCP_HANDLERS[name]
 
     def call(params: Dict[str, Any]) -> str:
+        if not runtime.is_public():
+            return json.dumps({"ok": False, "code": "operator_install", "error": OPERATOR_INSTALL_MESSAGE})
         return getattr(importlib.import_module(module), func)(params)
 
     call.__name__ = f"handle_{name}"

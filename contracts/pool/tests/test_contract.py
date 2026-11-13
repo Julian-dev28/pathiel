@@ -680,14 +680,32 @@ def test_mcp_tools_handlers_and_classes_agree():
 
 
 def test_mcp_handler_imports_lazily(monkeypatch):
+    monkeypatch.setenv("PATHIEL_INSTALL", "public")           # the only install kind this ever runs on
     import types
     fake = types.ModuleType("services.pool.join_tools")
     fake.handle_pool_status = lambda params: json.dumps({"seen": params})
-    handler = pool.mcp_handler("pool_status")                # built without the module existing
+    handler = pool.mcp_handler("pool_status")                 # built without the module existing
     monkeypatch.setitem(sys.modules, "services.pool.join_tools", fake)
     assert json.loads(handler({"a": 1})) == {"seen": {"a": 1}}
     with pytest.raises(KeyError):
         pool.mcp_handler("pool_trade")
+
+
+def test_mcp_handler_refuses_on_an_operator_install_without_importing_anything(monkeypatch):
+    """HIGH finding (2026-11-13): mcp_handler used to import and run the real
+    handler on every install kind; only tools/list (server_tools()) differed.
+    Every one of the four tools must refuse by itself, before
+    importlib.import_module ever runs, regardless of the caller (the MCP
+    server, a different client, a raw script)."""
+    monkeypatch.delenv("PATHIEL_INSTALL", raising=False)       # the operator's own checkout
+    assert not runtime.is_public()
+    for name in pool.MCP_HANDLERS:
+        module, _func = pool.MCP_HANDLERS[name]
+        monkeypatch.delitem(sys.modules, module, raising=False)
+        handler = pool.mcp_handler(name)
+        out = json.loads(handler({"confirm": True}))
+        assert out == {"ok": False, "code": "operator_install", "error": pool.OPERATOR_INSTALL_MESSAGE}
+        assert module not in sys.modules, f"{name}: {module} was imported despite the refusal"
 
 
 def test_contract_module_is_stdlib_plus_runtime_at_import():

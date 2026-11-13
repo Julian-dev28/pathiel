@@ -61,6 +61,24 @@ def no_key_mainnet(monkeypatch, tmp_path, builder_jobs):
     return E.install(monkeypatch, tmp_path, M, builder_jobs, network="mainnet")
 
 
+@pytest.fixture
+def operator(monkeypatch, tmp_path, builder_jobs):
+    """The maintainer's own checkout: PATHIEL_INSTALL unset, mainnet (the
+    operator's own default), no key."""
+    return E.install(monkeypatch, tmp_path, M, builder_jobs, public=False, network="mainnet")
+
+
+@pytest.fixture
+def operator_keyed(monkeypatch, tmp_path, builder_jobs):
+    """The maintainer's own checkout with a REAL configured key: the exact
+    HIGH-severity scenario (operator mode, mainnet, the key the live order
+    path signs with). A fresh PATHIEL_STATE_DIR so a test can assert nothing
+    was written to the pool's outbox."""
+    h = E.install(monkeypatch, tmp_path, M, builder_jobs, public=False, network="mainnet", key=True)
+    monkeypatch.setenv("PATHIEL_STATE_DIR", str(tmp_path / "state"))
+    return h
+
+
 # ── the pool tools exist exactly once and nowhere by accident ───────────────
 
 def test_pool_tool_names_match_the_contract():
@@ -199,6 +217,65 @@ def test_pool_status_reads_local_files_only_and_never_raises(no_key):
     assert err is False
     assert body["ok"] is True
     assert body["state"] == "no_account"
+
+
+# ── operator install: every pool tool refuses before it runs at all ────────
+#
+# HIGH finding (2026-11-13): _tool_handlers() wired every pool tool name to
+# its real handler on EVERY install kind; only server_tools() (tools/list)
+# differed by install kind. _call_tool() dispatched purely by name, with no
+# check against the install kind for a pool tool, so a raw tools/call for
+# pool_join on the operator's own mainnet checkout reached
+# signing.sign_configured() -- the SAME key the live order path signs with
+# -- and would have written a real signed join file for a pull request
+# nobody asked for. The one test that sounded like it proved this
+# (test_pool_tools_never_in_the_operators_own_tools, above) only checked
+# tools/list; nothing called dispatch_message for a pool tool name on an
+# operator-mode harness. These do.
+
+def test_pool_tools_refuse_on_the_operators_own_install_through_dispatch_message(operator):
+    """Every one of the four, through the exact path a client uses
+    (M.dispatch_message -> M._call_tool -> M._tool_handlers()), not just a
+    listing check."""
+    for name in POOL_TOOL_NAMES:
+        err, body = operator.call(name, {})
+        assert err is True, (name, body)
+        assert body == {"ok": False, "code": "operator_install", "error": body["error"]}, (name, body)
+        assert "operator" in body["error"].lower()
+
+
+def test_pool_join_and_pool_leave_confirm_on_operator_install_never_sign_or_write(operator_keyed):
+    """The exact HIGH scenario: a raw tools/call for pool_join/pool_leave
+    with confirm=true, a real configured mainnet key, on the operator's own
+    checkout. No signature, no pr_url, no key byte anywhere in the answer,
+    and nothing written to the pool's outbox."""
+    import services.pool.paths as pool_paths
+
+    for name, args in (("pool_join", {"confirm": True, "joined_at": "2026-11-13T00:00:00Z"}),
+                       ("pool_leave", {"confirm": True, "left_at": "2026-11-13T00:00:00Z"})):
+        err, body = operator_keyed.call(name, args)
+        assert err is True, (name, body)
+        assert body == {"ok": False, "code": "operator_install", "error": body["error"]}, (name, body)
+        assert "signed" not in body and "pr_url" not in body and "signature" not in body
+        assert E.KEY.removeprefix("0x").lower() not in json.dumps(body).lower()
+    assert not os.path.exists(pool_paths.outbox_root())
+
+
+def test_pool_tools_refuse_before_importing_services_pool_on_an_operator_install(operator_keyed, monkeypatch):
+    """The refusal sits ahead of `importlib.import_module(module)` in
+    contracts.pool.mcp_handler -- the exact line that used to reach
+    services.pool.join_tools / services.pool.report_tool unconditionally.
+    Patching import_module to explode proves it is never reached, for all
+    four tools, with a real configured key."""
+    def _boom(name):
+        raise AssertionError(f"mcp_handler imported {name!r} despite the operator_install refusal")
+    monkeypatch.setattr(pool_contract.importlib, "import_module", _boom)
+    for name, args in (("pool_status", {}), ("pool_report", {}),
+                       ("pool_join", {"confirm": True, "joined_at": "2026-11-13T00:00:00Z"}),
+                       ("pool_leave", {"confirm": True, "left_at": "2026-11-13T00:00:00Z"})):
+        err, body = operator_keyed.call(name, args)
+        assert err is True, (name, body)
+        assert body == {"ok": False, "code": "operator_install", "error": body["error"]}, (name, body)
 
 
 # ── no pool tool is ever decorated with the live-money builder_fee block ────

@@ -15,7 +15,8 @@ All notable changes to pathiel. The format follows
   the join count.
 - Four MCP tools: `pool_status`, `pool_report`, `pool_join`, `pool_leave`.
   Listed on a public install only (64 tools total); the maintainer's own
-  checkout is unchanged at 60.
+  checkout is unchanged at 60, and the pool tools refuse outright
+  (`operator_install`) if ever called there.
 - `/pathiel:share`: walks a user through joining or leaving, shows the exact
   statement before it signs anything, and opens the pull request.
 - A public scoreboard (static HTML and JSON, served from `docs/scoreboard/`
@@ -70,6 +71,12 @@ All notable changes to pathiel. The format follows
   refuses any change that would bring an account back into the pool without
   a new signed join newer than every statement the repository ever held
   for it (deleting a leave file does not work).
+- The four pool MCP tools refuse before touching any pool code whenever
+  the process is not a public install (`contracts.runtime.is_public()`),
+  regardless of whether an MCP client calls a listed tool name: a pool
+  tool dispatched on the maintainer's own mainnet checkout used to run
+  for real, including signing a join/leave statement with the
+  maintainer's configured trading key.
 
 ## [0.4.0] - 2026-11-12
 
