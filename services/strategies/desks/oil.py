@@ -21,12 +21,23 @@ $24.9M 24h, xyz:CL $30.7M, xyz:NATGAS $1.3M, maxLeverage 20/20/10; xyz:HO still
 thin ($43k).
 Regenerate this check with:
     PATHIEL_STATE_DIR=$(mktemp -d) .venv/bin/python -m services.strategies.desks._verify oil
+
+Testnet (2026-11-12, testnet /info meta dex="xyz"): xyz:BRENTOIL is listed with
+isDelisted true, xyz:CL is live (maxLeverage 20), as are xyz:NATGAS, xyz:GOLD
+and xyz:SILVER. So Brent carries a testnet_substitute: on testnet, while the
+venue does not list Brent as live, the desk trades WTI as its primary and the
+brief says so (services/strategies/desks.substitutions). Mainnet never swaps.
 """
 from __future__ import annotations
 
-from contracts.strategies.models import DeskSpec, Instrument, PairSpec, TokenBudget
+from contracts.strategies.models import DeskSpec, Instrument, NetworkSubstitute, PairSpec, TokenBudget
 
 DESK_ID = "oil"
+
+# Verified on testnet before it was added; see the module docstring.
+BRENT_TESTNET_SUBSTITUTE = NetworkSubstitute(
+    coin="xyz:CL", label="WTI",
+    verified="2026-11-12 testnet meta dex=xyz: xyz:BRENTOIL isDelisted, xyz:CL live (maxLeverage 20)")
 
 
 def build_spec() -> DeskSpec:
@@ -36,7 +47,8 @@ def build_spec() -> DeskSpec:
         tagline="Brent and WTI perps on Hyperliquid, priced off Brent. Supply shocks, "
                 "inventories, OPEC+, policy.",
         instruments=[
-            Instrument(coin="xyz:BRENTOIL", label="Brent", role="primary"),
+            Instrument(coin="xyz:BRENTOIL", label="Brent", role="primary",
+                       testnet_substitute=BRENT_TESTNET_SUBSTITUTE),
             Instrument(coin="xyz:CL", label="WTI", role="secondary"),
             Instrument(coin="xyz:NATGAS", label="Nat Gas", role="hedge"),
         ],

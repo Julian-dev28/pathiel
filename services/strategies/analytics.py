@@ -596,6 +596,16 @@ def _sigma_for_verdict(daily: Sequence[Candle]) -> Optional[float]:
 # ── default I/O (live network; injectable for tests) ─────────────────────────
 
 def default_candle_fetcher(coin: str, interval: str, count: int) -> Sequence[Candle]:
+    """The venue's candles. On testnet a coin the venue says is delisted or
+    not listed gets [] with no request: fetch_hl_candles retries a non-list
+    reply with backoff for about 24 s, and an unlisted coin never answers
+    with a list (2026-11-12, desk_brief ~30 s; services/strategies/listing).
+    The desk then drops it with its usual "no candle data" note. Mainnet: no
+    listing read, exactly as before."""
+    from services.strategies import listing
+    if listing.on_testnet() and listing.not_tradable_here(coin):
+        logger.info(f"[strategies.analytics] {coin} is not tradable on testnet; no candle read")
+        return []
     from pathiel.client.hl_client import fetch_hl_candles
     return fetch_hl_candles(coin, interval, count)
 

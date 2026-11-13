@@ -190,8 +190,10 @@ def test_public_unapproved_places_without_builder(path, sdk, public, fetch, buil
 
 
 def test_address_unset_schedules_nothing(sdk, monkeypatch, fetch, builder_jobs):
+    import contracts.runtime as runtime
     monkeypatch.setenv("PATHIEL_INSTALL", "public")
     monkeypatch.delenv("PATHIEL_BUILDER_ADDRESS", raising=False)
+    monkeypatch.setattr(runtime, "DEFAULT_BUILDER_ADDRESS", "")   # a fork that empties it
     for path in PATHS:
         out = PATHS[path]()
         assert out["ok"] and out["builder"]["reason_code"] == "no_builder_address"

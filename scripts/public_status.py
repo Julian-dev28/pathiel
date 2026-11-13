@@ -122,8 +122,12 @@ def check_network(env: Mapping[str, str]) -> Check:
     net = runtime.network(env)
     how = "set by PATHIEL_NETWORK" if network_explicit(env) else "the default"
     if net == "mainnet":
-        return Check("WARN", "network", f"mainnet ({how}): orders use real money")
-    return Check("PASS", "network", f"testnet ({how}): test funds only")
+        practise = ("" if network_explicit(env) else
+                    ". To practise with test money, add PATHIEL_NETWORK=testnet to the env file "
+                    "and reconnect")
+        return Check("WARN", "network", f"mainnet ({how}): orders use real money{practise}")
+    return Check("PASS", "network", f"testnet ({how}): test funds only. The oil desk trades WTI "
+                                    "(xyz:CL) here as the stand-in for Brent")
 
 
 def check_state_dir(env: Mapping[str, str]) -> Check:
@@ -286,12 +290,16 @@ def check_builder(env: Mapping[str, str], online: bool) -> Check:
         return Check("PASS", "builder fee", "operator install: no builder fee on any order")
     if not address or fee <= 0:
         return Check("PASS", "builder fee", "no builder address configured: orders carry no builder fee")
+    account = _account(env)
+    if account and account.strip().lower() == address:
+        return Check("PASS", "builder fee", f"the trading account is the builder address ({address}): "
+                                            "its orders never carry the builder fee")
     head = f"{rate} of notional per fill to {address}, charged only after you approve it"
     if not online:
         return Check("PASS", "builder fee", f"{head}. Approval not read (add --online)")
     try:
         from pathiel.client.builder import builder_status
-        status = builder_status(_account(env) or None, refresh=True)
+        status = builder_status(account or None, refresh=True)
     except Exception as e:   # noqa: BLE001
         return Check("WARN", "builder fee", f"{head}. Could not read the approval: {type(e).__name__}")
     approved = status.get("approved_tenths_bp")

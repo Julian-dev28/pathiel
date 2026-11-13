@@ -148,7 +148,8 @@ def test_generated_tick_files_point_at_risk_limits():
     # one definition of L per oil_levels.py call that takes it (--check, --next)
     assert flat.count("L is the `max_leverage` that `risk_limits` reports") == 2
     assert "where L is the `max_leverage` that `risk_limits` reports" in flat
-    assert "On testnet a tool says plainly when a coin is not tradable there" in flat
+    assert "On testnet the oil desk trades WTI (xyz:CL) as the Brent stand-in" in flat
+    assert "says plainly when a coin is not tradable there" in flat
 
 
 def test_generator_output_is_current():
@@ -190,7 +191,7 @@ def test_operator_tick_sources_are_untouched(tmp_path, monkeypatch):
 def test_pathiel_agent_skill_names_the_public_layout():
     text = (ROOT / "skills" / "pathiel-agent" / "SKILL.md").read_text(encoding="utf-8")
     head = text[:text.index("## How a trade happens now")]
-    for needle in ("~/.pathiel", "testnet", "PATHIEL_NETWORK=mainnet", "`risk_limits`"):
+    for needle in ("~/.pathiel", "**mainnet**", "real", "PATHIEL_NETWORK=testnet", "`risk_limits`"):
         assert needle in head, needle
     assert "60 tools" in text
 

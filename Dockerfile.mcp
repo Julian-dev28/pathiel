@@ -1,17 +1,17 @@
 # pathiel MCP server as a container, for MCP registries and clients that run
 # servers as images. The public code path: the same launcher as the Claude Code
-# plugin (scripts/pathiel-mcp), so a container starts on the Hyperliquid
-# TESTNET with the public default risk profile (3x, 1% a trade, one position)
-# and read-only until a key is given.
+# plugin (scripts/pathiel-mcp), so a container starts on Hyperliquid MAINNET
+# with the public default risk profile (3x, 1% a trade, one position) and
+# read-only until a key is given. With a key it trades REAL MONEY.
 #
 #   docker build -f Dockerfile.mcp -t pathiel-mcp .
-#   docker run -i --rm -v pathiel-data:/data pathiel-mcp                      # read-only, testnet
-#   docker run -i --rm -v pathiel-data:/data \
+#   docker run -i --rm -v pathiel-data:/data pathiel-mcp                      # read-only, mainnet
+#   docker run -i --rm -v pathiel-data:/data -e PATHIEL_NETWORK=testnet \
 #     -e HYPERLIQUID_WALLET_ADDRESS -e HYPERLIQUID_PRIVATE_KEY -e HYPERLIQUID_MASTER_ADDRESS \
 #     pathiel-mcp                                                               # testnet trading
 #
-# Mainnet (real money) is one explicit opt-in: -e PATHIEL_NETWORK=mainnet, or
-# the line PATHIEL_NETWORK=mainnet in /data/.env.local.
+# Testnet (test money) is one explicit opt-in: -e PATHIEL_NETWORK=testnet, or
+# the line PATHIEL_NETWORK=testnet in /data/.env.local.
 #
 # No key is ever baked in: .dockerignore keeps every .env file and the
 # maintainer's .agent-config.json out of the build context. Keys and state

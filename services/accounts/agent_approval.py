@@ -6,8 +6,8 @@ Typed-data construction mirrors `hyperliquid.utils.signing.sign_agent` /
 same domain, same `HyperliquidTransaction:ApproveAgent` type, same
 `signatureChainId`, same mainnet `hyperliquidChain`. Mainnet only:
 `submit_approve_agent` refuses before posting when contracts.runtime resolves
-any other network (a public install defaults to testnet; approve the API
-wallet in the Hyperliquid testnet app there).
+any other network (a public install that set PATHIEL_NETWORK=testnet;
+approve the API wallet in the Hyperliquid testnet app there).
 
 Two things never happen outside a mocked test, per
 docs/overhaul/SWARM_RULES.md section 10 (this wave's extra live-money rule):

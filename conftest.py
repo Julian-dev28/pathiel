@@ -94,6 +94,20 @@ def _builder_isolation(monkeypatch):
     builder.reset()
 
 
+@pytest.fixture(autouse=True)
+def _listing_isolation():
+    """services.strategies.listing caches coin_listing answers per process
+    (testnet only); one test's fake venue must never answer the next."""
+    import sys
+    mod = sys.modules.get("services.strategies.listing")
+    if mod is not None:
+        mod.reset()
+    yield
+    mod = sys.modules.get("services.strategies.listing")
+    if mod is not None:
+        mod.reset()
+
+
 @pytest.fixture
 def builder_jobs(_builder_isolation):
     """Background approval reads scheduled during this test, not yet run."""

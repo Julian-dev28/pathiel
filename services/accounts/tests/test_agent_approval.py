@@ -263,11 +263,14 @@ def test_submit_refuses_off_mainnet_before_any_post(monkeypatch):
     monkeypatch.setenv("PATHIEL_NETWORK", "testnet")
     with pytest.raises(RuntimeError, match="mainnet only"):
         aa.submit_approve_agent("0x" + "2" * 40, "pathiel", 7, "0x" + "ab" * 65)
-    monkeypatch.delenv("PATHIEL_NETWORK")
-    monkeypatch.setenv("PATHIEL_INSTALL", "public")          # public default is testnet too
+    monkeypatch.setenv("PATHIEL_INSTALL", "public")          # a public install on testnet too
     with pytest.raises(RuntimeError, match="mainnet only"):
         aa.submit_approve_agent("0x" + "2" * 40, "pathiel", 7, "0x" + "ab" * 65)
     assert posted == []
+    monkeypatch.delenv("PATHIEL_NETWORK")                    # 2026-11-12: public default is
+    assert aa.submit_approve_agent("0x" + "2" * 40, "pathiel", 7, "0x" + "ab" * 65) == {"status": "ok"}
+    assert len(posted) == 1                                  # mainnet, the chain it signs
+    posted.clear()
     monkeypatch.setenv("PATHIEL_NETWORK", "mainnet")         # explicitly live: as today
     assert aa.submit_approve_agent("0x" + "2" * 40, "pathiel", 7, "0x" + "ab" * 65) == {"status": "ok"}
     assert len(posted) == 1

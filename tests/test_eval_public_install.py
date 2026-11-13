@@ -1,8 +1,10 @@
 """Eval: what a fresh public install trades with, and that the operator's does
 not move.
 
-Outcome measured: a stranger who installs the plugin lands on testnet with a
-3x, 1% a trade, one-position profile seeded from the tracked template; every
+Outcome measured: a stranger who installs the plugin lands on mainnet (real
+money, the 2026-11-12 decision; testnet is one line away and gets its own
+state dir) with the shipped builder address and a 3x, 1% a trade,
+one-position profile seeded from the tracked template; every
 trade that profile sizes stays inside its caps across a grid of account sizes,
 stop widths and venue size steps; the operator's 20x config resolves as
 before and its file is untouched; and the builder fee approval command
@@ -10,7 +12,8 @@ before and its file is untouched; and the builder fee approval command
 
 Four parts, one scorecard (threshold: every row passes):
 
-  1. fresh HOME through the launcher functions plus seed-public
+  1. fresh HOME through the launcher functions plus seed-public, then the
+     same HOME with the PATHIEL_NETWORK=testnet line
   2. size_trade grid: equity {25 .. 100k} x stop {0.5, 1, 2, 5}% x size step
      {none, 5, 2, 0 decimals} x requested leverage {none, 20x}
   3. operator scenario
@@ -38,6 +41,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List
 
 NAME = "public_install"
+SHIPPED_BUILDER = "0x2c2e4efF574B3Fd9879AdeF9c5CAC6fD7C916985"   # contracts/runtime default
 ROOT = Path(__file__).resolve().parents[1]
 PLUGIN_ENV = ROOT / "scripts" / "_plugin_env.sh"
 MCP_WRAPPER = ROOT / "scripts" / "pathiel-mcp"
@@ -92,6 +96,7 @@ def part_fresh_install(make, tmp: Path) -> List[Dict[str, Any]]:
     code = ("import json, sys; from pathiel.agents.config_store import CONFIG_PATH, read_risk_profile; "
             "import contracts.runtime as r; from services.strategies import desks; "
             "json.dump({'config_path': CONFIG_PATH, 'network': r.network(), 'install': r.install_kind(), "
+            "'network_explicit': r.network_is_explicit(), 'builder': r.builder_address(), "
             "'profile': read_risk_profile().model_dump(), "
             "'ladders': {s.id: list(s.leverage_ladder) for s in desks.list_specs()}}, "
             "open(sys.argv[1], 'w'))")
@@ -105,12 +110,24 @@ def part_fresh_install(make, tmp: Path) -> List[Dict[str, Any]]:
         return [_row("fresh: launcher functions ran", proc.stderr[-300:], "exit 0")]
     got = json.loads(out.read_text())
     config = home / ".pathiel" / ".agent-config.json"
+    fresh_state = Path((tmp / "fresh.state").read_text()).name
+
+    # The same HOME after the user adds the one testnet line.
+    (home / ".pathiel" / ".env.local").write_text("PATHIEL_NETWORK=testnet\n")
+    proc_t = subprocess.run(["bash", "-c", script], env=env, capture_output=True, text=True, timeout=60)
+    got_t = json.loads(out.read_text()) if proc_t.returncode == 0 else {}
+    testnet_state = Path((tmp / "fresh.state").read_text()).name if proc_t.returncode == 0 else ""
     return [
         _row("fresh: launcher functions ran", "exit 0", "exit 0"),
         _row("fresh: stdout clean", proc.stdout, ""),
         _row("fresh: install", got["install"], "public"),
-        _row("fresh: network", got["network"], "testnet"),
-        _row("fresh: state dir", Path((tmp / "fresh.state").read_text()).name, "state-testnet"),
+        _row("fresh: network (default, real money)", got["network"], "mainnet"),
+        _row("fresh: network not marked as chosen", got["network_explicit"], False),
+        _row("fresh: state dir", fresh_state, "state"),
+        _row("fresh: builder is the shipped address", got["builder"], SHIPPED_BUILDER.lower()),
+        _row("testnet line: network", got_t.get("network"), "testnet"),
+        _row("testnet line: network marked as chosen", got_t.get("network_explicit"), True),
+        _row("testnet line: state dir", testnet_state, "state-testnet"),
         _row("fresh: config path is ~/.pathiel/.agent-config.json", got["config_path"] == str(config), True),
         _row("fresh: config equals template",
              json.loads(config.read_text()) == json.loads(TEMPLATE.read_text()), True),
@@ -265,5 +282,5 @@ def run(make: Callable[..., Dict[str, str]], tmp: Path) -> List[Dict[str, Any]]:
 
 def test_public_install_eval(public_env, tmp_path, scorecard):
     card = scorecard(NAME, run(public_env, tmp_path))
-    assert card["total"] == 11 + 5 + 5 + 8 + 1
+    assert card["total"] == 16 + 5 + 5 + 8 + 1
     assert card["passed"] == card["total"], [r for r in card["rows"] if not r["ok"]]

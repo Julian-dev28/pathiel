@@ -22,7 +22,7 @@ import re
 from decimal import Decimal
 from typing import Any, Dict, Mapping, Optional
 
-CONTRACT_VERSION = "1.0.0"
+CONTRACT_VERSION = "1.1.0"   # 1.1.0 (2026-11-12): mainnet default on public installs
 
 MAINNET_API_URL = "https://api.hyperliquid.xyz"
 TESTNET_API_URL = "https://api.hyperliquid-testnet.xyz"
@@ -30,7 +30,9 @@ TESTNET_API_URL = "https://api.hyperliquid-testnet.xyz"
 ENV_INSTALL = "PATHIEL_INSTALL"
 ENV_NETWORK = "PATHIEL_NETWORK"
 # Set by the public launcher (scripts/_plugin_env.sh), which always exports
-# PATHIEL_NETWORK: "default" means nobody chose the network.
+# PATHIEL_NETWORK: "default" means nobody chose the network (mainnet), and
+# "invalid" means the env file line was not mainnet or testnet (the launcher
+# then runs testnet, the side that cannot lose real money).
 ENV_NETWORK_SOURCE = "PATHIEL_NETWORK_SOURCE"
 ENV_BUILDER_ADDRESS = "PATHIEL_BUILDER_ADDRESS"
 ENV_BUILDER_FEE = "PATHIEL_BUILDER_FEE_TENTHS_BP"
@@ -40,16 +42,21 @@ RUNTIME_ENV_VARS = (ENV_INSTALL, ENV_NETWORK, ENV_BUILDER_ADDRESS, ENV_BUILDER_F
 # ════════════════════════════════════════════════════════════════════════════
 # BUILDER CONFIG POINT
 #
-# Julien fills this in. It is the one place the default builder address lives.
-#   * It links a wallet to the project publicly: anyone can see which address
-#     collects the fee on every order a public install routes.
+# The one place the default builder address lives. Julien's choice
+# (2026-11-12): his funded master account.
+#   * It links that wallet to the project publicly: anyone can see which
+#     address collects the fee on every order a public install routes.
 #   * The wallet needs at least 100 USDC of perps account value on Hyperliquid
 #     to collect builder fees (the venue's rule; pathiel does not check it).
+#   * An order from this same account never carries the builder (attach rule
+#     step 4, builder.builder_for_order: self_trade).
 #   * Empty means no builder is ever attached, on any install. Everything else
 #     works the same.
-# PATHIEL_BUILDER_ADDRESS in the environment overrides it (tests, forks).
+# PATHIEL_BUILDER_ADDRESS in the environment overrides it (tests, forks); a
+# non-empty value that is not an address (e.g. "none") turns the builder off.
+# PATHIEL_BUILDER_FEE_TENTHS_BP=0 turns it off too.
 # ════════════════════════════════════════════════════════════════════════════
-DEFAULT_BUILDER_ADDRESS = ""
+DEFAULT_BUILDER_ADDRESS = "0x2c2e4efF574B3Fd9879AdeF9c5CAC6fD7C916985"
 
 # 10 tenths of a basis point = 1 bp = 0.01% of notional per fill. A tenth of the
 # 0.1% perp cap and about a fifth of the base taker fee. Approval asks for this
@@ -58,6 +65,8 @@ DEFAULT_BUILDER_FEE_TENTHS_BP = 10
 MAX_PERP_BUILDER_FEE_TENTHS_BP = 100   # Hyperliquid perp cap, 0.1%
 
 _NETWORKS = ("mainnet", "testnet")
+# PATHIEL_NETWORK_SOURCE values that mean the user did not choose the network.
+_NOT_CHOSEN_SOURCES = ("default", "invalid")
 _ADDRESS_RE = re.compile(r"^0x[0-9a-f]{40}$")
 _DIGITS_RE = re.compile(r"^[0-9]+$")
 
@@ -83,18 +92,21 @@ def _explicit_network(env: Optional[Mapping[str, str]]) -> Optional[str]:
 
 
 def network(env: Optional[Mapping[str, str]] = None) -> str:
-    """A valid PATHIEL_NETWORK wins. Otherwise testnet on a public install and
-    mainnet on the operator's. An invalid value counts as unset."""
+    """A valid PATHIEL_NETWORK wins. Otherwise mainnet, on both install kinds
+    (Julien, 2026-11-12: a public install trades real money unless the user
+    asks for testnet). An invalid value counts as unset. The public launcher
+    never hands Python an invalid value: it exports testnet for one."""
     explicit = _explicit_network(env)
     if explicit:
         return explicit
-    return "testnet" if is_public(env) else "mainnet"
+    return "mainnet"
 
 
 def network_is_explicit(env: Optional[Mapping[str, str]] = None) -> bool:
     """True when someone chose the network: PATHIEL_NETWORK holds a valid value
-    and the launcher did not mark it as its own default."""
-    if str(_env(env).get(ENV_NETWORK_SOURCE) or "").strip().lower() == "default":
+    and the launcher did not mark it as its own default or its fallback for
+    an invalid line."""
+    if str(_env(env).get(ENV_NETWORK_SOURCE) or "").strip().lower() in _NOT_CHOSEN_SOURCES:
         return False
     return _explicit_network(env) is not None
 

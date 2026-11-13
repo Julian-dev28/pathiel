@@ -17,9 +17,10 @@ never blocks the gold tick or the other way round. Leverage up to the `max_lever
 runs the liquidation rule: the stop must use under half the distance to
 liquidation). Brent, gold and silver fit their leverage to the stop
 (`next_trade.LEVERAGE_FIT`); `place_bracket` caps and fits it by itself,
-so never pass `leverage` on a new entry. On testnet a tool says plainly
-when a coin is not tradable there (xyz:BRENTOIL is delisted on testnet):
-log `action=NONE` with that message and stop. Never chase, on every desk: the
+so never pass `leverage` on a new entry. On testnet the oil desk trades
+WTI (xyz:CL) as the Brent stand-in and its brief says so first; a tool
+says plainly when a coin is not tradable there: log `action=NONE` with
+that message and stop. Never chase, on every desk: the
 silver breakout exception ended 2026-11-04 evening. No entry after a break
 either: none while the mid is past the 24h range's own edge (a long under
 the 24h low, a short over the 24h high). Never add at market above the

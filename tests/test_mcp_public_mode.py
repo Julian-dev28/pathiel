@@ -125,12 +125,16 @@ def test_public_tools_list_has_no_dashboard_or_pause_wording(no_key):
     assert len(json.dumps(listed)) <= len(json.dumps(M.TOOLS)) + 200
 
 
+SHIPPED_BUILDER = "0x2c2e4efF574B3Fd9879AdeF9c5CAC6fD7C916985"
+
+
 @pytest.mark.parametrize("case", ["no_key", "testnet_key", "mainnet_key", "builder_set",
-                                  "builder_unset"])
+                                  "builder_unset", "builder_shipped"])
 def test_public_instructions_content_and_length(case, monkeypatch, tmp_path, builder_jobs):
     kw = {"no_key": {}, "testnet_key": {"key": True}, "mainnet_key": {"key": True, "network": "mainnet"},
           "builder_set": {"key": True, "builder_address": E.BUILDER},
-          "builder_unset": {"key": True, "builder_address": ""}}[case]
+          "builder_unset": {"key": True, "builder_address": ""},
+          "builder_shipped": {"key": True, "builder_address": None, "network": "mainnet"}}[case]
     h = E.install(monkeypatch, tmp_path, M, builder_jobs, **kw)
     text = h.rpc("initialize", {})["result"]["instructions"]
     low = text.lower()
@@ -147,12 +151,16 @@ def test_public_instructions_content_and_length(case, monkeypatch, tmp_path, bui
     assert ("trading: enabled" in low) == (case != "no_key")
     if case == "builder_set":
         assert "0.01%" in text and E.BUILDER in text and "approve" in low
+    elif case == "builder_shipped":
+        assert "0.01%" in text and SHIPPED_BUILDER.lower() in text and "approve" in low
     else:
         assert "builder fee: not configured" in low
     for word in ("localhost", "desk page", "/api/", "dashboard", "20x"):
         assert word not in low, word
     if net == "mainnet":
-        assert "real money" in low
+        assert "real money" in low and "pathiel_network=testnet" in low
+    else:
+        assert "wti (xyz:cl)" in low and "stand-in for brent" in low
 
 
 # ── read-only tier ────────────────────────────────────────────────────────────
@@ -287,7 +295,42 @@ def test_unknown_listing_does_not_refuse(keyed, monkeypatch):
     assert M._public_gate("place_bracket", {"coin": "BTC", "stop_px": 1, "tp_px": 2}) is None
 
 
-def test_desk_brief_names_a_delisted_primary(no_key):
+WTI_LINE = ("Testnet: this desk trades WTI (xyz:CL) as the stand-in for Brent (xyz:BRENTOIL), "
+            "which is delisted on testnet.")
+
+
+@pytest.mark.parametrize("mode", ["quick", "full"])
+def test_desk_brief_on_testnet_trades_wti_as_the_brent_stand_in(no_key, mode):
+    """2026-11-12: testnet does not list Brent as live, so the oil desk's
+    spec swaps in xyz:CL and the brief says so plainly, first."""
+    err, body = no_key.call("desk_brief", {"desk": "oil", "mode": mode})
+    assert not err
+    assert body["testnet_substitute"].startswith(WTI_LINE)
+    assert "mainnet trades Brent" in body["testnet_substitute"]
+    assert "network_note" not in body, "the desk can trade here: WTI is listed"
+    if mode == "quick":
+        assert body["markdown"].startswith("**" + WTI_LINE)
+    from services.strategies.desks import get_spec
+    spec = get_spec("oil")
+    primary = next(i for i in spec.instruments if i.role == "primary")
+    assert (primary.coin, primary.label) == ("xyz:CL", "WTI")
+    assert [i.coin for i in spec.instruments].count("xyz:CL") == 1
+    assert spec.pairs == [] and "WTI (xyz:CL) stands in for Brent" in spec.tagline
+
+
+def test_desk_brief_on_mainnet_has_no_substitute(monkeypatch, tmp_path, builder_jobs):
+    h = E.install(monkeypatch, tmp_path, M, builder_jobs, network="mainnet")
+    _err, body = h.call("desk_brief", {"desk": "oil"})
+    assert "testnet_substitute" not in body and "Testnet:" not in body["markdown"]
+    from services.strategies.desks import get_spec
+    assert next(i for i in get_spec("oil").instruments if i.role == "primary").coin == "xyz:BRENTOIL"
+
+
+def test_desk_brief_names_a_delisted_primary_with_no_substitute(no_key, monkeypatch):
+    """A desk whose unlisted primary has no verified substitute still says it
+    cannot trade here (the rule every desk but oil falls under)."""
+    from services.strategies import desks
+    monkeypatch.setattr(desks, "substitutions", lambda spec: [])
     err, body = no_key.call("desk_brief", {"desk": "oil"})
     assert not err
     assert body["network_note"].startswith("xyz:BRENTOIL is not tradable on testnet (delisted).")
@@ -416,8 +459,18 @@ def test_state_install_block_without_a_key(no_key, monkeypatch):
     monkeypatch.delenv("PATHIEL_NETWORK")
     _err, body = no_key.call("state")
     assert body["install"]["trading"] == "read_only"
-    assert body["install"]["network"] == "testnet" and body["install"]["network_explicit"] is False
+    # 2026-11-12: no network set is mainnet, and the notice says real money.
+    assert body["install"]["network"] == "mainnet" and body["install"]["network_explicit"] is False
+    assert "MAINNET" in body["install"]["network_notice"]
+    assert "real money" in body["install"]["network_notice"]
     assert body["install"]["builder_fee"]["reason_code"] == "no_builder_address"
+
+
+def test_state_install_block_names_testnet_and_the_stand_in(no_key):
+    _err, body = no_key.call("state")
+    notice = body["install"]["network_notice"]
+    assert body["install"]["network"] == "testnet" and "testnet (test funds)" in notice
+    assert "WTI (xyz:CL)" in notice
 
 
 def test_state_reads_a_new_approval_at_once(keyed):
@@ -544,12 +597,24 @@ class TestStdioFreshHome:
         assert proc.returncode == 0, proc.stderr[-2000:]
         init = out[1]["result"]
         assert init["serverInfo"]["name"] == "pathiel"
-        assert "Network: testnet" in init["instructions"]
+        assert "Network: mainnet. REAL MONEY" in init["instructions"]   # the default, 2026-11-12
         assert "Trading: read-only" in init["instructions"]
         tools = out[2]["result"]["tools"]
         assert len(tools) == 60
         assert not any("dashboard" in t["description"].lower() for t in tools)
         assert "maintainer mode" not in proc.stderr
+        notices = [ln for ln in proc.stderr.splitlines() if ln.startswith("pathiel: public install")]
+        assert len(notices) == 1 and "MAINNET" in notices[0] and "PATHIEL_NETWORK=testnet" in notices[0]
+
+    def test_testnet_opt_in_names_testnet_at_start(self, public_env):
+        env = public_env(PATHIEL_NETWORK="testnet")
+        proc = subprocess.run([sys.executable, str(E.SERVER)], input="", capture_output=True,
+                              text=True, timeout=90, env=env, cwd=str(public_env.env_file.parent))
+        assert proc.returncode == 0, proc.stderr[-2000:]
+        notices = [ln for ln in proc.stderr.splitlines() if ln.startswith("pathiel: public install")]
+        assert notices == ["pathiel: public install on Hyperliquid testnet (test funds). The oil desk "
+                           "trades WTI (xyz:CL) as the Brent stand-in."]
+        assert proc.stdout == ""
 
     def test_place_bracket_is_read_only(self, public_env):
         proc, out = self._session(public_env, {"method": "tools/call", "params": {
@@ -558,6 +623,6 @@ class TestStdioFreshHome:
         result = out[2]["result"]
         assert result["isError"] is True
         body = json.loads(result["content"][0]["text"])
-        assert body["read_only"] is True and body["network"] == "testnet"
+        assert body["read_only"] is True and body["network"] == "mainnet"
         assert body["tool"] == "place_bracket"
         assert "Traceback" not in proc.stderr

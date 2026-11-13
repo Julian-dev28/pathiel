@@ -16,8 +16,10 @@ metadata:
 **Plugin installs** (the Claude Code plugin, `scripts/pathiel-mcp`, or the
 container) keep keys, config and state under `~/.pathiel`
 (`~/.pathiel/.env.local`, `~/.pathiel/.agent-config.json`,
-`~/.pathiel/state/`) and default to Hyperliquid **testnet**. Going live is
-one explicit line, `PATHIEL_NETWORK=mainnet`, in `~/.pathiel/.env.local`. A
+`~/.pathiel/state/`) and default to Hyperliquid **mainnet**: with a key, real
+money. Practice on testnet is one explicit line, `PATHIEL_NETWORK=testnet`, in
+`~/.pathiel/.env.local` (state then goes to `~/.pathiel/state-testnet/`, and
+the oil desk trades WTI, `xyz:CL`, as the Brent stand-in). A
 fresh plugin install starts from a conservative risk profile (3x max
 leverage, about 1% of equity at risk per trade, one position); `risk_limits`
 reports the active one. The rest of this guide describes the maintainer's

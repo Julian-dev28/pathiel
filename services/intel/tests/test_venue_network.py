@@ -69,8 +69,14 @@ def test_testnet_env_selects_the_testnet_info_url(reload_venue, posted):
     assert posted == [TESTNET]
 
 
-def test_public_install_without_a_network_uses_testnet(reload_venue, posted):
+def test_public_install_without_a_network_uses_mainnet(reload_venue, posted):
+    """2026-11-12: mainnet is the public default; testnet is the opt-in."""
     mod = reload_venue(PATHIEL_INSTALL="public")
+    assert mod.HL_INFO_URL == MAINNET
+
+
+def test_public_install_opted_into_testnet_uses_testnet(reload_venue, posted):
+    mod = reload_venue(PATHIEL_INSTALL="public", PATHIEL_NETWORK="testnet")
     assert mod.HL_INFO_URL == TESTNET
 
 

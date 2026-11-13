@@ -38,8 +38,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# The venue URL follows the runtime contract (contracts/runtime): mainnet for
-# the operator's stack, testnet by default on a public install, and whatever
+# The venue URL follows the runtime contract (contracts/runtime): mainnet by
+# default on every install (a public one since 2026-11-12), and whatever
 # PATHIEL_NETWORK names. Read once at import: one network per process. Every
 # caller reads this module global at call time, so nothing else holds a copy.
 HL_API = _runtime.api_url()

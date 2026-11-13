@@ -148,7 +148,8 @@ def _posted_url(mod, monkeypatch) -> str:
 @pytest.mark.parametrize("env, want", [
     ({}, "https://api.hyperliquid.xyz/info"),
     ({"PATHIEL_NETWORK": "testnet"}, "https://api.hyperliquid-testnet.xyz/info"),
-    ({"PATHIEL_INSTALL": "public"}, "https://api.hyperliquid-testnet.xyz/info"),
+    ({"PATHIEL_INSTALL": "public"}, "https://api.hyperliquid.xyz/info"),
+    ({"PATHIEL_INSTALL": "public", "PATHIEL_NETWORK": "testnet"}, "https://api.hyperliquid-testnet.xyz/info"),
     ({"PATHIEL_INSTALL": "public", "PATHIEL_NETWORK": "mainnet"}, "https://api.hyperliquid.xyz/info"),
 ])
 def test_info_url_follows_the_runtime_network(monkeypatch, env, want):

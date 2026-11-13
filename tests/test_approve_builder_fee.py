@@ -155,7 +155,7 @@ def test_fee_example_dollars():
 # ── dry run ───────────────────────────────────────────────────────────────────
 
 def test_dry_run_sends_nothing_and_needs_no_key(master, monkeypatch, capsys):
-    _net(monkeypatch, public=True)                      # public default: testnet
+    _net(monkeypatch, "testnet", public=True)           # the opt-in practice network
     monkeypatch.setattr(ab, "_master_key", _never)      # no key source is even consulted
     code, out, text, _err = _run(capsys, [], isatty=_never)
     assert code == 0
@@ -176,21 +176,31 @@ def test_dry_run_human_output_names_everything(master, monkeypatch, capsys):
         assert word in out
 
 
-def test_dry_run_runs_standalone_in_a_public_env(public_env):
+def test_public_dry_run_with_no_network_set_is_mainnet(master, monkeypatch, capsys):
+    """Decision 2026-11-12: a public install with no PATHIEL_NETWORK is on
+    mainnet, so the approval it prints is the mainnet one."""
+    _net(monkeypatch, public=True)
+    code, out, _text, _err = _run(capsys, [], isatty=_never)
+    assert code == 0 and out["dry_run"] is True and out["network"] == "mainnet"
+
+
+@pytest.mark.parametrize("network,want", [(None, "mainnet"), ("testnet", "testnet")])
+def test_dry_run_runs_standalone_in_a_public_env(public_env, network, want):
     acct = Account.create()
-    env = public_env(PATHIEL_BUILDER_ADDRESS=BUILDER, HYPERLIQUID_MASTER_ADDRESS=acct.address)
+    env = public_env(PATHIEL_BUILDER_ADDRESS=BUILDER, HYPERLIQUID_MASTER_ADDRESS=acct.address,
+                     PATHIEL_NETWORK=network)
     proc = subprocess.run([sys.executable, str(SCRIPT), "--json"], cwd=str(ROOT), env=env,
                           capture_output=True, text=True, timeout=60, stdin=subprocess.DEVNULL)
     assert proc.returncode == 0, proc.stderr
     out = json.loads(proc.stdout.strip().splitlines()[-1])
-    assert out["dry_run"] is True and out["network"] == "testnet"
+    assert out["dry_run"] is True and out["network"] == want
     assert out["builder"] == BUILDER_LC and out["max_fee_rate"] == "0.01%"
 
 
 # ── --yes ─────────────────────────────────────────────────────────────────────
 
 def test_yes_signs_for_testnet_and_recovers_to_the_account(master, monkeypatch, capsys):
-    _net(monkeypatch, public=True)
+    _net(monkeypatch, "testnet", public=True)
     post, prompt = Post(), Prompt(master.key.hex())
     code, out, text, _ = _run(capsys, ["--yes"], post=post, getpass_fn=prompt,
                               fetch_max_fee=lambda u, b: 10)
@@ -223,7 +233,7 @@ def test_yes_signs_for_mainnet_chain_field(master, monkeypatch, capsys):
 def test_public_install_ignores_the_env_key_and_prompts(master, monkeypatch, capsys):
     other = Account.create()
     monkeypatch.setenv("HYPERLIQUID_MASTER_PRIVATE_KEY", other.key.hex())
-    _net(monkeypatch, public=True)
+    _net(monkeypatch, "testnet", public=True)
     post, prompt = Post(), Prompt(master.key.hex())
     code, _out, text, _ = _run(capsys, ["--yes"], post=post, getpass_fn=prompt,
                                fetch_max_fee=lambda u, b: 10)
@@ -235,7 +245,7 @@ def test_public_install_ignores_the_env_key_and_prompts(master, monkeypatch, cap
 def test_public_install_warns_when_the_env_key_is_set(master, monkeypatch, capsys):
     other = Account.create()
     monkeypatch.setenv("HYPERLIQUID_MASTER_PRIVATE_KEY", other.key.hex())
-    _net(monkeypatch, public=True)
+    _net(monkeypatch, "testnet", public=True)
     _code, _out, text, err = _run(capsys, ["--yes"], post=Post(), getpass_fn=Prompt(master.key.hex()),
                                   fetch_max_fee=lambda u, b: 10)
     warns = [ln for ln in err.splitlines() if ln.startswith("WARN")]
@@ -258,7 +268,7 @@ def test_wallet_address_fallback_for_a_master_key_trader(master, monkeypatch, ca
     HYPERLIQUID_WALLET_ADDRESS; the same key approves."""
     monkeypatch.setenv("HYPERLIQUID_MASTER_ADDRESS", "")
     monkeypatch.setenv("HYPERLIQUID_WALLET_ADDRESS", master.address)
-    _net(monkeypatch, public=True)
+    _net(monkeypatch, "testnet", public=True)
     post = Post()
     code, out, _t, _ = _run(capsys, ["--yes"], post=post, getpass_fn=Prompt(master.key.hex()),
                             fetch_max_fee=lambda u, b: 10)
@@ -266,7 +276,7 @@ def test_wallet_address_fallback_for_a_master_key_trader(master, monkeypatch, ca
 
 
 def test_confirming_read_after_success(master, monkeypatch, capsys):
-    _net(monkeypatch, public=True)
+    _net(monkeypatch, "testnet", public=True)
     reads = []
     code, out, _t, _ = _run(capsys, ["--yes"], post=Post(), getpass_fn=Prompt(master.key.hex()),
                             fetch_max_fee=lambda u, b: reads.append((u, b)) or 10)
@@ -276,7 +286,7 @@ def test_confirming_read_after_success(master, monkeypatch, capsys):
 
 
 def test_confirming_read_failure_still_exits_0(master, monkeypatch, capsys):
-    _net(monkeypatch, public=True)
+    _net(monkeypatch, "testnet", public=True)
 
     def boom(u, b):
         raise TimeoutError("slow")
@@ -288,7 +298,7 @@ def test_confirming_read_failure_still_exits_0(master, monkeypatch, capsys):
 
 
 def test_venue_error_reply_exits_1(master, monkeypatch, capsys):
-    _net(monkeypatch, public=True)
+    _net(monkeypatch, "testnet", public=True)
     post = Post(reply={"status": "err", "response": "Builder has insufficient balance to be approved."})
     code, out, text, _ = _run(capsys, ["--yes"], post=post, getpass_fn=Prompt(master.key.hex()),
                               fetch_max_fee=lambda u, b: 0)
@@ -309,7 +319,7 @@ def test_error_reply_with_the_approval_stored_reports_success(master, monkeypatc
     """Final review: a 502 after the venue stored the approval used to be
     retried by the shared session's adapter; the replayed nonce was refused
     and the script printed FAILED. Now one post, then the read-back decides."""
-    _net(monkeypatch, public=True)
+    _net(monkeypatch, "testnet", public=True)
     post = Post(reply={"status": "err", "response": "Invalid nonce: duplicate nonce"})
     reads = []
     code, out, _t, _ = _run(capsys, ["--yes"], post=post, getpass_fn=Prompt(master.key.hex()),
@@ -330,7 +340,7 @@ def test_approval_in_place_table(approved, tenths, want):
 def test_default_post_is_one_plain_post_not_the_retrying_session(master, monkeypatch, capsys):
     import requests
 
-    _net(monkeypatch, public=True)
+    _net(monkeypatch, "testnet", public=True)
     monkeypatch.setattr(hl_client, "_get_session", _never)
     monkeypatch.setattr(hl_client, "_http_post_strict", _never)
     sent = []
@@ -357,7 +367,7 @@ def test_default_post_is_one_plain_post_not_the_retrying_session(master, monkeyp
 
 
 def test_revoke_rate_zero_builds_a_zero_action(master, monkeypatch, capsys):
-    _net(monkeypatch, public=True)
+    _net(monkeypatch, "testnet", public=True)
     code, out, _t, _ = _run(capsys, ["--max-fee-rate", "0%"])
     assert code == 0 and out["action"]["maxFeeRate"] == "0%" and "revokes" in out["note"]
     post = Post()
@@ -368,7 +378,7 @@ def test_revoke_rate_zero_builds_a_zero_action(master, monkeypatch, capsys):
 
 
 def test_rate_is_signed_in_canonical_form(master, monkeypatch, capsys):
-    _net(monkeypatch, public=True)
+    _net(monkeypatch, "testnet", public=True)
     post = Post()
     _run(capsys, ["--max-fee-rate", "0.010%", "--yes"], post=post,
          getpass_fn=Prompt(master.key.hex()), fetch_max_fee=lambda u, b: 10)
@@ -427,7 +437,7 @@ def test_refuses_on_network_drift(master, monkeypatch, capsys):
 def test_refuses_a_key_for_another_account(master, monkeypatch, capsys):
     """The user pastes the API wallet key instead of the master key."""
     api_wallet = Account.create()
-    _net(monkeypatch, public=True)
+    _net(monkeypatch, "testnet", public=True)
     post = Post()
     code, out, text, _ = _run(capsys, ["--yes"], post=post, getpass_fn=Prompt(api_wallet.key.hex()))
     _assert_refused(code, out, text, post, master, api_wallet)
@@ -435,7 +445,7 @@ def test_refuses_a_key_for_another_account(master, monkeypatch, capsys):
 
 
 def test_refuses_an_invalid_key(master, monkeypatch, capsys):
-    _net(monkeypatch, public=True)
+    _net(monkeypatch, "testnet", public=True)
     post = Post()
     code, out, text, _ = _run(capsys, ["--yes"], post=post, getpass_fn=Prompt("0x1234nothex"))
     _assert_refused(code, out, text, post, master)
@@ -445,7 +455,7 @@ def test_refuses_an_invalid_key(master, monkeypatch, capsys):
 def test_refuses_without_key_or_tty(master, monkeypatch, capsys):
     # public, env key set, no TTY: the env key is not a fallback
     monkeypatch.setenv("HYPERLIQUID_MASTER_PRIVATE_KEY", master.key.hex())
-    _net(monkeypatch, public=True)
+    _net(monkeypatch, "testnet", public=True)
     post = Post()
     code, out, text, _ = _run(capsys, ["--yes"], post=post, getpass_fn=_never, isatty=lambda: False)
     _assert_refused(code, out, text, post, master)
@@ -464,7 +474,7 @@ def test_refuses_without_key_or_tty(master, monkeypatch, capsys):
 
 def test_refuses_without_a_trading_account_before_prompting(master, monkeypatch, capsys):
     monkeypatch.setenv("HYPERLIQUID_MASTER_ADDRESS", "")
-    _net(monkeypatch, public=True)
+    _net(monkeypatch, "testnet", public=True)
     post = Post()
     code, out, text, _ = _run(capsys, ["--yes"], post=post, getpass_fn=_never)
     _assert_refused(code, out, text, post, master)
@@ -472,7 +482,7 @@ def test_refuses_without_a_trading_account_before_prompting(master, monkeypatch,
 
 
 def test_output_never_contains_the_key(master, monkeypatch, capsys):
-    _net(monkeypatch, public=True)
+    _net(monkeypatch, "testnet", public=True)
     texts = []
     for argv, kw in ((["--yes"], {"post": Post(), "fetch_max_fee": lambda u, b: 10}),
                      (["--yes"], {"post": Post(reply={"status": "err", "response": "x"})}),

@@ -64,9 +64,10 @@ AGENT_RULES = (
      "runs the liquidation rule: the stop must use under half the distance to\n"
      "liquidation). Brent, gold and silver fit their leverage to the stop\n"
      "(`next_trade.LEVERAGE_FIT`); `place_bracket` caps and fits it by itself,\n"
-     "so never pass `leverage` on a new entry. On testnet a tool says plainly\n"
-     "when a coin is not tradable there (xyz:BRENTOIL is delisted on testnet):\n"
-     "log `action=NONE` with that message and stop.", 1),
+     "so never pass `leverage` on a new entry. On testnet the oil desk trades\n"
+     "WTI (xyz:CL) as the Brent stand-in and its brief says so first; a tool\n"
+     "says plainly when a coin is not tradable there: log `action=NONE` with\n"
+     "that message and stop.", 1),
     ("`python3 scripts/oil_levels.py --check ENTRY STOP TP --lev 20` judges a\n"
      "   level: the R gate and the 20x line.",
      "`python3 scripts/oil_levels.py --check ENTRY STOP TP --lev L` judges a\n"

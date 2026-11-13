@@ -11,7 +11,8 @@
 #   PATHIEL_INSTALL  public                the public code path (contracts/runtime);
 #                                          the operator's repo .mcp.json never
 #                                          runs this file
-#   PATHIEL_NETWORK  testnet unless the env file has PATHIEL_NETWORK=mainnet
+#   PATHIEL_NETWORK  mainnet (REAL MONEY) unless the environment or the env
+#                    file says PATHIEL_NETWORK=testnet
 #
 # Every line of output here goes to stderr: scripts/pathiel-mcp speaks MCP
 # over stdout and one stray byte breaks the handshake. The one exception is
@@ -56,31 +57,33 @@ pathiel_paths() {
 }
 
 # 2. Which network. The process env wins, else the first PATHIEL_NETWORK line
-#    of the env file. Lowercased, whitespace and quotes stripped. Only mainnet
-#    and testnet are accepted; empty means testnet, anything else means
-#    testnet plus one warning. Exported, so Python (which loads the same file
-#    with setdefault) can never read the line differently: an odd line such as
-#    'export PATHIEL_NETWORK=mainnet' or 'mainnet # live' lands on testnet,
-#    the side that cannot lose real money.
+#    of the env file ('export ' before the name and a trailing ' # comment'
+#    are allowed). Lowercased, whitespace and quotes stripped. Nothing set
+#    means mainnet: real money (decision of 2026-11-12); testnet is the
+#    explicit opt-in, PATHIEL_NETWORK=testnet. A value that is set but is not
+#    mainnet or testnet means testnet plus one warning: the user tried to
+#    choose something, and testnet is the side that cannot lose real money.
+#    Exported, so Python (which loads the same file with setdefault) can
+#    never read the line differently.
 #    PATHIEL_NETWORK_SOURCE says where the answer came from (environment,
-#    env file, default), so status output can tell a user's choice from the
-#    default even though PATHIEL_NETWORK is always exported.
+#    env file, default, invalid), so status output can tell a user's choice
+#    from the default even though PATHIEL_NETWORK is always exported.
 pathiel_resolve_network() {
   local raw="${PATHIEL_NETWORK:-}" from="the environment" source="environment" net
   if [ -z "$raw" ] && [ -f "${PATHIEL_ENV_FILE:-}" ]; then
-    raw="$(grep -m 1 -E '^[[:space:]]*PATHIEL_NETWORK[[:space:]]*=' "$PATHIEL_ENV_FILE" 2>/dev/null \
-           | sed -e 's/^[^=]*=//' || true)"
+    raw="$(grep -m 1 -E '^[[:space:]]*(export[[:space:]]+)?PATHIEL_NETWORK[[:space:]]*=' "$PATHIEL_ENV_FILE" 2>/dev/null \
+           | sed -e 's/^[^=]*=//' -e 's/[[:space:]]#.*$//' || true)"
     from="$PATHIEL_ENV_FILE"
     source="env file"
   fi
   net="$(printf '%s' "$raw" | tr -d "[:space:]\"'" | tr '[:upper:]' '[:lower:]')"
   case "$net" in
     mainnet|testnet) ;;
-    "") net="testnet"; source="default" ;;
+    "") net="mainnet"; source="default" ;;
     *)
       pathiel_warn "PATHIEL_NETWORK in $from is not mainnet or testnet; using testnet"
       net="testnet"
-      source="default"
+      source="invalid"
       ;;
   esac
   export PATHIEL_NETWORK="$net"
@@ -92,7 +95,7 @@ pathiel_resolve_network() {
 #    ledger never lands in mainnet state.
 pathiel_state_paths() {
   local suffix=""
-  if [ "${PATHIEL_NETWORK:-testnet}" != "mainnet" ]; then
+  if [ "${PATHIEL_NETWORK:-mainnet}" = "testnet" ]; then
     suffix="-testnet"
   fi
   export PATHIEL_STATE_DIR="${PATHIEL_STATE_DIR:-$PATHIEL_HOME/state$suffix}"

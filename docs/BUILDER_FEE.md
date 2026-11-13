@@ -40,7 +40,7 @@ state never blocks or fails an order. An order Hyperliquid refuses for its own
 reason (no match, margin, price) is not sent again and is never charged.
 
 No fee is attached when no builder address is configured, or when your
-trading account is the builder address.
+trading account is the builder address (compared without regard to case).
 
 ## How to approve
 
@@ -95,9 +95,10 @@ Hyperliquid caps perp builder fees at 0.1%.
 
 ## Testnet and mainnet
 
-A public install trades on testnet until you switch it to mainnet. Approvals
-are separate per network: an approval on testnet does nothing on mainnet. The
-script prints the network first; run it again after you switch to mainnet.
+A public install trades on mainnet, with real money, unless
+`PATHIEL_NETWORK=testnet` is in `~/.pathiel/.env.local`. Approvals are
+separate per network: an approval on testnet does nothing on mainnet. The
+script prints the network first; run it again on each network you trade.
 
 ## How to stop
 
@@ -119,9 +120,15 @@ script prints the network first; run it again after you switch to mainnet.
   Hyperliquid again, waiting at most 4 seconds.
   `scripts/public_status.py --online` reads it at once too.
 
-## For whoever runs the builder address
+## The builder address
+
+The fee goes to `0x2c2e4efF574B3Fd9879AdeF9c5CAC6fD7C916985`, the
+maintainer's own account. The approval you sign names this address, and the
+dry run prints it before anything is signed.
 
 Hyperliquid pays builder fees only to an address that holds at least 100 USDC
 of perps account value. pathiel does not check this. The builder address is
-set in one place, `DEFAULT_BUILDER_ADDRESS` in `contracts/runtime/__init__.py`,
-and `PATHIEL_BUILDER_ADDRESS` overrides it.
+set in one place, `DEFAULT_BUILDER_ADDRESS` in `contracts/runtime/__init__.py`.
+`PATHIEL_BUILDER_ADDRESS` overrides it: another address to send the fee
+elsewhere (a fork), or any value that is not an address, such as `none`, to
+attach no builder at all.

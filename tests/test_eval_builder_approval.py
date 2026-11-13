@@ -1,17 +1,20 @@
 """Eval: the builder fee approval does what the disclosure says, scenario by scenario.
 
-Twelve offline scenarios through scripts/approve_builder_fee.py main() (and
+Fifteen offline scenarios through scripts/approve_builder_fee.py main() (and
 one through scripts/approve_api_wallet.py), each with a throwaway key and a
 recording post. Outcome measured, not code paths:
 
-  * dry run: 0 posts, no key source consulted
-  * --yes on testnet / mainnet / revoke / public prompt: exactly 1 post whose
-    signature recovers to the trading account on the right chain
+  * dry run: 0 posts, no key source consulted; a public install with no
+    network set prints the mainnet approval (2026-11-12), testnet on opt-in
+  * --yes on testnet / mainnet (public default and operator) / revoke /
+    public prompt: exactly 1 post whose signature recovers to the trading
+    account on the right chain
   * public install: the env master key is used 0 times (the prompt is)
-  * 6 refusals: 0 posts each, exit 1, no key text in the output
+  * 7 refusals: 0 posts each, exit 1, no key text in the output, including
+    the shipped builder address approving itself
   * approve_api_wallet on testnet: hyperliquidChain 'Testnet', recovers
 
-Threshold 12/12. Run:
+Threshold 15/15. Run:
 
     .venv/bin/python -m pytest -q -s tests/test_eval_builder_approval.py
 """
@@ -46,6 +49,7 @@ ab = _load("approve_builder_fee")
 aw = _load("approve_api_wallet")
 
 BUILDER = "0x" + "c3" * 20
+SHIPPED_BUILDER = "0x2c2e4efF574B3Fd9879AdeF9c5CAC6fD7C916985"   # contracts/runtime default
 FEE_TYPES = [{"name": "hyperliquidChain", "type": "string"}, {"name": "maxFeeRate", "type": "string"},
              {"name": "builder", "type": "address"}, {"name": "nonce", "type": "uint64"}]
 FEE_PRIMARY = "HyperliquidTransaction:ApproveBuilderFee"
@@ -148,34 +152,41 @@ def run() -> List[Dict[str, Any]]:
     master = Account.create()
     other = Account.create()
 
+    for network, label in (("", "dry run (public, no network set: mainnet)"),
+                           ("testnet", "dry run (public, testnet opt-in)")):
+        with pytest.MonkeyPatch.context() as mp:
+            _scenario(mp, public=True, network=network, account=master.address)
+            post = _Post()
+
+            def no_key(*_a, **_k):
+                raise AssertionError("dry run consulted a key source")
+
+            mp.setattr(ab, "_master_key", no_key)
+            r = _call(ab.main, ["--json"], post=post, getpass_fn=no_key, isatty=no_key,
+                      fetch_max_fee=no_key)
+            out = json.loads(r["text"].strip().splitlines()[-1])
+            ok = (r["code"] == 0 and post.calls == [] and out.get("dry_run") is True
+                  and out.get("network") == (network or "mainnet")
+                  and out.get("max_fee_rate") == "0.01%")
+            rows.append({"check": label, "got": f"posts={len(post.calls)} exit={r['code']} "
+                                                f"network={out.get('network')}",
+                         "want": f"posts=0 exit=0 network={network or 'mainnet'}", "ok": bool(ok)})
+
     with pytest.MonkeyPatch.context() as mp:
-        _scenario(mp, public=True, account=master.address)
-        post = _Post()
-
-        def no_key(*_a, **_k):
-            raise AssertionError("dry run consulted a key source")
-
-        mp.setattr(ab, "_master_key", no_key)
-        r = _call(ab.main, ["--json"], post=post, getpass_fn=no_key, isatty=no_key,
-                  fetch_max_fee=no_key)
-        out = json.loads(r["text"].strip().splitlines()[-1])
-        ok = (r["code"] == 0 and post.calls == [] and out.get("dry_run") is True
-              and out.get("network") == "testnet" and out.get("max_fee_rate") == "0.01%")
-        rows.append({"check": "dry run (public, testnet)", "got": f"posts={len(post.calls)} exit={r['code']}",
-                     "want": "posts=0 exit=0", "ok": bool(ok)})
-
-    with pytest.MonkeyPatch.context() as mp:
-        rows.append(_yes_row("--yes on testnet (public, prompt)", mp, public=True, network="",
+        rows.append(_yes_row("--yes on testnet (public, prompt)", mp, public=True, network="testnet",
                              chain="Testnet", prompt_acct=master, master=master))
+    with pytest.MonkeyPatch.context() as mp:
+        rows.append(_yes_row("--yes on mainnet (public default, prompt)", mp, public=True, network="",
+                             chain="Mainnet", prompt_acct=master, master=master))
     with pytest.MonkeyPatch.context() as mp:
         rows.append(_yes_row("--yes on mainnet (operator, env key)", mp, public=False, network="",
                              chain="Mainnet", env_key_acct=master, master=master))
     with pytest.MonkeyPatch.context() as mp:
-        rows.append(_yes_row("revoke 0%", mp, public=True, network="", chain="Testnet",
+        rows.append(_yes_row("revoke 0%", mp, public=True, network="testnet", chain="Testnet",
                              argv=("--max-fee-rate", "0%"), prompt_acct=master, master=master,
                              want_rate="0%"))
     with pytest.MonkeyPatch.context() as mp:
-        rows.append(_yes_row("public: env master key used 0 times", mp, public=True, network="",
+        rows.append(_yes_row("public: env master key used 0 times", mp, public=True, network="testnet",
                              chain="Testnet", env_key_acct=other, prompt_acct=master, master=master))
 
     with pytest.MonkeyPatch.context() as mp:
@@ -185,11 +196,14 @@ def run() -> List[Dict[str, Any]]:
         rows.append(_refusal_row("refuse: builder is the account", mp, master=master, public=True,
                                  builder=master.address, account=master.address))
     with pytest.MonkeyPatch.context() as mp:
+        rows.append(_refusal_row("refuse: the shipped builder approving itself", mp, master=master,
+                                 public=True, builder=SHIPPED_BUILDER, account=SHIPPED_BUILDER))
+    with pytest.MonkeyPatch.context() as mp:
         rows.append(_refusal_row("refuse: rate above 0.1%", mp, master=master, public=True,
                                  argv=("--yes", "--max-fee-rate", "0.2%"), account=master.address))
     with pytest.MonkeyPatch.context() as mp:
         rows.append(_refusal_row("refuse: network drift", mp, master=master, public=True,
-                                 drift=True, account=master.address))
+                                 network="testnet", drift=True, account=master.address))
     with pytest.MonkeyPatch.context() as mp:
         rows.append(_refusal_row("refuse: key of another account", mp, master=master, public=True,
                                  prompt_acct=other, account=master.address))
@@ -215,5 +229,5 @@ def run() -> List[Dict[str, Any]]:
 
 def test_builder_approval_eval_meets_threshold(scorecard):
     card = scorecard("builder_approval", run())
-    assert card["total"] == 12
-    assert card["passed"] == 12, [r for r in card["rows"] if not r["ok"]]
+    assert card["total"] == 15
+    assert card["passed"] == 15, [r for r in card["rows"] if not r["ok"]]

@@ -117,23 +117,45 @@ def run_commands(public_env, tmp_path: Path) -> Tuple[List[Tuple[str, str]], Pat
 
 # ── network and paths ─────────────────────────────────────────────────────────
 
-def test_default_is_public_testnet_with_a_testnet_state_dir(public_env, tmp_path):
+def test_default_is_public_mainnet_with_the_mainnet_state_dir(public_env, tmp_path):
+    """Decision 2026-11-12: nothing set means mainnet (real money), state in
+    ~/.pathiel/state where 0.3.0 kept it. The source says nobody chose it."""
     home = tmp_path / "home"
     env = fresh_env(public_env, HOME=str(home))
     (home / ".pathiel" / ".env.local").write_text("")   # an empty env file
-    got, _ = run_functions(env, tmp_path / "out")
+    got, proc = run_functions(env, tmp_path / "out")
     assert got["PATHIEL_INSTALL"] == "public"
-    assert got["PATHIEL_NETWORK"] == "testnet"
+    assert got["PATHIEL_NETWORK"] == "mainnet"
     assert got["PATHIEL_NETWORK_SOURCE"] == "default"
     assert got["PATHIEL_HOME"] == str(home / ".pathiel")
-    assert got["PATHIEL_STATE_DIR"] == str(home / ".pathiel" / "state-testnet")
-    assert got["PATHIEL_STATE_DIR"].endswith("/state-testnet")
-    assert got["PATHIEL_UNIVERSE_CACHE_DIR"] == str(home / ".pathiel" / "state-testnet" / "universe_cache")
+    assert got["PATHIEL_STATE_DIR"] == str(home / ".pathiel" / "state")
+    assert "testnet" not in got["PATHIEL_STATE_DIR"]
+    assert got["PATHIEL_UNIVERSE_CACHE_DIR"] == str(home / ".pathiel" / "state" / "universe_cache")
+    assert "warning" not in proc.stderr
     assert got["PATHIEL_ENV_FILE"] == str(home / ".pathiel" / ".env.local")
     assert got["PATHIEL_AGENT_CONFIG_FILE"] == str(home / ".pathiel" / ".agent-config.json")
     assert got["PATHIEL_DATA"] == str(home / ".pathiel" / "data")
     assert got["PATHIEL_ROOT"] == str(ROOT)
     assert Path(got["PATHIEL_STATE_DIR"]).is_dir() and Path(got["PATHIEL_UNIVERSE_CACHE_DIR"]).is_dir()
+
+
+def test_no_env_file_at_all_is_mainnet_too(public_env, tmp_path):
+    env = fresh_env(public_env, HOME=str(tmp_path / "nohome"))
+    got, _ = run_functions(env, tmp_path / "out")
+    assert got["PATHIEL_NETWORK"] == "mainnet" and got["PATHIEL_NETWORK_SOURCE"] == "default"
+
+
+def test_env_file_line_selects_testnet(public_env, tmp_path):
+    """Testnet is the explicit opt-in: one line, its own state dir."""
+    home = tmp_path / "home"
+    env = fresh_env(public_env, HOME=str(home))
+    (home / ".pathiel" / ".env.local").write_text("# keys\nHYPERLIQUID_PRIVATE_KEY=\nPATHIEL_NETWORK=testnet\n")
+    got, proc = run_functions(env, tmp_path / "out")
+    assert got["PATHIEL_NETWORK"] == "testnet"
+    assert got["PATHIEL_NETWORK_SOURCE"] == "env file"
+    assert got["PATHIEL_STATE_DIR"] == str(home / ".pathiel" / "state-testnet")
+    assert got["PATHIEL_UNIVERSE_CACHE_DIR"] == str(home / ".pathiel" / "state-testnet" / "universe_cache")
+    assert "warning" not in proc.stderr
 
 
 def test_env_file_line_selects_mainnet(public_env, tmp_path):
@@ -192,26 +214,59 @@ def test_process_env_is_normalized_too(public_env, tmp_path, value):
     assert got["PATHIEL_NETWORK"] == "mainnet"
 
 
-@pytest.mark.parametrize("line,warns", [
-    ("PATHIEL_NETWORK=live", True),
-    ("PATHIEL_NETWORK=mainnet # real money", True),
-    ("PATHIEL_NETWORK=main", True),
-    ("export PATHIEL_NETWORK=mainnet", False),    # not a matching line: unset
-    ("# PATHIEL_NETWORK=mainnet", False),         # the template's commented line
-    ("PATHIEL_NETWORK=", False),
+@pytest.mark.parametrize("line", [
+    "PATHIEL_NETWORK=live", "PATHIEL_NETWORK=main", "PATHIEL_NETWORK=test",
+    "PATHIEL_NETWORK=testnet#practice", "PATHIEL_NETWORK=testnet-v2",
 ])
-def test_garbage_value_falls_back_to_testnet_with_a_warning(public_env, tmp_path, line, warns):
+def test_garbage_value_falls_back_to_testnet_with_a_warning(public_env, tmp_path, line):
+    """A value that is set but is neither network: the user tried to choose,
+    so the launcher takes the side that cannot lose real money and says so."""
     home = tmp_path / "home"
     env = fresh_env(public_env, HOME=str(home))
     (home / ".pathiel" / ".env.local").write_text(line + "\n")
     got, proc = run_functions(env, tmp_path / "out")
     assert got["PATHIEL_NETWORK"] == "testnet", line
-    assert got["PATHIEL_NETWORK_SOURCE"] == "default", "a value nobody chose is not a choice"
+    assert got["PATHIEL_NETWORK_SOURCE"] == "invalid", "a value nobody could read is not a choice"
     assert got["PATHIEL_STATE_DIR"].endswith("/state-testnet")
     warnings = [w for w in proc.stderr.splitlines() if "warning" in w]
-    assert len(warnings) == (1 if warns else 0), proc.stderr
-    if warns:
-        assert "using testnet" in warnings[0]
+    assert len(warnings) == 1 and "using testnet" in warnings[0], proc.stderr
+
+
+@pytest.mark.parametrize("line", [
+    "# PATHIEL_NETWORK=testnet",                  # the template's commented opt-in line
+    "# PATHIEL_NETWORK=mainnet",
+    "PATHIEL_NETWORK=",
+    "PATHIEL_NETWORK=   ",
+    "HYPERLIQUID_PRIVATE_KEY=",
+])
+def test_unset_lines_mean_the_mainnet_default(public_env, tmp_path, line):
+    home = tmp_path / "home"
+    env = fresh_env(public_env, HOME=str(home))
+    (home / ".pathiel" / ".env.local").write_text(line + "\n")
+    got, proc = run_functions(env, tmp_path / "out")
+    assert got["PATHIEL_NETWORK"] == "mainnet", line
+    assert got["PATHIEL_NETWORK_SOURCE"] == "default"
+    assert "warning" not in proc.stderr
+
+
+@pytest.mark.parametrize("line,want", [
+    ("export PATHIEL_NETWORK=testnet", "testnet"),
+    ("  export   PATHIEL_NETWORK = testnet", "testnet"),
+    ("PATHIEL_NETWORK=testnet # practice first", "testnet"),
+    ("export PATHIEL_NETWORK=testnet # practice", "testnet"),
+    ("export PATHIEL_NETWORK=mainnet", "mainnet"),
+    ("PATHIEL_NETWORK=mainnet # real money", "mainnet"),
+])
+def test_shell_style_lines_are_read_as_written(public_env, tmp_path, line, want):
+    """With mainnet the default, a user who writes the testnet line the shell
+    way must still get testnet: an ignored line would mean real money."""
+    home = tmp_path / "home"
+    env = fresh_env(public_env, HOME=str(home))
+    (home / ".pathiel" / ".env.local").write_text(line + "\n")
+    got, proc = run_functions(env, tmp_path / "out")
+    assert got["PATHIEL_NETWORK"] == want, line
+    assert got["PATHIEL_NETWORK_SOURCE"] == "env file"
+    assert "warning" not in proc.stderr
 
 
 @pytest.mark.parametrize("line", [
@@ -270,7 +325,7 @@ def test_a_relative_home_becomes_absolute(public_env, tmp_path):
     assert proc.returncode == 0, proc.stderr
     home, state = (tmp_path / "o").read_text().splitlines()
     assert home == str(tmp_path / "rel" / "pathiel")
-    assert state == str(tmp_path / "rel" / "pathiel" / "state-testnet")
+    assert state == str(tmp_path / "rel" / "pathiel" / "state")
 
 
 def test_nothing_goes_to_stdout_from_prepare_functions(public_env, tmp_path):

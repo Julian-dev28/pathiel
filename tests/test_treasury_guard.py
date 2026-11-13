@@ -82,7 +82,7 @@ def test_refuses_on_a_public_install(treasury, monkeypatch, capsys):
 def test_refuses_on_a_public_install_with_no_network_set(treasury, monkeypatch, capsys):
     mod = treasury(PATHIEL_INSTALL="public")
     assert _run_status(mod, monkeypatch).code == 2
-    assert "(install=public, network=testnet)" in capsys.readouterr().out
+    assert "(install=public, network=mainnet)" in capsys.readouterr().out   # mainnet default
     assert treasury.calls == []
 
 

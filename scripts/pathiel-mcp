@@ -4,8 +4,9 @@
 # .claude-plugin/plugin.json runs this as "${CLAUDE_PLUGIN_ROOT}/scripts/pathiel-mcp".
 # It builds the Python environment on first use (into $CLAUDE_PLUGIN_DATA, which
 # survives plugin updates), points the code at ~/.pathiel for keys and state,
-# marks the process as a public install on testnet unless ~/.pathiel/.env.local
-# says PATHIEL_NETWORK=mainnet, then execs scripts/pathiel-mcp-server.py over
+# marks the process as a public install on mainnet (real money) unless the
+# environment or ~/.pathiel/.env.local says PATHIEL_NETWORK=testnet, then
+# execs scripts/pathiel-mcp-server.py over
 # stdio. Nothing is written to stdout before the exec: that channel is the MCP
 # transport.
 #

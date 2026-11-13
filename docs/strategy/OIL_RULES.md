@@ -9,10 +9,17 @@ named next to it; when the code and this page disagree, the code wins.
 Brent, as `xyz:BRENTOIL`: a HIP-3 perp on the xyz dex, margined separately
 from Hyperliquid's main dex. WTI (`xyz:CL`) is tracked alongside it.
 
-Brent is delisted on Hyperliquid testnet. On testnet, practise on `xyz:CL`:
-pathiel refuses a new entry on a coin the current network does not list,
-with a plain message, and never refuses a close, a cancel or a sweep for
-that reason.
+pathiel runs on mainnet unless `PATHIEL_NETWORK=testnet` is set. Brent is
+delisted on Hyperliquid testnet, so on testnet the desk trades WTI
+(`xyz:CL`) as its primary instead, and the brief opens with a line that says
+so: prices, levels and sizes there are WTI, not Brent. The stand-in is the
+`testnet_substitute` on the Brent instrument in
+`services/strategies/desks/oil.py`, applied by
+`services/strategies/desks/__init__.py` only on testnet and only while the
+venue does not list Brent as live. Mainnet always trades Brent. On any
+network pathiel refuses a new entry on a coin that network does not list,
+with a plain message, and never refuses a close, a cancel or a sweep for that
+reason.
 
 ## One position
 

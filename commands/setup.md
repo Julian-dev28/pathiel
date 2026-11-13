@@ -12,9 +12,11 @@ the chat; the user types keys into files and prompts on their own machine.
 0. **Tell the user this first, before any key is involved.** Show it as it
    is:
 
-   > - pathiel places real orders on Hyperliquid when it runs on mainnet.
-   >   It starts on the Hyperliquid **testnet**, where the money is not real.
-   >   Mainnet is an explicit opt-in, one line in `~/.pathiel/.env.local`.
+   > - pathiel runs on Hyperliquid **mainnet** by default. With a key it
+   >   places real orders with **real money**. To practise first with test
+   >   money, add one line, `PATHIEL_NETWORK=testnet`, to
+   >   `~/.pathiel/.env.local`. On testnet the oil desk trades WTI (`xyz:CL`)
+   >   as the stand-in for Brent, which testnet does not list.
    > - Builder fee: orders pathiel places for you can carry a Hyperliquid
    >   builder fee of **0.01% of notional per fill** (1 basis point; 0.02% for
    >   a round trip), paid to the pathiel builder address. It is charged only
@@ -41,20 +43,21 @@ the chat; the user types keys into files and prompts on their own machine.
 2. **Choose a mode with the user.** Ask which one they want:
 
    - **Read-only** (no key): prices, candles, order books, funding and the
-     desk briefs work; order tools answer "read-only mode". Nothing to fill
-     in. For real market data instead of testnet data, add the line
-     `PATHIEL_NETWORK=mainnet`; with no key it still cannot place an order.
-   - **Testnet trading** (the default): an API wallet key from the testnet
-     app. Test funds only.
-   - **Mainnet trading**: real money. The user adds `PATHIEL_NETWORK=mainnet`
-     to the env file themselves, and an API wallet key from the mainnet app.
-     A builder fee approval signed on testnet does not carry over: after the
-     switch, rerun `--commands` and the `approve-sign` line (step 5).
+     desk briefs work, with mainnet market data; order tools answer
+     "read-only mode". Nothing to fill in, and nothing can be traded.
+   - **Mainnet trading** (the default network): **real money**. An API
+     wallet key from the mainnet app. Every order risks the account's real
+     funds.
+   - **Testnet trading** (practice): the user adds `PATHIEL_NETWORK=testnet`
+     to the env file themselves (the template has the line, commented out),
+     and an API wallet key from the testnet app. Test funds only. The oil
+     desk trades WTI (`xyz:CL`) there as the Brent stand-in. A builder fee
+     approval signed on testnet does not carry over: after switching back to
+     mainnet, rerun `--commands` and the `approve-sign` line (step 5).
 
-   Upgrading from pathiel 0.3.0: it ran on mainnet, and 0.4.0 starts on
-   testnet. To keep trading on mainnet, the user adds
-   `PATHIEL_NETWORK=mainnet`; mainnet state stays in `~/.pathiel/state`,
-   testnet state goes to `~/.pathiel/state-testnet`.
+   Mainnet state lives in `~/.pathiel/state` (where pathiel 0.3.0 kept it),
+   testnet state in `~/.pathiel/state-testnet`. Upgrading from 0.3.0 keeps
+   mainnet, as before.
 
 3. **The env file.** If `~/.pathiel/.env.local` does not exist, create it
    from the plugin's template and set its mode to 600:
@@ -103,7 +106,8 @@ the chat; the user types keys into files and prompts on their own machine.
    that key in the chat.
 
    The approval is per network: it is signed on the network the env file
-   names when the line runs. Tell the user that an approval signed on
+   names when the line runs (mainnet unless it says
+   `PATHIEL_NETWORK=testnet`). Tell the user that an approval signed on
    testnet does not cover mainnet; after switching to mainnet, rerun
    `--commands` and the `approve-sign` line once more.
 
@@ -131,5 +135,6 @@ the chat; the user types keys into files and prompts on their own machine.
    `/loop 15m /pathiel:desk-tick oil` keeps it running for the session.
    Every order goes through `place_bracket` with an exact stop and target,
    sized by the risk profile, and the user confirms each one. On testnet
-   some markets, such as the oil desk's `xyz:BRENTOIL`, may not be listed;
-   pathiel says so instead of trading them.
+   the oil desk's brief opens with the line that it trades WTI (`xyz:CL`)
+   as the stand-in for Brent (`xyz:BRENTOIL`, not listed there); other
+   markets testnet does not list are refused for entries, with the reason.

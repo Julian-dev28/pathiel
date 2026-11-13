@@ -156,10 +156,21 @@ MAX_PUBLIC_INSTRUCTIONS_CHARS = 2500
 
 
 def _public_network_line(net: str) -> str:
+    """Mainnet is the default (2026-11-12); testnet is the user's opt-in."""
     if net == "testnet":
-        return ("Network: testnet (test funds, the default). Real money needs one line, "
-                "PATHIEL_NETWORK=mainnet, in ~/.pathiel/.env.local and a restart.")
-    return "Network: mainnet. REAL MONEY: orders use the account's real funds."
+        return ("Network: testnet (test funds). "
+                "The oil desk trades WTI (xyz:CL) here as the stand-in for Brent.")
+    return ("Network: mainnet. REAL MONEY: orders use the account's real funds. "
+            "To practise with test funds: PATHIEL_NETWORK=testnet in ~/.pathiel/.env.local, then reconnect.")
+
+
+def _public_start_notice(net: str) -> str:
+    """The one stderr line a public install prints at start, naming the network."""
+    if net == "testnet":
+        return ("pathiel: public install on Hyperliquid testnet (test funds). The oil desk "
+                "trades WTI (xyz:CL) as the Brent stand-in.")
+    return ("pathiel: public install on Hyperliquid MAINNET: with a key, orders use real money. "
+            "Set PATHIEL_NETWORK=testnet in ~/.pathiel/.env.local to practise.")
 
 
 def _public_trading_line() -> str:
@@ -199,7 +210,7 @@ Start here
 - place_bracket {{coin, entry_px, stop_px, tp_px}}: one entry with an exact stop and target, sized by the profile. dry_run=true checks it without placing. bracket_sweep {{coin}} after every close.
 - Market reads (get_price, get_candles, get_l2_book, get_funding_rate, market_*) need no key and no account.
 
-Coins: main-dex perps by name (BTC, ETH). HIP-3 perps as dex:SYMBOL (xyz:GOLD). Testnet lists fewer live markets than mainnet: a coin that is delisted or missing on this network is refused for new entries (xyz:BRENTOIL is delisted on testnet). Closes are never refused.
+Coins: main-dex perps by name (BTC, ETH). HIP-3 perps as dex:SYMBOL (xyz:GOLD). Testnet lists fewer live markets than mainnet: a coin that is delisted or missing on this network is refused for new entries (xyz:BRENTOIL is delisted on testnet, so the oil desk trades xyz:CL, WTI, there). Closes are never refused.
 
 {_public_fee_sentence()}
 
@@ -1847,10 +1858,12 @@ def _install_block() -> Dict[str, Any]:
     status = builder.builder_status(account, refresh=False)
     if account and status.get("enabled") and status.get("reason_code") in _STATE_REREAD:
         status = builder.builder_status(account, refresh=True)
+    net = runtime.network()
     return {
         "kind": runtime.install_kind(),
-        "network": runtime.network(),
+        "network": net,
         "network_explicit": runtime.network_is_explicit(),
+        "network_notice": _public_start_notice(net).removeprefix("pathiel: "),
         "trading": "read_only" if reason else "enabled",
         "read_only_reason": reason,
         "builder_fee": {k: status.get(k) for k in (
@@ -1891,7 +1904,9 @@ def _reword(value: Any) -> Any:
 
 def _desk_network_note(desk_id: str) -> "str | None":
     """network_note when the desk's primary instrument is delisted or not
-    listed on this network (testnet: the oil desk's xyz:BRENTOIL)."""
+    listed on this network and has no testnet substitute (get_spec has
+    already swapped the oil desk's xyz:BRENTOIL for xyz:CL on testnet; the
+    brief itself says so through desks.substitution_note)."""
     if not desk_id:
         return None
     from pathiel.client.exchange import coin_listing
@@ -1905,6 +1920,19 @@ def _desk_network_note(desk_id: str) -> "str | None":
         return (_network_note(coin, status) + " The brief's levels may be stale or empty; "
                 "the thesis still reads, but this desk cannot open a trade here.")
     return None
+
+
+def _desk_substitution_note(desk_id: str) -> "str | None":
+    """'Testnet: this desk trades WTI (xyz:CL) as the stand-in for Brent ...'
+    when this network swaps the desk's instrument, else None. None at once on
+    mainnet (no venue read), so the operator's brief is unchanged."""
+    if not desk_id or not runtime.network() == "testnet":
+        return None
+    try:
+        from services.strategies.desks import registry_spec, substitution_note
+        return substitution_note(registry_spec(desk_id))
+    except Exception:   # noqa: BLE001 - the brief answers without the note
+        return None
 
 
 def _public_decorate(name: str, args: Dict[str, Any], text: str,
@@ -3687,9 +3715,13 @@ def handle_desk_brief(params: Dict[str, Any]) -> str:
     except Exception as e:
         return json.dumps({"error": str(e), "desk": desk_id})
     sizing = _thesis_sizing(brief)
+    substitute = _desk_substitution_note(desk_id)   # None on mainnet
     if mode == "full":
-        return json.dumps({"desk": desk_id, "mode": "full", "your_size": sizing,
-                           "brief": _compact_brief(brief)})
+        out_full = {"desk": desk_id, "mode": "full", "your_size": sizing,
+                    "brief": _compact_brief(brief)}
+        if substitute:
+            out_full["testnet_substitute"] = substitute
+        return json.dumps(out_full)
     try:
         # FIXED 2026-10-18: the real renderer requires a thesis, so a desk
         # that had never been refreshed crashed here ('NoneType' object has
@@ -3700,14 +3732,19 @@ def handle_desk_brief(params: Dict[str, Any]) -> str:
             markdown = _render_quick(brief.thesis, brief.analytics, mode)
     except Exception as e:
         return json.dumps({"error": f"render failed: {type(e).__name__}: {e}", "desk": desk_id})
+    if substitute:
+        markdown = f"**{substitute}**\n\n" + markdown
     if sizing and sizing.get("reason"):
         markdown += "\nYour size: " + sizing["reason"]
     live_rule = _live_rule(desk_id, brief)
     if live_rule.get("line"):
         markdown += "\n" + live_rule["line"]
-    return json.dumps({"desk": desk_id, "mode": "quick", "markdown": markdown,
-                       "stale": brief.stale, "your_size": sizing,
-                       "live_rule": live_rule.get("next")})
+    out = {"desk": desk_id, "mode": "quick", "markdown": markdown,
+           "stale": brief.stale, "your_size": sizing,
+           "live_rule": live_rule.get("next")}
+    if substitute:
+        out["testnet_substitute"] = substitute
+    return json.dumps(out)
 
 
 def _live_rule(desk_id: str, brief: Any) -> Dict[str, Any]:
@@ -4402,6 +4439,10 @@ def main() -> None:
         sys.stderr.write(notice + "\n")
         sys.stderr.flush()
     if runtime.is_public():
+        # Once per start: which network, so a fresh install's real-money
+        # default is never a surprise. The operator's launch prints nothing.
+        sys.stderr.write(_public_start_notice(runtime.network()) + "\n")
+        sys.stderr.flush()
         _warm_builder()   # background read; the first order after start may still miss it
     run()
 

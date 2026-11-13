@@ -312,7 +312,7 @@ def test_the_public_env_template_carries_no_real_value():
     assert assignments == ["HYPERLIQUID_WALLET_ADDRESS=", "HYPERLIQUID_PRIVATE_KEY=",
                            "HYPERLIQUID_MASTER_ADDRESS="]
     assert "HYPERLIQUID_MASTER_PRIVATE_KEY" not in text
-    assert "# PATHIEL_NETWORK=mainnet" in text and "REAL MONEY" in text
+    assert "# PATHIEL_NETWORK=testnet" in text and "REAL MONEY" in text and "MAINNET" in text
     assert "Never add your main account's private key" in text
     assert "different API wallets" in text and "app.hyperliquid-testnet.xyz" in text
     assert not re.search(r"0x[0-9a-fA-F]{40}", text), "no address of any kind"
@@ -423,3 +423,27 @@ def test_desk_loops_window_keeps_the_live_cron_offsets_and_one_watcher():
     assert "`10,25,40,55 * * * *`, prompt `/desk-tick metals`" in text
     assert "pgrep -f scripts/trigger_watch.py" in text
     assert "--model opus" in text  # protect the Fable meter
+
+
+def test_setup_says_mainnet_is_the_real_money_default_and_offers_testnet():
+    """Decision 2026-11-12: a fresh install trades real money by default.
+    Setup says so before any key, offers the one testnet line for practice,
+    and names the WTI stand-in for Brent there. It never tells the user to
+    add a mainnet line (there is none to add)."""
+    text = re.sub(r"\s*\n\s*(>\s*)?", " ", (ROOT / "commands" / "setup.md").read_text())
+    first_key = text.index("HYPERLIQUID_PRIVATE_KEY")
+    for needle in ("**mainnet** by default", "**real money**", "`PATHIEL_NETWORK=testnet`",
+                   "WTI (`xyz:CL`)"):
+        assert needle in text and text.index(needle) < first_key, needle
+    assert "PATHIEL_NETWORK=mainnet" not in text
+    assert "starts on the Hyperliquid **testnet**" not in text
+    step2 = text[text.index("2. **Choose a mode"):text.index("3. **The env file.**")]
+    assert "**Mainnet trading** (the default network)" in step2
+    assert "**Testnet trading** (practice)" in step2
+
+
+def test_the_env_template_offers_the_testnet_line_commented():
+    text = (ROOT / "config" / "public" / "env.local.example").read_text()
+    assert "# PATHIEL_NETWORK=testnet" in text
+    assert "PATHIEL_NETWORK=mainnet" not in text
+    assert "MAINNET unless this file says otherwise" in text and "WTI (xyz:CL)" in text

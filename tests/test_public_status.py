@@ -61,7 +61,11 @@ def test_keyless_install_is_all_pass_or_warn(public_env):
     parsed = lines(out)
     assert parsed and all(status in ("PASS", "WARN") for status, _n, _m in parsed), out
     assert by_name(out, "trading") == [("WARN", "read-only (no key)")]
-    assert by_name(out, "network")[0][0] == "PASS" and "testnet" in by_name(out, "network")[0][1]
+    # 2026-11-12: mainnet is the default, so the network line warns and says
+    # how to practise on testnet; read-only still trades nothing.
+    net_status, net_msg = by_name(out, "network")[0]
+    assert net_status == "WARN" and net_msg.startswith("mainnet (the default)")
+    assert "real money" in net_msg and "PATHIEL_NETWORK=testnet" in net_msg
     assert by_name(out, "install")[0][0] == "PASS"
 
 
@@ -151,7 +155,7 @@ def test_json_output_shape(public_env):
     assert set(payload) == {"ok", "install", "network", "network_explicit", "trading_mode",
                             "env_file", "checks"}
     assert payload["ok"] is True and payload["install"] == "public"
-    assert payload["network"] == "testnet" and payload["network_explicit"] is False
+    assert payload["network"] == "mainnet" and payload["network_explicit"] is False
     assert payload["trading_mode"] == "read-only (no key)"
     assert payload["env_file"] == str(public_env.env_file)
     names = [c["name"] for c in payload["checks"]]
@@ -166,7 +170,7 @@ def test_json_output_shape(public_env):
 
 
 @pytest.mark.parametrize("network,explicit,mode,level", [
-    (None, False, "testnet trading", "PASS"),
+    (None, False, "MAINNET trading: real money", "WARN"),        # the default, 2026-11-12
     ("testnet", True, "testnet trading", "PASS"),
     ("mainnet", True, "MAINNET trading: real money", "WARN"),
 ])
@@ -179,9 +183,13 @@ def test_reports_network_and_trading_mode(public_env, network, explicit, mode, l
     assert code == 0, out + err
     assert by_name(out, "trading") == [(level, mode)]
     net_status, net_msg = by_name(out, "network")[0]
-    assert net_msg.startswith(network or "testnet")
+    assert net_msg.startswith(network or "mainnet")
     assert ("set by PATHIEL_NETWORK" in net_msg) is explicit
-    assert net_status == ("WARN" if network == "mainnet" else "PASS")
+    assert net_status == ("PASS" if network == "testnet" else "WARN")
+    # The practise hint shows only when nobody chose the network; testnet
+    # names the WTI stand-in for Brent.
+    assert ("PATHIEL_NETWORK=testnet" in net_msg) is (network is None)
+    assert ("WTI (xyz:CL)" in net_msg) is (network == "testnet")
     payload = json.loads(run(env, "--json")[1])
     assert payload["trading_mode"] == mode and payload["network_explicit"] is explicit
 
@@ -191,11 +199,20 @@ def test_state_dir_must_match_the_network(public_env, tmp_path):
     assert "does not say testnet" in by_name(run(mismatch)[1], "state dir")[0][1]
     good = tmp_path / "state-testnet"
     good.mkdir()
-    assert by_name(run(public_env(PATHIEL_STATE_DIR=str(good)))[1], "state dir")[0][0] == "PASS"
+    assert by_name(run(public_env(PATHIEL_NETWORK="testnet", PATHIEL_STATE_DIR=str(good)))[1],
+                   "state dir")[0][0] == "PASS"
+    # The mainnet default with the launcher's mainnet dir passes; a testnet
+    # dir on mainnet warns.
+    main = tmp_path / "state"
+    main.mkdir()
+    assert by_name(run(public_env(PATHIEL_STATE_DIR=str(main)))[1], "state dir")[0][0] == "PASS"
+    assert "says testnet" in by_name(run(public_env(PATHIEL_STATE_DIR=str(good)))[1], "state dir")[0][1]
 
 
 def test_builder_line_for_unset_and_set_address(public_env):
-    code, out, _err = run(public_env(PATHIEL_BUILDER_ADDRESS=""))
+    # The shipped default is set (2026-11-12); a non-address override is a
+    # fork's off switch.
+    code, out, _err = run(public_env(PATHIEL_BUILDER_ADDRESS="none"))
     assert code == 0
     assert by_name(out, "builder fee") == [
         ("PASS", "no builder address configured: orders carry no builder fee")]
@@ -207,7 +224,7 @@ def test_builder_line_for_unset_and_set_address(public_env):
     assert "charged only after you approve it" in msg and "--online" in msg
 
     # --online with no address set: nothing to read, so no network either way.
-    code, out, _err = run(public_env(PATHIEL_BUILDER_ADDRESS=""), "--online")
+    code, out, _err = run(public_env(PATHIEL_BUILDER_ADDRESS="none"), "--online")
     assert code == 0 and "no builder address configured" in by_name(out, "builder fee")[0][1]
 
     # The operator's install never carries a builder fee.
@@ -283,3 +300,26 @@ def test_the_launchers_default_is_not_reported_as_a_choice(public_env):
     assert json.loads(run(default, "--json")[1])["network_explicit"] is False
     chosen = public_env(PATHIEL_NETWORK="testnet", PATHIEL_NETWORK_SOURCE="env file")
     assert "set by PATHIEL_NETWORK" in by_name(run(chosen)[1], "network")[0][1]
+
+
+SHIPPED_BUILDER = "0x2c2e4efF574B3Fd9879AdeF9c5CAC6fD7C916985"
+
+
+def test_builder_line_names_the_shipped_address(public_env):
+    """No override: the fee goes to the shipped builder (Julien's master
+    account), shown lowercase."""
+    code, out, _err = run(public_env(PATHIEL_BUILDER_ADDRESS=None))
+    status, msg = by_name(out, "builder fee")[0]
+    assert code == 0 and status == "PASS"
+    assert SHIPPED_BUILDER.lower() in msg and "0.01% of notional per fill" in msg
+
+
+def test_builder_line_when_the_account_is_the_builder(public_env):
+    """The builder's own account trading through a public install never pays
+    its own fee; status says so without any read."""
+    code, out, _err = run(public_env(PATHIEL_BUILDER_ADDRESS=None,
+                                     HYPERLIQUID_MASTER_ADDRESS=SHIPPED_BUILDER,
+                                     HYPERLIQUID_WALLET_ADDRESS=other_address()), "--online")
+    status, msg = by_name(out, "builder fee")[0]
+    assert code == 0 and status == "PASS"
+    assert "the trading account is the builder address" in msg and "never carry" in msg

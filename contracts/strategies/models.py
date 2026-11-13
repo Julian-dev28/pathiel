@@ -39,6 +39,9 @@ CONTRACT_VERSION = "1.3.0"   # 1.1.0 (2026-10-23): + DeskAnalytics.structure (ca
                               # excursion, so targets can be graded against how far price actually
                               # travels, not just the thesis's own say-so). All additive and
                               # Optional; old readers and old fixtures ignore every new field.
+                              # No bump for Instrument.testnet_substitute (2026-11-12, public
+                              # testnet): it is excluded from every dump, so no reader can see it,
+                              # and a bump would restamp every operator analytics/thesis payload.
 
 Side = Literal["long", "short"]
 CallSide = Literal["long", "short", "flat", "pair"]
@@ -52,10 +55,23 @@ class _M(BaseModel):
 
 # ── desk definition ──────────────────────────────────────────────────────────
 
+class NetworkSubstitute(_M):
+    """A coin that stands in for an instrument on a network that does not
+    list it (testnet: xyz:BRENTOIL is not tradable, xyz:CL is). Add one only
+    after reading that network's perpDexs/meta; `verified` says when and how."""
+    coin: str                                  # HL name on that network, e.g. "xyz:CL"
+    label: str                                 # human name, e.g. "WTI"
+    verified: str                              # "2026-11-12 testnet meta dex=xyz: listed"
+
+
 class Instrument(_M):
     coin: str                                  # HL name, e.g. "xyz:CL", "BTC"
     label: str                                 # human name, e.g. "WTI"
     role: Literal["primary", "secondary", "hedge"] = "primary"
+    # 2026-11-12: used only on testnet, only when the venue does not list `coin`
+    # there (services/strategies/desks.for_network). exclude=True: never in a
+    # model_dump, so every serialized spec stays exactly as it was.
+    testnet_substitute: Optional[NetworkSubstitute] = Field(default=None, exclude=True)
 
 
 class PairSpec(_M):

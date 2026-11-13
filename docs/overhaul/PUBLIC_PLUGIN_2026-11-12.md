@@ -2,7 +2,7 @@
 
 Path: `docs/overhaul/PUBLIC_PLUGIN_2026-11-12.md`. Base commit `2816df7`, branch `overhaul-2026-10-17`. Version 0.3.0 to 0.4.0.
 
-Revision 2 resolves the plan review: 6 majors and 12 minors, none rejected. The changes are listed under "What the review changed".
+Revision 2 resolves the plan review: 6 majors and 12 minors, none rejected. The changes are listed under "What the review changed". Julien's later decisions of the same day (builder address, mainnet by default, testnet WTI stand-in) are in "2026-11-12 decisions" at the end; where they differ from the text above, they win.
 
 ## Goal
 
@@ -53,7 +53,7 @@ Testnet (read-only info calls, 2026-11-12):
 | 3 | A stop is never lost to builder state, whatever the venue's wording | `tests/test_exchange_builder_paths.py` |
 | 4 | Operator: 0 builder fields, 0 jobs, 1 SDK call per order, mainnet, 20x, instructions, tools/list and thesis prompt hashes equal to base | `tests/test_operator_path_unchanged.py`, `tests/test_mcp_operator_unchanged.py`, `services/thesis/tests/test_prompt.py` |
 | 5 | Fresh public install: leverage at most 3, risk at most 1% (2% only on a minimum-order bump), 1 position | `tests/test_eval_public_install.py` |
-| 6 | Launcher with empty HOME resolves testnet; mainnet needs one explicit line; 0 mainnet requests in testnet mode | `tests/test_public_launcher.py`, `tests/test_eval_public_tiers.py` |
+| 6 | Launcher with empty HOME resolves mainnet (decision of 2026-11-12); testnet needs one explicit line; 0 mainnet requests in testnet mode | `tests/test_public_launcher.py`, `tests/test_eval_public_tiers.py` |
 | 7 | No key: N/N market reads return data, K/K account reads (aliases included) say "no account configured", 6/6 writes say read-only, 0 tracebacks | `tests/test_eval_public_tiers.py` |
 | 8 | 0 machine-bound strings, 0 operator name in the public thesis prompt, 0 stray venue URLs, treasury refuses off operator mainnet | `tests/test_eval_portability.py` |
 | 9 | 0 claim hits in public copy, shipped files and every doc they link; 0 references to the gitignored ROI doc (the tracked tree may not name it, this doc included) | `tests/test_public_copy.py`, `tests/test_public_portability.py` |
@@ -280,7 +280,7 @@ The env file must exist. A missing one makes the loader fall back to the checkou
 - A refusal in wording that is not in `KNOWN_VENUE_ERRORS` is resent: one extra request, usually the same refusal. An IOC refused that way can fill on the resend.
 - A transient venue error in unknown wording followed by a clean resend starts a 10 minute cooldown that was not needed. Fees are lost for that window; orders are not.
 - The network is fixed at process start. Changing the env file needs an MCP reconnect. A drift guard refuses to sign for the wrong chain.
-- The oil desk cannot be practised on testnet because Brent is delisted there. Tools say so. `xyz:CL` and the main-dex perps work.
+- On testnet the oil desk trades WTI (`xyz:CL`), not Brent, which is delisted there. The brief says so first. WTI and Brent move together but are not the same price; a testnet rehearsal is not a Brent result.
 - A stranger who ignores the maintainer warning and runs the server from a clone with his own key trades mainnet on the tracked 20x config. No code check can tell his clone from the operator's checkout without risking the operator's live stack.
 - Research docs with backtest figures remain in the public repo. They are unlinked from public copy and shipped files, and `OIL_STRATEGY.md` opens with the audit banner.
 - The claims lint is a pattern list with a one-hop reach. A new phrasing, or a clean doc that links a research doc, can pass.
@@ -289,7 +289,7 @@ The env file must exist. A missing one makes the loader fall back to the checkou
 - The daily loss figure is not enforced. Public copy says so.
 - `Dockerfile.mcp` is checked statically in the gate.
 - The `0%` revoke value has not been exercised live. `PATHIEL_BUILDER_FEE_TENTHS_BP=0` is the certain way to stop the fee.
-- Users on plugin 0.3.0 move to testnet on update until they add the mainnet line.
+- A fresh public install trades real money as soon as a key is in the env file. The disclosure, the start notice, `state` and `public_status.py` all say mainnet; nothing stops a user who skips them.
 
 ## Rollout
 
@@ -311,3 +311,21 @@ The env file must exist. A missing one makes the loader fall back to the checkou
 ## Restart
 
 Your live stack needs nothing. Behavior on your path is identical. If you want the running processes on the new code anyway: reconnect the MCP server from Claude Code with `/mcp`, and restart the dashboard with `scripts/restart.sh` (yours to run; agents never run it). No sudo is involved.
+
+## 2026-11-12 decisions
+
+Julien's final calls, made after revision 2. Branch `pub2/core` on `12536b8`.
+
+| # | Decision | Where | Proof |
+|---|---|---|---|
+| 1 | Builder address `0x2c2e4efF574B3Fd9879AdeF9c5CAC6fD7C916985`, his funded master account. Still the single config point; fee stays f = 10 (0.01%). | `contracts/runtime/__init__.py` `DEFAULT_BUILDER_ADDRESS` | `contracts/runtime/tests/test_runtime.py`, scorecards `public_install` ("fresh: builder is the shipped address") and `public_tiers` (row E) |
+| 2 | The builder address equals the operator's own trading account, so attach rule step 4 (`self_trade`, compared lowercase) now matters for any public install he runs. Kept and pinned. | `pathiel/client/builder.py` `_gate` | `test_the_shipped_builder_never_charges_its_own_account`, `builder_approval` row "refuse: the shipped builder approving itself" |
+| 3 | Mainnet by default on public installs. A valid `PATHIEL_NETWORK` wins, otherwise mainnet for both install kinds. Testnet is the opt-in line `PATHIEL_NETWORK=testnet`. | `contracts/runtime` `network()`, `scripts/_plugin_env.sh` | `test_network_table`, `test_default_is_public_mainnet_with_the_mainnet_state_dir` |
+| 4 | Launcher parsing: nothing set means mainnet, source `default`; a set value that is neither network means testnet plus one warning, source `invalid` (the user tried to choose; testnet cannot lose money); `export PATHIEL_NETWORK=...` and a trailing ` # comment` are read as written, so a shell-style testnet line never lands on mainnet. `network_is_explicit()` is False for `default` and `invalid`. | `scripts/_plugin_env.sh`, `contracts/runtime` | `test_shell_style_lines_are_read_as_written`, `test_garbage_value_falls_back_to_testnet_with_a_warning` |
+| 5 | Real money is said, not nagged: setup's disclosure and step 2, the env template, one stderr line at server start on a public install, `install.network_notice` in `state`, the initialize instructions and `public_status.py` (WARN on mainnet, with the testnet hint only when nobody chose). Tool outputs are not decorated further. Read-only no-key mode and the 3x profile are unchanged. | `commands/setup.md`, `config/public/env.local.example`, `scripts/pathiel-mcp-server.py`, `scripts/public_status.py` | `test_setup_says_mainnet_is_the_real_money_default_and_offers_testnet`, `TestStdioFreshHome`, scorecard row E |
+| 6 | Testnet oil fallback. `Instrument.testnet_substitute` (a `NetworkSubstitute`: coin, label, verified) on the desk spec; only verified substitutes. Brent carries `xyz:CL` / WTI, verified 2026-11-12 on testnet meta dex=xyz (`xyz:BRENTOIL` isDelisted, `xyz:CL` live, maxLeverage 20). On testnet, unless the venue says Brent is listed, `get_spec` swaps the instrument (same role), drops the duplicate `xyz:CL` and the Brent-WTI pair, and the tagline says so. The brief opens with "Testnet: this desk trades WTI (xyz:CL) as the stand-in for Brent (xyz:BRENTOIL) ...", also as `testnet_substitute` in the output. The field is excluded from every dump, so specs, briefs and journals are byte-identical and `CONTRACT_VERSION` stays 1.3.0. Mainnet: no swap and no listing read. | `contracts/strategies/models.py`, `services/strategies/desks/`, `services/strategies/listing.py`, `scripts/pathiel-mcp-server.py` | `services/strategies/tests/test_testnet_substitute.py`, `test_desk_brief_on_testnet_trades_wti_as_the_brent_stand_in`, scorecard row W |
+| 7 | The ~30 s desk_brief on a network that does not list a desk coin: `hl_client.fetch_hl_candles` retries any non-list reply 6 times with backoff (0.5+1+2+4+8+8 s), and `candleSnapshot` for an unlisted coin never answers with a list. Measured on testnet before the fix: the ai desk brief 28.7 s, 24 s of it in `xyz:ARM` retries. Fix: on testnet the analytics candle fetcher sends no read for a coin the venue says is delisted or not listed (one cached, serialized listing read per coin). After: ai 7.0 s (three runs), oil 3.9 s. `fetch_hl_candles` itself is unchanged (operator code); mainnet makes no listing read. | `services/strategies/analytics.py` `default_candle_fetcher` | `test_the_30s_brief_regression_no_retry_sleep_for_an_unlisted_coin`, scorecard row W |
+
+Superseded above: Goal "testnet by default", the network rule in "The model", decision 19 "Keyless installs default to testnet", and the 0.3.0 note (0.3.0 ran mainnet; 0.4.0 keeps mainnet).
+
+Not changed here, owned by the listing-docs unit: `README.md`, `docs/GETTING_STARTED.md`, `server.json`, `smithery.yaml`, `.claude-plugin/*.json` still say testnet by default, and `tests/test_listing_metadata.py`, `tests/test_eval_listing.py`, `tests/test_public_copy.py` pin that wording. They need the same flip.

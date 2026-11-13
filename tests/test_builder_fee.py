@@ -14,6 +14,7 @@ import time
 
 import pytest
 
+import contracts.runtime as runtime
 from pathiel.client import builder
 
 ADDR = "0x" + "b1" * 20
@@ -88,7 +89,10 @@ def _state(name, monkeypatch, jobs, fetch, clock):
     if name == "operator_install":
         monkeypatch.delenv("PATHIEL_INSTALL")
     elif name == "no_builder_address":
+        # The shipped default is set (2026-11-12); the no-address path is a
+        # fork that empties it.
         monkeypatch.delenv("PATHIEL_BUILDER_ADDRESS")
+        monkeypatch.setattr(runtime, "DEFAULT_BUILDER_ADDRESS", "")
     elif name == "fee_zero":
         monkeypatch.setenv("PATHIEL_BUILDER_FEE_TENTHS_BP", "0")
     elif name == "self_trade":
@@ -387,7 +391,7 @@ def test_status_shape_and_counters(public, builder_jobs, fetch, clock):
                        "approved_tenths_bp", "attaches", "reason_code", "reason", "counters"}
     assert st["enabled"] is True and st["address"] == ADDR
     assert st["fee_tenths_bp"] == 10 and st["fee_rate"] == "0.01%"
-    assert st["network"] == "testnet" and st["reason_code"] == "cache_cold"
+    assert st["network"] == "mainnet" and st["reason_code"] == "cache_cold"   # mainnet default
     assert st["counters"] == {"with_builder": 0, "without_builder": 0, "retried": 0, "refused": 0}
     assert len(builder_jobs) == 1, "a cache view warms the cache"
     _run(builder_jobs)
@@ -426,7 +430,10 @@ def test_warm_is_a_noop_for_operator_and_unset_address(monkeypatch, builder_jobs
     assert builder.warm(ACCT) is False                       # operator
     monkeypatch.setenv("PATHIEL_INSTALL", "public")
     monkeypatch.delenv("PATHIEL_BUILDER_ADDRESS")
+    monkeypatch.setattr(runtime, "DEFAULT_BUILDER_ADDRESS", "")
     assert builder.warm(ACCT) is False                       # no address
+    monkeypatch.setenv("PATHIEL_BUILDER_ADDRESS", "none")
+    assert builder.warm(ACCT) is False                       # a fork's off switch
     monkeypatch.setenv("PATHIEL_BUILDER_ADDRESS", ADDR)
     monkeypatch.setenv("PATHIEL_BUILDER_FEE_TENTHS_BP", "0")
     assert builder.warm(ACCT) is False                       # fee 0
@@ -455,6 +462,32 @@ def test_default_spawn_starts_a_daemon_thread():
 def test_cache_is_keyed_by_network(public, builder_jobs, fetch, clock, monkeypatch):
     _warm(builder_jobs, 10, fetch)
     assert builder.builder_for_order(ACCT) is not None
-    monkeypatch.setenv("PATHIEL_NETWORK", "mainnet")
+    monkeypatch.setenv("PATHIEL_NETWORK", "testnet")
     assert builder.builder_for_order(ACCT) is None
     assert builder.last_decision(ACCT)["reason_code"] == "cache_cold"
+
+
+# -- decision 2026-11-12: the shipped builder is Julien's master account -------
+
+JULIEN = "0x2c2e4efF574B3Fd9879AdeF9c5CAC6fD7C916985"
+
+
+@pytest.mark.parametrize("acct", [JULIEN, JULIEN.lower(), "0x" + JULIEN[2:].upper()])
+def test_the_shipped_builder_never_charges_its_own_account(monkeypatch, builder_jobs, fetch, acct):
+    """No env override: the default address is the builder. Julien's own
+    master account, in any case, trading through a public install never
+    carries the builder and never schedules a read."""
+    monkeypatch.setenv("PATHIEL_INSTALL", "public")
+    monkeypatch.delenv("PATHIEL_BUILDER_ADDRESS", raising=False)
+    assert runtime.builder_address() == JULIEN.lower()
+    assert builder.builder_for_order(acct) is None
+    assert builder.last_decision(acct)["reason_code"] == "self_trade"
+    assert builder.warm(acct) is False
+    assert builder_jobs == [] and fetch.calls == []
+
+
+def test_the_shipped_builder_charges_another_approved_account(monkeypatch, builder_jobs, fetch, clock):
+    monkeypatch.setenv("PATHIEL_INSTALL", "public")
+    monkeypatch.delenv("PATHIEL_BUILDER_ADDRESS", raising=False)
+    _warm(builder_jobs, 10, fetch)
+    assert builder.builder_for_order(ACCT) == {"b": JULIEN.lower(), "f": 10}

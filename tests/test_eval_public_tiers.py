@@ -14,6 +14,15 @@ against an offline venue built from recorded testnet /info answers
      no request goes to mainnet.
   C  operator: instructions and tools/list hash to the pinned base values and
      no output carries a public key.
+  D  final review: a testnet with no HIP-3 dex, a fresh approval, the
+     launcher's default network.
+  E  decisions of 2026-11-12, mainnet: no PATHIEL_NETWORK means mainnet and
+     the state notice says real money; the shipped builder address is the
+     default and never charges its own account; the oil desk is Brent.
+  W  decisions of 2026-11-12, testnet: the oil desk trades xyz:CL (WTI) as
+     the Brent stand-in and the brief says so first; Brent entries are
+     refused, WTI entries are not; analytics sends no candle read for a coin
+     testnet does not list.
 
 Run: .venv/bin/python -m pytest -q -s tests/test_eval_public_tiers.py
 
@@ -42,6 +51,9 @@ STRATEGY_FIXTURES = ROOT / "contracts" / "strategies" / "fixtures"
 
 ACCT = "0x" + "a1" * 20
 BUILDER = "0x" + "b1" * 20
+SHIPPED_BUILDER = "0x2c2e4efF574B3Fd9879AdeF9c5CAC6fD7C916985"   # contracts/runtime default
+WTI_LINE = ("Testnet: this desk trades WTI (xyz:CL) as the stand-in for Brent (xyz:BRENTOIL), "
+            "which is delisted on testnet.")
 KEY = "0x" + "11" * 32
 
 # Base values, pinned on the untouched server (2816df7) before this unit
@@ -381,12 +393,16 @@ class Harness:
 
 def install(monkeypatch, tmp_path, server, jobs, *, public: bool = True,
             network: str = "testnet", key: bool = False, address: Optional[str] = None,
-            builder_address: str = "", max_builder_fee: int = 0) -> Harness:
+            builder_address: Optional[str] = "", max_builder_fee: int = 0) -> Harness:
     """Point one loaded server module at the offline venue, as one install.
 
     Never reaches the network: the shared session, requests.post, the SDK
     Info and the SDK Exchange are all replaced, and builder approval reads go
-    to the fake venue through builder._fetch."""
+    to the fake venue through builder._fetch.
+
+    builder_address: "" means no builder (the env off switch "none"; the
+    shipped default is set since 2026-11-12), None means the shipped
+    default, anything else is the override."""
     import requests
 
     from pathiel.client import builder
@@ -403,7 +419,10 @@ def install(monkeypatch, tmp_path, server, jobs, *, public: bool = True,
         monkeypatch.setenv("PATHIEL_NETWORK", network)
     else:
         monkeypatch.delenv("PATHIEL_NETWORK", raising=False)
-    monkeypatch.setenv("PATHIEL_BUILDER_ADDRESS", builder_address)
+    if builder_address is None:
+        monkeypatch.delenv("PATHIEL_BUILDER_ADDRESS", raising=False)
+    else:
+        monkeypatch.setenv("PATHIEL_BUILDER_ADDRESS", builder_address or "none")
     monkeypatch.delenv("PATHIEL_BUILDER_FEE_TENTHS_BP", raising=False)
     monkeypatch.setattr(hl_client, "HL_API", base)
 
@@ -588,6 +607,73 @@ def scenario_d(h: Harness, monkeypatch) -> List[Dict[str, Any]]:
     return rows
 
 
+def _row(check: str, got: Any, want: Any) -> Dict[str, Any]:
+    return {"check": check, "got": got, "want": want, "ok": got == want}
+
+
+def scenario_e(h: Harness, monkeypatch) -> List[Dict[str, Any]]:
+    """Public install on mainnet by default, with the shipped builder."""
+    from pathiel.client import builder
+    from services.strategies.desks import get_spec
+    monkeypatch.delenv("PATHIEL_NETWORK", raising=False)
+    monkeypatch.setenv("PATHIEL_NETWORK_SOURCE", "default")
+    rows: List[Dict[str, Any]] = []
+    _err, body = h.call("state")
+    install = (body or {}).get("install") or {}
+    rows.append(_row("E no PATHIEL_NETWORK: network", install.get("network"), "mainnet"))
+    rows.append(_row("E no PATHIEL_NETWORK: not marked as chosen", install.get("network_explicit"), False))
+    notice = str(install.get("network_notice"))
+    rows.append(_row("E state notice says MAINNET and real money",
+                     "MAINNET" in notice and "real money" in notice, True))
+    init = h.rpc("initialize", {})["result"]["instructions"]
+    rows.append(_row("E instructions open on mainnet REAL MONEY", "Network: mainnet. REAL MONEY" in init, True))
+    fee = install.get("builder_fee") or {}
+    rows.append(_row("E builder address is the shipped one", fee.get("address"), SHIPPED_BUILDER.lower()))
+    rows.append(_row("E shipped builder never charges its own account",
+                     (builder.builder_for_order(SHIPPED_BUILDER),
+                      builder.last_decision(SHIPPED_BUILDER).get("reason_code")),
+                     (None, "self_trade")))
+    _err, body = h.call("desk_brief", {"desk": "oil"})
+    primary = next(i.coin for i in get_spec("oil").instruments if i.role == "primary")
+    rows.append(_row("E mainnet oil desk primary", primary, "xyz:BRENTOIL"))
+    rows.append(_row("E mainnet brief has no stand-in line",
+                     "testnet_substitute" in body or "Testnet:" in str(body.get("markdown")), False))
+    return rows
+
+
+def scenario_w(h: Harness) -> List[Dict[str, Any]]:
+    """Public install that opted into testnet."""
+    from services.strategies import analytics
+    from services.strategies.desks import get_spec
+    rows: List[Dict[str, Any]] = []
+    spec = get_spec("oil")
+    primary = next(i for i in spec.instruments if i.role == "primary")
+    rows.append(_row("W testnet oil desk primary", (primary.coin, primary.label), ("xyz:CL", "WTI")))
+    rows.append(_row("W xyz:CL once, Brent gone, no WTI-WTI pair",
+                     ([i.coin for i in spec.instruments].count("xyz:CL"),
+                      "xyz:BRENTOIL" in [i.coin for i in spec.instruments], spec.pairs),
+                     (1, False, [])))
+    _err, body = h.call("desk_brief", {"desk": "oil"})
+    md = str((body or {}).get("markdown"))
+    rows.append(_row("W brief opens with the WTI stand-in line", md.startswith("**" + WTI_LINE), True))
+    rows.append(_row("W brief has no cannot-trade note", "network_note" in (body or {}), False))
+    _err, body = h.call("place_bracket", {"coin": "xyz:CL", "stop_px": 58, "tp_px": 66, "dry_run": True})
+    rows.append(_row("W WTI entry is not refused for listing", "network_note" in (body or {}), False))
+    _err, body = h.call("place_bracket", {"coin": "xyz:BRENTOIL", "stop_px": 58, "tp_px": 66,
+                                          "dry_run": True})
+    rows.append(_row("W Brent entry is refused (delisted)",
+                     "(delisted)" in str((body or {}).get("network_note")), True))
+    before = h.venue.types.count("candleSnapshot")
+    got = analytics.default_candle_fetcher("xyz:ARM", "1d", 30)
+    rows.append(_row("W no candle read for a coin testnet does not list",
+                     (list(got), h.venue.types.count("candleSnapshot") - before), ([], 0)))
+    got = analytics.default_candle_fetcher("xyz:CL", "1d", 30)
+    rows.append(_row("W listed coin still reads candles", len(got) > 0, True))
+    rows.append(_row("W mainnet requests", h.venue.mainnet_requests(), 0))
+    rows.append(_row("W unknown venue requests", len(h.venue.unknown), 0))
+    return rows
+
+
 def scenario_c(h: Harness) -> List[Dict[str, Any]]:
     rows: List[Dict[str, Any]] = []
     init = h.rpc("initialize", {})["result"]["instructions"]
@@ -642,6 +728,16 @@ def test_eval_public_tiers(monkeypatch, tmp_path, builder_jobs, scorecard):
     with monkeypatch.context() as m:
         h = install(m, tmp_path / "d", s, builder_jobs, key=True, builder_address=BUILDER)
         rows += scenario_d(h, m)
+    builder_jobs.clear()
+    builder.reset()
+    with monkeypatch.context() as m:
+        h = install(m, tmp_path / "e", s, builder_jobs, network="mainnet", builder_address=None)
+        rows += scenario_e(h, m)
+    builder_jobs.clear()
+    builder.reset()
+    with monkeypatch.context() as m:
+        h = install(m, tmp_path / "w", s, builder_jobs, network="testnet", key=True)
+        rows += scenario_w(h)
     builder_jobs.clear()
     builder.reset()
     with monkeypatch.context() as m:
