@@ -1,0 +1,213 @@
+/* scoreboard.css: pathiel research pool public scoreboard.
+ * Static page, no build step, no framework. Light by default, dark through
+ * prefers-color-scheme. Phone width: 16px side gutter, tables scroll inside
+ * their own wrapper so the page itself never scrolls sideways.
+ */
+
+:root {
+  --bg: #ffffff;
+  --fg: #1a1a1a;
+  --muted: #555555;
+  --border: #d6d6d6;
+  --head-bg: #f3f3f3;
+  --row-alt: #fafafa;
+  --link: #0a4fa8;
+  --badge-bg: #e4e9f1;
+  --badge-fg: #1a1a1a;
+  --tile-bg: #f6f6f6;
+  --focus: #0a4fa8;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #121212;
+    --fg: #e8e8e8;
+    --muted: #a8a8a8;
+    --border: #3a3a3a;
+    --head-bg: #1d1d1d;
+    --row-alt: #181818;
+    --link: #7fb0ff;
+    --badge-bg: #26324a;
+    --badge-fg: #e8e8e8;
+    --tile-bg: #1a1a1a;
+    --focus: #7fb0ff;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+body {
+  padding: 16px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica,
+    Arial, sans-serif;
+  line-height: 1.45;
+  max-width: 960px;
+  margin: 0 auto;
+}
+
+h1 {
+  font-size: 1.5rem;
+  margin: 0 0 8px;
+}
+
+h2 {
+  font-size: 1.1rem;
+  margin: 24px 0 8px;
+  border-top: 1px solid var(--border);
+  padding-top: 16px;
+}
+
+p {
+  margin: 0 0 12px;
+}
+
+.lede {
+  color: var(--muted);
+}
+
+a {
+  color: var(--link);
+}
+
+a:focus-visible,
+button:focus-visible,
+[tabindex]:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.about {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  background: var(--tile-bg);
+}
+
+.about p {
+  margin: 0 0 10px;
+}
+
+.about p:last-child {
+  margin-bottom: 0;
+}
+
+#app {
+  margin-top: 8px;
+}
+
+#app ul {
+  margin: 0 0 16px;
+  padding-left: 20px;
+}
+
+#app li {
+  margin-bottom: 4px;
+  color: var(--muted);
+}
+
+/* ── count tiles ────────────────────────────────────────────────────────── */
+
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 8px;
+  margin: 0 0 20px;
+}
+
+.tile {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 12px;
+  background: var(--tile-bg);
+}
+
+.tile p:first-child {
+  font-size: 1.3rem;
+  font-weight: 600;
+  margin: 0;
+}
+
+.tile p:last-child {
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin: 2px 0 0;
+}
+
+/* ── tables: always inside a horizontally scrollable wrapper ─────────────── */
+
+.table-wrap {
+  overflow-x: auto;
+  margin-bottom: 24px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+  min-width: 640px;
+  font-size: 0.85rem;
+}
+
+caption {
+  text-align: left;
+  padding: 10px 12px;
+  font-weight: 600;
+  background: var(--head-bg);
+  border-bottom: 1px solid var(--border);
+}
+
+th,
+td {
+  padding: 8px 10px;
+  text-align: left;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--border);
+}
+
+th {
+  background: var(--head-bg);
+  font-weight: 600;
+}
+
+tbody tr:nth-child(even) {
+  background: var(--row-alt);
+}
+
+tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  background: var(--badge-bg);
+  color: var(--badge-fg);
+  vertical-align: middle;
+}
+
+footer {
+  margin-top: 24px;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+noscript p {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 12px 16px;
+  background: var(--tile-bg);
+}
