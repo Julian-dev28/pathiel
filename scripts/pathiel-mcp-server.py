@@ -1,0 +1,4458 @@
+#!/usr/bin/env python3
+"""Pathiel-Trader MCP server — stdio transport (JSON-RPC 2.0, one message per line).
+
+Tool families (tools/list is the source of truth; SERVER_INSTRUCTIONS below is
+what a client model reads first):
+  desks      desk_list, desk_brief, desk_refresh, desk_submit_call, desk_track_record, desk_grade
+  account    account_overview, accounts, state, wallet_account, get_* account reads
+  risk       risk_limits, risk_size_trade
+  market     get_price, get_candles, get_l2_book, market_*, ...
+  trading    place_bracket, bracket_sweep, close_position, set_leverage,
+             cancel_order (LIVE MONEY)
+
+Headless oil desk (2026-10-23): the autonomous bot's brain path (scan /
+research / submit_verdict / execute) is retired. Claude places trades through
+place_bracket / bracket_sweep; the operator trades his own wallet by hand from
+Claude's thesis. See .claude/skills/desk-tick/SKILL.md.
+
+Transport (run()): the main thread reads stdin; every tools/call runs on a
+worker thread with a deadline, so a slow call never blocks the others and
+always gets exactly one answer. See "concurrent transport" below.
+
+Run as: python scripts/pathiel-mcp-server.py (a checkout), or through
+scripts/pathiel-mcp (the Claude Code plugin, which builds its own venv and
+points PATHIEL_ENV_FILE and PATHIEL_STATE_DIR at ~/.pathiel).
+Automatically loads the operator's env file (see scripts/_state_env.py).
+Live smoke over the real transport: python scripts/mcp_smoke.py
+
+Public install (PATHIEL_INSTALL=public, exported by the plugin launcher and
+the container; contracts/runtime decides): the same tools behind a gate at the
+MCP boundary (_public_gate: read-only tier with no key, no-account answers,
+the profile's leverage cap, entries refused on coins this network does not
+list, desk_refresh without the claude CLI) and with network and builder fee
+added to the outputs (_public_decorate). The operator's path never runs either.
+See "public install" below ALIASES.
+"""
+
+import copy
+import json
+import math
+import queue
+import re
+import shutil
+import sys
+import os
+import threading
+import time
+import traceback
+from concurrent.futures import ThreadPoolExecutor
+from typing import Any, Callable, Dict, List, Optional, Tuple
+
+# Auto-load the operator's env file: $PATHIEL_ENV_FILE, else <root>/.env.local,
+# else ~/.pathiel/.env.local (a Claude Code plugin install, where the plugin
+# root is a cache directory that cannot hold keys). One loader for every
+# standalone script: scripts/_state_env.py.
+_SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
+if _SCRIPTS_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPTS_DIR)
+import _state_env  # noqa: E402
+
+_state_env.load_env_local(os.path.dirname(_SCRIPTS_DIR))
+
+# Add project root to path
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+import contracts.runtime as runtime  # noqa: E402
+from pathiel import __version__
+from pathiel.agents.config_store import read_agent_config
+from pathiel.client.hl_client import fetch_account_state, resolve_user_address
+from pathiel.agents.hyperfeed import (
+    market_get_asset_data,
+    market_get_funding_regime,
+    market_list_instruments,
+    market_get_mids,
+)
+
+# Set True at `initialize` if the connected client advertised the MCP `sampling`
+# capability. No tool currently routes through it (the `research` tool that
+# originally consumed this was retired with the bot's brain path on
+# 2026-10-23), but the negotiation and the `_server_request` transport it
+# would use stay: a future tool is free to ask the connected harness's own
+# model a question via `sampling/createMessage` instead of a hosted API.
+_CLIENT_SUPPORTS_SAMPLING = False
+_server_request_seq = 0
+
+
+def _norm_coin(raw: str) -> str:
+    """Normalize a coin parameter without mangling HIP-3 dex prefixes.
+
+    Bare crypto tickers are case-insensitive (`btc` → `BTC`) but HIP-3 perp
+    names are `<lowercase-dex>:<uppercase-symbol>` (`xyz:MU`, `vntl:NVDA`).
+    A naive `.upper()` produces `XYZ:MU` and the position lookup fails.
+    Keep the dex prefix as-is and only uppercase the symbol.
+    """
+    if not raw:
+        return ""
+    if ":" in raw:
+        dex, _, sym = raw.partition(":")
+        return f"{dex}:{sym.upper()}"
+    return raw.upper()
+
+# Tools whose underlying SDK call is not yet wired up. Each one is registered
+# with the MCP server so clients don't get a "tool not found" error, but
+# instead of returning fake data (which an LLM would silently consume —
+# things like `{'fear_greed': 50}` or `{'max_size': 0}` look like real
+# numbers), the handler returns an explicit `not_implemented` error. This
+# keeps tool discovery honest: an LLM that gets this response knows to skip
+# the value rather than fold a placeholder into its reasoning.
+# Empty since 2026-09-06: every advertised tool now has a real handler. The
+# mechanism below is kept deliberately — it is the right shape for a tool whose
+# endpoint genuinely does not exist yet, and returning a clean not_implemented
+# beats fake zeros. What is NOT acceptable is leaving a name here when
+# pathiel.client can already answer it, which is how six of these hid working
+# capability for months.
+_STUB_TOOL_NAMES: List[str] = [
+    ]
+
+
+def _make_stub_handler(tool_name: str):
+    """Build a handler that explicitly reports the tool is not implemented.
+
+    Returns an error payload instead of fake data so any LLM caller gets an
+    unambiguous "don't use this" signal rather than a plausible-looking zero.
+    """
+    def handler(params: Dict[str, Any]) -> str:
+        return json.dumps({
+            "error": "not_implemented",
+            "tool": tool_name,
+            "reason": "stub — underlying Hyperliquid SDK method not yet wired up. Do not use the response as data.",
+        })
+    return handler
+
+
+# What a client model reads at connect time (MCP initialize "instructions").
+# Short on purpose: it rides in every session's context.
+SERVER_INSTRUCTIONS = """pathiel: a headless trading desk on live Hyperliquid. Real money. Claude is the trader; there is no autonomous bot. Active desks: config active_desks (oil; silver = metals desk). Each trades its own slice of equity (desk_equity_share), one position per desk. Other desks are off.
+
+Start here
+- desk_list, then desk_brief {desk} for that desk's call. Quick mode is short markdown, call first, with "Your size" for the active account. The Desk page (http://localhost:8000/) shows the same call as a card plus the open position with margin in use.
+- desk_refresh {desk} writes a NEW thesis (news + one local model call, about a minute). Use it when asked, when the brief says the thesis is stale, or when its target has already been hit.
+- place_bracket {coin, entry_px, stop_px, tp_px}: one entry with an exact stop and target, sized to the coin's desk slice of equity less the opening fee, capped by free margin (20x cap, ONE position per desk), stop inside half the distance to liquidation. Refuses under 2R and a second position, except add=true: one same-side top-up to full size, stop no wider. bracket_sweep {coin}: cancel a stranded sibling, confirm the stop covers the position, fold per-fill stops/targets into one pair. Run it after every close.
+- set_leverage {coin, leverage}: keeps an open position's own margin type; a venue refusal is an error. Confirm with get_asset_positions.
+- account_overview: equity and where it sits. HIP-3 money (xyz:BRENTOIL, xyz:CL, xyz:NVDA, ...) lives on its own dex (xyz), not main; main-dex-only reads look empty for it.
+- risk_limits / risk_size_trade: what this account may trade and how big, from the saved risk profile. Size every suggested trade with risk_size_trade, never by hand.
+- A missing position or dashes on the Desk page while the venue shows one: GET /api/health/system -> hl_budget names who spent or was refused the venue budget.
+
+Coins: main-dex perps by name (BTC, ETH). HIP-3 perps as dex:SYMBOL (xyz:BRENTOIL = Brent, the oil desk's price; xyz:CL = WTI; xyz:GOLD; xyz:NATGAS).
+
+LIVE MONEY: place_bracket, bracket_sweep, set_target, close_position, set_leverage, cancel_order act on the real account, and config with arguments rewrites the live trading config. Call them only when the operator asked for that exact action in this conversation. Every other tool only reads (desk_refresh, desk_submit_call and desk_grade write the desk journal; desk_grade never places or touches an order, it only grades what already happened)."""
+
+# Public install (contracts/runtime: PATHIEL_INSTALL=public, set only by the
+# plugin launcher and the container): a stranger's Claude reads this instead.
+# Built per call because the network, the key and the builder address are the
+# user's. Never mentions the operator's dashboard, his 20x profile or his desk
+# shares. MAX_PUBLIC_INSTRUCTIONS_CHARS keeps it inside the operator's budget.
+MAX_PUBLIC_INSTRUCTIONS_CHARS = 2500
+
+
+def _public_network_line(net: str) -> str:
+    """Mainnet is the default (2026-11-12); testnet is the user's opt-in."""
+    if net == "testnet":
+        return ("Network: testnet (test funds). "
+                "The oil desk trades WTI (xyz:CL) here as the stand-in for Brent.")
+    return ("Network: mainnet. REAL MONEY: orders use the account's real funds. "
+            "To practise with test funds: PATHIEL_NETWORK=testnet in ~/.pathiel/.env.local, then reconnect.")
+
+
+def _public_start_notice(net: str) -> str:
+    """The one stderr line a public install prints at start, naming the network."""
+    if net == "testnet" and runtime.network_is_invalid():
+        return ("pathiel: public install on Hyperliquid testnet because the PATHIEL_NETWORK line "
+                "is not mainnet or testnet. Fix it in ~/.pathiel/.env.local and reconnect.")
+    if net == "testnet":
+        return ("pathiel: public install on Hyperliquid testnet (test funds). The oil desk "
+                "trades WTI (xyz:CL) as the Brent stand-in.")
+    return ("pathiel: public install on Hyperliquid MAINNET: with a key, orders use real money. "
+            "Set PATHIEL_NETWORK=testnet in ~/.pathiel/.env.local to practise.")
+
+
+def _public_trading_line() -> str:
+    try:
+        from pathiel.client.exchange import trading_block_reason
+        reason = trading_block_reason()
+    except Exception:   # noqa: BLE001 - an import failure reads as no key
+        reason = "no key could be read"
+    if reason:
+        return ("Trading: read-only. No key is configured, so the six live-money tools refuse; "
+                "every read works. /pathiel:setup adds an API wallet key.")
+    return "Trading: enabled. An API wallet key is configured for this network."
+
+
+def _public_fee_sentence() -> str:
+    address = runtime.builder_address()
+    fee = runtime.builder_fee_tenths_bp()
+    if not address or fee <= 0:
+        return "Builder fee: not configured. Orders carry no builder fee."
+    return (f"Builder fee: {runtime.fee_rate_str(fee)} of notional per fill, to {address}, "
+            "charged only after the user approves it once with the master key "
+            "(scripts/approve_builder_fee.py). Hyperliquid enforces the approval; without it "
+            "orders go out with no fee. state shows the approval.")
+
+
+def _public_instructions() -> str:
+    net = runtime.network()
+    text = f"""pathiel: a Hyperliquid perps desk that Claude trades through these tools. {_public_network_line(net)} {_public_trading_line()} Not financial advice: the user decides every trade and can lose money.
+
+Default risk profile: 3x max leverage, 1% of equity at risk at the stop, one position at a time. set_leverage is capped by the profile's max_leverage. Change it with the config tool (risk_profile) or ~/.pathiel/.agent-config.json.
+
+Start here
+- state: network, trading status, builder fee, equity, positions.
+- desk_list, then desk_brief {{desk}}: the desk's call as short markdown, with "Your size".
+- desk_refresh {{desk}} writes a NEW thesis (news + one local Claude Code call, about a minute). Needs the claude CLI on PATH.
+- risk_limits / risk_size_trade: what this account may trade and how big. Size every trade with risk_size_trade, never by hand.
+- place_bracket {{coin, entry_px, stop_px, tp_px}}: one entry with an exact stop and target, sized by the profile. dry_run=true checks it without placing. bracket_sweep {{coin}} after every close.
+- Market reads (get_price, get_candles, get_l2_book, get_funding_rate, market_*) need no key and no account.
+
+Coins: main-dex perps by name (BTC, ETH). HIP-3 perps as dex:SYMBOL (xyz:GOLD). Testnet lists fewer live markets than mainnet: a coin that is delisted or missing on this network is refused for new entries (xyz:BRENTOIL is delisted on testnet, so the oil desk trades xyz:CL, WTI, there). Closes are never refused.
+
+{_public_fee_sentence()}
+
+LIVE MONEY: place_bracket, bracket_sweep, set_target, close_position, set_leverage, cancel_order act on the account on {net}, and config with arguments rewrites the trading config. Call them only when the user asked for that exact action in this conversation. Every other tool only reads (desk_refresh, desk_submit_call and desk_grade write the local desk journal)."""
+    return text[:MAX_PUBLIC_INSTRUCTIONS_CHARS]
+
+
+def server_instructions() -> str:
+    """The MCP initialize instructions: SERVER_INSTRUCTIONS, byte for byte, on
+    the operator's install; the public text on a public one."""
+    if not runtime.is_public():
+        return SERVER_INSTRUCTIONS
+    return _public_instructions()
+
+
+# Tools definition
+TOOLS = [
+    {
+        "name": "state",
+        "description": "Get full agent state: mode, config, positions, recent trades, and account equity.",
+        "inputSchema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "connected_wallets",
+        "description": (
+            "Wallets signed in to the dashboard, newest first. READ-ONLY: this server "
+            "signs with its own key, so it can never place, close or size an order on "
+            "any wallet listed here. Answers 'whose account am I looking at'; feed an "
+            "address to wallet_account below."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "limit": {"type": "integer",
+                          "description": "Max wallets to return (default 10, max 100)."},
+            },
+        },
+    },
+    {
+        "name": "wallet_account",
+        "description": (
+            "Read-only Hyperliquid state for any address: equity, withdrawable, open "
+            "positions. Needs no key (/info clearinghouseState takes a plain address). "
+            "Omit `address` for the active account; an unfunded address returns "
+            "funded=false, not an error."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "address": {"type": "string",
+                            "description": "0x address. Defaults to the active account."},
+            },
+        },
+    },
+    {
+        "name": "config",
+        "description": (
+            "Read the agent config (no arguments), or change it: passing ANY field "
+            "rewrites the live config. Every top-level key in .agent-config.json is "
+            "accepted (read first to see them); nested objects are deep-merged. "
+            "Sizing is the risk profile now (risk_limits), not a config knob."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "mode": {"type": "string", "enum": ["OFF", "LIVE"]},
+                "enable_hip3": {"type": "boolean"},
+                "hip3_dex_allowlist": {"type": "array", "items": {"type": "string"}},
+                "hip3_dex_blocklist": {"type": "array", "items": {"type": "string"}},
+                "coin_allowlist": {"type": "array", "items": {"type": "string"}},
+                "coin_blocklist": {"type": "array", "items": {"type": "string"}},
+            },
+            "additionalProperties": True,
+        },
+    },
+    {
+        "name": "market_get_asset_data",
+        "description": "Get comprehensive asset data: candles + funding + OI.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "asset": {"type": "string", "description": "Coin ticker (e.g. BTC)"},
+                "intervals": {"type": "array", "items": {"type": "string"}, "description": "Candle intervals (default [\"5m\",\"15m\",\"1h\",\"4h\"])"},
+                "count": {"type": "integer", "description": "Newest candles kept per interval (default 48, max 500)."}
+            },
+            "required": ["asset"]
+        }
+    },
+    {
+        "name": "market_get_funding_regime",
+        "description": "Market-wide funding regime (crowded trades): overall and per asset "
+                       "class, plus the assets with the most extreme funding.",
+        "inputSchema": {"type": "object", "properties": {
+            "asset_class": {"type": "string", "enum": ["crypto", "equity", "commodity"],
+                            "description": "Only list assets of this class."},
+            "limit": {"type": "integer", "description": "Assets listed, most extreme funding first (default 25, max 1000)."},
+        }}
+    },
+    {
+        "name": "market_list_instruments",
+        "description": "Tradable instruments (perps + spot), highest 24h volume first.",
+        "inputSchema": {"type": "object", "properties": {
+            "query": {"type": "string", "description": "Substring of the symbol, e.g. \"xyz:\" or \"OIL\"."},
+            "type": {"type": "string", "enum": ["perp", "spot"]},
+            "limit": {"type": "integer", "description": "Max rows (default 50, max 1000)."},
+        }}
+    },
+    {
+        "name": "close_position",
+        "description": "Close a position for a specific coin.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "coin": {"type": "string", "description": "Coin ticker (e.g. BTC, ETH)"},
+            },
+            "required": ["coin"],
+        },
+    },
+    {
+        "name": "get_price",
+        "description": "Get current mid price for a coin. Also answers get_coin_price.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "coin": {"type": "string", "description": "Coin ticker (default BTC)"},
+            },
+        },
+    },
+    {
+        "name": "get_candles",
+        "description": "Candles for a coin and interval, lookback by count. Also answers "
+                       "get_candles_aggregated. For an explicit time window see get_price_history.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "coin": {"type": "string", "description": "Coin ticker (default BTC)"},
+                "interval": {"type": "string", "description": "Candle interval (default 1h)"},
+                "count": {"type": "number", "description": "Number of candles (default 100)"},
+            },
+        },
+    },
+    {
+        "name": "set_leverage",
+        "description": "Set leverage for a coin. With an open position the position's own margin type (isolated or cross) is kept; flat, the market default applies. A venue refusal is an error.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "coin": {"type": "string", "description": "Coin ticker (e.g. BTC)"},
+                "leverage": {"type": "number", "description": "Leverage value (default 5)"}
+            },
+            "required": ["coin"]
+        }
+    },
+    {
+        "name": "get_open_orders",
+        "description": ("Open orders (trigger type, tp/sl) on the main dex AND every HIP-3 dex "
+                        "holding margin (xyz:CL orders live on xyz), optionally filtered by "
+                        "coin. Also answers get_frontend_open_orders, get_user_orders."),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "coin": {"type": "string", "description": "Filter by coin (optional)"},
+                "user": {"type": "string",
+                        "description": "Account address (optional; defaults to this deployment's)"},
+                "limit": {"type": "number", "description": "Max orders to return (default 100)"}
+            }
+        }
+    },
+    {
+        "name": "cancel_order",
+        "description": "Cancel an open order by order ID and coin.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "order_id": {"type": "number"},
+                "coin": {"type": "string", "description": "e.g. xyz:BRENTOIL"},
+                "asset": {"type": "number", "description": "index, if no coin"}
+            },
+            "required": ["order_id"]
+        }
+    },
+    {
+        "name": "get_user_fees",
+        "description": "Get user fee tiers and rates. Also answers get_user_fees_detailed.",
+        "inputSchema": {"type": "object", "properties": {}}
+    },
+    {
+        "name": "get_trade_history",
+        "description": ("This account's fills, newest last (HL has no public trade tape). "
+                        "Also answers get_user_fills, get_recent_trades."),
+        "inputSchema": {"type": "object", "properties": {
+            "coin": {"type": "string", "description": "Filter by coin (optional)"},
+            "limit": {"type": "number", "description": "Max trades to return (default 100)"},
+            "user": {"type": "string",
+                    "description": "Account address (optional; defaults to this deployment's)"}
+        }}
+    },
+    {
+        "name": "get_l2_book",
+        "description": "L2 order book for a coin. Also answers get_market_depth.",
+        "inputSchema": {"type": "object", "properties": {
+            "coin": {"type": "string", "description": "Coin ticker (e.g. BTC)"}
+        }, "required": ["coin"]}
+    },
+    {
+        "name": "get_user_state",
+        "description": "Raw clearinghouse state for ONE perp dex (default: main). HIP-3 money "
+                       "sits on its own dex (pass dex=\"xyz\" for xyz:CL); for every dex at once "
+                       "use account_overview.",
+        "inputSchema": {"type": "object", "properties": {
+            "dex": {"type": "string", "description": "Perp dex name, e.g. \"xyz\" (default: main)."},
+        }}
+    },
+    {
+        "name": "get_withdrawals",
+        "description": "This account's withdrawals, from the non-funding ledger.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "startTime": {
+                    "type": "number",
+                    "description": "Start time, unix ms (default: all history)"
+                },
+                "limit": {
+                    "type": "number",
+                    "description": "Max entries to return (default 100)"
+                },
+                "user": {
+                    "type": "string",
+                    "description": "Account address (optional; defaults to this deployment's)"
+                }
+            }
+        }
+    },
+    {
+        "name": "get_predicted_funding",
+        "description": ("Predicted next funding per venue for one coin, or every main-dex coin "
+                        "when omitted. HIP-3 coins (xyz:, vntl:, km:, ...) have no cross-venue "
+                        "prediction on HL; falls back to their current hourly rate, labeled."),
+        "inputSchema": {"type": "object", "properties": {
+            "coin": {"type": "string", "description": "Coin ticker (optional)"}
+        }}
+    },
+    {
+        "name": "get_asset_context",
+        "description": ("Funding, open interest, mark and day volume for one coin (HIP-3-aware: "
+                        "xyz:CL, vntl:NVDA, ... route to their own dex), or every main-dex coin "
+                        "when omitted. Also answers get_market_stats."),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "coin": {
+                    "type": "string",
+                    "description": "Coin ticker (optional)"
+                }
+            }
+        }
+    },
+    {
+        "name": "get_price_history",
+        "description": "Candles for a coin over a time window (default last 100 hours).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "coin": {
+                    "type": "string",
+                    "description": "Coin ticker"
+                },
+                "interval": {
+                    "type": "string",
+                    "description": "Candle interval (default 1h)"
+                },
+                "start_time": {
+                    "type": "number",
+                    "description": "Start, unix seconds or ms"
+                },
+                "end_time": {
+                    "type": "number",
+                    "description": "End, unix seconds or ms (default now)"
+                }
+            },
+            "required": [
+                "coin"
+            ]
+        }
+    },
+    {
+        "name": "get_assets",
+        "description": ("Every tradeable perp (main dex) with size decimals and max leverage. "
+                        "Also answers get_markets_info, get_perp_markets, get_asset_contexts."),
+        "inputSchema": {"type": "object", "properties": {
+            "fields": {"type": "array", "items": {"type": "string"},
+                      "description": "Return only these keys per asset (optional, trims payload)"}
+        }}
+    },
+    {
+        "name": "get_deposits",
+        "description": "This account's deposits, from the non-funding ledger.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "startTime": {
+                    "type": "number",
+                    "description": "Start time, unix ms (default: all history)"
+                },
+                "limit": {
+                    "type": "number",
+                    "description": "Max entries to return (default 100)"
+                },
+                "user": {
+                    "type": "string",
+                    "description": "Account address (optional; defaults to this deployment's)"
+                }
+            }
+        }
+    },
+    {
+        "name": "get_transfers",
+        "description": "This account's internal, spot, sub-account and vault transfers. "
+                       "Also answers get_transfer_history.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "startTime": {
+                    "type": "number",
+                    "description": "Start time, unix ms (default: all history)"
+                },
+                "limit": {
+                    "type": "number",
+                    "description": "Max entries to return (default 100)"
+                },
+                "user": {
+                    "type": "string",
+                    "description": "Account address (optional; defaults to this deployment's)"
+                }
+            }
+        }
+    },
+    {
+        "name": "get_max_trade_size",
+        "description": "The MOST this account's margin allows on a coin (the coin's own dex "
+                       "for HIP-3), at min(coin max, profile max) leverage, checked against the "
+                       "book. A ceiling, not advice: size real trades with risk_size_trade.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "coin": {
+                    "type": "string",
+                    "description": "Coin ticker"
+                },
+                "is_buy": {
+                    "type": "boolean",
+                    "description": "True to buy (default), False to sell"
+                }
+            },
+            "required": [
+                "coin"
+            ]
+        }
+    },
+    {
+        "name": "get_portfolio_status",
+        "description": "Account value and PnL per HL window (day/week/month/allTime): latest "
+                       "values by default, full=true for the whole series.",
+        "inputSchema": {"type": "object", "properties": {
+            "full": {"type": "boolean", "description": "Return every point of every series (large)."},
+        }}
+    },
+    {
+        "name": "get_coin_info",
+        "description": "Get detailed info for a specific coin.",
+        "inputSchema": {"type": "object", "properties": {
+            "coin": {"type": "string", "description": "Coin ticker"}
+        }, "required": ["coin"]}
+    },
+    {
+        "name": "get_all_mids",
+        "description": "Current mid prices, including HIP-3 (xyz:, vntl:, km:, ...). Prediction "
+                       "(#id) markets are left out unless asked. Also answers market_get_mids.",
+        "inputSchema": {"type": "object", "properties": {
+            "coins": {"type": "array", "items": {"type": "string"}, "description": "Only these coins."},
+            "include_outcomes": {"type": "boolean", "description": "Also return #id prediction markets."},
+        }}
+    },
+    {
+        "name": "get_order_by_oid",
+        "description": "Order status by order ID. Also answers get_order_status.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "user": {
+                    "type": "string",
+                    "description": "Account address (optional; defaults to this deployment's)"
+                },
+                "oid": {
+                    "type": "number",
+                    "description": "Order ID"
+                },
+                "orderId": {
+                    "type": "number",
+                    "description": "Alias of oid"
+                }
+            },
+            "required": [
+                "oid"
+            ]
+        }
+    },
+    {
+        "name": "get_account_summary",
+        "description": "Equity (main dex + HIP-3), available margin, withdrawable, notional, position count.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "user": {
+                    "type": "string",
+                    "description": "Account address (optional; defaults to this deployment's)"
+                }
+            }
+        }
+    },
+    {
+        "name": "get_asset_positions",
+        "description": "Open positions across main dex and HIP-3; pass coin to filter. "
+                       "Also answers get_portfolio.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "coin": {
+                    "type": "string",
+                    "description": "Coin ticker (optional filter)"
+                },
+                "user": {
+                    "type": "string",
+                    "description": "Account address (optional; defaults to this deployment's)"
+                }
+            }
+        }
+    },
+    {
+        "name": "get_24h_stats",
+        "description": "Get 24-hour statistics for a coin.",
+        "inputSchema": {"type": "object", "properties": {
+            "coin": {"type": "string", "description": "Coin ticker"}
+        }, "required": ["coin"]}
+    },
+    {
+        "name": "get_funding_rate",
+        "description": "Current hourly funding for one coin, or the whole board sorted by "
+                       "it when omitted.",
+        "inputSchema": {"type": "object", "properties": {
+            "coin": {"type": "string", "description": "Coin ticker (optional)"}
+        }}
+    },
+    {
+        "name": "get_portfolio_pnl",
+        "description": "Unrealized pnl per open position plus HL's day/week/month/all-time pnl.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "user": {
+                    "type": "string",
+                    "description": "Account address (optional; defaults to this deployment's)"
+                }
+            }
+        }
+    },
+    {
+        "name": "get_risk_metrics",
+        "description": "Equity across every dex, account leverage, main-dex cross margin ratio "
+                       "(1.0 = liquidation) and liquidation distance for every open position "
+                       "(main and HIP-3).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "user": {
+                    "type": "string",
+                    "description": "Account address (optional; defaults to this deployment's)"
+                }
+            }
+        }
+    },
+    {
+        "name": "get_historical_funding",
+        "description": ("Funding this ACCOUNT paid or received (not the venue rate; see "
+                        "get_funding_rate and get_predicted_funding). Also answers "
+                        "get_user_funding_history."),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "coin": {
+                    "type": "string",
+                    "description": "Coin ticker (optional filter)"
+                },
+                "startTime": {
+                    "type": "number",
+                    "description": "Start time, unix ms (default: all history)"
+                },
+                "endTime": {
+                    "type": "number",
+                    "description": "End time, unix ms (optional)"
+                },
+                "limit": {
+                    "type": "number",
+                    "description": "Max entries to return (default 100)"
+                },
+                "user": {
+                    "type": "string",
+                    "description": "Account address (optional; defaults to this deployment's)"
+                }
+            }
+        }
+    },
+    {
+        "name": "get_open_interest",
+        "description": "Open interest for a coin (HIP-3-aware), or the top 100 by OI when omitted.",
+        "inputSchema": {"type": "object", "properties": {
+            "coin": {"type": "string", "description": "Coin ticker (optional)"}
+        }}
+    },
+    {
+        "name": "get_api_rate_limits",
+        "description": "Get API rate limit status.",
+        "inputSchema": {"type": "object", "properties": {}}
+    },
+    {
+        "name": "get_server_time",
+        "description": "Get Hyperliquid server time.",
+        "inputSchema": {"type": "object", "properties": {}}
+    },
+    {
+        "name": "get_user_orders_history",
+        "description": "Get user's order history with filtering.",
+        "inputSchema": {"type": "object", "properties": {
+            "limit": {"type": "number", "description": "Max orders (default 100)"}
+        }}
+    },
+    {
+        "name": "get_price_impact",
+        "description": "Walk the live L2 book for a trade and report avg fill, worst price, "
+                       "slippage and unfilled size. Also answers get_slippage_estimate.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "coin": {
+                    "type": "string",
+                    "description": "Coin ticker"
+                },
+                "size": {
+                    "type": "number",
+                    "description": "Trade size in COIN units"
+                },
+                "notionalUsd": {
+                    "type": "number",
+                    "description": "Trade size in USD (overrides size)"
+                },
+                "is_buy": {
+                    "type": "boolean",
+                    "description": "True to buy (default), False to sell"
+                }
+            },
+            "required": [
+                "coin"
+            ]
+        }
+    },
+    {
+        "name": "get_withdrawal_status",
+        "description": "Whether a withdrawal settled (by tx hash), or the 20 most recent withdrawals.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "withdrawal_id": {
+                    "type": "string",
+                    "description": "Withdrawal tx hash (optional)"
+                },
+                "user": {
+                    "type": "string",
+                    "description": "Account address (optional; defaults to this deployment's)"
+                }
+            }
+        }
+    },
+    {
+        "name": "get_liquidation_price",
+        "description": "Venue liquidation price for an open position (pass coin only), or HL's isolated-margin estimate for a hypothetical one (pass leverage + is_long).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "coin": {
+                    "type": "string",
+                    "description": "Coin ticker"
+                },
+                "leverage": {
+                    "type": "number",
+                    "description": "Leverage (hypothetical position)"
+                },
+                "is_long": {
+                    "type": "boolean",
+                    "description": "Side (hypothetical position)"
+                },
+                "entry_px": {
+                    "type": "number",
+                    "description": "Entry price (default current mid)"
+                },
+                "size": {
+                    "type": "number",
+                    "description": "Position size, echoed back; liquidation price does not depend on it"
+                },
+                "user": {
+                    "type": "string",
+                    "description": "Account address (optional; defaults to this deployment's)"
+                }
+            },
+            "required": [
+                "coin"
+            ]
+        }
+    },
+    {
+        "name": "get_max_leverage",
+        "description": "Maximum allowed leverage for a coin (HIP-3-aware: xyz:CL, vntl:NVDA, "
+                       "... route to their own dex). Also answers get_leverage.",
+        "inputSchema": {"type": "object", "properties": {
+            "coin": {"type": "string", "description": "Coin ticker"}
+        }, "required": ["coin"]}
+    },
+    {
+        "name": "get_user_fills_by_time",
+        "description": "Get user fills within a time window (unix ms).",
+        "inputSchema": {"type": "object", "properties": {
+            "start_time": {"type": "number", "description": "Start time (unix ms)"},
+            "end_time": {"type": "number", "description": "End time (unix ms, optional)"}
+        }, "required": ["start_time"]}
+    },
+    {
+        "name": "get_historical_orders",
+        "description": "Historical (filled + cancelled) orders, newest first.",
+        "inputSchema": {"type": "object", "properties": {
+            "coin": {"type": "string", "description": "Only this coin."},
+            "limit": {"type": "integer", "description": "Max orders (default 50, max 2000)."},
+            "user": {"type": "string", "description": "Account address (default: the trading account)."},
+        }}
+    },
+    {
+        "name": "query_order_by_cloid",
+        "description": "Order status by client order ID (0x-prefixed 16-byte hex).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "user": {
+                    "type": "string",
+                    "description": "Account address (optional; defaults to this deployment's)"
+                },
+                "cloid": {
+                    "type": "string",
+                    "description": "Client order ID"
+                }
+            },
+            "required": [
+                "cloid"
+            ]
+        }
+    },
+    # ── desk tools (services.strategies facade; desk-core owns the service) ──
+    {
+        "name": "desk_list",
+        "description": "Every desk's one-line card: tagline, primary coin, mid, 1d return, "
+                       "latest call and track record. Start here before desk_brief.",
+        "inputSchema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "desk_brief",
+        "description": "One desk's current call. mode=quick (default): short markdown, the "
+                       "call first, plus \"Your size\" for the active account. mode=full: the "
+                       "whole structured brief (analytics, intel, thesis, history).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "desk": {"type": "string", "description": "Desk id, e.g. \"oil\""},
+                "mode": {"type": "string", "enum": ["quick", "full"], "default": "quick"},
+            },
+            "required": ["desk"],
+        },
+    },
+    {
+        "name": "desk_refresh",
+        "description": "Refresh a desk: market data, news/policy/odds, then a NEW thesis via "
+                       "the local model (~1 min; progress reported). Skips the model unless "
+                       "the market moved, a big headline landed, the thesis expired, or "
+                       "force=true.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "desk": {"type": "string", "description": "Desk id, e.g. \"oil\""},
+                "force": {"type": "boolean", "default": False,
+                         "description": "Rewrite the thesis even if nothing material changed"},
+            },
+            "required": ["desk"],
+        },
+    },
+    {
+        "name": "desk_submit_call",
+        "description": "Record your own trade call on a desk (author=user), journaled "
+                       "alongside the machine's theses for track-record comparison.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "desk": {"type": "string", "description": "Desk id, e.g. \"oil\""},
+                "call": {
+                    "type": "object",
+                    "description": "The trade in one shot.",
+                    "properties": {
+                        "side": {"type": "string", "enum": ["long", "short", "flat", "pair"]},
+                        "instrument": {"type": "string",
+                                      "description": "Coin, or pair label when side=pair"},
+                        "one_liner": {"type": "string", "description": "The whole trade, <=160 chars"},
+                        "entry_px": {"type": "number"},
+                        "entry_zone": {"type": "array", "items": {"type": "number"},
+                                      "description": "[lo, hi]"},
+                        "stop_px": {"type": "number"},
+                        "targets": {"type": "array", "items": {"type": "number"}},
+                        "leverage": {"type": "number"},
+                        "confidence": {"type": "number", "description": "0-1"},
+                        "invalidation": {"type": "string",
+                                        "description": "The observable that kills the idea"},
+                    },
+                    "required": ["side", "instrument", "one_liner", "confidence", "invalidation"],
+                },
+                "scenarios": {
+                    "type": "array",
+                    "description": "Optional probability-weighted outcome scenarios, must sum to 1",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "name": {"type": "string"},
+                            "probability": {"type": "number"},
+                            "move_lo_pct": {"type": "number"},
+                            "move_hi_pct": {"type": "number"},
+                            "description": {"type": "string"},
+                            "triggers": {"type": "array", "items": {"type": "string"}},
+                        },
+                        "required": ["name", "probability", "move_lo_pct", "move_hi_pct", "description"],
+                    },
+                },
+                "notes": {"type": "string"},
+            },
+            "required": ["desk", "call"],
+        },
+    },
+    {
+        "name": "desk_track_record",
+        "description": "Graded-thesis track record for one desk: hit rate, mean Brier, mean "
+                       "return, split machine vs user calls.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "desk": {"type": "string", "description": "Desk id, e.g. \"oil\""},
+            },
+            "required": ["desk"],
+        },
+    },
+    {
+        "name": "desk_grade",
+        "description": "Grade now: expired theses, then accounts' trades vs each call. desk "
+                       "narrows trade grading only.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "desk": {"type": "string"},
+            },
+        },
+    },
+    {
+        "name": "account_overview",
+        "description": "The active account's money: total equity, where it sits (each perp "
+                       "dex incl. HIP-3, plus spot), open positions, and whether it can trade "
+                       "right now (plain-English blockers). Start here for \"how much do I have\".",
+        "inputSchema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "accounts",
+        "description": "Hyperliquid accounts registered in pathiel (connected wallets, API "
+                       "keys, watch-only), which one is active, and which address the bot "
+                       "trades with. Connect or switch in the dashboard's Account tab.",
+        "inputSchema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "risk_limits",
+        "description": "What the account may trade under its risk profile: positions at once, "
+                       "$ lost per stop-out, daily pause, max leverage. equity_usd/preset = what-if.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "equity_usd": {"type": "number"},
+                "preset": {"type": "string", "enum": ["auto", "starter", "small", "standard", "pro"]},
+            },
+        },
+    },
+    {
+        "name": "risk_size_trade",
+        "description": "Size ONE trade for the active account: size, margin, $ at risk, payoff "
+                       "per target, liquidation price. Same rules as the bot's books. Use it "
+                       "before suggesting any size.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "coin": {"type": "string", "description": "e.g. xyz:CL (WTI), BTC"},
+                "entry_px": {"type": "number"},
+                "stop_px": {"type": "number", "description": "Below entry = long, above = short."},
+                "leverage": {"type": "number", "description": "Capped by coin and profile max."},
+                "targets": {"type": "array", "items": {"type": "number"}},
+                "equity_usd": {"type": "number", "description": "What-if equity (default: live)."},
+            },
+            "required": ["coin", "entry_px", "stop_px"],
+        },
+    },
+    {
+        "name": "place_bracket",
+        "description": "One trade with exact stop and take-profit, sized like "
+                       "risk_size_trade. entry_px = resting limit, stop/target attached on "
+                       "fill; omit for market. Refuses under min_r (2R) or an existing "
+                       "position/entry on the coin, unless add=true: then it tops the open "
+                       "position up to the full-port size on the same side, stop no wider "
+                       "than the resting one, existing protection untouched. dry_run = size only.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "coin": {"type": "string", "description": "e.g. xyz:BRENTOIL"},
+                "entry_px": {"type": "number"},
+                "stop_px": {"type": "number"},
+                "tp_px": {"type": "number"},
+                "leverage": {"type": "number"},
+                "min_r": {"type": "number"},
+                "dry_run": {"type": "boolean"},
+                "add": {"type": "boolean", "description": "Top up an open same-side position to the full-port size; the stop may not be wider than the one resting."},
+            },
+            "required": ["coin", "stop_px", "tp_px"],
+        },
+    },
+    {
+        "name": "bracket_sweep",
+        "description": "Flat: cancel leftover reduce-only orders (sibling of a fired "
+                       "stop/target), list resting entries. In a position: say whether a "
+                       "stop covers it, and fold several stops (or targets) at one price, one "
+                       "per fill, into a single order for the whole size. Never opens, closes "
+                       "or moves a level.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"coin": {"type": "string"}},
+            "required": ["coin"],
+        },
+    },
+    {
+        "name": "set_target",
+        "description": "Move an open position's take-profit: one limit target for the whole "
+                       "size at tp_px goes on first, then the old target(s) are cancelled. "
+                       "Refuses a target on the losing side of the mark. Never touches the stop.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"coin": {"type": "string"}, "tp_px": {"type": "number"}},
+            "required": ["coin", "tp_px"],
+        },
+    },
+]
+
+
+# ── tool annotations (MCP 2025-06-18) ────────────────────────────────────────
+# Clients use these to decide what needs a human's yes. Every tool lands in
+# exactly one bucket; tests/test_mcp_shoreup.py fails on a tool with none.
+LIVE_MONEY_TOOLS = frozenset({"close_position", "set_leverage", "cancel_order",
+                              "place_bracket", "bracket_sweep", "set_target"})
+LIVE_CONFIG_TOOLS = frozenset({"config"})
+LOCAL_WRITE_TOOLS = frozenset({"desk_refresh", "desk_submit_call", "desk_grade"})
+
+
+def _annotate_tools(tools: List[Dict[str, Any]]) -> None:
+    """Only the hints that differ from the spec defaults (readOnlyHint=false,
+    destructiveHint=true, idempotentHint=false, openWorldHint=true): every
+    char here rides in every session's tools/list."""
+    for tool in tools:
+        name = tool["name"]
+        if name in LIVE_MONEY_TOOLS:
+            ann: Dict[str, Any] = {"destructiveHint": True}
+            if not tool["description"].startswith("LIVE MONEY"):
+                tool["description"] = "LIVE MONEY: acts on the real account. " + tool["description"]
+        elif name in LIVE_CONFIG_TOOLS:
+            ann = {"destructiveHint": True, "idempotentHint": True}
+        elif name in LOCAL_WRITE_TOOLS:
+            ann = {"destructiveHint": False}
+        else:
+            ann = {"readOnlyHint": True}
+        tool["annotations"] = ann
+
+
+_annotate_tools(TOOLS)
+
+
+def handle_state(params: Dict[str, Any]) -> str:
+    user = resolve_user_address()
+    # include_hip3=True so the LLM sees aggregated equity and every HIP-3
+    # position (xyz/vntl/km) when querying account state.
+    account = fetch_account_state(user, include_hip3=True) if user else {"equity": 0, "total_ntl": 0, "asset_positions": []}
+    config = read_agent_config()
+
+    return json.dumps({
+        "mode": config.get("mode", "OFF"),
+        "equity": account.get("equity", 0),
+        "equity_by_dex": {k: v for k, v in (account.get("dex_equity") or {}).items() if v},
+        "total_notional": account.get("total_ntl", 0),
+        "positions": account.get("asset_positions", []),
+        "scan_interval_sec": config.get("scan", {}).get("interval", 180),
+        "min_composite_score": config.get("scan", {}).get("minCompositeScore", 20),
+    })
+
+
+def _auth_store():
+    """The dashboard's auth database, or None where there is not one.
+
+    MCP often runs beside a deployment rather than inside it, so a missing or
+    unreadable store is an ordinary state and not a failure to report upward.
+    """
+    try:
+        from services.auth.store import AuthStore
+        return AuthStore()
+    except Exception:
+        return None
+
+
+def handle_connected_wallets(params: Dict[str, Any]) -> str:
+    """Who has signed in to the dashboard.
+
+    Deliberately read-only, and deliberately not wired into any tool that
+    signs. This server holds the deployment's own key and no other, so a
+    connected wallet is something it can LOOK AT and nothing it can trade —
+    which is the security model, not a gap in it. An agent that wants to act on
+    one of these accounts cannot, and should say so rather than reaching for
+    the house key on the user's behalf.
+    """
+    limit = max(1, min(100, int(params.get("limit") or 10)))
+    store = _auth_store()
+    if store is None:
+        return json.dumps({"wallets": [], "status": "no auth database reachable"})
+    try:
+        users = store.list_users()
+    except Exception as e:
+        return json.dumps({"wallets": [], "status": f"auth database unreadable: {e}"})
+    users.sort(key=lambda u: (u.last_seen_at or 0), reverse=True)
+    return json.dumps({
+        "wallets": [{"address": u.address, "role": u.role,
+                     "last_seen_at": u.last_seen_at, "disabled": bool(u.disabled)}
+                    for u in users[:limit]],
+        "can_this_server_trade_them": False,
+        "why_not": ("this server signs with the deployment's own key; a wallet "
+                    "that signed in to the dashboard granted a session, not a key"),
+    })
+
+
+def handle_wallet_account(params: Dict[str, Any]) -> str:
+    """Read-only Hyperliquid state for one address."""
+    address = str(params.get("address") or "").strip()
+    if not address:
+        # The active account (Account tab) first; wave 2 retired sign-in as
+        # the way an account is chosen. A dashboard sign-in is the fallback.
+        try:
+            from services.accounts.view import get_effective_active_account
+            active = get_effective_active_account()
+            address = active.main_address if active else ""
+        except Exception:
+            address = ""
+    if not address and runtime.is_public():
+        # a public install's address with no key (watch only) is no registry
+        # account; it is still the address the user configured
+        address = resolve_user_address() or ""
+    if not address:
+        store = _auth_store()
+        try:
+            users = sorted(store.list_users(), key=lambda u: (u.last_seen_at or 0),
+                           reverse=True) if store else []
+        except Exception:
+            users = []
+        if not users:
+            return json.dumps({"error": "no address given, no active account, and no wallet "
+                                        "has signed in. Connect one in the Account tab."})
+        address = users[0].address
+    if not address.startswith("0x") or len(address) != 42:
+        return json.dumps({"error": f"malformed address: {address!r}"})
+    try:
+        # include_hip3: a HIP-3 account (all its margin on xyz:) read as
+        # $0.0086 here while `state` said $15.21 for the same wallet, and an
+        # agent reported two balances for one account.
+        state = fetch_account_state(address, include_hip3=True) or {}
+    except Exception as e:
+        return json.dumps({"address": address, "status": "unavailable", "error": str(e)})
+    equity = float(state.get("equity") or 0.0)
+    return json.dumps({
+        "address": address,
+        "funded": equity > 0,
+        "equity": equity,
+        "equity_by_dex": {k: v for k, v in (state.get("dex_equity") or {}).items() if v},
+        "withdrawable": state.get("withdrawable"),
+        "positions": state.get("asset_positions", []),
+        "read_only": True,
+    })
+
+
+def handle_config(params: Dict[str, Any]) -> str:
+    from pathiel.agents.config_store import read_agent_config, update_agent_config
+
+    config = read_agent_config()
+
+    # Snake_case scalar/bool/list keys that map 1:1 to .agent-config.json. Writing
+    # snake_case (not the old camelCase) keeps a single canonical key per setting —
+    # the previous handler wrote camelCase and silently created duplicate keys.
+    #
+    # 2026-10-23 (wave 2): every sizing/gating key the retired autonomous
+    # executor read (leverage, equity_fraction_per_trade, the per-trade caps,
+    # the confidence/volume/regime gates, dsl_exit, runner_entry_gate,
+    # runner_mover_surface, ...) is dropped from this allowlist along with
+    # DEFAULT_CONFIG — Claude sizes every trade through place_bracket /
+    # risk_size_trade against the operator's risk profile now, not a global
+    # config knob. See pathiel/agents/config_store.py's DEFAULT_CONFIG for
+    # the full list of what left and why.
+    _DIRECT_KEYS = [
+        "mode", "enable_hip3",
+        "hip3_dex_allowlist", "hip3_dex_blocklist",
+        "coin_allowlist", "coin_blocklist",
+    ]
+    # 2026-10-25: `ai_brain` left this list with pathiel/agents/ai_brain.py.
+    # Nested blocks still deep-merge through the generic path below.
+    # 2026-10-31: desk_equity_share ({desk: fraction}, e.g. oil 0.95, metals
+    # 0.05) is validated by update_agent_config (services/strategies/desk_share.py).
+    _NESTED_KEYS: List[str] = ["desk_equity_share"]
+
+    updates: Dict[str, Any] = {}
+    for key in _DIRECT_KEYS:
+        if key in params and params[key] is not None:
+            updates[key] = params[key]
+
+    def _as_object(key: str, val: Any) -> Any:
+        # MCP clients send untyped nested params as a JSON string; accept both.
+        if isinstance(val, str):
+            try:
+                val = json.loads(val)
+            except ValueError:
+                return None
+        return val if isinstance(val, dict) else None
+
+    def _as_list(key: str, val: Any) -> Any:
+        # Same for list fields the schema does not type (active_desks, ...).
+        # 2026-10-25: {"active_desks": '["oil"]'} was saved as the STRING
+        # '["oil"]', and every reader of active_desks got a string of 7
+        # characters instead of one desk.
+        if isinstance(val, str):
+            try:
+                val = json.loads(val)
+            except ValueError:
+                return None
+        return val if isinstance(val, list) else None
+
+    for key in _NESTED_KEYS:
+        if key not in params or params[key] is None:
+            continue
+        obj = _as_object(key, params[key])
+        if obj is None:
+            return json.dumps({"status": "error", "error": f"{key} must be an object"})
+        updates[key] = obj
+
+    # Any other key already in the live config (risk_profile, a hand-added
+    # experiment block, ...) is accepted too, as the tool contract promises.
+    # Before this, those keys were dropped silently and the call still
+    # returned the unchanged config, which read as success.
+    _handled = set(_DIRECT_KEYS) | set(_NESTED_KEYS)
+    unknown = []
+    for key, val in params.items():
+        if key in _handled or val is None:
+            continue
+        if key not in config:
+            unknown.append(key)
+            continue
+        if isinstance(config[key], dict):
+            val = _as_object(key, val)
+            if val is None:
+                return json.dumps({"status": "error", "error": f"{key} must be an object"})
+        elif isinstance(config[key], list):
+            val = _as_list(key, val)
+            if val is None:
+                return json.dumps({"status": "error", "error": f"{key} must be a list"})
+        updates[key] = val
+    if unknown:
+        # Fail loud and write nothing: a typo must never look like a saved change.
+        return json.dumps({"status": "error",
+                           "error": f"unknown config key(s): {', '.join(sorted(unknown))}"})
+
+    if updates:
+        try:
+            config = update_agent_config(updates)
+        except ValueError as e:
+            return json.dumps({"status": "error", "error": str(e)})
+
+    return json.dumps(config)
+
+
+def handle_market_get_asset_data(params: Dict[str, Any]) -> str:
+    asset = params.get("asset", "")
+    if not asset:
+        return json.dumps({"status": "error", "error": "asset required"})
+    intervals = params.get("intervals")
+    count = _limit({"limit": params.get("count")}, 48, cap=500)
+    out = market_get_asset_data(asset=asset, intervals=intervals)
+    candles = ((out or {}).get("data") or {}).get("candles") if isinstance(out, dict) else None
+    if isinstance(candles, dict):
+        for iv, rows in list(candles.items()):
+            if isinstance(rows, list):
+                candles[iv] = rows[-count:]
+    return json.dumps(out)
+
+
+def handle_market_get_funding_regime(params: Dict[str, Any]) -> str:
+    out = market_get_funding_regime()
+    assets = out.get("assets") if isinstance(out, dict) else None
+    if isinstance(assets, list):
+        cls = params.get("asset_class")
+        rows = [a for a in assets if not cls or a.get("asset_class") == cls]
+        rows.sort(key=lambda a: abs(_fnum(a.get("funding_rate"))), reverse=True)
+        out = {**out, "assets": rows[:_limit(params, 25, cap=1000)], "assets_total": len(rows)}
+    return json.dumps(out)
+
+
+def handle_market_list_instruments(params: Dict[str, Any]) -> str:
+    out = market_list_instruments()
+    rows = out.get("instruments") if isinstance(out, dict) else None
+    if isinstance(rows, list):
+        q = str(params.get("query") or "").strip().lower()
+        typ = params.get("type")
+        rows = [r for r in rows if (not q or q in str(r.get("symbol", "")).lower())
+                and (not typ or r.get("type") == typ)]
+        rows.sort(key=lambda r: _fnum(r.get("volume_24h")), reverse=True)
+        out = {**out, "matched": len(rows), "instruments": rows[:_limit(params, 50, cap=1000)]}
+    return json.dumps(out)
+
+
+def _tool_handlers() -> Dict[str, Any]:
+    """tool name -> handler. Built on first use because the handlers are
+    defined below run() in this file."""
+    global _TOOL_HANDLERS
+    if _TOOL_HANDLERS is not None:
+        return _TOOL_HANDLERS
+    tool_handlers = {
+        "get_assets": handle_get_assets,
+        "get_funding_rate": handle_get_funding_rate,
+        "get_historical_funding": handle_get_historical_funding,
+        "get_trade_history": handle_get_trade_history,
+        "get_user_orders_history": handle_get_user_orders_history,
+        "get_deposits": handle_get_deposits,
+        "get_withdrawals": handle_get_withdrawals,
+        "get_transfers": handle_get_transfers,
+        "get_withdrawal_status": handle_get_withdrawal_status,
+        "get_portfolio_status": handle_get_portfolio_status,
+        "get_api_rate_limits": handle_get_api_rate_limits,
+        "get_price_impact": handle_get_price_impact,
+        "get_max_trade_size": handle_get_max_trade_size,
+        "get_predicted_funding": handle_get_predicted_funding,
+        "get_asset_context": handle_get_asset_context,
+        "get_open_interest": handle_get_open_interest,
+        "state": handle_state,
+        "connected_wallets": handle_connected_wallets,
+        "wallet_account": handle_wallet_account,
+        "config": handle_config,
+        "market_get_asset_data": handle_market_get_asset_data,
+        "market_get_funding_regime": handle_market_get_funding_regime,
+        "market_list_instruments": handle_market_list_instruments,
+        "close_position": handle_close_position,
+        "get_price": handle_get_price,
+        "get_candles": handle_get_candles,
+        "set_leverage": handle_set_leverage,
+        "get_open_orders": handle_get_open_orders,
+        "cancel_order": handle_cancel_order,
+        "get_user_fees": handle_get_user_fees,
+        "get_l2_book": handle_get_l2_book,
+        "get_user_state": handle_get_user_state,
+        "get_price_history": handle_get_price_history,
+        "get_coin_info": handle_get_coin_info,
+        "get_all_mids": handle_get_all_mids,
+        "get_account_summary": handle_get_account_summary,
+        "get_asset_positions": handle_get_asset_positions,
+        "get_24h_stats": handle_get_24h_stats,
+        "get_portfolio_pnl": handle_get_portfolio_pnl,
+        "get_risk_metrics": handle_get_risk_metrics,
+        "get_server_time": handle_get_server_time,
+        "get_liquidation_price": handle_get_liquidation_price,
+        "get_max_leverage": handle_get_max_leverage,
+        "get_order_by_oid": handle_get_order_by_oid,
+        "get_user_fills_by_time": handle_get_user_fills_by_time,
+        "get_historical_orders": handle_get_historical_orders,
+        "query_order_by_cloid": handle_query_order_by_cloid,
+        "desk_list": handle_desk_list,
+        "desk_brief": handle_desk_brief,
+        "desk_refresh": handle_desk_refresh,
+        "desk_submit_call": handle_desk_submit_call,
+        "desk_track_record": handle_desk_track_record,
+        "desk_grade": handle_desk_grade,
+        "account_overview": handle_account_overview,
+        "accounts": handle_accounts,
+        "risk_limits": handle_risk_limits,
+        "risk_size_trade": handle_risk_size_trade,
+        "place_bracket": handle_place_bracket,
+        "bracket_sweep": handle_bracket_sweep,
+        "set_target": handle_set_target,
+    }
+
+    for _name in _STUB_TOOL_NAMES:
+        tool_handlers[_name] = _make_stub_handler(_name)
+
+    # Hidden aliases: old tool names from before the 2026-10-17 consolidation,
+    # dispatched to the handler that now covers them but no longer listed in
+    # TOOLS (tools/list). Every existing client that calls one of these by
+    # name keeps working; new discovery (tools/list) only sees the lean set.
+    # A name on the right MUST be a key already in tool_handlers above.
+    for _alias, _canonical in ALIASES.items():
+        tool_handlers[_alias] = tool_handlers[_canonical]
+
+    _TOOL_HANDLERS = tool_handlers
+    return tool_handlers
+
+
+_TOOL_HANDLERS: "Dict[str, Any] | None" = None
+
+# old tool name -> canonical tool name. See the comment in _tool_handlers().
+ALIASES: Dict[str, str] = {
+    "get_coin_price": "get_price",
+    "market_get_mids": "get_all_mids",
+    "get_markets_info": "get_assets",
+    "get_perp_markets": "get_assets",
+    "get_asset_contexts": "get_assets",
+    "get_market_stats": "get_asset_context",
+    "get_market_depth": "get_l2_book",
+    "get_candles_aggregated": "get_candles",
+    "get_user_fees_detailed": "get_user_fees",
+    "get_user_fills": "get_trade_history",
+    "get_recent_trades": "get_trade_history",
+    "get_user_funding_history": "get_historical_funding",
+    "get_order_status": "get_order_by_oid",
+    "get_portfolio": "get_asset_positions",
+    "get_frontend_open_orders": "get_open_orders",
+    "get_user_orders": "get_open_orders",
+    "get_slippage_estimate": "get_price_impact",
+    "get_transfer_history": "get_transfers",
+    "get_leverage": "get_max_leverage",
+}
+
+
+# ── public install: tool classes, gates, output decoration ──────────────────
+#
+# Everything below runs only when runtime.is_public() (PATHIEL_INSTALL=public,
+# exported by scripts/_plugin_env.sh and Dockerfile.mcp). The operator's stack
+# (.mcp.json, no env block) never calls _public_gate, _public_decorate or
+# builder.warm, gets SERVER_INSTRUCTIONS and TOOLS unchanged, and every
+# handler's output byte for byte (tests/test_mcp_operator_unchanged.py).
+#
+# The gate sits at the MCP boundary (_call_tool), so code that calls a handler
+# directly skips it; pathiel.client.exchange's own credential checks stay the
+# second layer for writes.
+
+# Venue market data: needs no key and no account.
+MARKET_READ_TOOLS = frozenset({
+    "market_get_asset_data", "market_get_funding_regime", "market_list_instruments",
+    "get_price", "get_candles", "get_l2_book", "get_predicted_funding", "get_asset_context",
+    "get_price_history", "get_assets", "get_coin_info", "get_all_mids", "get_24h_stats",
+    "get_funding_rate", "get_open_interest", "get_server_time", "get_price_impact",
+    "get_max_leverage",
+})
+# One account's venue state: needs an address (a `user`/`address` argument
+# where the tool takes one, else the configured account).
+ACCOUNT_READ_TOOLS = frozenset({
+    "wallet_account", "get_open_orders", "get_user_fees", "get_trade_history", "get_user_state",
+    "get_withdrawals", "get_deposits", "get_transfers", "get_max_trade_size",
+    "get_portfolio_status", "get_order_by_oid", "get_account_summary", "get_asset_positions",
+    "get_portfolio_pnl", "get_risk_metrics", "get_historical_funding", "get_api_rate_limits",
+    "get_user_orders_history", "get_withdrawal_status", "get_liquidation_price",
+    "get_user_fills_by_time", "get_historical_orders", "query_order_by_cloid",
+    "account_overview", "risk_limits", "risk_size_trade",
+})
+# Local state, or reads that already answer sensibly with no account.
+LOCAL_READ_TOOLS = frozenset({
+    "state", "connected_wallets", "accounts", "desk_list", "desk_brief", "desk_track_record",
+})
+
+TOOL_CLASSES: Dict[str, frozenset] = {
+    "market_read": MARKET_READ_TOOLS, "account_read": ACCOUNT_READ_TOOLS,
+    "local_read": LOCAL_READ_TOOLS, "live_money": LIVE_MONEY_TOOLS,
+    "live_config": LIVE_CONFIG_TOOLS, "local_write": LOCAL_WRITE_TOOLS,
+}
+
+# An account read that is a what-if when any of these arguments is given: it
+# needs no account then.
+_ACCOUNT_READ_WHAT_IF: Dict[str, Tuple[str, ...]] = {
+    "risk_limits": ("equity_usd",),
+    "risk_size_trade": ("equity_usd",),
+    "get_liquidation_price": ("leverage", "is_long"),
+}
+
+
+def _check_tool_classes() -> List[str]:
+    """Every tool in exactly one class, every alias onto a listed tool. Runs at
+    import: a tool added without a class would reach a public user ungated.
+
+    Raises only on a public install. The operator's install (.mcp.json) logs
+    the problems to stderr and keeps starting: the classes gate public users
+    only, so a missed class must never cost the operator his close_position
+    and bracket_sweep while a position is open. The gate tests still fail on
+    any problem (tests/test_mcp_public_mode.py)."""
+    names = [t["name"] for t in TOOLS]
+    problems = []
+    for name in names:
+        homes = [k for k, s in TOOL_CLASSES.items() if name in s]
+        if len(homes) != 1:
+            problems.append(f"{name}: in {homes or 'no class'}")
+    listed = set(names)
+    for k, s in TOOL_CLASSES.items():
+        for name in sorted(s - listed):
+            problems.append(f"{name}: in {k} but not in TOOLS")
+    for alias, target in ALIASES.items():
+        if target not in listed:
+            problems.append(f"alias {alias} -> {target}: not a TOOLS name")
+        if alias in listed:
+            problems.append(f"alias {alias} is also a TOOLS name")
+    if problems:
+        message = "pathiel-mcp-server tool classes are wrong: " + "; ".join(problems)
+        if runtime.is_public():
+            raise RuntimeError(message)
+        print(f"[pathiel-mcp] WARNING (public installs would refuse to start): {message}",
+              file=sys.stderr)
+    return problems
+
+
+_check_tool_classes()
+
+
+def _canonical(name: str) -> str:
+    return ALIASES.get(name, name)
+
+
+NO_ACCOUNT_MSG = ("no account configured: set HYPERLIQUID_WALLET_ADDRESS in ~/.pathiel/.env.local "
+                  "(run /pathiel:setup). Market reads work without one.")
+
+# Tool descriptions a public user would read as "this machine has a web
+# dashboard" (it does not) or "pathiel stops trading after a daily loss" (it
+# does not). server_tools() swaps them in; names and schemas never change.
+_PUBLIC_DESCRIPTION_OVERRIDES: Dict[str, str] = {
+    "connected_wallets": (
+        "Wallets that signed in to pathiel's local sign-in store, newest first (empty on a "
+        "plugin install). READ-ONLY: this server signs with its own key, so it can never place, "
+        "close or size an order on any wallet listed here. Feed an address to wallet_account below."),
+    "accounts": (
+        "Hyperliquid accounts registered in pathiel (API keys, watch-only), which one is active, "
+        "and which address trades. Set the trading account in ~/.pathiel/.env.local "
+        "(run /pathiel:setup)."),
+    "risk_limits": (
+        "What the account may trade under its risk profile: positions at once, $ lost per "
+        "stop-out, the daily loss figure (shown, not enforced), max leverage. "
+        "equity_usd/preset = what-if."),
+}
+_PUBLIC_FORBIDDEN_TOOL_WORDS = ("dashboard", "account tab", "desk page", "localhost", "daily pause")
+_PUBLIC_TOOLS: "List[Dict[str, Any]] | None" = None
+
+
+def server_tools() -> List[Dict[str, Any]]:
+    """tools/list. TOOLS itself on the operator's install. On a public one, a
+    deep copy with _PUBLIC_DESCRIPTION_OVERRIDES applied: same names, order,
+    inputSchema and annotations."""
+    global _PUBLIC_TOOLS
+    if not runtime.is_public():
+        return TOOLS
+    if _PUBLIC_TOOLS is None:
+        tools = copy.deepcopy(TOOLS)
+        for tool in tools:
+            override = _PUBLIC_DESCRIPTION_OVERRIDES.get(tool["name"])
+            if override is not None:
+                tool["description"] = override
+        _PUBLIC_TOOLS = tools
+    return _PUBLIC_TOOLS
+
+
+def _as_flag(v: Any) -> bool:
+    return v is True or str(v).strip().lower() in ("1", "true", "yes", "y")
+
+
+def _trading_account() -> str:
+    """The main address orders are signed for (what the builder cache keys on),
+    else the configured read address, else ''. Never raises."""
+    try:
+        from pathiel.client.exchange import _resolve_identity
+        return _resolve_identity()[1] or ""
+    except Exception:   # noqa: BLE001 - no key: fall back to the read address
+        pass
+    try:
+        return resolve_user_address() or ""
+    except Exception:   # noqa: BLE001
+        return ""
+
+
+def _warm_builder() -> None:
+    """Start a background approval read when one is due. Never blocks."""
+    try:
+        from pathiel.client import builder
+        builder.warm(_trading_account() or None)
+    except Exception:   # noqa: BLE001 - builder state never fails a call
+        pass
+
+
+def _network_note(coin: str, status: str) -> str:
+    net = runtime.network()
+    hint = ("Testnet lists fewer live markets than mainnet: pick a listed coin "
+            "(market_list_instruments), or switch networks in ~/.pathiel/.env.local."
+            if net == "testnet" else "Pick a listed coin (market_list_instruments).")
+    return f"{coin} is not tradable on {net} ({status}). {hint}"
+
+
+def _profile_leverage_cap() -> "float | None":
+    """The saved risk profile's max leverage. Unset on an auto preset: the
+    highest any auto tier allows (the starter tier), so the gate never refuses
+    what the profile would allow at some equity."""
+    from pathiel.agents.config_store import read_risk_profile
+    profile = read_risk_profile()
+    if profile.max_leverage is not None:
+        return float(profile.max_leverage)
+    from services.risk.presets import resolve_profile
+    return resolve_profile(profile, 0.0)[1].max_leverage
+
+
+def _user_given(canon: str, args: Dict[str, Any]) -> bool:
+    """True when the call names its own address and the tool honors it."""
+    tool = next((t for t in TOOLS if t["name"] == canon), None)
+    props = ((tool or {}).get("inputSchema") or {}).get("properties") or {}
+    for key in ("user", "address"):
+        if key in props and str(args.get(key) or "").strip():
+            return True
+    return False
+
+
+def _public_gate(name: str, args: Dict[str, Any]) -> Optional[str]:
+    """JSON error text that answers the call instead of its handler, or None.
+    Public installs only. Rules, on _canonical(name), in order:
+      1. a live-money tool (except a place_bracket dry run) with no usable key
+         gets the read-only payload; otherwise the builder cache is warmed;
+      2. set_leverage above the risk profile's max_leverage is refused;
+      3. place_bracket, set_target and set_leverage on a coin delisted or not
+         listed on this network are refused; closes, cancels and sweeps never;
+      4. an account read with no address anywhere says so instead of erroring;
+      5. desk_refresh without the claude CLI fails fast."""
+    canon = _canonical(name)
+    if canon in LIVE_MONEY_TOOLS:
+        dry = canon == "place_bracket" and _as_flag(args.get("dry_run"))
+        if not dry:
+            from pathiel.client.exchange import trading_block_reason
+            reason = trading_block_reason()
+            if reason is not None:
+                return json.dumps({"ok": False, "read_only": True, "network": runtime.network(),
+                                   "tool": name, "error": reason})
+        _warm_builder()
+    if canon == "set_leverage":
+        try:
+            wanted = float(args.get("leverage", 5))
+        except (TypeError, ValueError):
+            wanted = None
+        cap = _profile_leverage_cap() if wanted is not None else None
+        if wanted is not None and cap is not None and wanted > cap:
+            return json.dumps({
+                "ok": False, "network": runtime.network(), "leverage": wanted, "max_leverage": cap,
+                "error": (f"leverage {wanted:g}x is above the risk profile cap of {cap:g}x "
+                          "(risk_profile.max_leverage). Raise the cap first with the config tool "
+                          "or ~/.pathiel/.agent-config.json if you mean it.")})
+    if canon in ("place_bracket", "set_target", "set_leverage"):
+        coin = _norm_coin(str(args.get("coin") or ""))
+        if coin:
+            from pathiel.client.exchange import coin_listing
+            status = coin_listing(coin)
+            if status in ("delisted", "not_listed"):
+                note = _network_note(coin, status)
+                return json.dumps({"ok": False, "coin": coin, "placed": False,
+                                   "network": runtime.network(), "network_note": note,
+                                   "error": note})
+    if canon in ACCOUNT_READ_TOOLS:
+        what_if = any(args.get(k) not in (None, "") for k in _ACCOUNT_READ_WHAT_IF.get(canon, ()))
+        if not what_if and not _user_given(canon, args):
+            try:
+                address = resolve_user_address() or ""
+            except Exception:   # noqa: BLE001
+                address = ""
+            if not address:
+                return json.dumps({"error": NO_ACCOUNT_MSG, "no_account": True})
+    if canon == "desk_refresh":
+        from services.llm.config import claude_binary
+        if shutil.which(claude_binary()) is None:
+            return json.dumps({
+                "error": ("desk_refresh needs the Claude Code CLI (claude) on PATH to write a "
+                          "thesis and it was not found. Install Claude Code or set "
+                          "CLAUDE_CLI_COMMAND. desk_brief still shows the last thesis."),
+                "desk": str(args.get("desk") or "").strip()})
+    return None
+
+
+def _fee_estimate(notional_usd: float, fee_tenths_bp: int) -> float:
+    """The builder fee on `notional_usd`: fee in tenths of a basis point, so
+    f=10 is 0.01% and $250 costs $0.025."""
+    return round(float(notional_usd) * int(fee_tenths_bp) / 100000.0, 4)
+
+
+def _builder_notes(obj: Any) -> List[Dict[str, Any]]:
+    """Every builder note pathiel.client.exchange put on an order result
+    (key 'builder', with 'attached' and 'reason_code'), anywhere in obj."""
+    found: List[Dict[str, Any]] = []
+    stack = [obj]
+    while stack:
+        cur = stack.pop()
+        if isinstance(cur, dict):
+            note = cur.get("builder")
+            if isinstance(note, dict) and "attached" in note and "reason_code" in note:
+                found.append(note)
+            stack.extend(v for k, v in cur.items() if k != "builder")
+        elif isinstance(cur, list):
+            stack.extend(cur)
+    return found
+
+
+def _order_notional(canon: str, obj: Dict[str, Any]) -> "float | None":
+    """The notional the call's orders carry, when the output says."""
+    try:
+        if canon == "place_bracket":
+            v = (obj.get("sizing") or {}).get("notional_usd")
+            return float(v) if v is not None else None
+        if canon == "close_position":
+            res = obj.get("result") or {}
+            if res.get("total_sz") is not None and res.get("avg_px") is not None:
+                return float(res["total_sz"]) * float(res["avg_px"])
+            return None
+        if canon == "set_target":
+            if obj.get("size") is not None and obj.get("tp_px") is not None:
+                return float(obj["size"]) * float(obj["tp_px"])
+            return None
+        if canon == "bracket_sweep":
+            merged = (obj.get("consolidated") or {}).get("merged") or []
+            if merged:
+                return sum(float(m.get("size") or 0) * float(m.get("px") or 0) for m in merged)
+            return None
+    except (TypeError, ValueError):
+        return None
+    return None
+
+
+_NOT_AN_ORDER = frozenset({"set_leverage", "cancel_order"})
+_FEE_DETAIL = {
+    "resent_without_builder": ("Hyperliquid placed nothing for the order with the builder fee, "
+                               "so it was sent again without it"),
+    "not_an_order": "this action places no order, so it carries no builder fee",
+    "venue_refused": ("Hyperliquid refused the order for a reason of its own (not the builder "
+                      "fee) and placed nothing, so no fee was charged"),
+}
+
+
+def builder_counters() -> Dict[str, int]:
+    """pathiel.client.builder's order counters (with_builder, without_builder,
+    retried, refused), read from the cache view. {} when unreadable. No I/O."""
+    try:
+        from pathiel.client import builder
+        return dict(builder.builder_status(_trading_account() or None, refresh=False)
+                    .get("counters") or {})
+    except Exception:   # noqa: BLE001
+        return {}
+
+
+def _builder_fee_block(canon: str, obj: Dict[str, Any],
+                       counters_before: Optional[Dict[str, int]] = None) -> Dict[str, Any]:
+    """{charged, rate, address, reason, detail, est_usd?} for a live-money output.
+
+    What the orders of this call carried comes from the builder notes
+    pathiel.client.exchange puts on order results when the tool returns them
+    (place_bracket, close_position). set_target and bracket_sweep return a
+    summary without the order results, so for them it comes from the change in
+    builder's process-wide order counters across the call. Two live-money
+    calls running at once on one public install can blur that second source;
+    the order itself is never affected."""
+    from pathiel.client import builder
+    fee = runtime.builder_fee_tenths_bp()
+    block: Dict[str, Any] = {"charged": False, "rate": runtime.fee_rate_str(fee),
+                             "address": runtime.builder_address() or None}
+    notes = _builder_notes(obj)
+    delta: Dict[str, int] = {}
+    if not notes and counters_before is not None:
+        after = builder_counters()
+        delta = {k: int(after.get(k, 0)) - int(counters_before.get(k, 0))
+                 for k in ("with_builder", "without_builder", "retried", "refused")}
+    if notes:
+        charged = any(bool(n.get("attached")) for n in notes)
+        codes = [str(n.get("reason_code") or "none") for n in notes]
+        reason = ("approved" if charged else
+                  "resent_without_builder" if "resent_without_builder" in codes else codes[0])
+        block["charged"] = charged
+        block["reason"] = reason
+        block["detail"] = _FEE_DETAIL.get(reason) or builder.REASONS.get(reason, reason)
+    elif any(v > 0 for v in delta.values()):
+        charged = delta["with_builder"] > 0
+        if charged:
+            reason = "approved"
+        elif delta["retried"] > 0:
+            reason = "resent_without_builder"
+        elif delta["refused"] > 0 and delta["without_builder"] == 0:
+            reason = "venue_refused"
+        else:
+            reason = str(builder.last_decision(_trading_account()).get("reason_code") or "none")
+        block["charged"] = charged
+        block["reason"] = reason
+        block["detail"] = _FEE_DETAIL.get(reason) or builder.REASONS.get(reason, reason)
+    elif canon in _NOT_AN_ORDER:
+        block["reason"] = "not_an_order"
+        block["detail"] = _FEE_DETAIL["not_an_order"]
+    else:
+        status = builder.builder_status(_trading_account() or None, refresh=False)
+        block["reason"] = "no_order_placed"
+        block["detail"] = ("no order was sent in this call. Next order: "
+                           + str(status.get("reason") or status.get("reason_code")))
+    notional = _order_notional(canon, obj)
+    if notional is not None:
+        block["est_usd"] = _fee_estimate(notional, fee) if block["charged"] else 0.0
+    return block
+
+
+# Cache views after which `state` reads the approval once more itself, so a
+# user who just signed approve-sign sees it at once.
+_STATE_REREAD = frozenset({"cache_cold", "not_approved", "approval_read_failed"})
+
+
+def _install_block() -> Dict[str, Any]:
+    """Who is running, on which network, whether trading is on, the fee.
+
+    The fee comes from the cache view. When that view shows the fee enabled
+    but no approval yet, state reads the approval once (builder_status
+    refresh=True: one bounded read, at most builder.HARD_DEADLINE_S). Only
+    state does this; order paths never read."""
+    from pathiel.client import builder
+    from pathiel.client.exchange import trading_block_reason
+    reason = trading_block_reason()
+    account = _trading_account() or None
+    status = builder.builder_status(account, refresh=False)
+    if account and status.get("enabled") and status.get("reason_code") in _STATE_REREAD:
+        status = builder.builder_status(account, refresh=True)
+    net = runtime.network()
+    return {
+        "kind": runtime.install_kind(),
+        "network": net,
+        "network_explicit": runtime.network_is_explicit(),
+        "network_notice": _public_start_notice(net).removeprefix("pathiel: "),
+        "trading": "read_only" if reason else "enabled",
+        "read_only_reason": reason,
+        "builder_fee": {k: status.get(k) for k in (
+            "enabled", "address", "fee_tenths_bp", "fee_rate", "approved_tenths_bp",
+            "attaches", "reason_code", "reason")},
+    }
+
+
+_DAILY_LOSS_NOTE = ("Daily loss figure: -${:,.2f}. Informational only: pathiel does not stop "
+                    "trading for you.")
+_PUBLIC_WORDING: Tuple[Tuple["re.Pattern[str]", str], ...] = (
+    (re.compile(r"(?:in )?the dashboard's Account tab", re.I), "in ~/.pathiel/.env.local (run /pathiel:setup)"),
+    (re.compile(r"(?:in )?the Account tab(?: in the dashboard)?", re.I),
+     "in ~/.pathiel/.env.local (run /pathiel:setup)"),
+    (re.compile(r"Account tab", re.I), "~/.pathiel/.env.local (run /pathiel:setup)"),
+    (re.compile(r"(?:,? or )?PUT /api/\S+", re.I), ""),
+    (re.compile(r"\bthe dashboard\b", re.I), "pathiel's local sign-in"),
+    (re.compile(r"\bdashboard\b", re.I), "local sign-in"),
+    (re.compile(r"\bdaily pause\b", re.I), "daily loss figure"),
+    (re.compile(r"\bstops for the day\b", re.I), "shows a daily loss figure"),
+)
+_REWORDED_TOOLS = frozenset({"wallet_account", "accounts", "account_overview", "connected_wallets",
+                             "risk_limits"})
+
+
+def _reword(value: Any) -> Any:
+    """Every string in value with the dashboard and pause wording replaced."""
+    if isinstance(value, str):
+        for rx, repl in _PUBLIC_WORDING:
+            value = rx.sub(repl, value)
+        return value
+    if isinstance(value, list):
+        return [_reword(v) for v in value]
+    if isinstance(value, dict):
+        return {k: _reword(v) for k, v in value.items()}
+    return value
+
+
+def _desk_network_note(desk_id: str) -> "str | None":
+    """network_note when the desk's primary instrument is delisted or not
+    listed on this network and has no testnet substitute (get_spec has
+    already swapped the oil desk's xyz:BRENTOIL for xyz:CL on testnet; the
+    brief itself says so through desks.substitution_note)."""
+    if not desk_id:
+        return None
+    from pathiel.client.exchange import coin_listing
+    from services.strategies.desks import get_spec
+    spec = get_spec(desk_id)
+    if not spec or not spec.instruments:
+        return None
+    coin = next((i.coin for i in spec.instruments if i.role == "primary"), spec.instruments[0].coin)
+    status = coin_listing(coin)
+    if status in ("delisted", "not_listed"):
+        return (_network_note(coin, status) + " The brief's levels may be stale or empty; "
+                "the thesis still reads, but this desk cannot open a trade here.")
+    return None
+
+
+def _desk_substitution_note(desk_id: str) -> "str | None":
+    """'Testnet: this desk trades WTI (xyz:CL) as the stand-in for Brent ...'
+    when this network swaps the desk's instrument, else None. None at once on
+    mainnet (no venue read), so the operator's brief is unchanged."""
+    if not desk_id or not runtime.network() == "testnet":
+        return None
+    try:
+        from services.strategies.desks import registry_spec, substitution_note
+        return substitution_note(registry_spec(desk_id))
+    except Exception:   # noqa: BLE001 - the brief answers without the note
+        return None
+
+
+def _public_decorate(name: str, args: Dict[str, Any], text: str,
+                     counters_before: Optional[Dict[str, int]] = None) -> str:
+    """A handler's output, with what a public user needs added. Public
+    installs only. Text that is not a JSON object comes back unchanged.
+    counters_before: builder_counters() taken just before the handler ran."""
+    try:
+        obj = json.loads(text)
+    except (TypeError, ValueError):
+        return text
+    if not isinstance(obj, dict):
+        return text
+    canon = _canonical(name)
+    if canon in LIVE_MONEY_TOOLS:
+        obj["network"] = runtime.network()
+        obj["builder_fee"] = _builder_fee_block(canon, obj, counters_before)
+    elif canon == "state":
+        obj["install"] = _install_block()
+    elif canon == "desk_brief":
+        note = _desk_network_note(str(args.get("desk") or "").strip())
+        if note:
+            obj["network_note"] = note
+    elif canon in MARKET_READ_TOOLS and obj.get("error"):
+        # A HIP-3 coin whose dex or market this network does not list: say
+        # so instead of the raw venue error (a 422 on allMids, "unknown coin").
+        coin = _norm_coin(str(args.get("coin") or ""))
+        if ":" in coin:
+            from pathiel.client.exchange import coin_listing
+            status = coin_listing(coin)
+            if status in ("delisted", "not_listed"):
+                note = _network_note(coin, status)
+                obj["venue_error"] = obj["error"]
+                obj["error"] = note
+                obj["network_note"] = note
+    if canon == "risk_limits":
+        notes = obj.get("notes")
+        if isinstance(notes, list):
+            limit = _fnum(obj.get("daily_loss_limit_usd"))
+            obj["notes"] = [_DAILY_LOSS_NOTE.format(limit)
+                            if isinstance(n, str) and n.startswith("Daily pause after") else n
+                            for n in notes]
+        if "change_it" in obj:
+            obj["change_it"] = ("the config tool (risk_profile), or edit "
+                                "~/.pathiel/.agent-config.json.")
+    if canon == "accounts" and "manage" in obj:
+        obj["manage"] = ("set the trading account in ~/.pathiel/.env.local (run /pathiel:setup); "
+                         "add a watch-only address with wallet_account {address}.")
+    if canon in _REWORDED_TOOLS:
+        obj = _reword(obj)
+    return json.dumps(obj, default=str)
+
+
+def _operator_checkout_notice(root: str, env: "Dict[str, str] | Any") -> Optional[str]:
+    """One stderr line for someone who launched the server straight from a
+    checkout with no env file of their own: that path is the maintainer's
+    (mainnet, the repo's tracked 20x config). None on a public install, when
+    <root>/.env.local exists (the operator's checkout), or when
+    PATHIEL_ENV_FILE is set."""
+    if runtime.is_public(env):
+        return None
+    if os.path.isfile(os.path.join(root, ".env.local")):
+        return None
+    if str(env.get("PATHIEL_ENV_FILE") or "").strip():
+        return None
+    return ("pathiel: maintainer mode from a checkout (mainnet, the repo tracked config). "
+            "Public users: install the plugin or start scripts/pathiel-mcp.")
+
+# Protocol versions this server speaks. The tools surface is identical across
+# them, so a client asking for any of these gets its own version echoed back;
+# anything else gets the newest, which the spec lets the client reject.
+_SUPPORTED_PROTOCOL_VERSIONS = ("2025-06-18", "2025-03-26", "2024-11-05")
+
+# JSON-RPC 2.0 error codes.
+_PARSE_ERROR = -32700
+_INVALID_REQUEST = -32600
+_METHOD_NOT_FOUND = -32601
+_INVALID_PARAMS = -32602
+
+
+def _payload_is_error(text: str) -> bool:
+    """True when a handler's JSON reports failure.
+
+    Handlers return {"error": ...} or {"status": "error"} instead of raising,
+    so an agent reads the reason. That payload used to ship with
+    isError:false, which told the client the call worked.
+    """
+    try:
+        obj = json.loads(text)
+    except (TypeError, ValueError):
+        return False
+    return isinstance(obj, dict) and (
+        obj.get("error") not in (None, "", False) or obj.get("status") == "error")
+
+
+# A tool result lands in the client model's context. Claude Code warns past
+# ~10k tokens and truncates at 25k; a raw historicalOrders dump was 784 KB.
+# Handlers narrow their own output (limit/coin/query/full params); this is the
+# backstop for anything that still comes back too big.
+MAX_OUTPUT_CHARS = int(os.environ.get("PATHIEL_MCP_MAX_OUTPUT_CHARS", "40000"))
+
+
+def _guard_output(name: str, text: str) -> str:
+    if MAX_OUTPUT_CHARS <= 0 or len(text) <= MAX_OUTPUT_CHARS:
+        return text
+    return json.dumps({
+        "truncated": True, "tool": name, "original_chars": len(text),
+        "hint": ("Too large for a model context. Narrow it with this tool's filters "
+                 "(limit, coin, query, full=false) and call again."),
+        "head": text[: MAX_OUTPUT_CHARS // 2],
+    })
+
+
+def _call_tool(name: Any, args: Any) -> Dict[str, Any]:
+    handler = _tool_handlers().get(name) if isinstance(name, str) else None
+    if handler is None:
+        raise KeyError(name)
+    if not isinstance(args, dict):
+        return {"content": [{"type": "text", "text": json.dumps(
+            {"error": "arguments must be an object"})}], "isError": True}
+    public = runtime.is_public()
+    gated: Optional[str] = None
+    if public:
+        try:
+            gated = _public_gate(name, args)
+        except Exception as e:   # noqa: BLE001
+            traceback.print_exc(file=sys.stderr)
+            sys.stderr.flush()
+            if _canonical(name) in LIVE_MONEY_TOOLS or _canonical(name) in LIVE_CONFIG_TOOLS:
+                # fail closed for writes: a broken safety check never lets one through
+                gated = json.dumps({"ok": False, "network": runtime.network(), "tool": name,
+                                    "error": f"public safety check failed ({type(e).__name__}: {e}); "
+                                             "nothing was sent"})
+    if gated is not None:
+        text = gated
+    else:
+        counters_before = (builder_counters()
+                           if public and _canonical(name) in LIVE_MONEY_TOOLS else None)
+        try:
+            text = handler(args)
+        except Exception as e:
+            traceback.print_exc(file=sys.stderr)
+            sys.stderr.flush()
+            text = json.dumps({"error": f"{type(e).__name__}: {e}", "tool": name})
+        if not isinstance(text, str):
+            text = json.dumps(text, default=str)
+        if public:
+            try:
+                text = _public_decorate(name, args, text, counters_before)
+            except Exception:   # noqa: BLE001 - decoration never loses the handler's answer
+                traceback.print_exc(file=sys.stderr)
+                sys.stderr.flush()
+    is_error = _payload_is_error(text)
+    return {"content": [{"type": "text", "text": _guard_output(name, text)}],
+            "isError": is_error}
+
+
+def dispatch_message(msg: Any) -> "Dict[str, Any] | None":
+    """One inbound JSON-RPC message -> the response to send, or None.
+
+    Notifications (no "id") never get a response: answering one is a protocol
+    violation some clients treat as fatal. Every request with an id gets
+    exactly one response, success or error, so a client is never left waiting.
+    """
+    global _CLIENT_SUPPORTS_SAMPLING
+    if not isinstance(msg, dict):
+        return _error_msg(None, _INVALID_REQUEST, "message must be a JSON object")
+    method = msg.get("method")
+    is_notification = "id" not in msg
+    msg_id = msg.get("id")
+    params = msg.get("params") or {}
+
+    if is_notification:
+        return None
+    if not isinstance(method, str):
+        return _error_msg(msg_id, _INVALID_REQUEST, "method must be a string")
+    if not isinstance(params, dict):
+        return _error_msg(msg_id, _INVALID_PARAMS, "params must be an object")
+
+    if method == "initialize":
+        _client_caps = params.get("capabilities") or {}
+        _CLIENT_SUPPORTS_SAMPLING = isinstance(_client_caps, dict) and "sampling" in _client_caps
+        sys.stderr.write(f"[mcp] client sampling capability: {_CLIENT_SUPPORTS_SAMPLING}\n")
+        sys.stderr.flush()
+        asked = params.get("protocolVersion")
+        version = asked if asked in _SUPPORTED_PROTOCOL_VERSIONS else _SUPPORTED_PROTOCOL_VERSIONS[0]
+        return _result_msg(msg_id, {
+            "protocolVersion": version,
+            "capabilities": {"tools": {}},
+            "serverInfo": {"name": "pathiel", "version": __version__},
+            "instructions": server_instructions(),
+        })
+    if method == "ping":
+        return _result_msg(msg_id, {})
+    if method == "tools/list":
+        return _result_msg(msg_id, {"tools": server_tools()})
+    if method == "tools/call":
+        name = params.get("name")
+        try:
+            return _result_msg(msg_id, _call_tool(name, params.get("arguments") or {}))
+        except KeyError:
+            return _error_msg(msg_id, _INVALID_PARAMS, f"Unknown tool: {name}")
+    return _error_msg(msg_id, _METHOD_NOT_FOUND, f"Method not found: {method}")
+
+
+# ── concurrent transport ────────────────────────────────────────────────────
+# run() reads stdin on the main thread and answers everything except
+# tools/call inline. Each tools/call runs on a worker thread, so a minute-long
+# desk_refresh no longer blocks a get_price sent next to it, and every call is
+# answered by its deadline (_tool_timeout) even when the work behind it is
+# still running. A client response to one of the server's own requests
+# (sampling) is routed to the waiting handler by id. notifications/cancelled
+# suppresses the cancelled call's reply, as the spec asks.
+#
+# Where it breaks: Python cannot kill a thread, so a call that times out keeps
+# its worker until the handler returns. MAX_CONCURRENT_CALLS bounds the damage;
+# every network call underneath has its own (seconds-scale) timeout.
+#
+# 2026-10-31: that last sentence was wrong in practice. During a Hyperliquid
+# 502 storm, build_and_cache_analytics (desk_brief's inline rebuild) chains
+# several sequential, retrying network phases (daily candles x N instruments,
+# an account read, hourly candles for the primary); each phase is individually
+# timeout-bounded, but nothing bounded their SUM, and fetch_hl_candles's own
+# 6-retry backoff loop multiplied a dead connection into minutes per phase.
+# Measured: handle_desk_brief("oil") took 936-972s end to end. The per-tool
+# timer below still fired at DEFAULT_TOOL_TIMEOUT_S and freed the CLIENT, but
+# the worker thread kept running underneath for the full 900+s (the comment
+# above already says so), so MAX_CONCURRENT_CALLS workers filled with these
+# zombies during a sustained outage and every later tick queued behind them
+# with no free worker -- "the server processes calls one at a time."
+#
+# Fix: handle_desk_brief and handle_bracket_sweep run their slow work on
+# _BUILD_EXECUTOR (below) and give up waiting after HANDLER_DEADLINE_S,
+# falling back to cached data (desk_brief) or a clear "still running"
+# error (bracket_sweep). The dispatch-pool worker is freed within
+# HANDLER_DEADLINE_S either way, so MAX_CONCURRENT_CALLS always has room for
+# the next tick even when the orphaned rebuild is still stuck in a retry loop.
+
+MAX_CONCURRENT_CALLS = int(os.environ.get("PATHIEL_MCP_MAX_CONCURRENT", "6"))
+DEFAULT_TOOL_TIMEOUT_S = 120.0
+TOOL_TIMEOUT_S: Dict[str, float] = {"desk_refresh": 300.0}
+
+# No single desk_brief/bracket_sweep call may hold a tool-dispatch worker
+# longer than this. Comfortably above the pre-outage normal (~30s was the
+# slowest *healthy* tick observed 2026-10-31), far below the observed
+# incident duration (900+s).
+HANDLER_DEADLINE_S = float(os.environ.get("PATHIEL_MCP_HANDLER_DEADLINE_S", "30"))
+
+# Separate from the tool-dispatch `pool` in run(): a handler that gives up
+# waiting leaves its real work running here instead of on a dispatch worker,
+# so a stuck rebuild never consumes one of the MAX_CONCURRENT_CALLS slots that
+# the next tick's tools/call needs. Bounded size so a sustained outage can
+# still only accumulate a handful of zombie builds, not an unbounded pile.
+_BUILD_EXECUTOR = ThreadPoolExecutor(
+    max_workers=int(os.environ.get("PATHIEL_MCP_BUILD_WORKERS", "4")),
+    thread_name_prefix="pathiel-build")
+
+
+def _bounded(fn: Callable[..., Any], *args: Any,
+            deadline: "float | None" = None, **kwargs: Any) -> Any:
+    """Run fn(*args, **kwargs) on _BUILD_EXECUTOR; wait at most `deadline`
+    seconds for it (module-global HANDLER_DEADLINE_S, read fresh on every
+    call -- NOT a default-argument value -- so tests and
+    PATHIEL_MCP_HANDLER_DEADLINE_S both take effect). Raises
+    concurrent.futures.TimeoutError (== TimeoutError since Python 3.11) if
+    it doesn't finish in time -- fn keeps running in the background
+    regardless, this only bounds how long the CALLING thread (an MCP
+    tool-dispatch worker) waits on it."""
+    if deadline is None:
+        deadline = HANDLER_DEADLINE_S
+    return _BUILD_EXECUTOR.submit(fn, *args, **kwargs).result(timeout=deadline)
+
+
+_ROUTER_ACTIVE = False                     # True only inside run()
+_ROUTE_LOCK = threading.Lock()
+_WAITERS: Dict[str, "queue.Queue[Dict[str, Any]]"] = {}
+_EARLY: Dict[str, Dict[str, Any]] = {}     # responses that beat their waiter (bounded)
+_INFLIGHT: Dict[str, "_InflightCall"] = {}
+_TLS = threading.local()
+
+
+def _tool_timeout(name: str) -> float:
+    raw = os.environ.get("PATHIEL_MCP_TOOL_TIMEOUT_S")
+    if raw:
+        try:
+            return max(1.0, float(raw))
+        except ValueError:
+            pass
+    return TOOL_TIMEOUT_S.get(name, DEFAULT_TOOL_TIMEOUT_S)
+
+
+def _id_key(msg_id: Any) -> str:
+    return json.dumps(msg_id, sort_keys=True, default=str)
+
+
+class _InflightCall:
+    """One tools/call between receipt and its single response."""
+
+    def __init__(self, msg_id: Any, name: str, progress_token: Any):
+        self.msg_id, self.name, self.progress_token = msg_id, name, progress_token
+        self.answered = threading.Event()
+        self._lock = threading.Lock()
+        self._step = 0
+
+    def answer(self, response: "Dict[str, Any] | None") -> bool:
+        """Send `response` (None = say nothing, for a cancelled call) unless
+        this call was already answered. True if this was the answer."""
+        with self._lock:
+            if self.answered.is_set():
+                return False
+            self.answered.set()
+        if response is not None:
+            _send(response)
+        return True
+
+    def progress(self, message: str, total: "float | None" = None) -> None:
+        if self.progress_token is None or self.answered.is_set():
+            return
+        with self._lock:
+            self._step += 1
+            step = self._step
+        params: Dict[str, Any] = {"progressToken": self.progress_token,
+                                  "progress": step, "message": message}
+        if total is not None:
+            params["total"] = total
+        _send({"jsonrpc": "2.0", "method": "notifications/progress", "params": params})
+
+
+def _report_progress(message: str, total: "float | None" = None) -> None:
+    """Progress for the tool call running on this thread. A no-op outside
+    run() or when the client sent no progressToken."""
+    call = getattr(_TLS, "call", None)
+    if call is not None:
+        call.progress(message, total)
+
+
+def _timeout_result(name: str, seconds: float) -> Dict[str, Any]:
+    return {"content": [{"type": "text", "text": json.dumps({
+        "error": (f"{name} did not finish within {seconds:.0f}s. The work may still "
+                  "complete in the background; check again in a moment."),
+        "tool": name, "timed_out": True})}], "isError": True}
+
+
+def _deliver_response(msg: Dict[str, Any]) -> None:
+    key = str(msg.get("id"))
+    with _ROUTE_LOCK:
+        waiter = _WAITERS.pop(key, None)
+        if waiter is None:
+            if len(_EARLY) >= 64:
+                _EARLY.pop(next(iter(_EARLY)))
+            _EARLY[key] = msg
+            return
+    waiter.put(msg)
+
+
+def _cancel(request_id: Any) -> None:
+    with _ROUTE_LOCK:
+        call = _INFLIGHT.get(_id_key(request_id))
+    if call is not None and call.answer(None):
+        sys.stderr.write(f"[mcp] cancelled {call.name} (id {request_id})\n")
+        sys.stderr.flush()
+
+
+def _start_tool_call(msg: Dict[str, Any], pool: ThreadPoolExecutor) -> None:
+    msg_id = msg.get("id")
+    params = msg["params"]
+    name = params.get("name")
+    if not isinstance(name, str) or name not in _tool_handlers():
+        _send(_error_msg(msg_id, _INVALID_PARAMS, f"Unknown tool: {name}"))
+        return
+    meta = params.get("_meta")
+    call = _InflightCall(msg_id, name, meta.get("progressToken") if isinstance(meta, dict) else None)
+    key = _id_key(msg_id)
+    with _ROUTE_LOCK:
+        _INFLIGHT[key] = call
+    seconds = _tool_timeout(name)
+    timer = threading.Timer(seconds, lambda: call.answer(
+        _result_msg(msg_id, _timeout_result(name, seconds))))
+    timer.daemon = True
+    timer.start()
+
+    def work() -> None:
+        _TLS.call = call
+        try:
+            response = _result_msg(msg_id, _call_tool(name, params.get("arguments") or {}))
+        except KeyError:
+            response = _error_msg(msg_id, _INVALID_PARAMS, f"Unknown tool: {name}")
+        except Exception as e:  # _call_tool already folds handler errors into a result
+            traceback.print_exc(file=sys.stderr)
+            response = _error_msg(msg_id, -32603, f"Internal error: {e}")
+        finally:
+            _TLS.call = None
+            timer.cancel()
+        call.answer(response)
+        with _ROUTE_LOCK:
+            _INFLIGHT.pop(key, None)
+
+    pool.submit(work)
+
+
+def _route(msg: Any, pool: ThreadPoolExecutor) -> None:
+    if not isinstance(msg, dict):
+        _send(_error_msg(None, _INVALID_REQUEST, "message must be a JSON object"))
+        return
+    method = msg.get("method")
+    if method is None and "id" in msg and ("result" in msg or "error" in msg):
+        _deliver_response(msg)
+        return
+    if "id" not in msg:
+        if method == "notifications/cancelled":
+            _cancel((msg.get("params") or {}).get("requestId"))
+        return
+    if method == "tools/call" and isinstance(msg.get("params"), dict):
+        _start_tool_call(msg, pool)
+        return
+    try:
+        response = dispatch_message(msg)
+    except Exception as e:
+        traceback.print_exc(file=sys.stderr)
+        response = _error_msg(msg.get("id"), -32603, f"Internal error: {e}")
+    if response is not None:
+        _send(response)
+
+
+def run() -> None:
+    global _PROTO_OUT, _ROUTER_ACTIVE
+    # stdout IS the protocol channel. Anything else that prints to it (a stray
+    # print() in an engine module, a library banner) splices garbage into the
+    # JSON-RPC stream and the client drops the connection. Keep the real
+    # stdout for frames and point sys.stdout at stderr for everyone else.
+    _PROTO_OUT = sys.stdout
+    sys.stdout = sys.stderr
+    _tool_handlers()
+    pool = ThreadPoolExecutor(max_workers=max(1, MAX_CONCURRENT_CALLS),
+                              thread_name_prefix="mcp-tool")
+    _ROUTER_ACTIVE = True
+    try:
+        while True:
+            line = sys.stdin.readline()
+            if not line:
+                break
+            if not line.strip():
+                continue
+            try:
+                msg = json.loads(line)
+            except json.JSONDecodeError as e:
+                _send(_error_msg(None, _PARSE_ERROR, f"Parse error: {e}"))
+                continue
+            _route(msg, pool)
+    finally:
+        # Every accepted call is answered by its own deadline (its timer), so
+        # this wait is bounded even when a handler is stuck.
+        with _ROUTE_LOCK:
+            pending = list(_INFLIGHT.values())
+        for call in pending:
+            call.answered.wait()
+        _ROUTER_ACTIVE = False
+        pool.shutdown(wait=False, cancel_futures=True)
+
+
+def handle_get_price(params: Dict[str, Any]) -> str:
+    """Mid price for one coin: one rate-limited allMids POST on the coin's
+    own dex (weight 2). It used to go through exchange.get_hl_price, whose
+    SDK Info builds every dex's metadata on first use (2.5s for one price),
+    and answered 0.0 for a coin it could not find."""
+    coin = _norm_coin(params.get('coin', 'BTC'))
+    try:
+        price = _mid_price(coin)
+    except Exception as e:
+        return json.dumps({'coin': coin, 'error': str(e)})
+    if price <= 0:
+        return json.dumps({'coin': coin, 'error': f'no price for {coin} (unknown coin, or '
+                                                  'HIP-3 coins need their dex prefix, e.g. xyz:CL)'})
+    return json.dumps({'coin': coin, 'price': price}, default=str)
+
+def handle_get_candles(params: Dict[str, Any]) -> str:
+    """Handle get_candles tool call."""
+    from pathiel.client.hl_client import fetch_hl_candles
+    coin = _norm_coin(params.get('coin', 'BTC'))
+    interval = params.get('interval', '1h')
+    count = params.get('count', 100)
+    candles = fetch_hl_candles(coin, interval, count)
+    return json.dumps([c.model_dump() for c in candles], default=str)
+
+def handle_close_position(params: Dict[str, Any]) -> str:
+    """Handle close_position tool call."""
+    from pathiel.agents.bracket import close_position as close_position_market
+
+    coin = _norm_coin(params.get('coin', 'BTC'))
+
+    try:
+        result = close_position_market(coin)
+        closed = bool(result.get('ok')) and not bool(result.get('noop'))
+        payload = {'closed': closed, 'coin': coin, 'result': result}
+        if not closed:
+            payload['reason'] = result.get('noop') or result.get('error') or 'close_failed'
+        return json.dumps(payload, default=str)
+    except Exception as e:
+        return json.dumps({'closed': False, 'error': str(e)}, default=str)
+
+def handle_set_leverage(params: Dict[str, Any]) -> str:
+    """Set a coin's leverage. With an open position on the coin, the margin
+    type is the position's own (Hyperliquid refuses to switch type on an
+    open position: 2026-10-24 the auto path sent cross against an isolated
+    Brent long and the venue answered "Cannot switch leverage type with
+    open position" while the tool still said ok). Strict: a venue "err"
+    body is an error, not ok."""
+    from pathiel.client.exchange import set_leverage as set_leverage_fn
+    coin = _norm_coin(params.get('coin', 'BTC'))
+    leverage = int(params.get('leverage', 5))
+    is_cross = _open_position_margin_is_cross(coin)
+    result = set_leverage_fn(coin, leverage, is_cross=is_cross, strict=True)
+    result["margin_type"] = ("position's own: " if is_cross is not None else "market default: ") + (
+        "cross" if result.get("is_cross") else "isolated")
+    return json.dumps(result, default=str)
+
+
+def _open_position_margin_is_cross(coin: str, positions: Optional[List[Dict[str, Any]]] = None) -> Optional[bool]:
+    """True/False for the margin type of the open position on `coin`; None
+    when flat (let the market default decide). `positions` is the venue's
+    assetPositions list; fetched for the active account when omitted."""
+    if positions is None:
+        try:
+            from pathiel.client.account_snapshot import account_state
+            positions = account_state(_user({}), include_hip3=True).get("asset_positions") or []
+        except Exception:  # noqa: BLE001 - unknown is "flat": the market default applies
+            return None
+    for row in positions:
+        p = (row or {}).get("position") or {}
+        try:
+            if p.get("coin") == coin and float(p.get("szi") or 0) != 0:
+                lev = p.get("leverage") or {}
+                return (lev.get("type") == "cross") if isinstance(lev, dict) else None
+        except (TypeError, ValueError):
+            continue
+    return None
+
+def handle_get_open_orders(params: Dict[str, Any]) -> str:
+    """Open orders (frontend shape: trigger type, tp/sl). Also answers
+    get_frontend_open_orders, get_user_orders.
+
+    FIXED 2026-10-17: this read fetch_account_state(user)['open_orders'], a
+    key that function never returns (it has no such field), so every call
+    silently answered [] regardless of real open orders — a silent lie, not
+    an error. The real data is frontendOpenOrders, which get_frontend_open_orders
+    and get_user_orders already called correctly; this now does the same.
+    """
+    user = _user(params)
+    coin_filter = _norm_coin(params.get('coin', ''))
+    try:
+        dexes = _dexes_for(coin_filter, user)
+        orders: List[Dict[str, Any]] = []
+        for dex in dexes:
+            orders.extend(_info("frontendOpenOrders", user=user, **({"dex": dex} if dex else {})) or [])
+        if coin_filter:
+            orders = [o for o in orders if _norm_coin(o.get('coin', '')) == coin_filter]
+        return json.dumps({"count": len(orders), "dexes": [d or "main" for d in dexes],
+                           "orders": orders[:_limit(params, 100)]}, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+
+# An order needs margin on its own dex (HIP-3 dexes margin separately), and
+# the venue minimum is $10 at up to ~40x, so a dex holding under this much
+# cannot back one. Skipping those saves a weight-20 request per dust dex.
+_MIN_DEX_MARGIN_FOR_ORDERS = 0.25
+
+
+def _dexes_for(coin: str, user: str) -> List[str]:
+    """The perp dexes to ask about `user`'s orders: the coin's own dex when a
+    coin is given, else main plus every HIP-3 dex with margin on it.
+    FIXED 2026-10-18: frontendOpenOrders with no `dex` covers the main dex
+    (and spot) only, so every xyz:CL order was invisible to this tool."""
+    if coin:
+        return [_coin_dex(coin)]
+    acct = fetch_account_state(user, include_hip3=True) or {}
+    extra = sorted(d for d, eq in (acct.get("dex_equity") or {}).items()
+                   if d and _fnum(eq) >= _MIN_DEX_MARGIN_FOR_ORDERS)
+    return [""] + extra
+
+def handle_cancel_order(params: Dict[str, Any]) -> str:
+    """Cancel one order by coin (preferred) or asset index. The SDK's cancel
+    takes a coin NAME; passing the index straight through (the old code)
+    raised on every call, so this tool never worked for xyz:* orders."""
+    from pathiel.client.exchange import _has_usable_credential, cancel_orders
+    order_id = params.get('order_id')
+    coin = _norm_coin(str(params.get('coin') or '')) or None
+    asset = params.get('asset')
+    if order_id is None or (coin is None and asset is None):
+        return json.dumps({'cancelled': False, 'error': 'order_id plus coin (or asset index) required'})
+    if not _has_usable_credential():
+        return json.dumps({'cancelled': False, 'error': 'HYPERLIQUID_PRIVATE_KEY not set'})
+    try:
+        res = cancel_orders(int(order_id), coin=coin, asset_idx=int(asset) if asset is not None and coin is None else None)
+        return json.dumps({'cancelled': bool(res.get('ok')), 'order_id': int(order_id), 'coin': coin,
+                           **({} if res.get('ok') else {'error': res.get('error')})}, default=str)
+    except Exception as e:
+        return json.dumps({'cancelled': False, 'error': str(e)}, default=str)
+
+
+def handle_get_user_fees(params: Dict[str, Any]) -> str:
+    """Handle get_user_fees tool call."""
+    user = resolve_user_address()
+    try:
+        info = _limited_info()
+        fees = info.user_fees(user)
+        return json.dumps({"fees": fees}, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+
+# ── formerly stubs ───────────────────────────────────────────────────────────
+# Each of the six below advertised `not_implemented` while the capability sat
+# one call away in pathiel.client. That is worse than a missing tool: an agent
+# reads "not implemented" as "this data does not exist here" and goes without
+# it, or invents a workaround. Audited 2026-09-06 by checking every stub name
+# against what hl_client and exchange already expose.
+
+
+def handle_get_max_leverage(params: Dict[str, Any]) -> str:
+    """The venue's max leverage for a coin (HIP-3-aware: xyz:CL, vntl:NVDA, ...
+    route to their own dex's meta). Also answers get_leverage.
+
+    FIXED 2026-10-17: this used to re-scan info.meta()["universe"] (main dex
+    only) by hand and answer "not found" for every HIP-3 coin. Delegates to
+    pathiel.client.exchange.get_max_leverage, which already resolves the
+    dex from the coin's namespace prefix, caches per-dex, and refuses to
+    silently return a wrong/missing value as 1x.
+
+    Coin maxes differ (BTC 40x, BOME 3x), and sizing that assumes a global
+    ceiling silently over-levers the small ones.
+    """
+    from pathiel.client.exchange import get_max_leverage
+    coin = _norm_coin(params.get("coin", "BTC"))
+    try:
+        return json.dumps({"coin": coin, "max_leverage": get_max_leverage(coin)},
+                          default=str)
+    except Exception as e:
+        return json.dumps({"error": str(e)}, default=str)
+
+
+def _coin_dex(coin: str) -> str:
+    """The HIP-3 perpDex name for a namespaced coin ("xyz:CL" -> "xyz"), or ""
+    for a bare main-dex coin ("BTC" -> "")."""
+    return coin.split(":", 1)[0] if ":" in coin else ""
+
+
+def _asset_contexts(dex: str = "") -> Dict[str, Dict[str, Any]]:
+    """coin -> its asset context (funding, open interest, mark, day volume).
+
+    One `metaAndAssetCtxs` POST, optionally scoped to a HIP-3 perpDex via
+    `dex` (e.g. "xyz"). The response is a two-element array whose halves are
+    positionally aligned — universe[i] describes ctxs[i] — so they are
+    zipped rather than indexed independently.
+
+    HIP-3: verified live against /info on 2026-10-17 that a dex-scoped
+    metaAndAssetCtxs already returns dex-prefixed names ("xyz:CL", not
+    "CL") -- unlike clearinghouseState, which returns bare names for a
+    dex-scoped position. No renaming needed here; the bug this fixes was
+    simply never passing `dex` at all, so a HIP-3 coin was never in the
+    (main-dex-only) map to begin with.
+    """
+    raw = _info("metaAndAssetCtxs", **({"dex": dex} if dex else {}))
+    if not isinstance(raw, list) or len(raw) != 2:
+        # Raise, not {}: an empty map makes every caller answer
+        # "unknown coin: BTC" for what was a 429 or a timeout.
+        raise RuntimeError(
+            f"metaAndAssetCtxs unavailable for dex={dex!r} (rate limit or timeout); retry")
+    universe = (raw[0] or {}).get("universe") or []
+    ctxs = raw[1] or []
+    return {a.get("name"): c for a, c in zip(universe, ctxs) if a.get("name")}
+
+
+def _mid_price(coin: str) -> float:
+    """Current mid for one coin, routed to its HIP-3 dex when namespaced.
+
+    `allMids` with no `dex` only covers the main perp universe — verified
+    live 2026-10-17 that a HIP-3 coin like "xyz:CL" is simply absent from
+    it. This is the same fix as pathiel.client.exchange.get_hl_price,
+    applied through this server's own rate-limited `_info` instead of a
+    second SDK Info instance.
+    """
+    mids = _info("allMids", **({"dex": _coin_dex(coin)} if ":" in coin else {})) or {}
+    try:
+        return float(mids.get(coin) or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _hip3_predicted_funding(coin: str) -> "Dict[str, Any] | None":
+    """Best-available predicted-funding substitute for a HIP-3 coin.
+
+    HL's `predictedFundings` has no cross-venue data for HIP-3 perpDexs —
+    there is no other venue to compare against, these are HL-only synthetic
+    markets — and verified live 2026-10-17 that it ignores a `dex` param
+    entirely (identical main-universe rows come back regardless). Returns
+    the dex's own current hourly funding as a single HlPerp-shaped venue
+    entry, explicitly labeled as current rather than predicted so a caller
+    can't mistake it for the real thing.
+    """
+    dex = _coin_dex(coin)
+    if not dex:
+        return None
+    try:
+        ctx = _asset_contexts(dex)
+    except Exception:
+        return None
+    rate = (ctx.get(coin) or {}).get("funding")
+    if rate is None:
+        return None
+    return {
+        "coin": coin,
+        "venues": [["HlPerp", {"fundingRate": str(rate), "fundingIntervalHours": 1}]],
+        "source": "hip3_current_funding",
+        "note": "HIP-3 perpDexs have no predictedFundings coverage on HL; this is "
+                "the current hourly funding rate, not a forward prediction.",
+    }
+
+
+def handle_get_asset_context(params: Dict[str, Any]) -> str:
+    """Funding, open interest, mark and day volume for one coin, or all.
+    Also answers get_market_stats."""
+    coin = _norm_coin(params.get("coin", "")) if params.get("coin") else ""
+    try:
+        ctx = _asset_contexts(_coin_dex(coin))
+        if coin:
+            if coin not in ctx:
+                return json.dumps({"error": f"unknown coin: {coin}"})
+            return json.dumps({"coin": coin, **ctx[coin]}, default=str)
+        return json.dumps({"count": len(ctx), "contexts": ctx}, default=str)
+    except Exception as e:
+        return json.dumps({"error": str(e)}, default=str)
+
+
+def handle_get_open_interest(params: Dict[str, Any]) -> str:
+    """Open interest, from the same asset contexts (HIP-3-aware). Sorted so
+    the crowded names are at the top rather than buried in an alphabetical
+    list."""
+    coin = _norm_coin(params.get("coin", "")) if params.get("coin") else ""
+    try:
+        ctx = _asset_contexts(_coin_dex(coin))
+        if coin:
+            if coin not in ctx:
+                return json.dumps({"error": f"unknown coin: {coin}"})
+            return json.dumps({"coin": coin,
+                               "open_interest": ctx[coin].get("openInterest")},
+                              default=str)
+        rows = []
+        for c, v in ctx.items():
+            try:
+                rows.append({"coin": c, "open_interest": float(v.get("openInterest") or 0)})
+            except (TypeError, ValueError):
+                continue
+        rows.sort(key=lambda r: -r["open_interest"])
+        return json.dumps({"count": len(rows), "rows": rows[:100]}, default=str)
+    except Exception as e:
+        return json.dumps({"error": str(e)}, default=str)
+
+
+def handle_get_predicted_funding(params: Dict[str, Any]) -> str:
+    """Predicted next funding per venue, straight from /info. Falls back to
+    the current hourly rate for HIP-3 coins, which HL does not predict."""
+    coin = _norm_coin(params.get("coin", "")) if params.get("coin") else ""
+    try:
+        raw = _info("predictedFundings") or []
+        if coin:
+            for entry in raw:
+                if isinstance(entry, list) and entry and entry[0] == coin:
+                    return json.dumps({"coin": coin, "venues": entry[1]}, default=str)
+            hip3 = _hip3_predicted_funding(coin)
+            if hip3 is not None:
+                return json.dumps(hip3, default=str)
+            return json.dumps({"error": f"no predicted funding for {coin}"})
+        return json.dumps({"count": len(raw), "rows": raw}, default=str)
+    except Exception as e:
+        return json.dumps({"error": str(e)}, default=str)
+
+
+# ── formerly stubs, batch two (2026-09-06) ───────────────────────────────────
+# Every /info request type below was probed against the live venue before the
+# handler was written. The ones with no endpoint were DELETED rather than left
+# stubbed: a permanently unimplementable tool is a promise the venue cannot
+# keep, and it costs an agent a call to find that out.
+
+
+def _user(params: "Dict[str, Any] | None" = None) -> str:
+    """The address to query: params["user"] when given, else this deployment's."""
+    from pathiel.client.hl_client import resolve_user_address
+    given = str((params or {}).get("user") or "").strip()
+    return given or resolve_user_address()
+
+
+class _LimitedInfo:
+    """The slice of hyperliquid-python-sdk's Info these handlers use, routed
+    through `_info`.
+
+    The SDK's Info posts on its own session, outside pathiel's token bucket,
+    so a burst of these tools drew 429s that the rate-limited calls next to
+    them never saw. Same method names and return shapes; the request types
+    are the ones the SDK sends.
+    """
+
+    def all_mids(self):
+        return _info("allMids")
+
+    def meta(self):
+        return _info("meta")
+
+    def spot_meta(self):
+        return _info("spotMeta")
+
+    def l2_snapshot(self, coin: str):
+        return _info("l2Book", coin=coin)
+
+    def user_state(self, user: str):
+        return _info("clearinghouseState", user=user)
+
+    def spot_user_state(self, user: str):
+        return _info("spotClearinghouseState", user=user)
+
+    def user_fees(self, user: str):
+        return _info("userFees", user=user)
+
+    def query_referral_state(self, user: str):
+        return _info("referral", user=user)
+
+    def frontend_open_orders(self, user: str):
+        return _info("frontendOpenOrders", user=user)
+
+    def user_fills(self, user: str):
+        return _info("userFills", user=user)
+
+    def user_fills_by_time(self, user: str, start: int, end: "int | None" = None):
+        kw = {"user": user, "startTime": start}
+        if end is not None:
+            kw["endTime"] = end
+        return _info("userFillsByTime", **kw)
+
+    def user_funding_history(self, user: str, start: int, end: "int | None" = None):
+        kw = {"user": user, "startTime": start}
+        if end is not None:
+            kw["endTime"] = end
+        return _info("userFunding", **kw)
+
+    def historical_orders(self, user: str):
+        return _info("historicalOrders", user=user)
+
+
+def _limited_info() -> _LimitedInfo:
+    return _LimitedInfo()
+
+
+def _limit(params: Dict[str, Any], default: int, cap: int = 2000) -> int:
+    """A positive row limit from params["limit"], clamped to `cap`."""
+    try:
+        n = int(params.get("limit") or default)
+    except (TypeError, ValueError):
+        n = default
+    return max(1, min(cap, n))
+
+
+def _info(typ: str, **kw) -> Any:
+    """POST /info. Raises on a request that never landed (rate budget, 429,
+    timeout) so a handler reports the failure instead of "0 rows"."""
+    from pathiel.client.hl_client import _http_post_strict
+    return _http_post_strict("/info", {"type": typ, **kw})
+
+
+def _ledger(kinds: tuple, params: Dict[str, Any]) -> str:
+    """userNonFundingLedgerUpdates, filtered by delta type.
+
+    Deposits, withdrawals and transfers are one endpoint distinguished only by
+    `delta.type`, so they share this rather than three near-identical handlers
+    drifting apart.
+    """
+    try:
+        start = int(params.get("startTime") or 0)
+        rows = _info("userNonFundingLedgerUpdates", user=_user(params), startTime=start) or []
+        hits = [r for r in rows
+                if str(((r or {}).get("delta") or {}).get("type", "")) in kinds]
+        return json.dumps({"kinds": list(kinds), "count": len(hits),
+                           "rows": hits[-_limit(params, 100):]}, default=str)
+    except Exception as e:
+        return json.dumps({"error": str(e)}, default=str)
+
+
+def _walk_book(coin: str, usd: float, is_buy: bool) -> Dict[str, Any]:
+    """Walk the L2 book for `usd` of notional and report what it really costs.
+
+    The mid is what a quote screen shows; this is what the fill looks like. On a
+    thin alt the difference is the whole trade, which is why sizing that assumes
+    the mid silently over-sizes exactly the coins it should not.
+    """
+    book = _info("l2Book", coin=coin) or {}
+    levels = book.get("levels") or []
+    if len(levels) != 2:
+        raise ValueError(f"no book for {coin}")
+    # levels[0] is bids, levels[1] asks. A buy lifts asks; a sell hits bids.
+    side = levels[1] if is_buy else levels[0]
+    if not side:
+        raise ValueError(f"empty {'ask' if is_buy else 'bid'} side for {coin}")
+    best = float(side[0]["px"])
+    remaining, spend, filled = usd, 0.0, 0.0
+    worst = best
+    for lvl in side:
+        px, sz = float(lvl["px"]), float(lvl["sz"])
+        avail = px * sz
+        take = min(avail, remaining)
+        if take <= 0:
+            break
+        spend += take
+        filled += take / px
+        worst = px
+        remaining -= take
+        if remaining <= 0:
+            break
+    avg = spend / filled if filled else best
+    return {
+        "coin": coin, "side": "buy" if is_buy else "sell",
+        "notional_usd": usd,
+        "best_px": best, "avg_fill_px": round(avg, 8), "worst_px": worst,
+        "slippage_pct": round((avg / best - 1) * 100 * (1 if is_buy else -1), 4),
+        "filled_usd": round(spend, 2),
+        # Unfilled notional is the honest part: the book ran out before the
+        # size did, and a caller that ignores this thinks it got a price.
+        "unfilled_usd": round(max(0.0, remaining), 2),
+        "book_exhausted": remaining > 0,
+    }
+
+
+def handle_get_assets(params: Dict[str, Any]) -> str:
+    """Every tradeable perp (main dex) with its size decimals and max
+    leverage. Also answers get_markets_info, get_perp_markets,
+    get_asset_contexts. HIP-3 coins aren't in this bulk listing (an extra
+    HTTP call per dex); look one up with get_asset_context/get_max_leverage."""
+    try:
+        meta = _info("meta") or {}
+        uni = meta.get("universe") or []
+        fields = params.get("fields")
+        if isinstance(fields, list) and fields:
+            keep = [str(f) for f in fields]
+            uni = [{k: a.get(k) for k in keep} for a in uni]
+        return json.dumps({"count": len(uni), "assets": uni}, default=str)
+    except Exception as e:
+        return json.dumps({"error": str(e)}, default=str)
+
+
+def handle_get_funding_rate(params: Dict[str, Any]) -> str:
+    """Current hourly funding for one coin (HIP-3-aware), or the whole
+    main-dex board sorted by it when omitted."""
+    coin = _norm_coin(params.get("coin", "")) if params.get("coin") else ""
+    try:
+        ctx = _asset_contexts(_coin_dex(coin))
+        if coin:
+            if coin not in ctx:
+                return json.dumps({"error": f"unknown coin: {coin}"})
+            return json.dumps({"coin": coin, "funding": ctx[coin].get("funding")},
+                              default=str)
+        rows = []
+        for c, v in ctx.items():
+            try:
+                rows.append({"coin": c, "funding": float(v.get("funding") or 0)})
+            except (TypeError, ValueError):
+                continue
+        rows.sort(key=lambda r: -r["funding"])
+        return json.dumps({"count": len(rows), "rows": rows}, default=str)
+    except Exception as e:
+        return json.dumps({"error": str(e)}, default=str)
+
+
+def handle_get_historical_funding(params: Dict[str, Any]) -> str:
+    """Funding this ACCOUNT actually paid or received. Distinct from the venue
+    rate for a coin (get_funding_rate, get_predicted_funding). Also answers
+    get_user_funding_history."""
+    try:
+        start = int(params.get("startTime") if params.get("startTime") is not None
+                    else params.get("start_time") or 0)
+        end = params.get("endTime") if params.get("endTime") is not None else params.get("end_time")
+        kw: Dict[str, Any] = {"user": _user(params), "startTime": start}
+        if end is not None:
+            kw["endTime"] = int(end)
+        rows = _info("userFunding", **kw) or []
+        coin = _norm_coin(params.get("coin", "")) if params.get("coin") else ""
+        if coin:
+            rows = [r for r in rows
+                    if _norm_coin(str(((r or {}).get("delta") or {}).get("coin", ""))) == coin]
+        return json.dumps({"coin": coin or "all", "count": len(rows),
+                           "rows": rows[-_limit(params, 100):]}, default=str)
+    except Exception as e:
+        return json.dumps({"error": str(e)}, default=str)
+
+
+def handle_get_trade_history(params: Dict[str, Any]) -> str:
+    """This account's fills, newest last (HL has no public trade tape). Also
+    answers get_user_fills, get_recent_trades.
+
+    FIXED 2026-10-17: called `_user()` with no params, so a `user` override
+    was silently ignored even once advertised.
+    """
+    coin = _norm_coin(params.get("coin", "")) if params.get("coin") else ""
+    try:
+        rows = _info("userFills", user=_user(params)) or []
+        if coin:
+            rows = [r for r in rows if r.get("coin") == coin]
+        return json.dumps({"coin": coin or "all", "count": len(rows),
+                           "fills": rows[-_limit(params, 100):]}, default=str)
+    except Exception as e:
+        return json.dumps({"error": str(e)}, default=str)
+
+
+def handle_get_user_orders_history(params: Dict[str, Any]) -> str:
+    """Historical orders, reconstructed from fills.
+
+    HL exposes no order-history endpoint; fills are the durable record. Grouped
+    by oid so partial fills read as one order rather than several.
+    """
+    try:
+        rows = _info("userFills", user=_user()) or []
+        by_oid: Dict[Any, Dict[str, Any]] = {}
+        for f in rows:
+            oid = f.get("oid")
+            g = by_oid.setdefault(oid, {"oid": oid, "coin": f.get("coin"),
+                                        "side": f.get("side"), "fills": 0,
+                                        "sz": 0.0, "first_ts": f.get("time")})
+            g["fills"] += 1
+            try:
+                g["sz"] += float(f.get("sz") or 0)
+            except (TypeError, ValueError):
+                pass
+            g["last_ts"] = f.get("time")
+        out = sorted(by_oid.values(), key=lambda g: g.get("last_ts") or 0)
+        return json.dumps({"count": len(out), "orders": out[-_limit(params, 100):]}, default=str)
+    except Exception as e:
+        return json.dumps({"error": str(e)}, default=str)
+
+
+def handle_get_deposits(params: Dict[str, Any]) -> str:
+    return _ledger(("deposit",), params)
+
+
+def handle_get_withdrawals(params: Dict[str, Any]) -> str:
+    return _ledger(("withdraw",), params)
+
+
+def handle_get_transfers(params: Dict[str, Any]) -> str:
+    return _ledger(("internalTransfer", "accountClassTransfer", "spotTransfer",
+                    "subAccountTransfer", "vaultTransfer"), params)
+
+
+def handle_get_withdrawal_status(params: Dict[str, Any]) -> str:
+    """The most recent withdrawals. HL settles these on-chain, so there is no
+    per-request status endpoint — presence in the ledger IS the confirmation."""
+    try:
+        rows = _info("userNonFundingLedgerUpdates", user=_user(params), startTime=0) or []
+        w = [r for r in rows
+             if str(((r or {}).get("delta") or {}).get("type", "")) == "withdraw"]
+        wid = str(params.get("withdrawal_id") or params.get("hash") or "").strip().lower()
+        if wid:
+            hit = [r for r in w if str((r or {}).get("hash", "")).lower() == wid]
+            return json.dumps({"withdrawal_id": wid, "found": bool(hit),
+                               "status": "settled" if hit else "not in ledger",
+                               "note": "presence in the ledger is the confirmation; "
+                                       "HL has no per-withdrawal status endpoint",
+                               "row": hit[0] if hit else None}, default=str)
+        return json.dumps({"note": "presence in the ledger is the confirmation; "
+                                   "HL has no per-withdrawal status endpoint",
+                           "count": len(w), "recent": w[-20:]}, default=str)
+    except Exception as e:
+        return json.dumps({"error": str(e)}, default=str)
+
+
+def handle_get_portfolio_status(params: Dict[str, Any]) -> str:
+    """Account value and PnL history across HL's own windows."""
+    try:
+        raw = _info("portfolio", user=_user())
+        return json.dumps(raw if params.get("full") else _latest_points(raw), default=str)
+    except Exception as e:
+        return json.dumps({"error": str(e)}, default=str)
+
+
+def _latest_points(portfolio: Any) -> Any:
+    """HL's portfolio shape, [[window, {series: [[t, v], ...]}], ...], cut to
+    each series' last point plus its length. The full series is ~20 KB."""
+    if not isinstance(portfolio, list):
+        return portfolio
+    out = []
+    for pair in portfolio:
+        if isinstance(pair, list) and len(pair) == 2 and isinstance(pair[1], dict):
+            window, series = pair
+            out.append([window, {k: ({"last": v[-1], "points": len(v)} if isinstance(v, list) and v
+                                     else v) for k, v in series.items()}])
+        else:
+            out.append(pair)
+    return out
+
+
+def handle_get_api_rate_limits(params: Dict[str, Any]) -> str:
+    """Request budget left. Worth reading before a wide scan — this repo has a
+    history of scans dying on 429s that looked like a quiet market."""
+    try:
+        return json.dumps(_info("userRateLimit", user=_user()), default=str)
+    except Exception as e:
+        return json.dumps({"error": str(e)}, default=str)
+
+
+def handle_get_price_impact(params: Dict[str, Any]) -> str:
+    """What a given notional actually costs against the current book
+    (HIP-3-aware). Also answers get_slippage_estimate."""
+    coin = _norm_coin(params.get("coin", "BTC"))
+    try:
+        is_buy = _is_buy(params)
+        if params.get("notionalUsd") is not None:
+            usd = float(params["notionalUsd"])
+        elif params.get("size") is not None:
+            # `size` is in COIN units, as the schema says. It used to be read
+            # as USD, so 0.5 BTC was priced as a $0.50 order: zero impact on
+            # every request, on exactly the tool meant to warn about impact.
+            # And bare allMids() misses HIP-3 coins entirely (_mid_price
+            # routes to the coin's own dex), so a HIP-3 size conversion used
+            # to always answer "no mid for xyz:CL".
+            mid = _mid_price(coin)
+            if mid <= 0:
+                return json.dumps({"error": f"no mid for {coin}; cannot convert size to notional"})
+            usd = float(params["size"]) * mid
+        else:
+            usd = 1000.0
+        if usd <= 0:
+            return json.dumps({"error": "size/notionalUsd must be positive"})
+        out = _walk_book(coin, usd, is_buy)
+        if params.get("size") is not None and params.get("notionalUsd") is None:
+            out["size_coin"] = float(params["size"])
+        return json.dumps(out, default=str)
+    except Exception as e:
+        return json.dumps({"error": str(e)}, default=str)
+
+
+def _is_buy(params: Dict[str, Any]) -> bool:
+    """Trade direction from `is_buy` (bool, the schema field) or `side`."""
+    if params.get("is_buy") is not None:
+        v = params["is_buy"]
+        return v if isinstance(v, bool) else str(v).strip().lower() in ("1", "true", "yes", "buy")
+    return str(params.get("side", "buy")).lower() not in ("sell", "short")
+
+
+def handle_get_max_trade_size(params: Dict[str, Any]) -> str:
+    """How much this account could put on, bounded by BOTH margin and the book.
+
+    Equity alone is the wrong answer on a thin alt: the size that fits the
+    margin can be several percent of slippage away from the mid.
+    """
+    coin = _norm_coin(params.get("coin", "BTC"))
+    dex = _coin_dex(coin)
+    try:
+        from services.risk.derive import derive_limits
+        acct = fetch_account_state(_user(), include_hip3=True) or {}
+        # FIXED 2026-10-18: read main-dex margin for every coin and used the
+        # retired config `leverage` (3) as the ceiling, so xyz:CL showed $0.01
+        # of margin on an account with $15.18 on xyz.
+        if dex:
+            equity = _fnum((acct.get("dex_equity") or {}).get(dex))
+            available = _fnum((acct.get("dex_available") or {}).get(dex, equity))
+        else:
+            equity = _fnum((acct.get("dex_equity") or {}).get("", acct.get("equity")))
+            available = _fnum(acct.get("available"))
+        profile, books, venue = _risk_inputs()
+        resolved_max = _fnum(derive_limits(_fnum(acct.get("equity")), profile, books, venue)
+                             .profile.max_leverage)
+        coin_max, _ = _coin_specs(coin)
+        caps = [c for c in (coin_max, resolved_max) if c and c > 0]
+        lev = min(caps) if caps else 1.0
+        from services.risk.derive import margin_after_open_fee
+        by_margin = margin_after_open_fee(available, lev, venue) * lev
+        depth = _walk_book(coin, by_margin, _is_buy(params)) if by_margin > 0 else {}
+        return json.dumps({
+            "coin": coin, "dex": dex or "main", "equity": round(equity, 2),
+            "margin_available": round(available, 2),
+            "max_notional_by_margin": round(by_margin, 2),
+            "leverage_ceiling": lev, "coin_max_leverage": coin_max,
+            "profile_max_leverage": resolved_max,
+            "book_check": depth,
+            "note": "the most the margin allows, not a recommendation: use risk_size_trade",
+        }, default=str)
+    except Exception as e:
+        return json.dumps({"error": str(e)}, default=str)
+
+
+def handle_get_l2_book(params: Dict[str, Any]) -> str:
+    """L2 order book for a coin. Also answers get_market_depth."""
+    coin = _norm_coin(params.get('coin', 'BTC'))
+    try:
+        info = _limited_info()
+        # L2 book snapshot
+        book = info.l2_snapshot(coin)
+        return json.dumps(book, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+def handle_get_user_state(params: Dict[str, Any]) -> str:
+    """Raw clearinghouse state for one perp dex (default main). A HIP-3
+    account read here with no dex showed $0.0086 while $15.18 sat on xyz."""
+    user = resolve_user_address()
+    dex = str(params.get("dex") or "").strip()
+    try:
+        state = _info("clearinghouseState", user=user, **({"dex": dex} if dex else {}))
+        if isinstance(state, dict):
+            state = {**state, "dex": dex or "main"}
+        return json.dumps(state, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+
+# The real stdout, captured by run() before it redirects sys.stdout to stderr.
+# None outside run() (tests, imports), where sys.stdout is used as-is.
+_PROTO_OUT = None
+
+
+def _out():
+    return _PROTO_OUT if _PROTO_OUT is not None else sys.stdout
+
+
+_SEND_LOCK = threading.Lock()
+
+
+def _send(msg: Dict[str, Any]) -> None:
+    """One frame, whole. Worker threads answer concurrently; the lock keeps
+    two frames from interleaving on the wire."""
+    line = json.dumps(msg, default=str) + "\n"
+    with _SEND_LOCK:
+        out = _out()
+        out.write(line)
+        out.flush()
+
+
+def _result_msg(msg_id: Any, result: Dict[str, Any]) -> Dict[str, Any]:
+    return {"jsonrpc": "2.0", "id": msg_id, "result": result}
+
+
+def _error_msg(msg_id: Any, code: int, message: str) -> Dict[str, Any]:
+    return {"jsonrpc": "2.0", "id": msg_id, "error": {"code": code, "message": message}}
+
+
+def _server_request(method: str, params: Dict[str, Any], timeout_s: float = 120.0) -> Dict[str, Any]:
+    """Send a server -> client JSON-RPC request and block for its response.
+
+    Inside run(), the main thread owns stdin and routes the reply here by id
+    (_deliver_response); the client's other requests keep being served while
+    this one waits. Outside run() (in-process callers, tests), there is no
+    reader thread, so this reads stdin itself: _server_request_inline.
+    """
+    global _server_request_seq
+    with _ROUTE_LOCK:
+        _server_request_seq += 1
+        req_id = f"srv-{_server_request_seq}"
+    if not _ROUTER_ACTIVE:
+        return _server_request_inline(req_id, method, params, timeout_s)
+    waiter: "queue.Queue[Dict[str, Any]]" = queue.Queue(maxsize=1)
+    with _ROUTE_LOCK:
+        early = _EARLY.pop(req_id, None)
+        if early is None:
+            _WAITERS[req_id] = waiter
+    _send({"jsonrpc": "2.0", "id": req_id, "method": method, "params": params})
+    if early is not None:
+        msg = early
+    else:
+        try:
+            msg = waiter.get(timeout=timeout_s)
+        except queue.Empty:
+            with _ROUTE_LOCK:
+                _WAITERS.pop(req_id, None)
+            raise TimeoutError(f"server request {method} timed out after {timeout_s:.0f}s")
+    if "error" in msg:
+        raise RuntimeError(f"client returned error for {method}: {msg['error']}")
+    return msg.get("result") or {}
+
+
+def _server_request_inline(req_id: str, method: str, params: Dict[str, Any],
+                           timeout_s: float) -> Dict[str, Any]:
+    """The pre-run() path: the caller's thread reads stdin directly, so it
+    answers any client request that lands meanwhile (ping) or turns it away
+    (anything else) rather than leaving it unanswered."""
+    _send({"jsonrpc": "2.0", "id": req_id, "method": method, "params": params})
+    deadline = time.time() + timeout_s
+    while time.time() < deadline:
+        line = sys.stdin.readline()
+        if not line:
+            raise RuntimeError("stdin closed while awaiting server request response")
+        try:
+            msg = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if msg.get("id") == req_id:
+            if "error" in msg:
+                raise RuntimeError(f"client returned error for {method}: {msg['error']}")
+            return msg.get("result") or {}
+        if isinstance(msg.get("method"), str) and "id" in msg:
+            # A client request that arrived while this one is parked. It still
+            # needs exactly one reply or the client waits on it forever.
+            if msg["method"] == "ping":
+                _send(_result_msg(msg["id"], {}))
+            else:
+                _send(_error_msg(msg["id"], -32603,
+                                 f"server busy awaiting {method}; retry"))
+            continue
+        sys.stderr.write(f"[mcp] skipped non-matching message while awaiting {req_id}\n")
+        sys.stderr.flush()
+    raise TimeoutError(f"server request {method} timed out after {timeout_s:.0f}s")
+
+
+def handle_get_price_history(params: Dict[str, Any]) -> str:
+    """Candles over [start_time, end_time] (unix seconds or ms), default the
+    last 100 hours. For a lookback-by-count view see get_candles."""
+    coin = _norm_coin(params.get('coin', 'BTC'))
+    interval = str(params.get('interval') or '1h')
+    try:
+        def _ms(v: Any) -> int:
+            n = int(float(v))
+            return n if n > 10**11 else n * 1000
+        end = _ms(params["end_time"]) if params.get("end_time") else int(time.time() * 1000)
+        start = _ms(params["start_time"]) if params.get("start_time") else end - 100 * 3_600_000
+        if start >= end:
+            return json.dumps({'error': 'start_time must be before end_time'})
+        raw = _info("candleSnapshot", req={"coin": coin, "interval": interval,
+                                           "startTime": start, "endTime": end})
+        if not isinstance(raw, list):
+            return json.dumps({'error': f'no candles for {coin}'})
+
+        def _f(v: Any) -> "float | None":
+            try:
+                return float(v)
+            except (TypeError, ValueError):
+                return None
+
+        # Trim the venue's raw candle (t,T,s,i,o,c,h,l,v,n) down to the same
+        # lean {t,o,h,l,c,v} shape get_candles already uses: T/s/i are
+        # redundant with the request, and dropping them plus the string ->
+        # float conversion materially shrinks a multi-hundred-row response.
+        rows = [{"t": r.get("t"), "o": _f(r.get("o")), "h": _f(r.get("h")),
+                "l": _f(r.get("l")), "c": _f(r.get("c")), "v": _f(r.get("v"))}
+               for r in raw]
+        return json.dumps({'coin': coin, 'interval': interval, 'start': start, 'end': end,
+                           'count': len(rows), 'candles': rows}, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+
+def handle_get_coin_info(params: Dict[str, Any]) -> str:
+    """Handle get_coin_info tool call."""
+    coin = _norm_coin(params.get('coin', ''))
+    try:
+        from pathiel.client.exchange import get_coin_index
+        idx, _, _ = get_coin_index(coin)
+        return json.dumps({'coin': coin, 'index': idx}, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+def handle_get_all_mids(params: Dict[str, Any]) -> str:
+    """All current mid prices, including HIP-3 (xyz:, vntl:, km:, ...). Also
+    answers market_get_mids.
+
+    FIXED 2026-10-17: used to call the SDK's bare info.all_mids() (main dex
+    only), so every HIP-3 coin was simply missing. Delegates to hyperfeed's
+    market_get_mids(), which already merges allMids(dex=...) per registered
+    HIP-3 dex.
+    """
+    try:
+        mids = market_get_mids() or {}
+        wanted = params.get("coins")
+        if isinstance(wanted, list) and wanted:
+            keep = {_norm_coin(str(c)) for c in wanted}
+            mids = {k: v for k, v in mids.items() if k in keep}
+        elif not params.get("include_outcomes"):
+            mids = {k: v for k, v in mids.items() if not str(k).startswith("#")}
+        return json.dumps({'count': len(mids), 'mids': mids}, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+
+def _clearinghouse(params: Dict[str, Any]) -> Dict[str, Any]:
+    state = _info("clearinghouseState", user=_user(params))
+    if not isinstance(state, dict):
+        raise RuntimeError("clearinghouseState returned no data")
+    return state
+
+
+def _fnum(v: Any) -> float:
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _positions(state: Dict[str, Any]) -> List[Dict[str, Any]]:
+    return [p.get("position") or {} for p in (state.get("assetPositions") or [])
+            if _fnum((p.get("position") or {}).get("szi")) != 0]
+
+
+def handle_get_account_summary(params: Dict[str, Any]) -> str:
+    """Equity, margin, withdrawable and position count, main dex plus HIP-3.
+
+    These three tools (summary / pnl / risk) returned a hard-coded {} for
+    their whole lives: they called an SDK method that never existed and then
+    had the call deleted instead of replaced. They now read the clearinghouse.
+    """
+    try:
+        user = _user(params)
+        acct = fetch_account_state(user, include_hip3=True) or {}
+        main = _clearinghouse(params)
+        ms = main.get("marginSummary") or {}
+        return json.dumps({"summary": {
+            "user": user,
+            "equity": acct.get("equity", 0),
+            "equity_by_dex": acct.get("dex_equity", {}),
+            "available_margin": acct.get("available", 0),
+            "withdrawable": _fnum(main.get("withdrawable")),
+            "total_notional": acct.get("total_ntl", 0),
+            "total_margin_used": _fnum(ms.get("totalMarginUsed")),
+            "position_count": len(acct.get("asset_positions") or []),
+        }}, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+
+def handle_get_asset_positions(params: Dict[str, Any]) -> str:
+    """Open positions across main dex and HIP-3, optionally one coin."""
+    coin = _norm_coin(params.get('coin', ''))
+    try:
+        acct = fetch_account_state(_user(params), include_hip3=True) or {}
+        positions = [p.get("position") or {} for p in (acct.get("asset_positions") or [])]
+        if coin:
+            positions = [p for p in positions if _norm_coin(p.get('coin', '')) == coin]
+        return json.dumps({'coin': coin, 'count': len(positions),
+                           'positions': positions}, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+
+def handle_get_24h_stats(params: Dict[str, Any]) -> str:
+    """Handle get_24h_stats tool call."""
+    coin = _norm_coin(params.get('coin', ''))
+    try:
+        from pathiel.client.hl_client import fetch_hl_candles
+        # Get 24h of 1h candles for stats
+        candles = fetch_hl_candles(coin, '1h', 24)
+        return json.dumps({'coin': coin, 'stats_24h': [c.model_dump() for c in candles]}, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+
+def handle_get_portfolio_pnl(params: Dict[str, Any]) -> str:
+    """Unrealized pnl per open position plus HL's own day/week/month/all-time pnl."""
+    try:
+        acct = fetch_account_state(_user(params), include_hip3=True) or {}
+        open_rows = []
+        for p in acct.get("asset_positions") or []:
+            pos = p.get("position") or {}
+            open_rows.append({"coin": pos.get("coin"), "szi": _fnum(pos.get("szi")),
+                              "unrealized_pnl": _fnum(pos.get("unrealizedPnl")),
+                              "return_on_equity": _fnum(pos.get("returnOnEquity"))})
+        windows: Dict[str, Any] = {}
+        hist = _info("portfolio", user=_user(params)) or []
+        for pair in hist:
+            if isinstance(pair, list) and len(pair) == 2 and isinstance(pair[1], dict):
+                series = pair[1].get("pnlHistory") or []
+                # pnlHistory is cumulative within the window; the last point is the window's pnl.
+                windows[pair[0]] = _fnum(series[-1][1]) if series else 0.0
+        return json.dumps({"pnl": {
+            "unrealized_total": round(sum(r["unrealized_pnl"] for r in open_rows), 6),
+            "open_positions": open_rows,
+            "window_pnl": windows,
+        }}, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+
+def handle_get_risk_metrics(params: Dict[str, Any]) -> str:
+    """Account leverage, cross maintenance-margin ratio, and liquidation distance
+    per main-dex position. margin_ratio is HL's own liquidation trigger: at 1.0
+    the account is liquidated."""
+    try:
+        # FIXED 2026-10-18: equity and positions were main-dex only, so an
+        # account with its money on xyz read as equity $0.0086 and its oil
+        # position was missing from the liquidation-distance list.
+        acct = fetch_account_state(_user(params), include_hip3=True) or {}
+        main = _clearinghouse(params)
+        equity = _fnum(acct.get("equity"))
+        total_ntl = _fnum(acct.get("total_ntl"))
+        rows = []
+        for p in acct.get("asset_positions") or []:
+            pos = p.get("position") or {}
+            coin = _norm_coin(pos.get("coin", ""))
+            if not coin or _fnum(pos.get("szi")) == 0:
+                continue
+            mark = _mid_price(coin)
+            liq = _fnum(pos.get("liquidationPx")) if pos.get("liquidationPx") else None
+            rows.append({
+                "coin": coin, "dex": _coin_dex(coin) or "main", "szi": _fnum(pos.get("szi")),
+                "mark": mark, "leverage": (pos.get("leverage") or {}).get("value"),
+                "liquidation_px": liq,
+                "liq_distance_pct": round(abs(mark - liq) / mark * 100, 3) if liq and mark else None,
+            })
+        mm = _fnum(main.get("crossMaintenanceMarginUsed"))
+        main_equity = _fnum((main.get("crossMarginSummary") or {}).get("accountValue"))
+        return json.dumps({"risk": {
+            "equity": equity,
+            "equity_by_dex": {(k or "main"): v for k, v in (acct.get("dex_equity") or {}).items() if v},
+            "total_notional": total_ntl,
+            "account_leverage": round(total_ntl / equity, 4) if equity else None,
+            "main_cross_maintenance_margin_used": mm,
+            "main_margin_ratio": round(mm / main_equity, 6) if main_equity else None,
+            "positions": rows,
+            "scope": "equity and positions: every dex. margin_ratio: main dex cross "
+                     "margin only (each HIP-3 dex margins separately).",
+        }}, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+
+def handle_get_server_time(params: Dict[str, Any]) -> str:
+    """Handle get_server_time tool call."""
+    try:
+        import time
+        return json.dumps({'server_time': int(time.time() * 1000)}, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+
+def handle_get_liquidation_price(params: Dict[str, Any]) -> str:
+    """Liquidation price: the venue's own figure for an open position, else
+    HL's isolated-margin formula for a hypothetical one.
+
+    liq = entry - side * (entry / leverage - mmr * entry) / (1 - mmr * side),
+    HL's documented formula: margin available is initial margin minus
+    maintenance margin, and mmr is 1 / (2 * max_leverage). The old estimate,
+    entry * (1 - 1/leverage), ignored maintenance margin and put liquidation
+    further away than it is, which is the dangerous direction to be wrong.
+    """
+    coin = _norm_coin(params.get('coin', ''))
+    if not coin:
+        return json.dumps({'error': 'coin is required'})
+    try:
+        if params.get("leverage") is None and params.get("is_long") is None:
+            acct = fetch_account_state(_user(params), include_hip3=True) or {}
+            for p in acct.get("asset_positions") or []:
+                pos = p.get("position") or {}
+                if _norm_coin(pos.get("coin", "")) == coin:
+                    return json.dumps({"coin": coin, "source": "venue",
+                                       "szi": _fnum(pos.get("szi")),
+                                       "entry_px": _fnum(pos.get("entryPx")),
+                                       "liquidation_price": pos.get("liquidationPx")},
+                                      default=str)
+            return json.dumps({"error": f"no open {coin} position; pass leverage and "
+                                        "is_long to estimate a hypothetical one", "coin": coin})
+        leverage = _fnum(params.get("leverage"))
+        if leverage <= 0:
+            return json.dumps({"error": "leverage must be positive", "coin": coin})
+        is_long = params.get("is_long")
+        is_long = is_long if isinstance(is_long, bool) else str(is_long).lower() in ("1", "true", "yes", "long")
+        from pathiel.client.exchange import get_max_leverage
+        max_lev = _fnum(get_max_leverage(coin)) or leverage
+        if leverage > max_lev:
+            return json.dumps({"error": f"leverage {leverage:g}x exceeds {coin} max {max_lev:g}x",
+                               "coin": coin})
+        # _mid_price (not a bare allMids lookup) routes a HIP-3 coin to its
+        # own dex -- bare allMids() has no HIP-3 coverage at all, which is
+        # exactly why this previously failed for every xyz:/vntl:/km: coin
+        # unless the caller supplied entry_px by hand.
+        entry = _fnum(params.get("entry_px")) or _mid_price(coin)
+        if entry <= 0:
+            return json.dumps({"error": f"no price for {coin}", "coin": coin})
+        mmr = 1.0 / (2.0 * max_lev)
+        liq = round(_liq_estimate(entry, leverage, max_lev, bool(is_long)), 6)
+        return json.dumps({'coin': coin, 'source': 'estimate', 'size': params.get('size'),
+                           'leverage': leverage, 'is_long': bool(is_long), 'entry_px': entry,
+                           'maintenance_margin_rate': mmr,
+                           'liquidation_price': liq,
+                           'note': 'isolated-margin formula; cross positions liquidate on '
+                                   'account equity, so use get_risk_metrics for those'},
+                          default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+
+def _liq_estimate(entry: float, leverage: float, max_leverage: float, is_long: bool) -> float:
+    """HL isolated-margin liquidation price. One formula for the whole repo:
+    pathiel.agents.bracket.liq_estimate (the leverage gate uses the same one)."""
+    from pathiel.agents.bracket import liq_estimate
+    return liq_estimate(entry, leverage, max_leverage, is_long)
+
+
+def handle_get_order_by_oid(params: Dict[str, Any]) -> str:
+    """Order status by order ID. Also answers get_order_status."""
+    oid = params.get('oid')
+    if oid is None:
+        oid = params.get('orderId')
+    if oid is None:
+        return json.dumps({'error': 'oid is required'})
+    user = _user(params)
+    if not user:
+        return json.dumps({'error': 'no user address provided or configured'})
+    try:
+        # Was info.query_order_by_oid(params.get('user', ''), ...): an omitted
+        # user went to HL as "" and came back as a 422 deserialization error.
+        res = _info("orderStatus", user=user, oid=int(oid))
+        return json.dumps({'order': res, 'user': user}, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+
+def handle_get_user_fills_by_time(params: Dict[str, Any]) -> str:
+    """Handle get_user_fills_by_time tool call."""
+    start_time = int(params.get('start_time', 0))
+    end_time = params.get('end_time')
+    try:
+        from pathiel.client.exchange import HL_ACCOUNT
+        info = _limited_info()
+        if not HL_ACCOUNT:
+            return json.dumps({'error': 'no configured user address'}, default=str)
+        if end_time is not None:
+            fills = info.user_fills_by_time(HL_ACCOUNT, start_time, int(end_time))
+        else:
+            fills = info.user_fills_by_time(HL_ACCOUNT, start_time)
+        return json.dumps({'fills': fills, 'count': len(fills) if isinstance(fills, list) else 0,
+                           'start_time': start_time, 'end_time': end_time}, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+
+def handle_get_historical_orders(params: Dict[str, Any]) -> str:
+    """Handle get_historical_orders tool call."""
+    try:
+        user = _user(params)
+        if not user:
+            return json.dumps({'error': 'no configured user address'}, default=str)
+        orders = _limited_info().historical_orders(user)
+        if not isinstance(orders, list):
+            return json.dumps({'orders': [], 'count': 0}, default=str)
+        coin = _norm_coin(params.get("coin", ""))
+        if coin:
+            orders = [o for o in orders
+                      if _norm_coin(((o.get("order") or {}).get("coin")) or "") == coin]
+        orders.sort(key=lambda o: o.get("statusTimestamp") or 0, reverse=True)
+        return json.dumps({'count': len(orders), 'orders': orders[:_limit(params, 50)]},
+                          default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+
+def handle_query_order_by_cloid(params: Dict[str, Any]) -> str:
+    """Handle query_order_by_cloid tool call."""
+    cloid = str(params.get('cloid') or '').strip()
+    if not cloid:
+        return json.dumps({'error': 'cloid is required'})
+    addr = _user(params)
+    if not addr:
+        return json.dumps({'error': 'no user address provided or configured'}, default=str)
+    try:
+        # orderStatus takes a cloid in the oid slot. The SDK wrapper wanted a
+        # Cloid object and crashed on the string every caller passes.
+        res = _info("orderStatus", user=addr, oid=cloid)
+        return json.dumps({'order': res, 'cloid': cloid, 'user': addr}, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+
+# ── desk tools ────────────────────────────────────────────────────────────
+# Client of services.strategies.facade (owned by the desk-core agent, built
+# in parallel; it does not exist in this worktree). Every number an agent
+# sees here was computed by that service's DeskAnalytics/IntelPacket — this
+# file only renders what the facade returns, per the contract in
+# contracts/strategies/models.py. Tested against a fake facade.
+
+
+def _strategies_facade():
+    """Import services.strategies.facade lazily so a missing desk-core
+    service degrades every desk_* tool to a clear error instead of an
+    import-time crash of the whole MCP server. desk-core is a separate,
+    parallel-owned service that may not exist yet in every worktree/deploy
+    (it does not exist in this one)."""
+    try:
+        import services.strategies.facade as facade
+    except Exception as e:
+        raise RuntimeError(
+            f"services.strategies facade unavailable ({type(e).__name__}: {e}). "
+            "desk-core has not shipped this service in this environment yet."
+        ) from e
+    return facade
+
+
+def _render_quick_fallback(thesis: Any, analytics: Any, mode: str) -> str:
+    """Minimal markdown used only when services.thesis.api.render_markdown is
+    not importable (that service is owned by a different agent/worktree).
+
+    Mirrors the real renderer's contract (contracts/strategies/models.py):
+    every number comes from `analytics`/`thesis` as computed upstream, never
+    invented here.
+    """
+    lines: List[str] = []
+    if analytics is not None:
+        lines.append(f"as of {analytics.as_of.isoformat()}")
+        for inst in analytics.instruments:
+            lines.append(
+                f"- {inst.label} ({inst.coin}): {inst.mid:g}  "
+                f"1d {inst.ret_1d:+.2%}  5d {inst.ret_5d:+.2%}"
+            )
+    if thesis is None:
+        lines.append("")
+        lines.append("_no thesis yet -- call desk_refresh_")
+        return "\n".join(lines)
+    c = thesis.call
+    lines.append("")
+    lines.append(f"**{c.side.upper()} {c.instrument}** (confidence {c.confidence:.0%})")
+    lines.append(c.one_liner)
+    if c.entry_px is not None:
+        lines.append(f"entry {c.entry_px:g}")
+    if c.stop_px is not None:
+        lines.append(f"stop {c.stop_px:g}")
+    if c.targets:
+        lines.append(f"targets {', '.join(f'{t:g}' for t in c.targets)}")
+    lines.append(f"invalidation: {c.invalidation}")
+    if mode == "full":
+        for b in thesis.bull:
+            lines.append(f"+ {b.text}")
+        for b in thesis.bear:
+            lines.append(f"- {b.text}")
+        for lv in thesis.leverage_view:
+            lines.append(f"{lv.leverage:g}x: {lv.verdict} -- {lv.reason}")
+    return "\n".join(lines)
+
+
+def _render_quick(thesis: Any, analytics: Any, mode: str) -> str:
+    """services.thesis.api.render_markdown when importable, else the
+    fallback above. Only an import failure falls back -- an exception
+    raised BY the real renderer propagates, so a real bug there surfaces as
+    an error instead of being masked by the fallback."""
+    try:
+        from services.thesis.api import render_markdown
+    except Exception:
+        return _render_quick_fallback(thesis, analytics, mode)
+    return render_markdown(thesis, analytics, mode)
+
+
+def handle_desk_list(params: Dict[str, Any]) -> str:
+    """Every desk's one-line card. Start here before desk_brief."""
+    try:
+        facade = _strategies_facade()
+        cards = facade.list_cards()
+        return json.dumps({"count": len(cards),
+                           "desks": [c.model_dump(mode="json") for c in cards]})
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+def handle_desk_brief(params: Dict[str, Any]) -> str:
+    """Full brief for one desk. mode=quick renders short markdown (the call
+    first); mode=full returns the raw structured payload (details on
+    demand)."""
+    desk_id = str(params.get("desk") or "").strip()
+    if not desk_id:
+        return json.dumps({"error": "desk is required"})
+    mode = str(params.get("mode") or "quick").lower()
+    if mode not in ("quick", "full"):
+        return json.dumps({"error": f"mode must be quick or full, got {mode!r}", "desk": desk_id})
+    try:
+        facade = _strategies_facade()
+        # wait=True: an MCP caller has no page to update later, so analytics
+        # older than DESK_BRIEF_MAX_AGE_S are rebuilt inline (fast: candles
+        # come from the shared on-disk store). Bounded to HANDLER_DEADLINE_S
+        # (see the "concurrent transport" comment above): a venue outage can
+        # make that inline rebuild take minutes, and this MCP worker must not
+        # wait on it past the bound. On timeout the rebuild keeps running on
+        # _BUILD_EXECUTOR (it will update the on-disk cache whenever it
+        # finishes); this call falls back to the best cached brief instead.
+        try:
+            brief = _bounded(facade.get_brief, desk_id, wait=True, max_age_s=DESK_BRIEF_MAX_AGE_S)
+        except TimeoutError:
+            brief = facade.get_brief(desk_id, wait=False, max_age_s=DESK_BRIEF_MAX_AGE_S)
+            brief.stale = list(brief.stale or []) + [
+                f"analytics: rebuild still running after {HANDLER_DEADLINE_S:.0f}s "
+                "(serving the last cached copy; it will update in the background)"]
+    except Exception as e:
+        return json.dumps({"error": str(e), "desk": desk_id})
+    sizing = _thesis_sizing(brief)
+    substitute = _desk_substitution_note(desk_id)   # None on mainnet
+    if mode == "full":
+        out_full = {"desk": desk_id, "mode": "full", "your_size": sizing,
+                    "brief": _compact_brief(brief)}
+        if substitute:
+            out_full["testnet_substitute"] = substitute
+        return json.dumps(out_full)
+    try:
+        # FIXED 2026-10-18: the real renderer requires a thesis, so a desk
+        # that had never been refreshed crashed here ('NoneType' object has
+        # no attribute 'call') instead of saying "no call yet".
+        if brief.thesis is None or brief.analytics is None:
+            markdown = _render_quick_fallback(brief.thesis, brief.analytics, mode)
+        else:
+            markdown = _render_quick(brief.thesis, brief.analytics, mode)
+    except Exception as e:
+        return json.dumps({"error": f"render failed: {type(e).__name__}: {e}", "desk": desk_id})
+    if substitute:
+        markdown = f"**{substitute}**\n\n" + markdown
+    if sizing and sizing.get("reason"):
+        markdown += "\nYour size: " + sizing["reason"]
+    live_rule = _live_rule(desk_id, brief)
+    if live_rule.get("line"):
+        markdown += "\n" + live_rule["line"]
+    out = {"desk": desk_id, "mode": "quick", "markdown": markdown,
+           "stale": brief.stale, "your_size": sizing,
+           "live_rule": live_rule.get("next")}
+    if substitute:
+        out["testnet_substitute"] = substitute
+    return json.dumps(out)
+
+
+def _live_rule(desk_id: str, brief: Any) -> Dict[str, Any]:
+    """Where the tick would actually trade (GET /api/desks/{id}/next), at the
+    saved max leverage. Never fails the brief: a read error becomes a line."""
+    try:
+        from pathiel.agents.config_store import read_agent_config
+        from services.strategies.api import desk_next_trade
+        from services.strategies.next_trade import live_rule_line
+        if runtime.is_public():
+            # A public profile with no saved max_leverage must not fall back
+            # to the maintainer's 20x in the brief's live-rule line.
+            from services.risk.presets import PUBLIC_DEFAULT_PROFILE
+            try:
+                lev = _profile_leverage_cap() or PUBLIC_DEFAULT_PROFILE.max_leverage
+            except Exception:  # noqa: BLE001 - an unreadable profile gets the public cap
+                lev = PUBLIC_DEFAULT_PROFILE.max_leverage
+        else:
+            lev = float(((read_agent_config() or {}).get("risk_profile") or {}).get("max_leverage") or 20)
+        nt = _bounded(desk_next_trade, desk_id, lev, brief=brief)
+        line = live_rule_line(nt)
+        from services.strategies.desks import get_spec
+        from services.strategies.event_blackout import event_blackout, next_eia_blackout, upcoming_events
+        spec = get_spec(desk_id)
+        coin = next((i.coin for i in spec.instruments if i.role == "primary"), spec.instruments[0].coin) if spec else ""
+        # the thesis side: a headline alert that supports it does not hold (2026-11-06)
+        side = getattr(getattr(getattr(brief, "thesis", None), "call", None), "side", None)
+        side = side if side in ("long", "short") else None
+        active = event_blackout(coin, side=side)
+        if active:
+            line += f" {active['reason']}: the tick does not enter until then."
+            if active.get("flatten"):
+                # Operator 2026-11-05 "weekend flat": the one window that also
+                # closes. The agent confirms with scripts/weekend.py before it does.
+                line += " An open oil position is closed in this tick (weekend flat)."
+        else:
+            nxt = next_eia_blackout(coin)
+            if nxt:
+                line += f" Next EIA blackout {nxt['start_utc']} to {nxt['until_utc']}."
+        line += _weekend_line(coin)
+        # Operator 2026-11-05 "FIX THEM": a surprise headline the watcher caught
+        # in the last 2h stays on the brief after its 30-min blackout ended, so
+        # the tick runs the rewrite check and judges a position on the NEW thesis.
+        # With the side, an alert the hold skipped is named as "no hold".
+        line += _headline_alert_line(coin, side=side)
+        # Operator 2026-11-05: the midterms were missing from the calendar.
+        from services.intel.scheduled_events import calendar_warning, short_line
+        evs = upcoming_events(coin, 72.0)
+        line += "\nEvents next 72h: " + ("; ".join(short_line(r) for r in evs) if evs else "none scheduled") + "."
+        warn = calendar_warning(int(time.time() * 1000))
+        if warn:
+            line += f" WARNING: {warn}."
+        return {"next": nt, "line": line}
+    except Exception as e:  # noqa: BLE001 - the brief still answers without it
+        return {"next": None, "line": f"Live rule: unavailable ({type(e).__name__}: {str(e)[:80]})."}
+
+
+HEADLINE_ALERT_SHOW_S = 2 * 3600.0
+WEEKEND_SHOW_H = 24.0
+
+
+def _weekend_line(coin: str, now_ms: Optional[int] = None) -> str:
+    """' Weekend flat <start> to <end>: ...' when the oil weekend opens inside
+    WEEKEND_SHOW_H hours (operator 2026-11-05 "weekend flat"), '' otherwise
+    and for every non-oil coin. An active window is already on the line
+    through event_blackout. Never raises: the brief answers without it."""
+    try:
+        from services.strategies.event_blackout import next_weekend
+        nxt = next_weekend(coin, now_ms)
+        if not nxt or nxt["active"]:
+            return ""
+        from services.strategies.event_blackout import now_ms as _now
+        t = _now() if now_ms is None else now_ms
+        if nxt["start_ms"] - t > WEEKEND_SHOW_H * 3_600_000:
+            return ""
+        return (f" Weekend flat {nxt['start_utc']} to {nxt['until_utc']}: no new oil entries,"
+                " an open oil position is closed at the window open.")
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def _headline_alert_line(coin: str, now_s: Optional[float] = None, side: Optional[str] = None) -> str:
+    """' Last headline alert <utc>: <label>: <title>.' when the newest
+    headline_watch alert on `coin` is under HEADLINE_ALERT_SHOW_S old, else
+    ''. With `side` (the thesis side, since 2026-11-06), when an alert inside
+    its 30-minute window supports that side and nothing else holds it, adds
+    ' Headline alert (supports the <side>): <title>, no hold.' so the tick
+    knows the entry rule still runs. Never raises: the brief answers without it."""
+    try:
+        from datetime import datetime, timezone
+        from services.intel import headline_watch
+        a = headline_watch.latest_for(coin)
+        if not a:
+            return ""
+        now_s = time.time() if now_s is None else now_s
+        at_ms = int(a["at_ms"])
+        if now_s * 1000 - at_ms > HEADLINE_ALERT_SHOW_S * 1000:
+            return ""
+        when = datetime.fromtimestamp(at_ms / 1000, tz=timezone.utc).strftime("%Y-%m-%d %H:%MZ")
+        line = f" Last headline alert {when}: {a.get('label')}: {str(a.get('title') or '')[:120]}."
+        aligned = headline_watch.skipped_aligned(coin, int(now_s * 1000), side)
+        if aligned:
+            line += f" Headline alert (supports the {side}): {str(aligned.get('title') or '')[:120]}, no hold."
+        return line
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+DESK_BRIEF_MAX_AGE_S = 120.0
+
+# Intel rows kept in a full brief, most relevant first. A live oil packet was
+# 70 KB (40 headlines, 25 policy items, 79 odds markets) and pushed the whole
+# brief to 99 KB, over the output guard. The thesis already cites what it used.
+_BRIEF_INTEL_CAPS = {"headlines": 12, "policy": 8, "odds": 12, "catalysts": 14}
+_POLICY_SUMMARY_CHARS = 300
+
+
+def _compact_brief(brief: Any) -> Dict[str, Any]:
+    """brief.model_dump() cut to fit a model context: top intel rows (odds by
+    volume), short policy summaries, and the thesis history as one line each
+    (the latest thesis is already in full under "thesis")."""
+    d = brief.model_dump(mode="json")
+    intel = d.get("intel")
+    if isinstance(intel, dict):
+        odds = intel.get("odds")
+        if isinstance(odds, list):
+            odds.sort(key=lambda o: _fnum(o.get("volume_usd")), reverse=True)
+        for key, cap in _BRIEF_INTEL_CAPS.items():
+            rows = intel.get(key)
+            if isinstance(rows, list) and len(rows) > cap:
+                intel[key] = rows[:cap]
+                intel[f"{key}_total"] = len(rows)
+        for row in intel.get("policy") or []:
+            summary = row.get("summary")
+            if isinstance(summary, str) and len(summary) > _POLICY_SUMMARY_CHARS:
+                row["summary"] = summary[:_POLICY_SUMMARY_CHARS] + "..."
+    d["history"] = [{"id": t.get("id"), "author": t.get("author"), "created_at": t.get("created_at"),
+                     "side": (t.get("call") or {}).get("side"),
+                     "one_liner": (t.get("call") or {}).get("one_liner"), "grade": t.get("grade")}
+                    for t in d.get("history") or []]
+    return d
+
+
+def _thesis_sizing(brief: Any) -> "Dict[str, Any] | None":
+    """The desk's current call sized for the active account, by the same
+    rules as risk_size_trade. None when there is no long/short call with an
+    entry and a stop; {"error": ...} when the inputs could not be read."""
+    thesis = getattr(brief, "thesis", None)
+    call = getattr(thesis, "call", None)
+    if call is None or call.side not in ("long", "short") or not call.entry_px or not call.stop_px:
+        return None
+    try:
+        from services.risk.size import size_trade
+        profile, books, venue = _risk_inputs()
+        acct = getattr(brief.analytics, "account", None) if brief.analytics else None
+        equity = acct.equity_usd if acct is not None and acct.source == "venue" else _live_equity()
+        dslice = _desk_slice(call.instrument, equity)   # the desk's share of it, as place_bracket sizes
+        equity = dslice["slice_usd"]
+        coin_max, sz_dec = _coin_specs(call.instrument)
+        # FIXED 2026-10-27: this sized at the thesis's own leverage (5x) while
+        # place_bracket sizes at the profile's (20x), so "Your size" read 2.93
+        # against an 11.84 position and the tick's top-up rule ("brief size
+        # bigger than the position") never fired: $7.24 of a $69.85 account
+        # sat idle. Same leverage as place_bracket, so the two sizes agree.
+        # Same leverage fit as place_bracket (2026-11-04), so the two sizes agree.
+        from services.strategies.next_trade import fit_leverage, leverage_fit_for
+        lev = _bracket_leverage(profile)
+        if lev:
+            lev, _gate = fit_leverage(float(call.entry_px), float(call.stop_px), float(lev), coin_max,
+                                      leverage_fit_for(call.instrument))
+        sized = size_trade(equity, profile, books, entry_px=call.entry_px, stop_px=call.stop_px,
+                           leverage=lev, coin_max_leverage=coin_max,
+                           targets=call.targets or [], venue=venue, sz_decimals=sz_dec)
+        out = {"coin": call.instrument, "equity_usd": equity, "desk": dslice["desk"],
+               "equity_share": dslice["equity_share"], **sized.model_dump(mode="json")}
+        if dslice["equity_share"] < 1:
+            out["reason"] = f"{dslice['equity_share']:.0%} of equity: " + out["reason"]
+        if sized.warnings:
+            out["reason"] = " ".join([out["reason"], *sized.warnings])
+        return out
+    except Exception as e:
+        return {"error": f"could not size this call: {e}"}
+
+
+def handle_desk_refresh(params: Dict[str, Any]) -> str:
+    """Kick off (or reuse) a desk's data+thesis refresh."""
+    desk_id = str(params.get("desk") or "").strip()
+    if not desk_id:
+        return json.dumps({"error": "desk is required"})
+    force = bool(params.get("force", False))
+    try:
+        facade = _strategies_facade()
+        job = facade.refresh(desk_id, force=force,
+                             on_stage=lambda label: _report_progress(label, total=4))
+        return json.dumps({"desk": desk_id, "job": job.model_dump(mode="json")})
+    except Exception as e:
+        return json.dumps({"error": str(e), "desk": desk_id})
+
+
+def handle_desk_submit_call(params: Dict[str, Any]) -> str:
+    """Record a user trade call on a desk, journaled alongside the
+    machine's theses."""
+    desk_id = str(params.get("desk") or "").strip()
+    if not desk_id:
+        return json.dumps({"error": "desk is required"})
+    call = params.get("call")
+    if not isinstance(call, dict):
+        return json.dumps({"error": "call object is required", "desk": desk_id})
+    try:
+        from contracts.strategies.models import UserThesisIn
+        body = UserThesisIn.model_validate({
+            "call": call,
+            "scenarios": params.get("scenarios") or [],
+            "notes": params.get("notes"),
+        })
+    except Exception as e:
+        return json.dumps({"error": f"invalid call: {e}", "desk": desk_id})
+    try:
+        facade = _strategies_facade()
+        thesis = facade.submit_user_thesis(desk_id, body)
+        return json.dumps({"desk": desk_id, "thesis": thesis.model_dump(mode="json")})
+    except Exception as e:
+        return json.dumps({"error": str(e), "desk": desk_id})
+
+
+# ── accounts + risk (wave-2 services) ───────────────────────────────────────
+
+def _risk_inputs():
+    """(saved RiskProfile, live book roster, venue rules): the exact inputs
+    the dashboard's risk panel and the executor size with."""
+    from pathiel.agents.config_store import read_agent_config, read_risk_profile
+    from pathiel.client.exchange import MIN_ORDER_USD
+    from services.risk import books as risk_books
+    from services.risk.derive import VenueRules
+    cfg = read_agent_config()
+    return (read_risk_profile(cfg), risk_books.all_book_specs(cfg),
+            VenueRules(min_order_notional_usd=MIN_ORDER_USD))
+
+
+def _live_equity() -> float:
+    from services.accounts.summary import get_active_summary
+    summary = get_active_summary(max_age_s=0)   # a tool result is acted on: always a new read
+    if summary.equity_usd is None and runtime.is_public():
+        # Public install with an address and no key (watch only): the accounts
+        # registry has no account then, so read the address itself. Strict: a
+        # failed read raises, it never reads as $0.
+        address = resolve_user_address()
+        if address:
+            state = fetch_account_state(address, include_hip3=True, strict=True) or {}
+            return float(state.get("equity") or 0.0)
+    if summary.equity_usd is None:
+        raise RuntimeError("could not read the active account's equity"
+                           + (": " + "; ".join(summary.blockers) if summary.blockers else ""))
+    return float(summary.equity_usd)
+
+
+def _desk_slice(coin: str, equity: float) -> Dict[str, Any]:
+    """The equity a trade on `coin` sizes with: equity x its desk's share
+    (services/strategies/desk_share.py; operator 2026-10-31, "oil 95% silver
+    5%"). Share 1.0 when no shares are saved. Raises DeskShareError when the
+    saved shares are bad or the coin is on no active desk: never size blind."""
+    from pathiel.agents.config_store import read_agent_config
+    from services.strategies import desk_share
+    cfg = read_agent_config()
+    desk, share = desk_share.share_for_coin(coin, cfg)
+    return {"desk": desk, "equity_share": share, "equity_usd": equity,
+            "slice_usd": round(equity * share, 6), "shares_on": bool(desk_share.desk_shares(cfg)),
+            "desk_coins": desk_share.desk_coins(desk) if desk else [],
+            "slots": desk_share.slots(cfg, 1)}
+
+
+def _coin_specs(coin: str) -> "Tuple[float | None, int | None]":
+    """(venue max leverage, size decimals) for a coin, either None when the
+    venue metadata could not be read."""
+    from pathiel.client.exchange import get_coin_index, get_max_leverage
+    try:
+        max_lev: "float | None" = float(get_max_leverage(coin))
+    except Exception:
+        max_lev = None
+    try:
+        sz_dec: "int | None" = int(get_coin_index(coin)[1])
+    except Exception:
+        sz_dec = None
+    return max_lev, sz_dec
+
+
+def _position_row(pos: Dict[str, Any]) -> Dict[str, Any]:
+    szi = _fnum(pos.get("szi"))
+    return {"coin": _norm_coin(pos.get("coin", "")), "side": "long" if szi > 0 else "short",
+            "size": abs(szi), "entry_px": _fnum(pos.get("entryPx")),
+            "value_usd": _fnum(pos.get("positionValue")),
+            "upnl_usd": _fnum(pos.get("unrealizedPnl")),
+            "liq_px": _fnum(pos.get("liquidationPx")) or None,
+            "leverage": (pos.get("leverage") or {}).get("value")}
+
+
+def handle_account_overview(params: Dict[str, Any]) -> str:
+    """Equity and where it sits, positions, can-trade, for the active account."""
+    try:
+        from services.accounts.summary import get_active_snapshot
+        summary, state = get_active_snapshot(max_age_s=0)
+    except Exception as e:
+        return json.dumps({"error": f"account read failed: {e}"})
+    acct = summary.account
+    out: Dict[str, Any] = {
+        "account": None if acct is None else {
+            "label": acct.label, "address": acct.main_address, "mode": acct.mode,
+            "source": acct.source, "agent_approved": acct.verified_at is not None},
+        "equity_usd": summary.equity_usd, "withdrawable_usd": summary.withdrawable_usd,
+        "can_trade": summary.can_trade, "blockers": summary.blockers,
+    }
+    if state:
+        by_dex = {(d or "main"): round(_fnum(v), 4) for d, v in (state.get("dex_equity") or {}).items()}
+        out["equity_by_dex"] = {d: v for d, v in by_dex.items() if v >= 0.01}
+        out["dust_usd"] = round(sum(v for v in by_dex.values() if 0 < v < 0.01), 4)
+        out["spot_usdc"] = state.get("spot_usdc")
+        out["positions"] = [_position_row(p.get("position") or {})
+                            for p in state.get("asset_positions") or []
+                            if _fnum((p.get("position") or {}).get("szi")) != 0]
+        out["note"] = ("Each HIP-3 dex margins separately: money on xyz only backs xyz:* "
+                       "trades. Move funds between dexes in the Hyperliquid app.")
+    return json.dumps(out, default=str)
+
+
+def handle_accounts(params: Dict[str, Any]) -> str:
+    """The accounts registry plus the address the bot actually trades with."""
+    try:
+        from services.accounts.view import list_all_accounts
+        rows = list_all_accounts()
+    except Exception as e:
+        return json.dumps({"error": f"accounts registry unreadable: {e}"})
+    try:
+        trades_with = resolve_user_address() or None
+    except Exception:
+        trades_with = None
+    return json.dumps({
+        "count": len(rows),
+        "accounts": [{"id": a.id, "label": a.label, "address": a.main_address, "mode": a.mode,
+                      "source": a.source, "active": a.is_active,
+                      "agent_approved": a.verified_at is not None} for a in rows],
+        "bot_trades_with": trades_with,
+        "manage": "Account tab in the dashboard: connect a wallet, add a watch-only address, switch.",
+    }, default=str)
+
+
+def handle_risk_limits(params: Dict[str, Any]) -> str:
+    """derive_limits for the active account (or a what-if equity/preset)."""
+    try:
+        from contracts.risk.models import RiskProfile
+        from services.risk.derive import derive_limits
+        profile, books, venue = _risk_inputs()
+        preset = params.get("preset")
+        if preset:
+            profile = RiskProfile(preset=preset)
+        what_if_equity = params.get("equity_usd")
+        equity = _fnum(what_if_equity) if what_if_equity is not None else _live_equity()
+        lim = derive_limits(equity, profile, books, venue)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+    return json.dumps({
+        "what_if": bool(preset) or what_if_equity is not None,
+        "equity_usd": lim.equity_usd, "preset": lim.preset_applied, "headline": lim.headline,
+        "can_trade": lim.can_trade, "max_open_positions": lim.max_open_positions,
+        "risk_per_trade_usd": lim.risk_per_trade_usd,
+        "daily_loss_limit_usd": lim.daily_loss_limit_usd,
+        "max_leverage": lim.profile.max_leverage,
+        "min_equity_to_trade_usd": lim.min_equity_to_trade_usd,
+        "books": [{"book": b.book, "can_trade": b.can_trade, "reason": b.reason}
+                  for b in lim.books if b.enabled],
+        "notes": lim.notes,
+        "change_it": "Account tab in the dashboard (risk profile), or PUT /api/risk/profile.",
+    }, default=str)
+
+
+def _bracket_side(entry: Optional[float], stop: float, tp: float) -> Optional[str]:
+    """"long" when the stop sits below the entry (below the target on a
+    market order, where the entry is the live mid: the same answer for any
+    bracket check_levels accepts, read without a venue call), "short" when
+    above, None when it sits on it (check_levels refuses that anyway)."""
+    ref = entry if entry is not None else tp
+    return "long" if stop < ref else "short" if stop > ref else None
+
+
+def handle_place_bracket(params: Dict[str, Any]) -> str:
+    """Size with services.risk.size.size_trade, then pathiel.agents.bracket.place_bracket."""
+    from pathiel.agents import bracket
+    coin = _norm_coin(str(params.get("coin") or ""))
+    if not coin:
+        return json.dumps({"ok": False, "error": "coin is required"})
+    try:
+        stop = float(params["stop_px"])
+        tp = float(params["tp_px"])
+        entry = float(params["entry_px"]) if params.get("entry_px") not in (None, "") else None
+    except (KeyError, TypeError, ValueError):
+        return json.dumps({"ok": False, "coin": coin, "error": "stop_px and tp_px are required numbers"})
+    min_r = _fnum(params.get("min_r")) if params.get("min_r") not in (None, "") else bracket.DEFAULT_MIN_R
+    if not params.get("dry_run"):
+        # Operator 2026-11-03 "DO THIS THEN": no new oil entry 2h either side
+        # of the EIA report (OIL_EVENT_TIMING_TEST_2026-11-03.md, eia_2_2).
+        # 2026-11-05: the same for impact-3 scheduled events (FOMC, CPI,
+        # OPEC+, elections; services/intel/scheduled_events.py) and, operator
+        # "weekend flat", the oil futures weekend (Fri 16:00 to Sun 18:00 New
+        # York, oil coins only; services/strategies/weekend.py). This handler
+        # never touches an open position, a stop, a target or a close; the
+        # weekend close itself is the desk-tick agent's call. Since
+        # 2026-11-06 (operator 2026-11-05: "we SHOULDNT PAUSE FOR BULLISH
+        # HEADLINES") the check knows the side: a headline alert whose
+        # direction supports it does not hold; EIA, weekend and the
+        # calendar stay side-blind.
+        from services.strategies.event_blackout import event_blackout
+        blackout = event_blackout(coin, side=_bracket_side(entry, stop, tp))
+        if blackout:
+            return json.dumps({"ok": False, "coin": coin, "placed": False, "blackout": blackout,
+                               "error": blackout["reason"]})
+    lev_raw = params.get("leverage")
+    try:
+        from pathiel.client.exchange import get_hl_price
+        from services.risk.size import size_trade
+        profile, books, venue = _risk_inputs()
+        coin_max, sz_dec = _coin_specs(coin)
+        if not coin_max:
+            # Refuse rather than guess: without the venue's max leverage the
+            # liquidation estimate and the 20x rule cannot run, and a trade
+            # placed blind is the failure this desk exists to prevent.
+            return json.dumps({"ok": False, "coin": coin, "placed": False,
+                               "error": f"venue max leverage for {coin} could not be read; not trading blind"})
+        # One wallet, N slots (risk_profile.max_open_positions): a position or a
+        # resting entry on another coin takes a slot. Three desks share this
+        # wallet since 2026-10-23; without this, two desks could both rest an
+        # entry and the second fill would be refused by the venue for margin,
+        # or worse, half-fill.
+        # Since 2026-10-31 each desk with an equity share owns one slot and
+        # sizes off its own slice (services/strategies/desk_share.py), so oil
+        # and silver can both be open; no shares saved = the old rule (the
+        # profile's slots, the whole equity).
+        from pathiel.client.exchange import resolve_user_address
+        from services.strategies.desk_share import DeskShareError
+        try:
+            dslice = _desk_slice(coin, _live_equity())
+        except DeskShareError as e:
+            return json.dumps({"ok": False, "coin": coin, "placed": False, "error": f"desk share: {e}"})
+        slots = dslice["slots"] if dslice["shares_on"] else int(getattr(profile, "max_open_positions", None) or 1)
+        user = resolve_user_address()
+        if dslice["shares_on"]:
+            # one position per desk: another coin of THIS desk holding a
+            # position or an entry blocks it (oil cannot hold Brent and WTI)
+            own = bracket.desk_coin_held(user, coin, dslice["desk_coins"])
+            if own:
+                return json.dumps({"ok": False, "coin": coin, "placed": False,
+                                   "error": f"desk {dslice['desk']} already holds {own}: one position per desk"})
+        taken = bracket.slot_taken_by(user, coin, slots)
+        if taken:
+            return json.dumps({"ok": False, "coin": coin, "placed": False,
+                               "error": f"slot taken by {taken}: the account allows {slots} open position(s)"})
+        ref = entry if entry is not None else float(get_hl_price(coin))
+        add = _as_bool(params.get("add"))
+        leverage = _bracket_leverage(profile, lev_raw)
+        if lev_raw in (None, "") and not add and leverage:
+            # Leverage fit (operator 2026-11-04 "TURN ON LEVERAGE FIT"): a
+            # Brent stop too far for 20x trades at 15x instead of being
+            # refused. A top-up never refits (the venue sets one leverage
+            # for the whole position); an explicit leverage is the caller's.
+            from services.strategies.next_trade import fit_leverage, leverage_fit_for
+            leverage, _gate = fit_leverage(ref, stop, float(leverage), coin_max, leverage_fit_for(coin))
+        sized = size_trade(dslice["slice_usd"], profile, books, entry_px=ref, stop_px=stop,
+                           leverage=leverage, coin_max_leverage=coin_max, targets=[tp],
+                           venue=venue, sz_decimals=sz_dec)
+        size = float(sized.size or 0)
+        topup: Optional[Dict[str, Any]] = None
+        if add:
+            # The operator wants the whole stake in ONE position (2026-10-24):
+            # the top-up is the full-port size minus what is already on.
+            from pathiel.client.exchange import _position_size_on_coin
+            held = _position_size_on_coin(user, coin)
+            if held is None:
+                return json.dumps({"ok": False, "coin": coin, "placed": False,
+                                   "error": "position read failed; not trading blind"})
+            # ...and never more than the free margin on that dex can carry at
+            # this leverage once the opening fee is paid
+            # (services.risk.derive.margin_after_open_fee; a 10% then 2%
+            # reserve was held back here until 2026-10-27): the open position
+            # may hold more margin than its size implies (the venue keeps
+            # isolated margin when leverage is raised), so equity alone
+            # over-sizes the top-up and the venue would reject it.
+            from pathiel.client.account_snapshot import account_state
+            from services.risk.derive import VenueRules, margin_after_open_fee
+            st = account_state(user, include_hip3=True)
+            dex = coin.split(":", 1)[0] if ":" in coin else ""
+            free = float((st.get("dex_available") or {}).get(dex, st.get("available") or 0) or 0)
+            lev_used = float(sized.leverage or leverage or 1)
+            budget = margin_after_open_fee(free, lev_used, venue or VenueRules())
+            # DOWN, never to the nearest step: 2026-11-02 06:17Z a silver
+            # top-up rounded up past the free margin and the venue refused it
+            # ("Insufficient margin to place order") after the dry run passed.
+            cap = _floor_size(budget * lev_used / ref, sz_dec)
+            wanted = _round_size(size - abs(held), sz_dec)
+            size = _round_size(min(wanted, cap), sz_dec)
+            topup = {"held": held, "full_size": sized.size, "free_margin_usd": round(free, 2),
+                     "topup_cap_size": cap, "topup_size": size}
+            if size <= 0:
+                # Say which limit stopped it: on 2026-10-26 a position at 8.58
+                # of a 9.5 full-port size was refused as "already at or above
+                # the full-port size" when the real limit was the free margin.
+                if wanted <= 0:
+                    reason = f"position {abs(held)} already at or above the full-port size {sized.size}"
+                else:
+                    reason = (f"no free margin to add: ${free:.2f} free on {dex or 'main'} "
+                              f"buys under one size step at {lev_used:g}x after the opening fee")
+                return json.dumps({"ok": True, "coin": coin, "placed": False, "add": True, **topup,
+                                   "reason": reason}, default=str)
+        if not add and dslice["shares_on"] and size > 0:
+            # A desk's slice of equity is not all free margin: the other
+            # desk's isolated position holds its own, and unrealized profit
+            # is not margin. Never send more than the dex's free margin can
+            # open at this leverage after the fee (the venue would refuse,
+            # or half-fill).
+            from pathiel.client.account_snapshot import account_state
+            from services.risk.derive import VenueRules, margin_after_open_fee
+            st = account_state(user, include_hip3=True)
+            dex = coin.split(":", 1)[0] if ":" in coin else ""
+            free = float((st.get("dex_available") or {}).get(dex, st.get("available") or 0) or 0)
+            lev_used = float(sized.leverage or leverage or 1)
+            cap = _floor_size(margin_after_open_fee(free, lev_used, venue or VenueRules())
+                              * lev_used / ref, sz_dec)   # down, never over free margin
+            dslice["free_margin_usd"] = round(free, 2)
+            if cap < size:
+                dslice["capped_by_free_margin"] = {"wanted": size, "cap": cap}
+                size = cap
+    except Exception as e:
+        return json.dumps({"ok": False, "coin": coin, "error": f"sizing failed: {e}"})
+    if not sized.can_trade or not sized.size:
+        return json.dumps({"ok": False, "coin": coin, "placed": False,
+                           "error": f"sizing refused: {sized.reason}"}, default=str)
+    out = bracket.place_bracket(coin, entry_px=entry, stop_px=stop, tp_px=tp, size=size,
+                                leverage=int(sized.leverage or 1), min_r=min_r,
+                                coin_max_leverage=coin_max, dry_run=bool(params.get("dry_run")), add=add)
+    out["sizing"] = {"notional_usd": sized.notional_usd, "margin_usd": sized.margin_usd,
+                     "risk_usd": sized.risk_usd, "risk_pct": sized.risk_pct,
+                     "desk": dslice["desk"], "equity_share": dslice["equity_share"],
+                     "equity_usd": round(dslice["equity_usd"], 2), "slice_usd": round(dslice["slice_usd"], 2),
+                     **({k: dslice[k] for k in ("free_margin_usd", "capped_by_free_margin") if k in dslice})}
+    if topup:
+        out["topup"] = topup
+    return json.dumps(out, default=str)
+
+
+def _bracket_leverage(profile: Any, lev_raw: Any = None) -> "float | None":
+    """The leverage place_bracket sizes at: the caller's, else the risk
+    profile's cap (20x on the live account). desk_brief's "Your size" uses
+    the same, so the size the brief shows is the size a bracket places."""
+    if lev_raw not in (None, ""):
+        return _fnum(lev_raw)
+    return getattr(profile, "max_leverage", None) or None
+
+
+def _as_bool(v: Any) -> bool:
+    return v is True or str(v).strip().lower() in ("1", "true", "yes", "y")
+
+
+def _floor_size(size: float, sz_decimals: Any) -> float:
+    """Round DOWN to the coin's size step: a size capped by free margin must
+    never round up past it (the venue refuses the order)."""
+    try:
+        d = int(sz_decimals) if sz_decimals is not None else 2
+    except (TypeError, ValueError):
+        d = 2
+    step = 10 ** -d
+    return round(math.floor(max(0.0, size) / step + 1e-9) * step, 8)
+
+
+def _round_size(size: float, sz_decimals: Any) -> float:
+    try:
+        d = int(sz_decimals) if sz_decimals is not None else 2
+    except (TypeError, ValueError):
+        d = 2
+    return round(max(0.0, size), d)
+
+
+def handle_set_target(params: Dict[str, Any]) -> str:
+    from pathiel.agents import bracket
+    coin = _norm_coin(str(params.get("coin") or ""))
+    try:
+        tp = float(params["tp_px"])
+    except (KeyError, TypeError, ValueError):
+        return json.dumps({"ok": False, "coin": coin, "error": "tp_px is required"})
+    if not coin:
+        return json.dumps({"ok": False, "error": "coin is required"})
+    try:
+        return json.dumps(bracket.set_target(coin, tp), default=str)
+    except Exception as e:
+        return json.dumps({"ok": False, "coin": coin, "error": str(e)})
+
+
+def handle_bracket_sweep(params: Dict[str, Any]) -> str:
+    from pathiel.agents import bracket
+    coin = _norm_coin(str(params.get("coin") or ""))
+    if not coin:
+        return json.dumps({"ok": False, "error": "coin is required"})
+    # Bounded the same way as handle_desk_brief (see HANDLER_DEADLINE_S /
+    # _bounded above): sweep()'s reads (position, resting orders, price) go
+    # through the same venue HTTP path that stacked to 900+s in the
+    # 2026-10-31 outage. On timeout, sweep() keeps running on _BUILD_EXECUTOR
+    # and still completes (cancel/fold is idempotent, safe to let finish
+    # unseen) -- this only frees the MCP worker thread so the next tick's
+    # call gets a dispatch-pool slot instead of queueing behind this one.
+    try:
+        return json.dumps(_bounded(bracket.sweep, coin), default=str)
+    except TimeoutError:
+        return json.dumps({"ok": False, "coin": coin, "timed_out": True,
+                           "error": f"bracket_sweep did not finish within {HANDLER_DEADLINE_S:.0f}s "
+                                    "(the venue may be degraded); it is still running in the "
+                                    "background and does not need to be resent immediately"})
+    except Exception as e:
+        return json.dumps({"ok": False, "coin": coin, "error": str(e)})
+
+
+def handle_risk_size_trade(params: Dict[str, Any]) -> str:
+    """One trade sized by services.risk.size.size_trade, plus its liquidation price."""
+    coin = _norm_coin(str(params.get("coin") or ""))
+    if not coin:
+        return json.dumps({"error": "coin is required"})
+    try:
+        entry = float(params.get("entry_px"))
+        stop = float(params.get("stop_px"))
+    except (TypeError, ValueError):
+        return json.dumps({"error": "entry_px and stop_px must be numbers", "coin": coin})
+    lev_raw = params.get("leverage")
+    leverage = _fnum(lev_raw) if lev_raw not in (None, "") else None
+    targets = [_fnum(t) for t in (params.get("targets") or []) if _fnum(t) > 0]
+    try:
+        from services.risk.size import size_trade
+        profile, books, venue = _risk_inputs()
+        eq_raw = params.get("equity_usd")
+        share_note: Dict[str, Any] = {}
+        if eq_raw is not None:
+            equity = _fnum(eq_raw)          # a what-if equity is taken as given
+        else:
+            dslice = _desk_slice(coin, _live_equity())
+            equity = dslice["slice_usd"]    # live: the desk's share, as place_bracket sizes
+            share_note = {"desk": dslice["desk"], "equity_share": dslice["equity_share"],
+                          "account_equity_usd": round(dslice["equity_usd"], 2)}
+        coin_max, sz_dec = _coin_specs(coin)
+        sized = size_trade(equity, profile, books, entry_px=entry, stop_px=stop,
+                           leverage=leverage or None, coin_max_leverage=coin_max,
+                           targets=targets, venue=venue, sz_decimals=sz_dec)
+    except Exception as e:
+        return json.dumps({"error": str(e), "coin": coin})
+    out = {"coin": coin, "equity_usd": equity, "coin_max_leverage": coin_max, **share_note,
+           **sized.model_dump(mode="json")}
+    if sized.can_trade and sized.leverage and coin_max:
+        liq = _liq_estimate(entry, sized.leverage, coin_max, sized.side == "long")
+        out["liq_px"] = round(liq, 6)
+        out["stop_before_liq"] = stop > liq if sized.side == "long" else stop < liq
+        if not out["stop_before_liq"]:
+            out["warning"] = ("Liquidation comes before your stop at this leverage. "
+                              "Lower the leverage or move the stop closer.")
+    return json.dumps(out, default=str)
+
+
+def handle_desk_track_record(params: Dict[str, Any]) -> str:
+    """Graded-thesis track record for one desk."""
+    desk_id = str(params.get("desk") or "").strip()
+    if not desk_id:
+        return json.dumps({"error": "desk is required"})
+    try:
+        facade = _strategies_facade()
+        tr = facade.track_record(desk_id)
+        return json.dumps({"desk": desk_id, "track_record": tr.model_dump(mode="json")})
+    except Exception as e:
+        return json.dumps({"error": str(e), "desk": desk_id})
+
+
+def handle_desk_grade(params: Dict[str, Any]) -> str:
+    """Grade every expired thesis (one desk, or every desk), then every
+    registered account's trades against each graded call, right now --
+    the same two calls the server's hourly background sweep makes."""
+    desk_id = str(params.get("desk") or "").strip() or None
+    try:
+        facade = _strategies_facade()
+        n_theses = facade.grade_due()
+        n_trades = facade.grade_due_trades(desk_id)
+        return json.dumps({"desk": desk_id, "theses_graded": n_theses, "trades_graded": n_trades})
+    except Exception as e:
+        return json.dumps({"error": str(e), "desk": desk_id})
+
+
+def main() -> None:
+    """Entry point: the maintainer-path notice, the builder warm-up on a
+    public install, then the stdio loop."""
+    notice = _operator_checkout_notice(os.path.dirname(_SCRIPTS_DIR), os.environ)
+    if notice:
+        sys.stderr.write(notice + "\n")
+        sys.stderr.flush()
+    if runtime.is_public():
+        # Once per start: which network, so a fresh install's real-money
+        # default is never a surprise. The operator's launch prints nothing.
+        sys.stderr.write(_public_start_notice(runtime.network()) + "\n")
+        sys.stderr.flush()
+        _warm_builder()   # background read; the first order after start may still miss it
+    run()
+
+
+if __name__ == "__main__":
+    main()
+    # A tool call that timed out may still hold a worker thread; the client
+    # is gone (stdin closed), so leave without joining it.
+    sys.stderr.flush()
+    os._exit(0)

@@ -1,0 +1,8 @@
+{
+  "local_mode": true,
+  "address": "0x00000000000000000000000000000000000000a1",
+  "active_account_id": "acc_main",
+  "accounts_count": 2,
+  "can_trade": true,
+  "needs_onboarding": false
+}

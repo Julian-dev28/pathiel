@@ -1,0 +1,191 @@
+# MCP Server Structure
+
+`scripts/pathiel-mcp-server.py` — a stdio JSON-RPC MCP server exposing 60 tools, every one of them implemented. Registered in `~/.pathiel/config.yaml` under `mcp_servers.pathiel`, and for Claude Code in the repo's `.mcp.json`.
+
+## Transport and safety (2026-10-18)
+
+- **Concurrent calls.** `run()` reads stdin on the main thread; each
+  `tools/call` runs on a worker (`PATHIEL_MCP_MAX_CONCURRENT`, default 6) and is
+  answered exactly once: by the handler, or by a timeout result at its deadline
+  (`TOOL_TIMEOUT_S`: desk_refresh 300 s, else 120 s;
+  `PATHIEL_MCP_TOOL_TIMEOUT_S` overrides all). A timed-out handler keeps its
+  worker until it returns; Python cannot kill a thread.
+- **Cancel and progress.** `notifications/cancelled` suppresses the reply.
+  A `_meta.progressToken` gets `notifications/progress` from
+  `_report_progress()` (desk_refresh reports each pipeline stage).
+- **Sampling.** The server negotiates the client's MCP `sampling` capability at
+  `initialize` and can send it a server -> client request via
+  `_server_request()`; inside `run()` the reply is routed by id to the waiting
+  handler (`_deliver_response`), other requests keep flowing, and outside
+  `run()` (tests) `_server_request_inline` reads stdin itself. No tool uses
+  this today — the `research` tool that originally did was retired with the
+  bot's brain path on 2026-10-23 — but the transport stays for a future tool
+  that wants the connected harness's own model instead of a hosted API.
+- **Instructions and annotations.** `initialize` returns `SERVER_INSTRUCTIONS`
+  (short; it rides in every session). Every tool carries MCP annotations, only
+  the non-default hints: `LIVE_MONEY_TOOLS` destructive (and their descriptions
+  start "LIVE MONEY"), `config` destructive, `LOCAL_WRITE_TOOLS` non-destructive
+  writes, everything else `readOnlyHint`. A new tool lands read-only unless put
+  in a bucket; `tests/test_mcp_shoreup.py` checks the buckets.
+- **Output size.** Handlers narrow their own output (limit, coin, query,
+  full=false); `_guard_output` cuts anything over `MAX_OUTPUT_CHARS` (40k) into
+  a `truncated` payload with a hint. The tools/list budget gate is in
+  `tests/test_mcp_overhaul.py`.
+- **HIP-3.** Money and orders on a HIP-3 dex (oil: `xyz:BRENTOIL`, the oil desk's
+  price, and `xyz:CL` WTI) are invisible to a main-dex read. `get_open_orders`,
+  `get_max_trade_size`, `get_risk_metrics`, `get_user_state(dex=)` and
+  `account_overview` all read the right dex.
+
+Checks: `.venv/bin/python scripts/mcp_smoke.py` (live, read-only tools, leak
+check by secret value, parallel check), `scripts/mcp_tool_table.py --check`
+(docs/overhaul/MCP.md is generated), `skills/pathiel-agent/scripts/audit_mcp_server.py`.
+
+**There are no stubs left.** All 47 were audited against the live `/info` API on
+2026-09-06: 34 had a working endpoint and were implemented, 13 had none and were
+deleted rather than advertising a promise the venue cannot keep. 99 tools became
+86, and every one returns real data.
+
+The stub mechanism below is kept on purpose — it is the right shape for a tool
+whose endpoint genuinely does not exist yet, and a clean `not_implemented` beats
+fake zeros. Two rules before you use it:
+
+1. **Check `pathiel.client` first.** Six stubs sat on top of working code for
+   months. An agent reads "not implemented" as "this data does not exist here".
+2. **If the venue has no endpoint at all, delete the tool.** A permanently
+   unimplementable tool costs a call to discover and teaches nothing.
+
+Counted from source, not from memory: `TOOLS` holds 59 entries and
+`_STUB_TOOL_NAMES` is empty, so all 59 are genuinely implemented. 2026-10-23
+(headless oil desk): 22 bot-era/off-topic tools cut outright (80 -> 58) --
+scan, research, submit_verdict, execute, the leaderboard/discovery pair,
+staking/validator/vault/referral/rewards/spot/network reads, and two reads
+redundant with what stayed -- then +1 (`desk_grade`) the same day for
+grade-everything: 59. If you change either list, recount rather than
+adjusting this sentence by hand:
+
+```sh
+python - <<'EOF'
+import ast, pathlib
+tree = ast.parse(pathlib.Path("scripts/pathiel-mcp-server.py").read_text())
+g = {t.id: n.value for n in tree.body if isinstance(n, ast.Assign)
+     for t in n.targets if hasattr(t, "id")}
+tools = {v.value for e in g["TOOLS"].elts for k, v in zip(e.keys, e.values)
+         if getattr(k, "value", None) == "name"}
+stubs = {e.value for e in g["_STUB_TOOL_NAMES"].elts}
+print(f"{len(tools)} advertised, {len(tools - stubs)} implemented, {len(stubs)} stubs")
+EOF
+```
+
+**This process never touches the web auth.** It imports `pathiel` in-process
+rather than calling `pathiel.server` over HTTP, so wallet sign-in, sessions, the
+operator role and the CSP are all irrelevant here — and the filesystem is what
+gates it. See `mcp-config.md` for why that matters.
+
+## Layout
+
+| Piece | Role |
+|-------|------|
+| `TOOLS` (list) | One dict per tool: `{"name", "description", "inputSchema"}`. Drives `tools/list`. |
+| `handle_<name>(params)` | Real handlers — module-level functions returning a JSON string. |
+| `_STUB_TOOL_NAMES` (list) | Names of tools whose SDK call is not yet wired — registered so clients get a clean `not_implemented` instead of "tool not found" or fake zeros. |
+| `_make_stub_handler(name)` | Factory: builds a handler returning `{"error": "not_implemented", "tool": name, ...}` — never fake data. |
+| `tool_handlers` (dict, in `_tool_handlers()`) | `name -> handler`. Real handlers listed explicitly; stub handlers generated by looping over `_STUB_TOOL_NAMES`. |
+| `dispatch_message(msg)` | One JSON-RPC message in, the response out (or `None` for a notification). The whole protocol lives here; `run()` is only the stdin loop. |
+| `_info(type, **kw)` | Rate-limited strict `/info` POST. Raises on a request that never landed, so a 429 is an error and not "0 rows". |
+| `_limited_info()` | SDK-`Info`-shaped facade over `_info` (`all_mids`, `meta`, `user_fills`, ...). Use it instead of the SDK `Info`, which posts outside the token bucket. |
+| `_user(params)` | `params["user"]` if given, else the deployment's address. |
+| `_limit(params, default)` | Clamped `params["limit"]`. |
+
+## Adding a tool
+
+**Real tool — 3 edits:**
+1. Append a `{"name", "description", "inputSchema"}` dict to `TOOLS`.
+2. Add a module-level `def handle_<name>(params: Dict[str, Any]) -> str:`.
+3. Add `"<name>": handle_<name>,` to the `tool_handlers` dict in `_tool_handlers()`.
+
+Every `inputSchema` property must be read by the handler (directly or via a
+helper it calls). The audit fails otherwise: an advertised param the handler
+ignores is a silent no-op for the agent that passes it. That drift hid 16
+ignored params until 2026-10-14, including `size` on `get_price_impact`, which
+was read as USD while the schema said coin units.
+
+**Stub tool — 1 edit:** add the name to the `_STUB_TOOL_NAMES` list. The
+`tool_handlers` dict picks it up automatically via the `_make_stub_handler` loop
+(returns a clean `not_implemented` error, never fake data).
+
+## Handler boilerplate
+
+Use the existing helpers — do not invent new ones:
+
+```python
+def handle_get_xxx(params: Dict[str, Any]) -> str:
+    try:
+        user = _user(params)
+        if not user:
+            return json.dumps({"error": "no configured user address"}, default=str)
+        rows = _info("userFills", user=user) or []
+        return json.dumps({"count": len(rows), "rows": rows[-_limit(params, 100):]}, default=str)
+    except Exception as e:
+        return json.dumps({"error": str(e)}, default=str)
+```
+
+- Return `{"error": ...}` (or `{"status": "error"}`) for failure. The dispatcher
+  sets `isError: true` on those payloads, so clients see the failure.
+- Never print to stdout. `run()` sends `sys.stdout` to stderr anyway, but
+  `_send()` is the only writer to the protocol channel.
+- `_info()` / `_limited_info()`: read side, rate-limited (see Layout).
+- `_make_exchange()` — shared write-side `Exchange` client (needs `HYPERLIQUID_PRIVATE_KEY`).
+- `resolve_user_address()` (in `hl_client`) — master address, else wallet, else `""`.
+- A bad import from `pathiel.client.exchange` fails at *handler-call* time,
+  not file load — a `python -c 'import ...'` smoke test will not catch it. Check
+  the import against the actual module.
+- `close_position` is a thin adapter over
+  `pathiel.agents.bracket.close_position(coin)` (moved here from the retired
+  `executor.close_position_market` 2026-10-23, wave 2). Do not call
+  `place_hl_order` inline from the MCP server; the bracket helper owns
+  reduce-only handling, trigger-order cleanup, and realized PnL capture.
+- `place_bracket` is the MCP-native entry adapter. It sizes with
+  `services.risk.size.size_trade`, then calls `pathiel.agents.bracket.place_bracket`,
+  which refuses under the R-multiple minimum or when the stop sits too close
+  to liquidation for the requested leverage. `bracket_sweep` cancels a
+  stranded sibling order and confirms an open position is covered by a stop.
+- `config` deep-merges nested updates (risk_profile and any hand-added block)
+  so MCP clients can change one key without editing `.agent-config.json` by hand.
+
+## Audit invariant
+
+Every tool in `TOOLS` must resolve to exactly one handler, with no orphans:
+
+```
+len(TOOLS) == len(tool_handlers explicit keys) + len(_STUB_TOOL_NAMES)
+no tool name appears in both the explicit dict and _STUB_TOOL_NAMES
+no duplicate handle_* function definitions (a dup silently overrides the first)
+every TOOLS entry has a resolvable handler; no unwired handlers; no orphan dict keys
+```
+
+Do not check this by hand. Run the bundled `scripts/audit_mcp_server.py` before
+and after any tool change. It parses the server via `ast` (no import, no
+execution) and exits non-zero on drift, including schema params a handler never
+reads. `tests/test_mcp_server_hardening.py` runs it as a gate test.
+
+## Protocol
+
+`dispatch_message` implements JSON-RPC 2.0 for MCP: `initialize` (echoes a
+supported `protocolVersion`: 2025-06-18, 2025-03-26 or 2024-11-05), `ping`,
+`tools/list`, `tools/call`. Notifications never get a reply. Unknown method:
+`-32601`. Unknown tool: `-32602`. Bad JSON: `-32700` with `id: null`. A request
+that arrives while a call is parked on a server -> client `_server_request`
+still gets answered (`ping` normally, anything else with a busy error).
+
+## Testing
+
+- Gate (no network, <1s): `pytest tests/test_mcp_server_hardening.py tests/test_hyperfeed_market_data.py tests/test_mcp_sampling.py tests/test_mcp_wallet_tools.py`
+- Periodic eval (live HL, read-only, ~90s): `pytest -m online tests/test_mcp_online_eval.py -s`.
+  Calls every non-mutating tool through a real stdio session; pass floor 97%.
+  Trace in `/tmp/pathiel-mcp-eval/latest.json`.
+
+## Restart
+
+The server is a separate process; after editing it run `pkill -f pathiel-mcp-server.py`
+— the next tool call respawns it with fresh code. A committed fix that "doesn't
+take" almost always means a stale server process.

@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# Run a pathiel script with the plugin's own Python, from the plugin root,
+# with keys, state, config and network resolved the same way as the MCP
+# server (scripts/_plugin_env.sh). The plugin's desk-tick skill uses it:
+#   "${CLAUDE_PLUGIN_ROOT}/scripts/pathiel-py" scripts/desk_slot.py --desk oil
+# Outside Claude Code, `scripts/pathiel-mcp --commands` prints ready-made
+# lines with CLAUDE_PLUGIN_DATA set, so this finds the same venv.
+set -euo pipefail
+. "$(cd "$(dirname "$0")" && pwd)/_plugin_env.sh"
+pathiel_prepare
+cd "$PATHIEL_ROOT"
+exec "$PATHIEL_VENV/bin/python" "$@"

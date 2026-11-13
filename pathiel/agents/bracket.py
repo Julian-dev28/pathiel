@@ -1,0 +1,607 @@
+"""Bracket trades: one entry with an exact stop and take-profit, placed as
+asked. The operator's direct-trade path (Claude places it via the MCP
+`place_bracket` tool). Also carries `close_position`, the MCP `close_position`
+tool's handler — moved here 2026-10-23 (wave 2: the autonomous scan/research/
+execute engine in `executor.py` is retired; Claude trades through this module
+and the MCP server now, so `close_position_market` is the one piece of
+`executor.py` that still has a live caller).
+
+Everything here is deterministic: the R gate, the side, the one-position rule
+and the post-close sweep. The judgment (which entry, which stop) comes in as
+arguments, never from in here.
+
+Exchange calls go through `ex`, the pathiel.client.exchange module by
+default, so tests pass a fake.
+"""
+from __future__ import annotations
+
+from typing import Any, Dict, List, Optional
+
+# ── minimum tradable equity ──────────────────────────────────────────────────
+# Hyperliquid rejects orders under roughly $10 notional, so this is the absolute
+# floor below which no order can clear the exchange at all.
+#
+# Moved out of `executor.py` 2026-10-23 (wave 2) alongside `close_position`:
+# `pathiel/dashboard.py`'s risk panel calls `min_tradable_equity` directly as
+# its fallback when the risk service can't load, and `scripts/profit_audit.py`
+# calls it too — both real, surviving callers that have nothing to do with
+# the retired autonomous engine.
+MIN_TRADABLE_EQUITY_USD = 25.0
+
+
+def book_margin_requirement(config: Optional[Dict[str, Any]] = None) -> float:
+    """Equity needed for EVERY enabled book to hold a position simultaneously.
+
+    Sum of each book's margin (notional / leverage), grossed up by the
+    free-margin floor the executor used to enforce. With every per-book
+    config block retired (headless desk, 2026-10-23), this sums to 0 for any
+    config in practice today — kept as a derivation, not a constant, so a
+    reintroduced per-entry block with `enabled`/`notional_usd`/`shadow_only`
+    keys is still counted correctly rather than silently ignored.
+
+    A book is a block carrying `enabled`, `notional_usd` AND `shadow_only`.
+    That third key is the discriminator, and it is load-bearing: `enabled` +
+    `notional_usd` alone also matches gate RELAXATIONS like the retired
+    `thin_short_relax`, which carried a notional it applied to but opened no
+    position of its own.
+    """
+    cfg = config or {}
+    try:
+        free_floor = float(cfg.get("min_available_margin_pct", 0.10) or 0.0)
+    except (TypeError, ValueError):
+        free_floor = 0.10
+    if not 0.0 <= free_floor < 1.0:
+        free_floor = 0.10
+
+    total = 0.0
+    for block in cfg.values():
+        if not isinstance(block, dict):
+            continue
+        if not {"enabled", "notional_usd", "shadow_only"} <= block.keys():
+            continue
+        if not block.get("enabled", False):
+            continue
+        try:
+            notional = float(block.get("notional_usd") or 0)
+            leverage = max(1, int(block.get("leverage", 1) or 1))
+        except (TypeError, ValueError):
+            continue
+        total += notional / leverage
+    return total / (1.0 - free_floor) if total > 0 else 0.0
+
+
+def min_tradable_equity(config: Optional[Dict[str, Any]] = None) -> float:
+    """The floor below which trading refuses to run.
+
+    Precedence:
+      1. an explicit `min_tradable_equity_usd` — deliberate override for a
+         small test account
+      2. what the enabled book set actually costs, so the system refuses to run
+         a crippled subset of itself
+      3. MIN_TRADABLE_EQUITY_USD, the exchange-minimum backstop
+
+    A negative or non-numeric override falls back rather than disabling the
+    floor: a typo must not silently unlock trading on a dust account.
+    """
+    cfg = config or {}
+    if "min_tradable_equity_usd" in cfg:
+        try:
+            v = float(cfg["min_tradable_equity_usd"])
+            if v >= 0:
+                return v
+        except (TypeError, ValueError):
+            pass
+        return MIN_TRADABLE_EQUITY_USD
+    return max(MIN_TRADABLE_EQUITY_USD, book_margin_requirement(cfg))
+
+
+# The reward:risk a new trade must pay. 2R since 2026-10-30 (operator: "switch
+# it", adopting the strategy sweep's winner: market entry + 24h range + 2R;
+# docs/strategy/OIL_STRATEGY.md). 1.5R from 2026-10-23 until then.
+DEFAULT_MIN_R = 2.0
+# The stop may use at most this share of the distance to liquidation. At 20x
+# on Brent liquidation sits ~2.5% away and one average hour moves 2.7%; the
+# only 20x trades that survived were the ones whose stop sat far inside that
+# distance (operator's record, 2026-10-23). Half is the rule.
+DEFAULT_MAX_STOP_FRAC_OF_LIQ = 0.5
+
+
+def liq_estimate(entry_px: float, leverage: float, max_leverage: float, is_long: bool) -> float:
+    """Hyperliquid isolated-margin liquidation price:
+    liq = entry - side * (entry/leverage - mmr*entry) / (1 - mmr*side), mmr = 1/(2*max_leverage).
+    Checked against the venue's own number on 2026-10-23: 104.41 computed vs 104.43 shown
+    (20x Brent long from 107.16); the gap is fees and funding."""
+    side = 1.0 if is_long else -1.0
+    mmr = 1.0 / (2.0 * max_leverage)
+    return entry_px - side * (entry_px / leverage - mmr * entry_px) / (1.0 - mmr * side)
+
+
+def max_leverage_for_stop(entry_px: float, stop_px: float, max_leverage: float,
+                          max_stop_frac: float = DEFAULT_MAX_STOP_FRAC_OF_LIQ) -> int:
+    """Highest whole leverage at which this stop still uses no more than
+    `max_stop_frac` of the liquidation distance. Closed form of liq_estimate:
+    the liquidation distance as a fraction of entry is (1/L - mmr)/(1 - mmr*side),
+    so L <= 1 / (stop_frac/max_stop_frac * (1 - mmr*side) + mmr)."""
+    is_long = stop_px < entry_px
+    side = 1.0 if is_long else -1.0
+    mmr = 1.0 / (2.0 * max_leverage)
+    s = abs(entry_px - stop_px) / entry_px
+    if s <= 0:
+        return 1
+    lev = 1.0 / ((s / max_stop_frac) * (1.0 - mmr * side) + mmr)
+    return max(1, min(int(max_leverage), int(lev + 1e-9)))
+
+
+def check_leverage(entry_px: float, stop_px: float, leverage: float, coin_max_leverage: float,
+                   max_stop_frac: float = DEFAULT_MAX_STOP_FRAC_OF_LIQ) -> Dict[str, Any]:
+    """The 20x rule: the stop must sit inside `max_stop_frac` of the way to
+    liquidation, so a stop fires long before the venue does. Returns the
+    liquidation price, both distances, and when it fails, the highest
+    leverage that would pass with this stop."""
+    if min(entry_px, stop_px, leverage, coin_max_leverage) <= 0 or entry_px == stop_px:
+        return {"ok": False, "reason": "entry, stop, leverage and coin max leverage must be positive"}
+    is_long = stop_px < entry_px
+    liq = liq_estimate(entry_px, leverage, coin_max_leverage, is_long)
+    liq_dist = abs(entry_px - liq)
+    stop_dist = abs(entry_px - stop_px)
+    frac = stop_dist / liq_dist if liq_dist > 0 else float("inf")
+    out: Dict[str, Any] = {
+        "ok": frac <= max_stop_frac + 1e-9, "leverage": leverage, "liq_px": round(liq, 6),
+        "liq_dist_pct": round(liq_dist / entry_px * 100, 3), "stop_dist_pct": round(stop_dist / entry_px * 100, 3),
+        "stop_frac_of_liq": round(frac, 3), "max_stop_frac": max_stop_frac,
+        "max_leverage_ok": max_leverage_for_stop(entry_px, stop_px, coin_max_leverage, max_stop_frac),
+    }
+    if not out["ok"]:
+        out["reason"] = (f"stop uses {frac:.0%} of the liquidation distance at {leverage:g}x "
+                         f"(max {max_stop_frac:.0%}); this stop allows at most {out['max_leverage_ok']}x")
+    return out
+
+
+def check_levels(entry_px: float, stop_px: float, tp_px: float,
+                 min_r: float = DEFAULT_MIN_R) -> Dict[str, Any]:
+    """Side and reward:risk from the three prices. ok False with a plain
+    reason when they don't form a valid bracket or pay under `min_r`."""
+    if min(entry_px, stop_px, tp_px) <= 0:
+        return {"ok": False, "reason": "prices must be positive"}
+    if stop_px < entry_px < tp_px:
+        side = "long"
+    elif tp_px < entry_px < stop_px:
+        side = "short"
+    else:
+        return {"ok": False, "reason": "entry must sit between stop and target"}
+    r = abs(tp_px - entry_px) / abs(entry_px - stop_px)
+    out = {"ok": r + 1e-9 >= min_r, "side": side, "r_multiple": round(r, 2), "min_r": min_r}
+    if not out["ok"]:
+        out["reason"] = f"pays {r:.2f}R, under the {min_r}R minimum"
+    return out
+
+
+MIN_ORDER_NOTIONAL_USD = 10.0     # Hyperliquid's minimum order value
+
+# The take-profit sits this fraction of price inside the structure target:
+# closer to the entry, so a move that only approaches the target still pays.
+# Operator, 2026-10-29, adopting the scenario sweep's best combination
+# (0.5% offset + 0.75 stop buffer: $64 -> $199.60 vs $123.91 for the old
+# rules on the journaled theses; services/strategies/evals/scenario_sweep.py,
+# docs/overhaul/BACKTEST_RESULTS_2026-10-25.md "2026-10-29").
+TARGET_OFFSET_FRAC = 0.005
+
+
+def offset_target(target_px: float, side: str, frac: float = TARGET_OFFSET_FRAC) -> float:
+    """The take-profit `frac` of price inside the structure target, the same
+    formula the backtest used (desk_tick_sim.offset_target): long x (1 - frac),
+    short x (1 + frac)."""
+    if frac <= 0:
+        return target_px
+    return target_px * (1.0 - frac) if side == "long" else target_px * (1.0 + frac)
+
+
+def place_bracket(coin: str, *, entry_px: Optional[float], stop_px: float, tp_px: float,
+                  size: float, leverage: int, min_r: float = DEFAULT_MIN_R,
+                  coin_max_leverage: Optional[float] = None,
+                  max_stop_frac: float = DEFAULT_MAX_STOP_FRAC_OF_LIQ,
+                  dry_run: bool = False, add: bool = False, ex: Any = None,
+                  target_offset_frac: Optional[float] = None) -> Dict[str, Any]:
+    """Place one bracket. entry_px None = market now (IOC), checked against
+    the live mid; otherwise a resting limit with stop and target attached.
+
+    Refuses under min_r, refuses when the stop sits too close to liquidation
+    for this leverage (check_leverage; needs coin_max_leverage), and refuses
+    when the coin already has a position or a resting entry, so a repeated
+    call (a loop tick, a retry) can never stack a second trade.
+
+    `add=True` (operator, 2026-10-24: "add to position when possible") is the
+    one sanctioned way to stack: with a position already open on the coin it
+    places a top-up on the SAME side whose stop is no wider than the
+    protection already resting, and it leaves that protection alone (the
+    normal path cancels the coin's reduce-only orders first, which here
+    would strip the live position's stop). A resting entry still blocks, so
+    two top-ups never queue. Flat, `add` behaves like a normal entry.
+    """
+    if ex is None:
+        from pathiel.client import exchange as ex   # noqa: N813
+    market = entry_px is None
+    ref_px = float(ex.get_hl_price(coin)) if market else float(entry_px)
+    # A new trade's take-profit goes TARGET_OFFSET_FRAC inside the structure
+    # target the caller names; a top-up (add) keeps the position's own target
+    # as passed, so the offset is never applied twice.
+    structure_tp = tp_px
+    if target_offset_frac is None:
+        target_offset_frac = TARGET_OFFSET_FRAC
+    if not add and target_offset_frac > 0:
+        side = "long" if stop_px < ref_px else "short"
+        tp_px = round(offset_target(tp_px, side, target_offset_frac), 6)
+    gate = check_levels(ref_px, stop_px, tp_px, min_r)
+    base = {"coin": coin, "mode": "market" if market else "limit", "entry_px": ref_px,
+            "stop_px": stop_px, "tp_px": tp_px, "size": size, "leverage": leverage, **gate}
+    if tp_px != structure_tp:
+        base["structure_tp_px"] = structure_tp
+    if not gate["ok"]:
+        return {**base, "placed": False}
+    if coin_max_leverage:
+        lev_gate = check_leverage(ref_px, stop_px, leverage, coin_max_leverage, max_stop_frac)
+        base["liq"] = {k: lev_gate[k] for k in ("liq_px", "liq_dist_pct", "stop_dist_pct",
+                                                 "stop_frac_of_liq", "max_leverage_ok") if k in lev_gate}
+        if not lev_gate["ok"]:
+            return {**base, "ok": False, "placed": False, "reason": lev_gate["reason"]}
+    if size <= 0:
+        return {**base, "ok": False, "placed": False, "reason": "size must be positive"}
+
+    user = ex.resolve_user_address()
+    pos = ex._position_size_on_coin(user, coin)
+    if pos is None:
+        return {**base, "ok": False, "placed": False, "reason": "position read failed; not trading blind"}
+    orders = ex._resting_orders_for_coin(user, coin)
+    adding = bool(add) and pos != 0
+    if pos != 0 and not add:
+        return {**base, "ok": False, "placed": False, "reason": f"already in a position ({pos}) on {coin}"}
+    if adding:
+        base["add"] = True
+        base["position_before"] = pos
+        if (pos > 0) != (gate["side"] == "long"):
+            return {**base, "ok": False, "placed": False,
+                    "reason": f"add refused: position is {'long' if pos > 0 else 'short'} {abs(pos)}, call is {gate['side']}"}
+        existing = [float(o.get("triggerPx") or 0) for o in orders
+                    if o.get("reduceOnly") and "Stop" in str(o.get("orderType", ""))]
+        if existing:
+            tightest = max(existing) if pos > 0 else min(existing)
+            wider = stop_px < tightest if pos > 0 else stop_px > tightest
+            if wider:
+                return {**base, "ok": False, "placed": False,
+                        "reason": f"add refused: stop {stop_px:g} is wider than the resting stop {tightest:g}; never widen"}
+    entries = [o for o in orders if not o.get("reduceOnly")]
+    if entries:
+        return {**base, "ok": False, "placed": False,
+                "reason": f"{len(entries)} entry order(s) already resting on {coin}; cancel first"}
+    # Refuse what the venue would refuse BEFORE any live call. 2026-10-28: a 0.07
+    # top-up ($7.73) was sent, the venue said "Order must have minimum value of $10",
+    # and the set_leverage that ran first had already moved the open position 20x -> 19x.
+    if size * ref_px < MIN_ORDER_NOTIONAL_USD:
+        return {**base, "ok": False, "placed": False,
+                "reason": f"size {size:g} is ${size * ref_px:.2f}, under the venue's "
+                          f"${MIN_ORDER_NOTIONAL_USD:g} minimum order"}
+    if dry_run:
+        return {**base, "placed": False, "dry_run": True}
+
+    if not adding:
+        ex.cancel_stranded_reduce_only_orders(coin)   # old triggers must not hit the new trade
+        lev = ex.set_leverage(coin, int(leverage), is_cross=False, strict=True)
+        if not lev.get("ok"):
+            return {**base, "ok": False, "placed": False, "reason": f"set_leverage failed: {lev.get('error')}"}
+    # A top-up never touches leverage: the venue applies the setting to the WHOLE open
+    # position, so a top-up asking for 19x re-levers the position it is adding to.
+    is_buy = gate["side"] == "long"
+
+    if not market:
+        res = ex.place_hl_bracket_order(coin, is_buy, size, float(entry_px), stop_px, tp_px)
+        return {**base, "ok": bool(res.get("ok")), "placed": bool(res.get("entry", {}).get("ok")),
+                "result": res}
+
+    entry = ex.place_hl_order(is_buy, size, ref_px, coin)
+    filled = float(entry.get("total_sz") or 0)
+    if not entry.get("ok") or filled <= 0:
+        return {**base, "ok": False, "placed": False, "result": {"entry": entry}}
+    sl = ex.place_hl_trigger_order(is_buy, filled, stop_px, "sl", coin)
+    tp = ex.place_hl_trigger_order(is_buy, filled, tp_px, "tp", coin)
+    out = {**base, "ok": bool(sl.get("ok")), "placed": True, "filled_sz": filled,
+           "avg_px": entry.get("avg_px"), "result": {"entry": entry, "sl": sl, "tp": tp}}
+    if not sl.get("ok"):
+        out["reason"] = "FILLED WITHOUT A STOP: place one now"
+    elif adding:
+        # the top-up got its own stop and target; fold them into one pair
+        out["consolidated"] = consolidate_protection(coin, ex=ex)
+    return out
+
+
+def _position_protection(ex: Any, orders: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """The resting orders minus the stop/target children of a resting entry.
+
+    A top-up placed with add=true rests as a limit entry carrying its own
+    stop and target (normalTpsl children) for the size it will add. Those
+    children are reduce-only rows at the same prices as the live position's
+    pair, so counting them as the position's protection made the sweep
+    "fold" them into one pair sized to the CURRENT position and cancel them.
+    2026-11-01: a 2.77 top-up at 111.80 lost its stop that way at 13:48Z,
+    filled at 18:05Z with nothing covering it, and the 18:20Z tick had to
+    close the whole 43.5 Brent long. Children belong to their entry until it
+    fills; only then are they the position's."""
+    attached = ex.attached_child_oids(orders)
+    return [o for o in orders if int(o.get("oid") or 0) not in attached]
+
+
+def consolidate_protection(coin: str, ex: Any = None) -> Dict[str, Any]:
+    """One stop and one target for the whole open position.
+
+    Every top-up places its own reduce-only stop and target for the size it
+    added, so a position built in three fills carried three stops and three
+    targets at the same two prices (operator, 2026-10-28: "IT SEEMS
+    REDUNDANT"). When every stop sits at one price (and likewise every
+    target), this places ONE order for the full position size at that price
+    and only then cancels the old ones, so the position is never without a
+    stop: if the new order fails, the old ones stay. Different prices are a
+    deliberate scale-out and are left alone. A target still resting as a
+    market trigger is re-placed as a limit at the same price (targets are
+    limits since 2026-10-28). Never opens, closes or moves a
+    level."""
+    if ex is None:
+        from pathiel.client import exchange as ex   # noqa: N813
+    user = ex.resolve_user_address()
+    pos = ex._position_size_on_coin(user, coin)
+    if not pos:
+        return {"coin": coin, "ok": pos is not None, "merged": [],
+                **({"reason": "position read failed"} if pos is None else {})}
+    orders = _position_protection(ex, ex._resting_orders_for_coin(user, coin))
+    is_long, size = pos > 0, abs(pos)
+    out: Dict[str, Any] = {"coin": coin, "ok": True, "position": pos, "merged": [], "left": []}
+    for kind, label in (("sl", "Stop"), ("tp", "Take Profit")):
+        rows = [o for o in orders if o.get("reduceOnly") and label in str(o.get("orderType", ""))]
+        # a target still resting as a MARKET trigger (placed before 2026-10-28) is
+        # re-placed as a limit at the same price even when it is the only one
+        market_target = kind == "tp" and any("Market" in str(o.get("orderType", "")) for o in rows)
+        if len(rows) < 2 and not market_target:
+            continue
+        levels = {float(o.get("triggerPx") or 0) for o in rows}
+        if len(levels) != 1:
+            out["left"].append(f"{kind}: {len(rows)} orders at {len(levels)} prices, a scale-out, left as is")
+            continue
+        px = levels.pop()
+        new = ex.place_hl_trigger_order(is_long, size, px, kind, coin)
+        if not new.get("ok"):
+            out["ok"] = False
+            out["left"].append(f"{kind}: one {size:g} order at {px:g} was refused, the old ones stay: "
+                               f"{new.get('error') or new}")
+            continue
+        failed = [o.get("oid") for o in rows
+                  if not ex.cancel_orders(int(o.get("oid") or 0), coin).get("ok")]
+        out["merged"].append({"kind": kind, "px": px, "size": size, "replaced": len(rows),
+                              **({"to_limit": True} if market_target else {}),
+                              **({"cancel_failed": failed} if failed else {})})
+    return out
+
+
+def set_target(coin: str, tp_px: float, ex: Any = None) -> Dict[str, Any]:
+    """Move the open position's take-profit to `tp_px`: one limit take-profit
+    for the whole size goes on FIRST, then every other take-profit is
+    cancelled, so the position is never without a target and a refused new
+    order leaves the old one in place. Refuses a target on the losing side of
+    the mark (it would fill at once). Never touches the stop or the size.
+    Added 2026-10-29 to move the live trade onto the 0.5% offset target."""
+    if ex is None:
+        from pathiel.client import exchange as ex   # noqa: N813
+    user = ex.resolve_user_address()
+    pos = ex._position_size_on_coin(user, coin)
+    if pos is None:
+        return {"coin": coin, "ok": False, "reason": "position read failed"}
+    if pos == 0:
+        return {"coin": coin, "ok": False, "reason": "no open position"}
+    is_long, size = pos > 0, abs(pos)
+    mark = float(ex.get_hl_price(coin))
+    if (is_long and tp_px <= mark) or (not is_long and tp_px >= mark):
+        return {"coin": coin, "ok": False, "mark": mark,
+                "reason": f"target {tp_px:g} is on the wrong side of the mark {mark:g}"}
+    orders = ex._resting_orders_for_coin(user, coin)
+    old = [o for o in orders if o.get("reduceOnly") and "Take Profit" in str(o.get("orderType", ""))]
+    new = ex.place_hl_trigger_order(is_long, size, tp_px, "tp", coin)
+    if not new.get("ok"):
+        return {"coin": coin, "ok": False, "reason": f"new target refused, old kept: {new.get('error') or new}"}
+    failed = [o.get("oid") for o in old if not ex.cancel_orders(int(o.get("oid") or 0), coin).get("ok")]
+    return {"coin": coin, "ok": True, "position": pos, "tp_px": tp_px, "size": size,
+            "replaced": [o.get("triggerPx") for o in old], **({"cancel_failed": failed} if failed else {})}
+
+
+def sweep(coin: str, ex: Any = None) -> Dict[str, Any]:
+    """One tick of housekeeping for `coin`: cancel reduce-only orders left on a
+    flat coin (the sibling of a stop or target that fired), and report whether
+    an open position has a stop. Never opens or closes a position."""
+    if ex is None:
+        from pathiel.client import exchange as ex   # noqa: N813
+    user = ex.resolve_user_address()
+    pos = ex._position_size_on_coin(user, coin)
+    if pos is None:
+        return {"coin": coin, "ok": False, "reason": "position read failed"}
+    orders = ex._resting_orders_for_coin(user, coin)
+    if pos == 0:
+        entries = [o for o in orders if not o.get("reduceOnly")]
+        attached_ids = ex.attached_child_oids(orders)
+        attached = [o for o in orders if o.get("reduceOnly") and int(o.get("oid") or 0) in attached_ids]
+        # The stop/target a resting entry carries (normalTpsl children) are
+        # protection, not leftovers; cancel_stranded_* skips them by oid and
+        # cancels only the reduce-only rows no entry claims.
+        n = ex.cancel_stranded_reduce_only_orders(coin)
+        return {"coin": coin, "ok": True, "position": 0.0, "cancelled_stranded": n,
+                "resting_entries": [{"oid": o.get("oid"), "px": o.get("limitPx"), "sz": o.get("sz")}
+                                    for o in entries],
+                **({"attached_to_entry": [{"type": o.get("orderType"), "px": o.get("triggerPx"), "sz": o.get("sz")}
+                                          for o in attached]} if attached else {})}
+    orders = _position_protection(ex, orders)
+    stops = [o for o in orders if o.get("reduceOnly") and "Stop" in str(o.get("orderType", ""))]
+    tps = [o for o in orders if o.get("reduceOnly") and "Take Profit" in str(o.get("orderType", ""))]
+    covered = sum(float(o.get("sz") or 0) for o in stops)
+    consolidated = None
+    market_tp = any("Market" in str(o.get("orderType", "")) for o in tps)
+    if covered + 1e-9 >= abs(pos) and (len(stops) > 1 or len(tps) > 1 or market_tp):
+        # several stops/targets at one price (one per fill): fold into one pair
+        consolidated = consolidate_protection(coin, ex=ex)
+        if consolidated.get("merged"):
+            orders = _position_protection(ex, ex._resting_orders_for_coin(user, coin))
+            stops = [o for o in orders if o.get("reduceOnly") and "Stop" in str(o.get("orderType", ""))]
+            tps = [o for o in orders if o.get("reduceOnly") and "Take Profit" in str(o.get("orderType", ""))]
+            covered = sum(float(o.get("sz") or 0) for o in stops)
+    return {"coin": coin, "ok": covered + 1e-9 >= abs(pos), "position": pos,
+            **({"consolidated": consolidated} if consolidated else {}),
+            "stop_px": [o.get("triggerPx") for o in stops], "tp_px": [o.get("triggerPx") for o in tps],
+            "stop_covers": covered,
+            **({} if covered + 1e-9 >= abs(pos) else {"reason": "POSITION NOT FULLY COVERED BY A STOP"})}
+
+
+def close_position(coin: str) -> Dict[str, Any]:
+    """Market-close any open perp position for `coin`.
+
+    Moved out of `pathiel/agents/executor.py` 2026-10-23 (wave 2), trimmed to
+    its live-money essentials: the retired executor's DSL tracker lookup
+    (`dsl_exit`), trade-outcome ledger (`memory.record_close`) and loss-
+    cooldown arm (`memory.set_loss_cooldown`) all read or wrote state that no
+    surviving module produces or consumes any more — Claude is the only
+    trader on the wallet, there is no DSL exit loop re-registering trackers,
+    and no win-rate/payoff panel reads the outcome ledger. Carrying that dead
+    bookkeeping forward would just be a second, pointless place state could
+    go stale. Leverage for the realized-PnL% calc now comes straight off the
+    live Hyperliquid position (`position.leverage`) instead of a tracker
+    guess captured at entry time — strictly more accurate, since it is the
+    venue's own number at the moment of the close.
+
+    Returns `entry_px`, `fill_px`, `spot_pct`, `realized_pnl_pct` (leveraged,
+    net of taker fees) and `fees_pct` whenever the close fills with a
+    parseable avgPx.
+    """
+    from pathiel.client.exchange import (
+        cancel_open_orders_for_coin,
+        cancel_stranded_reduce_only_orders,
+        get_hl_price,
+        place_hl_order,
+    )
+    from pathiel.client.hl_client import fetch_account_state, resolve_user_address
+
+    user = resolve_user_address()
+    if not user:
+        return {"ok": False, "coin": coin, "error": "no_user_address"}
+
+    # include_hip3=True so we can resolve HIP-3 positions (xyz:MU, vntl:*, ...).
+    # Without this every close call for a HIP-3 position would fall into the
+    # `already_flat` branch even when the position is real.
+    state = fetch_account_state(user, include_hip3=True)
+    pos = next(
+        (p for p in state.get("asset_positions", [])
+         if p.get("position", {}).get("coin") == coin),
+        None,
+    )
+    if not pos:
+        # Already flat. It closed outside this path (an exchange-side stop or
+        # TP filled, a manual close) — clear any sibling reduce-only order so
+        # stale brackets don't pile up. Re-checks flatness on the coin's own
+        # dex first; reduce-only orders only.
+        cancel_stranded_reduce_only_orders(coin)
+        return {"ok": True, "coin": coin, "noop": "already_flat"}
+
+    try:
+        szi = float(pos["position"].get("szi", "0") or 0)
+        entry_px = float(pos["position"].get("entryPx") or 0)
+    except (TypeError, ValueError):
+        return {"ok": False, "coin": coin, "error": "bad_szi"}
+    if szi == 0:
+        cancel_stranded_reduce_only_orders(coin)   # same as already_flat above
+        return {"ok": True, "coin": coin, "noop": "zero_szi"}
+
+    is_long = szi > 0
+    side = "long" if is_long else "short"
+    mid_price = get_hl_price(coin)
+    if mid_price <= 0:
+        return {"ok": False, "coin": coin, "error": f"invalid_price_for_{coin}"}
+
+    # HL stores leverage as {"value": N, "type": "cross"|"isolated"}; a bare
+    # int on older/synthesized records. This is the venue's live number, not
+    # a cached guess from entry time.
+    leverage_obj = pos["position"].get("leverage")
+    if isinstance(leverage_obj, dict):
+        leverage = int(leverage_obj.get("value", 1) or 1)
+    else:
+        leverage = int(leverage_obj or 1)
+
+    # reduce_only: a close must only FLATTEN. Without it, the $10-min size floor in
+    # place_hl_order overshoots a sub-$10 position and flips it to the opposite side
+    # (the BIRD short<->long churn loop). reduce_only makes HL ignore the excess.
+    res = place_hl_order(is_buy=not is_long, size=abs(szi), mid_price=mid_price, coin=coin,
+                         reduce_only=True)
+    out: Dict[str, Any] = {**res, "coin": coin, "side": side,
+                            "entry_px": entry_px, "leverage": leverage}
+
+    if res.get("ok"):
+        # Cancel the now-stranded reduce-only SL/TP trigger bracket so stale
+        # orders don't pile up and reject a future reduce-only order on this coin.
+        cancel_open_orders_for_coin(coin)
+        fill_px = res.get("avg_px")
+        if fill_px and entry_px > 0:
+            # Spot move from the perspective of the position: long earns when
+            # mark rises, short earns when mark falls.
+            if is_long:
+                spot_pct = (fill_px - entry_px) / entry_px * 100
+            else:
+                spot_pct = (entry_px - fill_px) / entry_px * 100
+            # 2 round-trip taker fills at 2.5bps x leverage
+            fees_pct = 0.025 * 2 * leverage
+            out["fill_px"] = fill_px
+            out["spot_pct"] = round(spot_pct, 4)
+            out["realized_pnl_pct"] = round(spot_pct * leverage - fees_pct, 4)
+            out["fees_pct"] = round(fees_pct, 4)
+    return out
+
+
+def desk_coin_held(user: str, coin: str, desk_coins: Any, fetch_raw: Any = None,
+                   dexes: Any = None) -> Optional[str]:
+    """One position per desk (2026-10-31, desk equity shares): another coin of
+    the SAME desk with an open position or a resting entry, or None. `coin`
+    itself is place_bracket's own same-coin refusal. Fetchers injectable."""
+    from services.accounts import positions as acc_pos
+    fetch_raw = fetch_raw or acc_pos._fetch_raw
+    dexes = acc_pos._dexes_with_margin(user) if dexes is None else dexes
+    others = set(desk_coins or []) - {coin}
+    held: list = []
+    for dex in dexes:
+        raw = fetch_raw(user, dex)
+        for row in (raw.get("state") or {}).get("assetPositions") or []:
+            pos = (row or {}).get("position") or {}
+            try:
+                if pos.get("coin") in others and float(pos.get("szi") or 0) != 0:
+                    held.append(pos["coin"])
+            except (TypeError, ValueError):
+                continue
+        for o in raw.get("orders") or []:
+            if o.get("coin") in others and not o.get("reduceOnly"):
+                held.append(o["coin"])
+    return ", ".join(sorted(set(held))) or None
+
+
+def slot_taken_by(user: str, coin: str, max_open_positions: int, fetch_raw: Any = None,
+                  dexes: Any = None) -> Optional[str]:
+    """Account-wide check behind place_bracket: with max_open_positions slots,
+    an open position or a resting entry on ANY other coin takes a slot. Returns
+    the coin holding the last free slot's blocker, or None when a slot is free.
+    The same-coin case is place_bracket's own refusal. Fetchers injectable."""
+    from services.accounts import positions as acc_pos
+    fetch_raw = fetch_raw or acc_pos._fetch_raw
+    dexes = acc_pos._dexes_with_margin(user) if dexes is None else dexes
+    holders: list = []
+    for dex in dexes:
+        raw = fetch_raw(user, dex)
+        for row in (raw.get("state") or {}).get("assetPositions") or []:
+            pos = (row or {}).get("position") or {}
+            try:
+                if pos.get("coin") and pos.get("coin") != coin and float(pos.get("szi") or 0) != 0:
+                    holders.append(pos["coin"])
+            except (TypeError, ValueError):
+                continue
+        for o in raw.get("orders") or []:
+            if o.get("coin") and o.get("coin") != coin and not o.get("reduceOnly"):
+                holders.append(o["coin"])
+    holders = sorted(set(holders))
+    return ", ".join(holders) if len(holders) >= max(1, int(max_open_positions)) else None

@@ -1,0 +1,49 @@
+---
+name: desk-tick
+description: One tick of a desk's trading loop on pathiel, for the desk id given as the argument (oil, metals, ai, gas). Slot check here, then the desk-tick agent (Opus 5.5, medium effort) runs sweep, levels, brief, one decision, one log line. Run on a schedule with /loop 15m /pathiel:desk-tick oil. Live money on the connected Hyperliquid account.
+---
+
+<!-- GENERATED from .claude/skills/desk-tick/SKILL.md by scripts/build_plugin_skill.py. Edit the source, then rerun it. -->
+# desk-tick $ARGUMENTS
+
+One tick for desk `$ARGUMENTS` (default `oil` if empty). Two parts: the slot
+check runs here because it is one script call, and the tick itself runs in
+the `desk-tick` agent so the session's own model is not spent on a
+15-minute loop (operator, 2026-10-25: "fable is valuable and the tick is
+eating my usage"; an hourly clock was tried that evening and reverted the
+same night).
+
+1. **Slot first.** `"${CLAUDE_PLUGIN_ROOT}/scripts/pathiel-py" scripts/desk_slot.py --desk $ARGUMENTS`.
+   If `slot` is `inactive`, append
+   `DESK-TICK $ARGUMENTS <utc> action=SKIP desk not active` to
+   `/tmp/oil-loop/progress.log`, print it, and STOP. If `slot` is `held` and
+   `mine` is false, another desk's coin holds the account's one slot: append
+   `DESK-TICK $ARGUMENTS <utc> action=SKIP slot held by <holder>`, print it,
+   and STOP. No agent, no MCP calls. With desk equity shares saved (config
+   `desk_equity_share`; metals = gold since 2026-11-05) every desk owns its own slot, so
+   the second case only happens without shares (the 2026-10-23 rule: the
+   desk holding the one slot is the only one that ticks).
+2. **Otherwise launch the agent.** Agent tool, `subagent_type` `pathiel:desk-tick`,
+   prompt `DESK: $ARGUMENTS`. Do not run the tick steps yourself and do not
+   launch more than one agent per tick. The agent file
+   (the plugin's `agents/desk-tick.md`) carries the whole procedure and its hard
+   rules.
+   **Dead-tick rule** (operator, 2026-11-09, after three stalls): a previous
+   tick for this desk counts as running only if it started under 20 minutes
+   ago. One older than that died with the network or a sleeping Mac and
+   never reported back: do NOT skip for it. Append
+   `DESK-TICK <desk> <utc> action=NONE previous tick presumed dead after <N> min`
+   to `/tmp/oil-loop/progress.log` and launch the agent now. This overrides
+   the desk-loops overlap rule.
+3. **Relay, quietly.** The agent already wrote its line to
+   `/tmp/oil-loop/progress.log`. Say NOTHING in the chat for a HOLD, a
+   SKIP, or a NONE whose reason repeats that desk's previous log line
+   (operator, 2026-11-02: "can u hide these messages, it crowds up the
+   dialogue box"). Speak only when something changed: PLACED, CANCELLED,
+   CLOSED, a stop or target fill, a NONE with a new reason, an uncovered
+   position, or a tool error. Then one short message: what happened, with
+   the numbers, and the log line.
+
+If the agent fails to launch or returns no log line, append
+`DESK-TICK $ARGUMENTS <utc> action=NONE agent did not run` to the log and
+say so.

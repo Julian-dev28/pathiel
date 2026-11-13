@@ -1,0 +1,66 @@
+{
+  "id": "oil",
+  "name": "Oil",
+  "tagline": "WTI and Brent perps on Hyperliquid. Supply shocks, inventories, OPEC+, policy.",
+  "instruments": [
+    {
+      "coin": "xyz:CL",
+      "label": "WTI",
+      "role": "primary"
+    },
+    {
+      "coin": "xyz:BRENTOIL",
+      "label": "Brent",
+      "role": "secondary"
+    }
+  ],
+  "pairs": [
+    {
+      "label": "Brent-WTI spread",
+      "long": "xyz:BRENTOIL",
+      "short": "xyz:CL"
+    }
+  ],
+  "news_queries": [
+    "crude oil price",
+    "Strait of Hormuz",
+    "OPEC+",
+    "EIA crude inventories"
+  ],
+  "policy_topics": [
+    "Strategic Petroleum Reserve",
+    "Iran sanctions",
+    "Russia oil price cap"
+  ],
+  "prediction_market_queries": [
+    "Iran deal",
+    "Strait of Hormuz",
+    "oil price"
+  ],
+  "catalyst_kinds": [
+    "eia_weekly",
+    "api_weekly",
+    "opec_meeting",
+    "cftc_cot",
+    "baker_hughes",
+    "fomc"
+  ],
+  "leverage_ladder": [
+    5.0,
+    10.0,
+    20.0
+  ],
+  "horizon_days": 7,
+  "token_budget": {
+    "max_input_tokens": 6000,
+    "max_output_tokens": 1800,
+    "refresh_min_interval_min": 60,
+    "material_move_pct": 1.5,
+    "min_headline_relevance": 0.7
+  },
+  "lessons": [
+    "Brent-WTI spread",
+    "contango and backwardation",
+    "COT positioning"
+  ]
+}

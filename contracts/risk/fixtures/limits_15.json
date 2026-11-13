@@ -1,0 +1,67 @@
+{
+  "equity_usd": 15.21,
+  "preset_applied": "starter",
+  "profile": {
+    "preset": "starter",
+    "risk_per_trade_pct": 3.0,
+    "daily_loss_limit_pct": 8.0,
+    "max_leverage": 10.0,
+    "max_open_positions": 1,
+    "allow_min_order_bump": true,
+    "max_bumped_risk_pct": 6.0
+  },
+  "risk_per_trade_usd": 0.46,
+  "daily_loss_limit_usd": 1.22,
+  "max_open_positions": 1,
+  "min_order_notional_usd": 10.0,
+  "min_equity_to_trade_usd": 6.0,
+  "can_trade": true,
+  "books": [
+    {
+      "book": "news_surge_short",
+      "enabled": true,
+      "can_trade": true,
+      "notional_usd": 10.0,
+      "leverage": 10.0,
+      "margin_usd": 1.0,
+      "stop_pct": 6.0,
+      "risk_usd": 0.6,
+      "risk_pct": 3.9,
+      "bumped_to_min": true,
+      "needs_equity_usd": null,
+      "reason": "Sized up to Hyperliquid's $10 minimum: risks $0.60 (3.9%) if the stop hits."
+    },
+    {
+      "book": "xs_reversal",
+      "enabled": true,
+      "can_trade": true,
+      "notional_usd": 10.0,
+      "leverage": 3.0,
+      "margin_usd": 3.33,
+      "stop_pct": 4.0,
+      "risk_usd": 0.4,
+      "risk_pct": 2.6,
+      "bumped_to_min": false,
+      "needs_equity_usd": null,
+      "reason": "Fits: $10 at 3x, risks $0.40 (2.6%)."
+    },
+    {
+      "book": "drawdown_ladder",
+      "enabled": true,
+      "can_trade": false,
+      "notional_usd": null,
+      "leverage": null,
+      "margin_usd": null,
+      "stop_pct": null,
+      "risk_usd": null,
+      "risk_pct": null,
+      "bumped_to_min": false,
+      "needs_equity_usd": 525.0,
+      "reason": "Needs $525: five resting rungs of $10.50 each at 1x."
+    }
+  ],
+  "headline": "You can trade 1 position at a time, risking about $0.46 per trade.",
+  "notes": [
+    "Daily pause after -$1.22."
+  ]
+}

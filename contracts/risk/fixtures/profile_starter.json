@@ -1,0 +1,9 @@
+{
+  "preset": "starter",
+  "risk_per_trade_pct": 3.0,
+  "daily_loss_limit_pct": 8.0,
+  "max_leverage": 10.0,
+  "max_open_positions": 1,
+  "allow_min_order_bump": true,
+  "max_bumped_risk_pct": 6.0
+}

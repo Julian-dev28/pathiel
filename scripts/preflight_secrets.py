@@ -1,0 +1,531 @@
+#!/usr/bin/env python3
+"""Preflight secrets check — run BEFORE the app starts, refuse to start when
+secrets handling is wrong.
+
+Local dev survives a plaintext `.env.local` on a laptop nobody else touches.
+A deployed service does not: the same file pattern on Fly/k8s means the
+process env, the image layers, and (if someone ever runs `git add -A`) the
+repo history all become plausible leak paths for a real-money Hyperliquid key.
+This script is the gate — it is deterministic, offline, and exits non-zero
+the moment anything is wrong, with a precise message naming what and where.
+
+Checks (see CHECKS below for the authoritative list):
+  1. every REQUIRED secret is present and non-empty
+  2. the Hyperliquid trading key is an AGENT wallet, not the MASTER wallet —
+     HYPERLIQUID_WALLET_ADDRESS must differ from HYPERLIQUID_MASTER_ADDRESS.
+     This is the single highest-value check here: an agent wallet cannot
+     withdraw funds, a master key can. A leaked agent key is an annoyance;
+     a leaked master key is a robbery.
+  3. HYPERLIQUID_MASTER_PRIVATE_KEY (the actual master signing key, used only
+     by scripts/treasury.py for manual transfers) is never present when this
+     runs in a deployed context (Fly/k8s) — it must stay laptop-only.
+  4. no known secret VALUE appears anywhere in the git index (`git grep
+     --cached`, which inspects staged blobs, not the working tree — this is
+     what actually catches an accidental `git add .env.local`).
+  5. `.env.local` and its siblings (.env, .env.old, .env.local.old) are
+     gitignored AND not tracked.
+  6. those same files are not group/other readable or writable (0600, not
+     the 0644 a plain `touch`/editor save leaves behind).
+
+Every finding is printed by NAME, never by VALUE. `_redact()` is applied to
+every line this script prints, as defense in depth against a check
+accidentally interpolating a value into its own message.
+
+Usage:
+    python scripts/preflight_secrets.py [--repo-root PATH] [--env-file PATH] [--deploy]
+
+Exit codes:
+    0  all checks passed (WARN/SKIP findings do not fail the run)
+    1  one or more checks failed
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import stat
+import subprocess
+import sys
+import tempfile
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+REPO_ROOT = SCRIPT_DIR.parent
+
+# Values shorter than this are almost always placeholders ("", "0", "changeme")
+# rather than real secrets — scanning for them against the git index would be
+# noise (a short common substring matches all kinds of unrelated files).
+MIN_SECRET_SCAN_LEN = 8
+
+# Env-like files we expect to exist locally and never in the repo.
+ENV_FILE_CANDIDATES: Tuple[str, ...] = (".env.local", ".env", ".env.old", ".env.local.old")
+
+# Signals that this process is running inside an already-deployed container,
+# not on the operator's laptop. Both are set automatically by the respective
+# platform — nothing in this repo has to opt in for the signal to be honest.
+_DEPLOY_ENV_SIGNALS: Tuple[str, ...] = ("KUBERNETES_SERVICE_HOST",)
+
+
+# ── Secret registry ──────────────────────────────────────────────────────────
+# The authoritative list of secret-ish env vars this codebase reads. Keep in
+# sync with docs/SECRETS.md (which carries the full inventory: purpose, module,
+# provisioning, rotation) — this table only needs what the checks act on.
+#
+# required:
+#   "always"       — preflight fails if missing/empty, unconditionally
+#   "optional"     — feature degrades gracefully without it (documented per-var
+#                    in SECRETS.md); preflight never fails on absence
+#   "local_only"   — must NEVER be present in a deployed environment; checked
+#                    by check_master_key_not_deployed(), not the required-set check
+#
+# 2026-10-25: OPENROUTER_API_KEY (the AI brain's key; the brain module is
+# deleted), BRAVE_API_KEY and HYDROMANCER_API_KEY (no reader since the
+# research pipeline left 2026-10-23) are out of the registry. The desk intel
+# keys (EIA_API_KEY, FRED_API_KEY, CONGRESS_API_KEY) are free data keys, not
+# secrets that can move money; scripts/intel_keys.py reports on them.
+@dataclass(frozen=True)
+class SecretSpec:
+    name: str
+    purpose: str
+    required: str  # "always" | "optional" | "local_only"
+
+
+REGISTRY: Tuple[SecretSpec, ...] = (
+    SecretSpec("HYPERLIQUID_WALLET_ADDRESS", "agent/API wallet address that signs orders", "always"),
+    SecretSpec("HYPERLIQUID_PRIVATE_KEY", "agent/API wallet private key — signs orders", "always"),
+    SecretSpec("HYPERLIQUID_MASTER_ADDRESS", "master account public address (funds live here)", "always"),
+    SecretSpec("HYPERLIQUID_MASTER_PRIVATE_KEY", "master account private key — treasury transfers only", "local_only"),
+    # The rented server's own API wallet, kept on the Mac between trips. Only
+    # scripts/vps/make_server_env.py reads it; on the server it becomes
+    # HYPERLIQUID_PRIVATE_KEY. Declared so a copy in a tracked file fails.
+    SecretSpec("HYPERLIQUID_VPS_PRIVATE_KEY", "rented server's API wallet key (scripts/vps)", "optional"),
+    SecretSpec("PATHIEL_METRICS_TOKEN", "bearer token /metrics requires when set (internet-facing deploys)", "optional"),
+)
+
+
+@dataclass
+class Finding:
+    check: str
+    status: str  # "PASS" | "FAIL" | "WARN" | "SKIP"
+    name: str
+    message: str
+
+
+# ── env loading ───────────────────────────────────────────────────────────────
+
+def parse_env_file(path: Path) -> Dict[str, str]:
+    """KEY=VALUE parser matching services/*/env.py's loaders. Never
+    logs or returns anything derived from a value beyond the value itself in
+    memory — callers must not print it."""
+    out: Dict[str, str] = {}
+    if not path.exists():
+        return out
+    for line in path.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        k, _, v = line.partition("=")
+        v = v.strip().strip('"').strip("'")
+        out[k.strip()] = v
+    return out
+
+
+def effective_env(env_file: Path, process_env: Optional[Mapping[str, str]] = None) -> Dict[str, str]:
+    """What the app will actually see: the file provides values, a real
+    process env var of the same name wins (matches every `.setdefault`
+    loader in this repo — pathiel/server.py, services/*/env.py,
+    scripts/*.py all load the file first, then `setdefault`)."""
+    merged = parse_env_file(env_file)
+    merged.update(dict(process_env if process_env is not None else os.environ))
+    return merged
+
+
+def is_deploy_context(env: Mapping[str, str], forced: bool = False) -> bool:
+    return forced or any(env.get(sig) for sig in _DEPLOY_ENV_SIGNALS)
+
+
+# ── redaction ─────────────────────────────────────────────────────────────────
+
+# Undeclared env values at or above this length are treated as credentials and
+# redacted anyway. Short values are config — a provider name, a model slug, a
+# boolean — and redacting those made findings unreadable ("[REDACTED]: shells
+# out to a local binary" does not tell you WHICH provider) without protecting
+# anything, since no credential is 10 characters long.
+_UNDECLARED_SECRET_MIN_LEN = 20
+
+
+def _redaction_values(env: Mapping[str, str]) -> List[str]:
+    """Values that must never appear in output.
+
+    Two sources, deliberately: every DECLARED secret in REGISTRY regardless of
+    length, because that list is the authority on what is sensitive; plus any
+    other env value long enough to be a credential, which catches something
+    added to .env.local that nobody remembered to declare here.
+    """
+    declared = {spec.name for spec in REGISTRY}
+    out: List[str] = []
+    for k, v in env.items():
+        if not v:
+            continue
+        if k in declared and len(v) >= 4:
+            out.append(v)
+        elif len(v) >= _UNDECLARED_SECRET_MIN_LEN:
+            out.append(v)
+    return out
+
+
+def _redact(text: str, secret_values: Sequence[str]) -> str:
+    """Defense in depth: strip any known secret VALUE out of a line before it
+    is ever printed, even if a check bug tried to put one there. See
+    _redaction_values for which values those are and why the set is scoped
+    rather than "everything in the environment"."""
+    out = text
+    for v in secret_values:
+        if v and len(v) >= 4:
+            out = out.replace(v, "[REDACTED]")
+    return out
+
+
+def _emit(findings: List[Finding], secret_values: Sequence[str],
+          printer=print) -> None:
+    for f in findings:
+        line = f"[{f.status}] {f.check}: {f.name}: {f.message}"
+        printer(_redact(line, secret_values))
+
+
+# ── checks ────────────────────────────────────────────────────────────────────
+
+# HYPERLIQUID_WALLET_ADDRESS / HYPERLIQUID_PRIVATE_KEY / HYPERLIQUID_MASTER_ADDRESS:
+# a fully-migrated-to-the-accounts-vault setup can legitimately have none of
+# these in .env.local at all — services/accounts/credentials.py resolves the
+# trading identity from the registry/vault instead. Without this, preflight
+# would FAIL a correctly configured box the moment an operator finished
+# migrating, which is exactly backwards: the vault is the safer setup (the
+# main key never touches this repo at all), not an unverified one.
+_VAULT_SATISFIABLE_VARS = frozenset(
+    {"HYPERLIQUID_WALLET_ADDRESS", "HYPERLIQUID_PRIVATE_KEY", "HYPERLIQUID_MASTER_ADDRESS"})
+
+
+def _vault_active_trade_account(env: Mapping[str, str]) -> Optional[Dict[str, Any]]:
+    """The services/accounts registry's active account, ONLY when its mode
+    is "trade" — None otherwise, including when PATHIEL_STATE_DIR is unset
+    (nothing to look at) or the file is missing/malformed (fails safe: a
+    vault preflight can't verify falls through to the ordinary env checks,
+    never the reverse).
+
+    Reads ONLY the plain-JSON registry (services/accounts/env.py's
+    registry_path(), same file services.accounts.registry writes) —
+    addresses, ids, labels. NEVER the vault's encrypted key files: this
+    script must never touch key material, per
+    docs/overhaul/SWARM_RULES.md section 10 ("never read the VALUES of
+    private keys").
+    """
+    state_dir = (env.get("PATHIEL_STATE_DIR") or "").strip()
+    if not state_dir:
+        return None
+    path = Path(state_dir) / "accounts" / "accounts.json"
+    if not path.exists():
+        return None
+    try:
+        data = json.loads(path.read_text())
+    except (OSError, ValueError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    active_id = data.get("active_id")
+    for account in data.get("accounts", []) or []:
+        if isinstance(account, dict) and account.get("id") == active_id and account.get("mode") == "trade":
+            return account
+    return None
+
+
+def check_required_present(env: Mapping[str, str]) -> List[Finding]:
+    findings: List[Finding] = []
+    vault_account = _vault_active_trade_account(env)
+    for spec in REGISTRY:
+        if spec.required != "always":
+            continue
+        val = (env.get(spec.name) or "").strip()
+        if val:
+            findings.append(Finding("required_present", "PASS", spec.name, "present and non-empty"))
+        elif vault_account is not None and spec.name in _VAULT_SATISFIABLE_VARS:
+            findings.append(Finding(
+                "required_present", "PASS", spec.name,
+                f"not set in .env.local, but satisfied by the connected accounts "
+                f"vault (active account {vault_account.get('label', '?')!r}, "
+                f"source={vault_account.get('source', '?')})"))
+        else:
+            findings.append(Finding("required_present", "FAIL", spec.name,
+                                     f"missing or empty (required) — {spec.purpose}"))
+    return findings
+
+
+def check_master_not_agent(env: Mapping[str, str]) -> List[Finding]:
+    """The highest-value check: the trading key must be an agent/API wallet,
+    never the master. Mirrors pathiel/client/exchange.py's own
+    IS_AGENT computation, but preflight treats an unproven relationship as a
+    failure rather than a silent single-wallet fallback.
+
+    Vault-aware: a connected accounts-vault trade account gets the SAME
+    scrutiny as the legacy env vars, using its own (public) main_address /
+    agent_address pair instead. Its agent_address is always server-generated
+    and distinct from main_address by construction (services.accounts.registry
+    never stores a row where they match), so the only way this reports FAIL
+    for a vault account is a corrupt registry file — which is exactly the
+    case worth failing loudly on.
+    """
+    vault_account = _vault_active_trade_account(env)
+    if vault_account is not None:
+        name = "accounts vault: active trade account"
+        agent = (vault_account.get("agent_address") or "").strip()
+        main = (vault_account.get("main_address") or "").strip()
+        label = vault_account.get("label", "?")
+        if not agent:
+            return [Finding("agent_not_master", "WARN", name,
+                             f"active vault account {label!r} has mode=trade but no "
+                             f"agent_address on record — cannot confirm it trades through "
+                             f"a distinct agent wallet")]
+        if agent.lower() == main.lower():
+            return [Finding("agent_not_master", "FAIL", name,
+                             f"active vault account {label!r} has agent_address == "
+                             f"main_address — this should never happen; the account "
+                             f"registry is corrupt")]
+        return [Finding("agent_not_master", "PASS", name,
+                         f"active vault account {label!r} trades through a distinct "
+                         f"agent wallet — cannot withdraw")]
+
+    wallet = (env.get("HYPERLIQUID_WALLET_ADDRESS") or "").strip()
+    master = (env.get("HYPERLIQUID_MASTER_ADDRESS") or "").strip()
+    name = "HYPERLIQUID_WALLET_ADDRESS/HYPERLIQUID_MASTER_ADDRESS"
+    if not wallet:
+        return [Finding("agent_not_master", "SKIP", name,
+                         "HYPERLIQUID_WALLET_ADDRESS is not set — covered by required_present")]
+    if not master:
+        return [Finding("agent_not_master", "FAIL", name,
+                         "HYPERLIQUID_MASTER_ADDRESS is not set — cannot prove "
+                         "HYPERLIQUID_WALLET_ADDRESS is an agent wallet distinct from the "
+                         "master. Set HYPERLIQUID_MASTER_ADDRESS (a public address, not a "
+                         "secret) so this check can run.")]
+    if wallet.lower() == master.lower():
+        return [Finding("agent_not_master", "FAIL", name,
+                         "HYPERLIQUID_WALLET_ADDRESS equals HYPERLIQUID_MASTER_ADDRESS — the "
+                         "trading key IS the master wallet. A compromised process could "
+                         "withdraw funds, not just lose the trade. Create an agent/API wallet "
+                         "in the Hyperliquid UI (approveAgent) and point "
+                         "HYPERLIQUID_WALLET_ADDRESS/HYPERLIQUID_PRIVATE_KEY at it instead.")]
+    return [Finding("agent_not_master", "PASS", name,
+                     "trading key is a distinct agent wallet from the master — cannot withdraw")]
+
+
+def check_master_key_not_deployed(env: Mapping[str, str], deploy_mode: bool) -> List[Finding]:
+    """HYPERLIQUID_MASTER_PRIVATE_KEY signs treasury transfers (scripts/treasury.py)
+    and can withdraw funds. It has no business in a running service's
+    environment — only in the operator's local .env.local for manual CLI use."""
+    name = "HYPERLIQUID_MASTER_PRIVATE_KEY"
+    present = bool((env.get(name) or "").strip())
+    if not present:
+        return [Finding("master_key_not_deployed", "PASS", name, "not present in this environment")]
+    if deploy_mode:
+        return [Finding("master_key_not_deployed", "FAIL", name,
+                         "present in a DEPLOYED environment (Fly/k8s signal detected). This key "
+                         "can withdraw funds and must stay laptop-only for scripts/treasury.py — "
+                         "remove it from the deploy secret store immediately and rotate it.")]
+    return [Finding("master_key_not_deployed", "WARN", name,
+                     "present locally. This key can withdraw funds. An agent key "
+                     "(services/accounts, or HYPERLIQUID_WALLET_ADDRESS + "
+                     "HYPERLIQUID_PRIVATE_KEY) makes it unnecessary for trading — only "
+                     "scripts/treasury.py uses it. Confirm it is never copied into a "
+                     "Fly/k8s secret store alongside the trading key.")]
+
+
+def _env_files_present(repo_root: Path) -> List[Path]:
+    return [repo_root / name for name in ENV_FILE_CANDIDATES if (repo_root / name).exists()]
+
+
+def _git_subprocess_env() -> Dict[str, str]:
+    """Environment for a `git` call that MUST resolve against `cwd`, not
+    whatever repo this process happens to be a descendant of.
+
+    A git hook runs with GIT_DIR / GIT_INDEX_FILE / GIT_WORK_TREE (and, in a
+    worktree, GIT_COMMON_DIR) set in the environment, pointing at the
+    commit-in-progress — that is how the hook's own `git diff --cached` finds
+    the staged index without `--git-dir`. Every `git` subprocess spawned here
+    inherits that environment by default. Without this, `git check-ignore` /
+    `git ls-files` / `git grep --cached` run from inside a git hook (exactly
+    where scripts/hooks/pre-commit runs this file's own test suite) silently
+    answer for the OUTER repo instead of `cwd` — found by
+    tests/test_preflight_secrets.py::test_env_file_gitignored_and_untracked_passes
+    flaking (PASS directly, FAIL under `git commit`) on 2026-10-17. For
+    check_git_index_for_secrets specifically this is not just flaky: it is the
+    one check whose entire job is catching a leaked credential in the git
+    index, and a leaked GIT_DIR would make it scan the wrong index and report
+    a false PASS.
+    """
+    return {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+
+
+def check_env_files_gitignored(repo_root: Path) -> List[Finding]:
+    findings: List[Finding] = []
+    if not (repo_root / ".git").exists():
+        return [Finding("env_gitignored", "SKIP", "-", f"{repo_root} is not a git repository")]
+    for path in _env_files_present(repo_root):
+        rel = path.relative_to(repo_root)
+        proc = subprocess.run(["git", "check-ignore", "-q", str(rel)],
+                               cwd=repo_root, capture_output=True, env=_git_subprocess_env())
+        if proc.returncode == 0:
+            findings.append(Finding("env_gitignored", "PASS", str(rel), "gitignored"))
+        else:
+            findings.append(Finding("env_gitignored", "FAIL", str(rel),
+                                     "NOT covered by .gitignore — add it before touching git in this tree"))
+    if not findings:
+        findings.append(Finding("env_gitignored", "PASS", "-", "no env files present to check"))
+    return findings
+
+
+def check_env_files_not_tracked(repo_root: Path) -> List[Finding]:
+    findings: List[Finding] = []
+    if not (repo_root / ".git").exists():
+        return [Finding("env_not_tracked", "SKIP", "-", f"{repo_root} is not a git repository")]
+    for path in _env_files_present(repo_root):
+        rel = path.relative_to(repo_root)
+        proc = subprocess.run(["git", "ls-files", "--error-unmatch", str(rel)],
+                               cwd=repo_root, capture_output=True, env=_git_subprocess_env())
+        if proc.returncode == 0:
+            findings.append(Finding("env_not_tracked", "FAIL", str(rel),
+                                     "TRACKED by git — this file has secrets and must never be "
+                                     "committed. `git rm --cached` it, then rotate every secret "
+                                     "it held."))
+        else:
+            findings.append(Finding("env_not_tracked", "PASS", str(rel), "not tracked"))
+    if not findings:
+        findings.append(Finding("env_not_tracked", "PASS", "-", "no env files present to check"))
+    return findings
+
+
+def check_env_file_permissions(repo_root: Path) -> List[Finding]:
+    findings: List[Finding] = []
+    for path in _env_files_present(repo_root):
+        rel = path.relative_to(repo_root)
+        mode = stat.S_IMODE(path.stat().st_mode)
+        # Any group/other bit (read, write, or execute) means this file is
+        # readable by more than its owner. 0600 has none of these bits set.
+        if mode & 0o077:
+            findings.append(Finding("env_file_permissions", "FAIL", str(rel),
+                                     f"mode {oct(mode)} is readable/writable beyond the owner — "
+                                     f"run `chmod 600 {rel}`"))
+        else:
+            findings.append(Finding("env_file_permissions", "PASS", str(rel), f"mode {oct(mode)}"))
+    if not findings:
+        findings.append(Finding("env_file_permissions", "PASS", "-", "no env files present to check"))
+    return findings
+
+
+def check_git_index_for_secrets(repo_root: Path, secrets: Mapping[str, str]) -> List[Finding]:
+    """Scans the git INDEX (staged blobs), not the working tree — this is
+    what catches a secret that was `git add`ed and then the working copy
+    edited or reverted, which a working-tree grep would miss entirely."""
+    if not (repo_root / ".git").exists():
+        return [Finding("git_index_scan", "SKIP", "-", f"{repo_root} is not a git repository")]
+    try:
+        subprocess.run(["git", "rev-parse", "--git-dir"], cwd=repo_root,
+                        capture_output=True, check=True, env=_git_subprocess_env())
+    except Exception:
+        return [Finding("git_index_scan", "SKIP", "-", "git not available or repo has no HEAD")]
+
+    findings: List[Finding] = []
+    for name, value in secrets.items():
+        if not value or len(value) < MIN_SECRET_SCAN_LEN:
+            continue
+        pattern_file = None
+        try:
+            fd, pattern_file = tempfile.mkstemp(prefix="preflight-secret-", text=True)
+            os.chmod(pattern_file, 0o600)
+            with os.fdopen(fd, "w") as fh:
+                fh.write(value + "\n")
+            # -l: filenames only. Never let the matched LINE (which contains
+            # the secret) reach this process's stdout.
+            proc = subprocess.run(
+                ["git", "grep", "--cached", "--fixed-strings", "-l", "-f", pattern_file],
+                cwd=repo_root, capture_output=True, text=True, env=_git_subprocess_env(),
+            )
+            if proc.returncode == 0:
+                paths = [p for p in proc.stdout.splitlines() if p]
+                findings.append(Finding("git_index_scan", "FAIL", name,
+                                         f"value found in tracked file(s) in the git index: "
+                                         f"{', '.join(paths)} — rotate {name} now and purge it "
+                                         f"from history"))
+            elif proc.returncode not in (0, 1):
+                findings.append(Finding("git_index_scan", "WARN", name,
+                                         f"git grep exited {proc.returncode}; could not verify "
+                                         f"({(proc.stderr or '').strip()[:120]})"))
+        finally:
+            if pattern_file and os.path.exists(pattern_file):
+                os.remove(pattern_file)
+    if not findings:
+        findings.append(Finding("git_index_scan", "PASS", "-",
+                                 f"no scanned secret value (>= {MIN_SECRET_SCAN_LEN} chars) "
+                                 f"found in the git index"))
+    return findings
+
+
+# ── orchestration ─────────────────────────────────────────────────────────────
+
+def _index_scan_values(env: Mapping[str, str]) -> Dict[str, str]:
+    """The registry values the git-index scan looks for: keys and tokens,
+    never addresses. A wallet address is public by construction (it is on
+    chain, and the desk-tick skill and the README name the account the loop
+    tracks on purpose), so finding one in a tracked file is not a leak and
+    must not fail the preflight. 2026-10-25: HYPERLIQUID_MASTER_ADDRESS in
+    .claude/skills/desk-tick/SKILL.md failed every run until this."""
+    return {spec.name: (env.get(spec.name) or "") for spec in REGISTRY
+            if not spec.name.endswith("_ADDRESS")}
+
+
+def run_all(repo_root: Path, env: Mapping[str, str], deploy_mode: bool) -> List[Finding]:
+    findings: List[Finding] = []
+    findings += check_required_present(env)
+    findings += check_master_not_agent(env)
+    findings += check_master_key_not_deployed(env, deploy_mode)
+    findings += check_env_files_gitignored(repo_root)
+    findings += check_env_files_not_tracked(repo_root)
+    findings += check_env_file_permissions(repo_root)
+    findings += check_git_index_for_secrets(repo_root, _index_scan_values(env))
+    return findings
+
+
+def main(argv: Optional[Sequence[str]] = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0] if __doc__ else "")
+    parser.add_argument("--repo-root", type=Path, default=REPO_ROOT)
+    parser.add_argument("--env-file", type=Path, default=None,
+                         help="defaults to <repo-root>/.env.local")
+    parser.add_argument("--deploy", action="store_true",
+                         help="force deploy-mode checks even without a platform signal")
+    args = parser.parse_args(argv)
+
+    repo_root: Path = args.repo_root
+    env_file: Path = args.env_file if args.env_file is not None else repo_root / ".env.local"
+
+    env = effective_env(env_file)
+    deploy_mode = is_deploy_context(env, forced=args.deploy)
+    findings = run_all(repo_root, env, deploy_mode)
+
+    secret_values = _redaction_values(env)
+
+    print(f"preflight_secrets: repo={repo_root} env_file={env_file} "
+          f"deploy_mode={deploy_mode}")
+    _emit(findings, secret_values)
+
+    failures = [f for f in findings if f.status == "FAIL"]
+    warnings = [f for f in findings if f.status == "WARN"]
+    if failures:
+        print(f"PREFLIGHT: FAIL ({len(failures)} failing check(s), "
+              f"{len(warnings)} warning(s)) — do not start")
+        return 1
+    print(f"PREFLIGHT: PASS ({len(warnings)} warning(s))")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

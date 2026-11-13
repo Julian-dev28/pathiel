@@ -1,0 +1,12 @@
+{
+  "id": "acc_watch",
+  "label": "Whale I follow",
+  "main_address": "0x00000000000000000000000000000000000000c3",
+  "agent_address": null,
+  "mode": "watch",
+  "source": "watch",
+  "is_active": false,
+  "created_at": "2026-10-17T12:00:00Z",
+  "verified_at": null,
+  "agent_name": null
+}

@@ -1,0 +1,21 @@
+{
+  "account": {
+    "id": "acc_watch",
+    "label": "Whale I follow",
+    "main_address": "0x00000000000000000000000000000000000000c3",
+    "agent_address": null,
+    "mode": "watch",
+    "source": "watch",
+    "is_active": false,
+    "created_at": "2026-10-17T12:00:00Z",
+    "verified_at": null,
+    "agent_name": null
+  },
+  "equity_usd": 48210.5,
+  "withdrawable_usd": 30000.0,
+  "open_positions": 3,
+  "can_trade": false,
+  "blockers": [
+    "Watch-only account: connect a wallet to trade."
+  ]
+}

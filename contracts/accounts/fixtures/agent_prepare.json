@@ -1,0 +1,58 @@
+{
+  "request_id": "req_1",
+  "agent_address": "0x00000000000000000000000000000000000000b2",
+  "typed_data": {
+    "domain": {
+      "name": "HyperliquidSignTransaction",
+      "version": "1",
+      "chainId": 42161,
+      "verifyingContract": "0x0000000000000000000000000000000000000000"
+    },
+    "types": {
+      "EIP712Domain": [
+        {
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "name": "version",
+          "type": "string"
+        },
+        {
+          "name": "chainId",
+          "type": "uint256"
+        },
+        {
+          "name": "verifyingContract",
+          "type": "address"
+        }
+      ],
+      "HyperliquidTransaction:ApproveAgent": [
+        {
+          "name": "hyperliquidChain",
+          "type": "string"
+        },
+        {
+          "name": "agentAddress",
+          "type": "address"
+        },
+        {
+          "name": "agentName",
+          "type": "string"
+        },
+        {
+          "name": "nonce",
+          "type": "uint64"
+        }
+      ]
+    },
+    "primaryType": "HyperliquidTransaction:ApproveAgent",
+    "message": {
+      "hyperliquidChain": "Mainnet",
+      "agentAddress": "0x00000000000000000000000000000000000000b2",
+      "agentName": "pathiel",
+      "nonce": 1792238400000
+    }
+  },
+  "expires_at": "2026-10-17T12:10:00Z"
+}
