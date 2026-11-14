@@ -1,0 +1,84 @@
+name: Build
+
+# Builds both container images on every pull request to main, and on every
+# push to main, so a change that breaks a build (a Dockerfile base-image bump,
+# a dependency pin, a missing file in the image) is caught in the pull request
+# instead of at release time. Added 2026-11-14 after Dependabot's
+# python:3.11 -> 3.15 bump (#10) merged with no build run on it.
+#
+# Required to pass before a pull request merges (the main ruleset), together
+# with the CI test jobs. Read-only: nothing is pushed; release.yml is still
+# the only workflow that publishes.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  public-image:
+    name: Build (public MCP image)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - name: Build Dockerfile.mcp
+        run: docker build -f Dockerfile.mcp -t pathiel-mcp:ci .
+
+      - name: Smoke test over stdio (no key, read-only)
+        run: |
+          python3 - pathiel-mcp:ci <<'EOF'
+          import json, subprocess, sys
+          image = sys.argv[1]
+          version = json.load(open("server.json"))["version"]
+          msgs = [
+              {"jsonrpc": "2.0", "id": 1, "method": "initialize",
+               "params": {"protocolVersion": "2025-06-18", "capabilities": {},
+                          "clientInfo": {"name": "build-smoke", "version": "0"}}},
+              {"jsonrpc": "2.0", "method": "notifications/initialized"},
+              {"jsonrpc": "2.0", "id": 2, "method": "tools/list"},
+              {"jsonrpc": "2.0", "id": 3, "method": "tools/call",
+               "params": {"name": "place_bracket",
+                          "arguments": {"coin": "BTC", "entry_px": 1, "stop_px": 0.9, "tp_px": 1.5}}},
+          ]
+          stdin = "".join(json.dumps(m) + "\n" for m in msgs)
+          proc = subprocess.run(["docker", "run", "-i", "--rm", image], input=stdin,
+                                capture_output=True, text=True, timeout=120)
+          replies = {}
+          for line in proc.stdout.splitlines():
+              try:
+                  m = json.loads(line)
+              except ValueError:
+                  sys.exit(f"non-JSON on stdout (the MCP channel): {line[:200]}")
+              if "id" in m:
+                  replies[m["id"]] = m
+          if not {1, 2, 3} <= set(replies):
+              sys.exit(f"missing replies; stderr tail:\n{proc.stderr[-2000:]}")
+          info = replies[1]["result"]["serverInfo"]
+          tools = replies[2]["result"]["tools"]
+          refusal = json.loads(replies[3]["result"]["content"][0]["text"])
+          assert info == {"name": "pathiel", "version": version}, info
+          assert len(tools) == 30, len(tools)   # the public toolset (contracts/mcp_public)
+          assert refusal.get("read_only") is True and refusal.get("ok") is False, refusal
+          print(f"serverInfo {info}, {len(tools)} tools, place_bracket refused read-only")
+          EOF
+
+  operator-image:
+    name: Build (operator image)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - name: Build Dockerfile
+        run: docker build -f Dockerfile -t pathiel:ci .
