@@ -8,7 +8,7 @@ Run from anywhere:
 Parses the server with the `ast` module (no import, no execution) and checks
 the invariant from references/mcp-server.md:
 
-    every name in TOOLS is covered by exactly one handler, where
+    every name in TOOLS (and SET_STOP_TOOLS) is covered by exactly one handler, where
         covered = explicit tool_handlers keys  +  _STUB_TOOL_NAMES (stub list)
     no name appears in both the explicit dict and the stub list
     no duplicate handle_* function definitions
@@ -79,7 +79,9 @@ def audit(path: Path) -> int:
         )
         for tgt in targets:
             name = getattr(tgt, "id", None)
-            if name == "TOOLS" and isinstance(node.value, ast.List):
+            # TOOLS (the operator's list) and SET_STOP_TOOLS (set_stop: wired in
+            # tool_handlers on every install, listed on a public one only)
+            if name in ("TOOLS", "SET_STOP_TOOLS") and isinstance(node.value, ast.List):
                 for elt in node.value.elts:
                     if isinstance(elt, ast.Dict):
                         fields = {getattr(k, "value", None): v for k, v in zip(elt.keys, elt.values)}

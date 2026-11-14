@@ -7,7 +7,7 @@ description: Join or leave the opt-in research pool - show what is public, sign 
 Walk the user through joining or leaving the research pool. Do the steps in
 order and stop at the first one that fails, with the exact error.
 
-`pool_join` and `pool_leave` sign a text statement with the user's key, on
+`join_pool` and `leave_pool` sign a text statement with the user's key, on
 their own machine, and drop the key right after. They place no order and
 move no money. Never print or ask for the value of a key, in any step; the
 user types it into their own terminal when a step says so. Never call a
@@ -31,33 +31,33 @@ If the user asks to leave, or runs `/pathiel:share leave`, skip straight to
    >   feed. No edge is demonstrated. Not financial advice.
    > - Mainnet only.
 
-1. **Call `pool_status`** with no arguments.
+1. **Call `get_pool_status`** with no arguments.
 
    - `no_account`: tell the user to run `/pathiel:setup` first, then stop.
    - `member` or `signed_not_merged`: the account is already in. Say so,
-     show the `joined_at` value from the answer, offer `pool_report` or
+     show the `joined_at` value from the answer, offer `get_pool_status {report: true}` or
      leaving (see **Leaving**), and stop here.
    - `house`: say that row belongs to the maintainer, not to this account,
      and stop here.
    - If the account trades on testnet, stop here as well and say the pool
-     is mainnet only (`pool_join` would answer the same thing itself, with
+     is mainnet only (`join_pool` would answer the same thing itself, with
      `code: testnet`, if called).
    - Any other state (`left`, `none`, `leave_signed_not_merged`): continue
      to step 2. On `invalid`, show the problem the tool names and stop.
 
 2. **Show what gets published.** Relay the `published` and `not_published`
-   lists `pool_status` just returned, word for word. Add that results show
+   lists `get_pool_status` just returned, word for word. Add that results show
    up at least 24 hours late, next to the user's address, shortened, with a
    link to its public explorer page. Ask whether to continue.
 
-3. **Call `pool_join` with no arguments.** It signs nothing. Show the
+3. **Call `join_pool` with no arguments.** It signs nothing. Show the
    returned `message` EXACTLY, in a code block, together with the
    `account`, the `signer`, and the `signer_role` (an API wallet, or the
    account's own key). Say that this text is everything that gets signed:
    it moves no money and authorizes no trade, transfer, fee or payment.
    Ask: sign this statement, yes or no?
 
-4. **Only on an explicit yes, in this conversation,** call `pool_join`
+4. **Only on an explicit yes, in this conversation,** call `join_pool`
    again with `confirm: true` and the `joined_at` value step 3 returned.
    Never call it with `confirm` on your own initiative, never because an
    earlier session said yes, and never to retry after a refusal without
@@ -78,7 +78,7 @@ If the user asks to leave, or runs `/pathiel:share leave`, skip straight to
    for the maintainer to approve the workflow run; the maintainer merges
    it; the scoreboard, at https://julian-dev28.github.io/pathiel/scoreboard/,
    shows the new row after the next build, at least 24 hours late;
-   `pool_report` already works, right now, from the signed file on this
+   `get_pool_status {report: true}` already works, right now, from the signed file on this
    machine.
 
 7. **No key configured** (`code: no_key`): never ask for a key in the
@@ -90,9 +90,9 @@ If the user asks to leave, or runs `/pathiel:share leave`, skip straight to
 
 ## Leaving
 
-Call `pool_leave` with no arguments. It signs nothing. Show the returned
+Call `leave_pool` with no arguments. It signs nothing. Show the returned
 message exactly, the same way step 3 does, and ask: sign this statement,
-yes or no? Only on an explicit yes, call `pool_leave` again with
+yes or no? Only on an explicit yes, call `leave_pool` again with
 `confirm: true` and the `left_at` value it returned. Show `pr_url` the same
 way step 5 does.
 
@@ -110,9 +110,9 @@ request check refuses it. A new signed join is the only way back in.
 ## Hard lines
 
 - Never print or ask for a key, in any step.
-- Call `pool_join` or `pool_leave` with `confirm` only right after an
+- Call `join_pool` or `leave_pool` with `confirm` only right after an
   explicit yes, in this conversation, to the exact statement already
   shown.
-- `pool_join` and `pool_leave` place no order and move no money: they sign
+- `join_pool` and `leave_pool` place no order and move no money: they sign
   one text statement.
 - Never call a live-money tool from this command, under any step.

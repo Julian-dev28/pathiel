@@ -1,6 +1,6 @@
 ---
 name: pathiel-agent
-description: Use when operating, maintaining, or debugging pathiel — the headless Hyperliquid trading desk Claude trades through its MCP server. Covers place_bracket/bracket_sweep/close_position, the risk-profile sizing path, MCP tool wiring, and Hyperliquid order-placement gotchas.
+description: Use when operating, maintaining, or debugging pathiel — the headless Hyperliquid trading desk Claude trades through its MCP server. Covers place_bracket/sweep_brackets/close_position, the risk-profile sizing path, MCP tool wiring, and Hyperliquid order-placement gotchas.
 version: 2.0.0
 author: Pathiel Agent
 license: MIT
@@ -21,7 +21,7 @@ money. Practice on testnet is one explicit line, `PATHIEL_NETWORK=testnet`, in
 `~/.pathiel/.env.local` (state then goes to `~/.pathiel/state-testnet/`, and
 the oil desk trades WTI, `xyz:CL`, as the Brent stand-in). A
 fresh plugin install starts from a conservative risk profile (3x max
-leverage, about 1% of equity at risk per trade, one position); `risk_limits`
+leverage, about 1% of equity at risk per trade, one position); `get_risk_limits`
 reports the active one. The rest of this guide describes the maintainer's
 repo checkout (repo `.env.local`, repo `.agent-config.json`, the local
 dashboard), which runs on mainnet.
@@ -30,7 +30,7 @@ dashboard), which runs on mainnet.
 2026-10-23): Claude is the only trader on the wallet, placing every trade
 through the **MCP server** (`scripts/pathiel-mcp-server.py`, registered in
 `~/.pathiel/config.yaml` under `mcp_servers.pathiel`) — `place_bracket`,
-`bracket_sweep`, `close_position`. There is no autonomous scan/research/
+`sweep_brackets`, `close_position`. There is no autonomous scan/research/
 execute engine any more: the old scan→research→execute pipeline, its
 trigger config, TA filter, risk gates, DSL exit loop, and the seven
 strategy books it used to run are all retired. See
@@ -48,17 +48,17 @@ explicit confirmation.**
 
 ## How a trade happens now
 
-1. **Read the call.** `desk_brief {desk}` (oil is primary) for the desk's
-   current thesis, or `desk_refresh` to force a new one. `risk_limits` /
-   `risk_size_trade` for what the account may trade and how big — size
-   every trade with `risk_size_trade`, never by hand.
+1. **Read the call.** `get_desk_brief {desk}` (oil is primary) for the desk's
+   current thesis, or `refresh_desk` to force a new one. `get_risk_limits` /
+   `size_trade` for what the account may trade and how big — size
+   every trade with `size_trade`, never by hand.
 2. **Place it.** `place_bracket {coin, entry_px, stop_px, tp_px}` — one
    entry with an exact stop and target. It sizes through
    `services/risk/size.py`'s `size_trade()` against the operator's saved
    risk profile, checks the stop against liquidation
    (`pathiel.agents.bracket.check_leverage`), and refuses under the 2R
    minimum or when a position/entry already exists on the coin.
-3. **Housekeep.** `bracket_sweep {coin}` after every close: cancels the
+3. **Housekeep.** `sweep_brackets {coin}` after every close: cancels the
    stranded sibling order left by a fired stop/target and confirms an open
    position is covered by a stop.
 4. **Close.** `close_position {coin}` — market-closes with `reduce_only`,
@@ -98,13 +98,13 @@ dashboard/API server and the log rotator run as standing processes.
 
 Every trade sizes through `services/risk/size.py`'s `size_trade()`:
 `notional = (equity × risk_per_trade_pct) / stop_distance`, clamped by the
-operator's saved risk profile (`risk_limits` MCP tool / `/api/risk/*`) and
+operator's saved risk profile (`get_risk_limits` MCP tool / `/api/risk/*`) and
 the coin's exchange max leverage. Leverage is already baked into the
 notional — `position_notional = trade_notional`, never
 `trade_notional × leverage` again. `pathiel.agents.bracket.min_tradable_equity`
 is the structural floor below which the exchange can't clear a $10 order at
 all; `services.risk.books.main_engine_spec` is the one `BookSpec` the
-feasibility check (`risk_limits`/`risk_size_trade`/`place_bracket`) prices
+feasibility check (`get_risk_limits`/`size_trade`/`place_bracket`) prices
 against — there is no per-book roster any more.
 
 ## Operator rules (2026-10-24)
@@ -123,7 +123,7 @@ against — there is no per-book roster any more.
   own margin type (isolated on HIP-3; the venue refuses a type switch with
   a position open) and treats a venue "err" as an error. Hyperliquid keeps
   the isolated margin in place, so the liquidation price does not move.
-  Confirm with `get_asset_positions`.
+  Confirm with `get_positions`.
 - The Desk page (`/`) is where the operator reads positions: the Wallets
   card shows entry, mark, P&L, R, leverage, margin in use, liquidation,
   stop and target for the Active account; a flat watch-only wallet shows

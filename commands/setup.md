@@ -66,14 +66,14 @@ the chat; the user types keys into files and prompts on their own machine.
    pathiel in `/mcp`, so the key is made for the network they will trade
    on. Then offer two ways to add the key, in this order:
 
-   - **Connect your wallet (recommended).** Call the `wallet_connect` tool;
+   - **Connect your wallet (recommended).** Call the `connect_wallet` tool;
      Claude Code asks the user first. It makes a new API wallet key on this
      machine and opens a local page in the browser. The page shows the
      network (MAINNET in red) and the new API wallet's address, and the
      user approves it with one signature in their browser wallet
      (MetaMask, Rabby, Coinbase Wallet or any other). The key can trade and
      never withdraw; the main key stays in the wallet. Give the user the
-     `url` it returns in case no browser opened, then call `wallet_connect`
+     `url` it returns in case no browser opened, then call `connect_wallet`
      with `{"status": true}` until the state is `done` or `failed`. `done`
      means the key and both addresses are in `~/.pathiel/.env.local`: go to
      step 4. A `failed` result names the reason in `error`; fix it and call
@@ -125,17 +125,17 @@ the chat; the user types keys into files and prompts on their own machine.
    before the env file existed. After creating or editing
    `~/.pathiel/.env.local`, tell the user to reconnect pathiel in `/mcp`
    (or restart Claude Code). Then confirm in `/mcp` that the `pathiel`
-   server shows as connected with 65 tools. If it does not, the error is in
+   server shows as connected with 30 tools. If it does not, the error is in
    the MCP panel; the usual cause is step 1 not having finished.
 
-7. **Prove it.** Call `get_price` with `{coin: "BTC"}`, then `state`. The
-   `state` output names the network, whether a key is set, and the builder
+7. **Prove it.** Call `get_market` with `{coin: "BTC"}`, then `get_status`. The
+   `get_status` output names the network, whether a key is set, and the builder
    fee status. Check that the network and key it shows match the `network`
    and `trading` lines from step 4. If they differ, the server still runs
    with the old env file: tell the user to reconnect pathiel in `/mcp`, then
-   call `state` again.
+   call `get_status` again.
 
-8. **Say what is next.** `desk_list` then `desk_brief {desk: "oil"}` reads
+8. **Say what is next.** `list_desks` then `get_desk_brief {desk: "oil"}` reads
    the current call. `/pathiel:desk-tick oil` runs one tick of the loop;
    `/loop 15m /pathiel:desk-tick oil` keeps it running for the session.
    Every order goes through `place_bracket` with an exact stop and target,
