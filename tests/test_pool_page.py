@@ -258,6 +258,7 @@ _NODE_SCRIPT = r"""
 const m = require(JS_PATH);
 const fixture = require(FIXTURE_PATH);
 const emptyDoc = require(EMPTY_PATH);
+const LABELS = LABELS_JSON;
 const out = {};
 
 function FakeElement(tag) {
@@ -381,6 +382,37 @@ out.hasKofMTile = tiles.some(function (t) {
   out.thScopes = findAll(app, 'TH').every(function (th) { return th.attributes.scope === 'col'; });
 }
 
+// 6b. label chips: one class per contract label, a plain chip otherwise,
+//     and every label cell in the DOM is a chip holding the label's text.
+out.labelClasses = LABELS.map(function (l) { return m.labelClass(l); });
+out.unknownLabelClass = m.labelClass('SOMETHING NEW');
+{
+  const {doc, app} = newApp();
+  m.render(fixture, doc);
+  const chips = findAll(app, 'SPAN').filter(function (s) {
+    return /^chip( |$)/.test(s.attributes['class'] || '');
+  });
+  out.chipTexts = chips.map(function (c) { return c.textContent; });
+  out.fixtureLabels = fixture.pool.map(function (r) { return r.label; })
+    .concat(fixture.members.map(function (r) { return r.label; }));
+}
+
+// 6c. mean R sign colour: up, dn, or none; and the DOM carries it on the
+//     mean R cell of each row (column 7 of the pool table).
+out.signClasses = [m.signClass(0.5), m.signClass(-0.2), m.signClass(0),
+  m.signClass(null), m.signClass(undefined), m.signClass(NaN)];
+{
+  const {doc, app} = newApp();
+  m.render(fixture, doc);
+  const rows = findAll(app, 'TBODY')[0].children;
+  out.poolMeanRClasses = Array.prototype.map.call(rows, function (tr) {
+    return findAll(tr, 'TD')[6].attributes['class'] || '';
+  });
+  out.poolMeanRWant = fixture.pool.map(function (r) {
+    return (typeof r.mean_r === 'number' && r.mean_r !== 0) ? (r.mean_r > 0 ? 'up' : 'dn') : '';
+  });
+}
+
 // 7. pool.empty_scoreboard(now) renders the empty state without throwing.
 {
   const {doc, app} = newApp();
@@ -413,6 +445,7 @@ def test_node_pure_functions_and_render(tmp_path):
         .replace("JS_PATH", json.dumps(str(JS)))
         .replace("FIXTURE_PATH", json.dumps(str(FIXTURE)))
         .replace("EMPTY_PATH", json.dumps(str(empty_path)))
+        .replace("LABELS_JSON", json.dumps(list(pool.LABELS)))
     )
     script_path = tmp_path / "run_pool_page_test.js"
     script_path.write_text(script, encoding="utf-8")
@@ -454,6 +487,16 @@ def test_node_pure_functions_and_render(tmp_path):
     assert out["renderedHouseBadgeCount"] == 1
     assert out["hasCaptions"] == 2
     assert out["thScopes"] is True
+
+    # 6b. label chips: distinct per label, all prefixed 'chip', in row order.
+    assert len(set(out["labelClasses"])) == len(pool.LABELS)
+    assert all(c.startswith("chip chip-") for c in out["labelClasses"])
+    assert out["unknownLabelClass"] == "chip"
+    assert out["chipTexts"] == out["fixtureLabels"]
+
+    # 6c. mean R sign colour.
+    assert out["signClasses"] == ["up", "dn", "", "", "", ""]
+    assert out["poolMeanRClasses"] == out["poolMeanRWant"]
 
     # 7. empty scoreboard: no throw, empty state shown.
     assert out["emptyThrew"] is False, out.get("emptyError")

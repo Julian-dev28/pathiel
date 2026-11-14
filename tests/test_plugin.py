@@ -58,7 +58,7 @@ def test_the_plugin_manifest_has_no_component_paths_outside_the_defaults():
     cannot quietly replace the default scans."""
     m = _manifest()
     assert set(m) <= {"name", "displayName", "version", "description", "author", "homepage",
-                      "repository", "license", "keywords", "mcpServers"}, sorted(m)
+                      "repository", "documentationUrl", "privacyPolicyUrl", "supportUrl", "termsOfServiceUrl", "license", "keywords", "mcpServers"}, sorted(m)
     assert (ROOT / "skills" / "desk-tick" / "SKILL.md").is_file()
     assert (ROOT / "skills" / "pathiel-agent" / "SKILL.md").is_file()
     assert (ROOT / "agents" / "desk-tick.md").is_file()
@@ -74,7 +74,7 @@ def test_the_mcp_server_runs_through_the_plugin_wrapper():
     # The directory asks for the interpreter by name (START_FILE_AS_PROGRAM):
     # bash starts the launcher, the launcher is the first argument.
     assert server["command"] == "bash"
-    assert server["args"] == ["${CLAUDE_PLUGIN_ROOT}/scripts/pathiel-mcp"]
+    assert server["args"] == ["${CLAUDE_PLUGIN_ROOT}/scripts/pathiel-mcp.sh"]
     for path in (MCP_WRAPPER, PY_WRAPPER):
         assert path.is_file(), path
         assert path.stat().st_mode & stat.S_IXUSR, f"{path.name} is not executable"
@@ -106,7 +106,14 @@ def test_the_wrappers_parse_and_keep_stdout_clean_for_the_mcp_transport():
             s = line.strip()
             if s.startswith(("echo", "printf")) and "sha256" not in s:
                 assert ">&2" in s, f"{path.name}: writes to stdout: {s}"
-    text = MCP_WRAPPER.read_text()
+    # scripts/pathiel-mcp is a shim to the launcher, scripts/pathiel-mcp.sh
+    # (2026-11-13: the directory wants the file name to match bash).
+    shim = MCP_WRAPPER.read_text()
+    assert [ln for ln in shim.splitlines() if ln and not ln.startswith("#")] == \
+        ['exec bash "$(cd "$(dirname "$0")" && pwd)/pathiel-mcp.sh" "$@"']
+    launcher = MCP_WRAPPER.with_name("pathiel-mcp.sh")
+    subprocess.run(["bash", "-n", str(launcher)], check=True)
+    text = launcher.read_text()
     assert "exec " in text and "pathiel-mcp-server.py" in text
     assert "--bootstrap" in text
     # The stdout writer runs only behind --commands, which exits before exec.
@@ -296,7 +303,7 @@ def test_setup_says_to_reconnect_after_the_env_file_changes():
     step6 = text[text.index("6. **Connect the tools.**"):text.index("7. **Prove it.**")]
     assert "reconnect pathiel in `/mcp`" in step6 and "restart Claude Code" in step6
     assert "~/.pathiel/.env.local" in step6
-    assert step6.index("reconnect") < step6.index("64 tools")
+    assert step6.index("reconnect") < step6.index("30 tools")
     step7 = text[text.index("7. **Prove it.**"):text.index("8. **Say what is next.**")]
     assert "match the `network` and `trading` lines" in step7
     assert "reconnect pathiel in `/mcp`" in step7
@@ -420,8 +427,8 @@ def test_a_due_rewrite_is_forced_through_desk_refresh():
     for path in (ROOT / ".claude" / "agents" / "desk-tick.md", ROOT / "agents" / "desk-tick.md"):
         text = path.read_text()
         assert "scripts/thesis_due.py --desk DESK" in text, path
-        assert "`desk_refresh {desk: DESK, force: true}` only when it says `\"due\": true`" in text, path
-        assert "desk_refresh {desk: DESK}`" not in text, f"{path}: an unforced refresh would skip the daily rewrite"
+        assert "`refresh_desk {desk: DESK, force: true}` only when it says `\"due\": true`" in text, path
+        assert "refresh_desk {desk: DESK}`" not in text, f"{path}: an unforced refresh would skip the daily rewrite"
 
 
 def test_routine_ticks_stay_quiet_in_the_chat():
@@ -467,3 +474,24 @@ def test_the_env_template_offers_the_testnet_line_commented():
     assert "# PATHIEL_NETWORK=testnet" in text
     assert "PATHIEL_NETWORK=mainnet" not in text
     assert "MAINNET unless this file says otherwise" in text and "WTI (xyz:CL)" in text
+
+
+def test_setup_offers_connect_your_wallet_first_and_paste_as_the_fallback():
+    """Step 3 (2026-11-13): wallet_connect first, the manual API wallet
+    paste second; the script twin ships in the bundle; a replace needs the
+    user's yes; testnet reconnects before connecting."""
+    text = re.sub(r"\s+", " ", (ROOT / "commands" / "setup.md").read_text())
+    step3 = text[text.index("3. **The env file.**"):text.index("4. **Check the install**")]
+    connect = step3.index("**Connect your wallet (recommended).**")
+    paste = step3.index("**Paste an API wallet (fallback),**")
+    assert connect < paste
+    assert "`connect_wallet`" in step3 and '{"status": true}' in step3
+    assert "scripts/connect_wallet.py" in step3 and "in the background" in step3
+    assert "`key_exists`" in step3 and "ask the user before" in step3 and '{"replace": true}' in step3
+    assert step3.index("`PATHIEL_NETWORK=testnet`") < connect and "reconnects pathiel in `/mcp`" in step3
+    assert "never withdraw" in step3 and "MAINNET in red" in step3
+    from importlib.util import module_from_spec, spec_from_file_location
+    spec = spec_from_file_location("_bpb_setup", ROOT / "scripts" / "build_plugin_bundle.py")
+    mod = module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    assert "scripts/connect_wallet.py" in mod.ENTRY_SCRIPTS

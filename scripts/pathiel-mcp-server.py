@@ -64,6 +64,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import contracts.runtime as runtime  # noqa: E402
 import contracts.pool as pool_contract  # noqa: E402 - stdlib only at import, safe at operator start
+import contracts.wallet_connect as wallet_connect_contract  # noqa: E402 - stdlib only, as above
+import contracts.mcp_public as public_toolset  # noqa: E402 - stdlib only: the public tools/list
 from pathiel import __version__
 from pathiel.agents.config_store import read_agent_config
 from pathiel.client.hl_client import fetch_account_state, resolve_user_address
@@ -184,8 +186,8 @@ def _public_trading_line() -> str:
     except Exception:   # noqa: BLE001 - an import failure reads as no key
         reason = "no key could be read"
     if reason:
-        return ("Trading: read-only. No key is configured, so the six live-money tools refuse; "
-                "every read works. /pathiel:setup adds an API wallet key.")
+        return ("Trading: read-only. No key is configured, so the seven live-money tools refuse; "
+                "every read works. connect_wallet adds a key with one wallet signature.")
     return "Trading: enabled. An API wallet key is configured for this network."
 
 
@@ -197,37 +199,66 @@ def _public_fee_sentence() -> str:
     return (f"Builder fee: {runtime.fee_rate_str(fee)} of notional per fill, to {address}, "
             "charged only after the user approves it once with the master key "
             "(scripts/approve_builder_fee.py). Hyperliquid enforces the approval; without it "
-            "orders go out with no fee. state shows the approval.")
+            "orders go out with no fee. get_status shows the approval.")
 
 
 def _public_instructions() -> str:
     net = runtime.network()
     text = f"""pathiel: a Hyperliquid perps desk that Claude trades through these tools. {_public_network_line(net)} {_public_trading_line()} Not financial advice: the user decides every trade and can lose money.
 
-Default risk profile: 3x max leverage, 1% of equity at risk at the stop, one position at a time. set_leverage is capped by the profile's max_leverage. Change it with the config tool (risk_profile) or ~/.pathiel/.agent-config.json.
+Default risk profile: 3x max leverage, 1% of equity at risk at the stop, one position at a time. set_leverage is capped by the profile's max_leverage. Change the profile with update_config (risk_profile) or ~/.pathiel/.agent-config.json.
 
 Start here
-- state: network, trading status, builder fee, equity, positions.
-- desk_list, then desk_brief {{desk}}: the desk's call as short markdown, with "Your size".
-- desk_refresh {{desk}} writes a NEW thesis (news + one local Claude Code call, about a minute). Needs the claude CLI on PATH.
-- risk_limits / risk_size_trade: what this account may trade and how big. Size every trade with risk_size_trade, never by hand.
-- place_bracket {{coin, entry_px, stop_px, tp_px}}: one entry with an exact stop and target, sized by the profile. dry_run=true checks it without placing. bracket_sweep {{coin}} after every close.
-- Market reads (get_price, get_candles, get_l2_book, get_funding_rate, market_*) need no key and no account.
+- get_status: network, trading, fee, account. get_account: balances.
+- list_desks, then get_desk_brief {{desk}}: the desk's call as short markdown, with "Your size".
+- refresh_desk {{desk}}: a NEW thesis (news + one local Claude Code call, ~1 min; needs the claude CLI).
+- size_trade sizes every trade (never by hand); get_risk_limits shows the profile.
+- place_bracket {{coin, entry_px, stop_px, tp_px}}: one entry with an exact stop and target, sized by the profile. dry_run=true checks only. set_stop (tighter only) and set_target move levels. sweep_brackets {{coin}} after every close.
+- Market reads (get_market, list_markets, get_candles, get_order_book) need no key.
 
 Coins: main-dex perps by name (BTC, ETH). HIP-3 perps as dex:SYMBOL (xyz:GOLD). Testnet lists fewer live markets than mainnet: a coin that is delisted or missing on this network is refused for new entries (xyz:BRENTOIL is delisted on testnet, so the oil desk trades xyz:CL, WTI, there). Closes are never refused.
 
 {_public_fee_sentence()}
 
-LIVE MONEY: place_bracket, bracket_sweep, set_target, close_position, set_leverage, cancel_order act on the account on {net}, and config with arguments rewrites the trading config. Call them only when the user asked for that exact action in this conversation. Every other tool only reads (desk_refresh, desk_submit_call and desk_grade write the local desk journal; pool_join/pool_leave sign a text statement with the user's key, only when asked, placing no order and moving no money)."""
+LIVE MONEY: place_bracket, set_stop, set_target, sweep_brackets, close_position, set_leverage, cancel_order act on the account on {net}, and update_config rewrites the trading config. Call them only when the user asked for that exact action in this conversation. Every other tool only reads (refresh_desk, submit_desk_call and get_desk_record with grade=true write the local desk journal; join_pool/leave_pool sign a text statement with the user's key, only when asked, placing no order and moving no money)."""
     return text[:MAX_PUBLIC_INSTRUCTIONS_CHARS]
+
+
+def operator_v2() -> bool:
+    """The operator's install listing the scoped toolset: PATHIEL_TOOLSET=v2
+    in .mcp.json's env (2026-11-13). Operator behavior is unchanged (no public
+    gate, no public decoration); only tools/list and the instructions use the
+    new names. Unset: TOOLS and SERVER_INSTRUCTIONS, byte for byte."""
+    return not runtime.is_public() and os.environ.get("PATHIEL_TOOLSET", "").strip().lower() == "v2"
 
 
 def server_instructions() -> str:
     """The MCP initialize instructions: SERVER_INSTRUCTIONS, byte for byte, on
-    the operator's install; the public text on a public one."""
-    if not runtime.is_public():
-        return SERVER_INSTRUCTIONS
-    return _public_instructions()
+    the operator's install; OPERATOR_V2_INSTRUCTIONS with PATHIEL_TOOLSET=v2;
+    the public text on a public one."""
+    if runtime.is_public():
+        return _public_instructions()
+    return OPERATOR_V2_INSTRUCTIONS if operator_v2() else SERVER_INSTRUCTIONS
+
+
+# The operator's instructions with the scoped toolset's names
+# (PATHIEL_TOOLSET=v2). Same rules as SERVER_INSTRUCTIONS, word for word where
+# no tool is named.
+OPERATOR_V2_INSTRUCTIONS = """pathiel: a headless trading desk on live Hyperliquid. Real money. Claude is the trader; there is no autonomous bot. Active desks: get_config active_desks (oil; silver = metals desk). Each trades its own slice of equity (desk_equity_share), one position per desk. Other desks are off.
+
+Start here
+- list_desks, then get_desk_brief {desk} for that desk's call. Quick mode is short markdown, call first, with "Your size" for the active account. The Desk page (http://localhost:8000/) shows the same call as a card plus the open position with margin in use.
+- refresh_desk {desk} writes a NEW thesis (news + one local model call, about a minute). Use it when asked, when the brief says the thesis is stale, or when its target has already been hit.
+- place_bracket {coin, entry_px, stop_px, tp_px}: one entry with an exact stop and target, sized to the coin's desk slice of equity less the opening fee, capped by free margin (20x cap, ONE position per desk), stop inside half the distance to liquidation. Refuses under 2R and a second position, except add=true: one same-side top-up to full size, stop no wider. sweep_brackets {coin}: cancel a stranded sibling, confirm the stop covers the position, fold per-fill stops/targets into one pair. Run it after every close.
+- set_stop {coin, stop_px} moves a stop tighter only; set_target moves the target. Neither is part of a desk's rules unless the operator says so.
+- set_leverage {coin, leverage}: keeps an open position's own margin type; a venue refusal is an error. Confirm with get_positions.
+- get_account: equity and where it sits. HIP-3 money (xyz:BRENTOIL, xyz:CL, xyz:NVDA, ...) lives on its own dex (xyz), not main; main-dex-only reads look empty for it.
+- get_risk_limits / size_trade: what this account may trade and how big, from the saved risk profile. Size every suggested trade with size_trade, never by hand.
+- A missing position or dashes on the Desk page while the venue shows one: GET /api/health/system -> hl_budget names who spent or was refused the venue budget.
+
+Coins: main-dex perps by name (BTC, ETH). HIP-3 perps as dex:SYMBOL (xyz:BRENTOIL = Brent, the oil desk's price; xyz:CL = WTI; xyz:GOLD; xyz:NATGAS).
+
+LIVE MONEY: place_bracket, sweep_brackets, set_stop, set_target, close_position, set_leverage, cancel_order act on the real account, and update_config rewrites the live trading config. Call them only when the operator asked for that exact action in this conversation. Every other tool only reads (refresh_desk, submit_desk_call and get_desk_record with grade=true write the desk journal; grading never places or touches an order, it only grades what already happened)."""
 
 
 # Tools definition
@@ -1086,9 +1117,13 @@ TOOLS = [
 # Clients use these to decide what needs a human's yes. Every tool lands in
 # exactly one bucket; tests/test_mcp_shoreup.py fails on a tool with none.
 LIVE_MONEY_TOOLS = frozenset({"close_position", "set_leverage", "cancel_order",
-                              "place_bracket", "bracket_sweep", "set_target"})
+                              "place_bracket", "bracket_sweep", "set_target", "set_stop"})
 LIVE_CONFIG_TOOLS = frozenset({"config"})
 LOCAL_WRITE_TOOLS = frozenset({"desk_refresh", "desk_submit_call", "desk_grade"})
+# Writes trading credentials to the user's env file (wallet_connect, public
+# installs only): destructive, so the client asks first, but no order and no
+# transfer, so never LIVE MONEY.
+ACCOUNT_SETUP_TOOLS = frozenset({wallet_connect_contract.TOOL_NAME})
 
 
 def _annotate_tools(tools: List[Dict[str, Any]]) -> None:
@@ -1103,6 +1138,8 @@ def _annotate_tools(tools: List[Dict[str, Any]]) -> None:
                 tool["description"] = "LIVE MONEY: acts on the real account. " + tool["description"]
         elif name in LIVE_CONFIG_TOOLS:
             ann = {"destructiveHint": True, "idempotentHint": True}
+        elif name in ACCOUNT_SETUP_TOOLS:
+            ann = {"destructiveHint": True}
         elif name in LOCAL_WRITE_TOOLS:
             ann = {"destructiveHint": False}
         else:
@@ -1424,6 +1461,7 @@ def _tool_handlers() -> Dict[str, Any]:
         "place_bracket": handle_place_bracket,
         "bracket_sweep": handle_bracket_sweep,
         "set_target": handle_set_target,
+        "set_stop": handle_set_stop,
     }
 
     for _name in _STUB_TOOL_NAMES:
@@ -1436,6 +1474,12 @@ def _tool_handlers() -> Dict[str, Any]:
     for _pool_tool_name in pool_contract.MCP_HANDLERS:
         tool_handlers[_pool_tool_name] = pool_contract.mcp_handler(_pool_tool_name)
 
+    # Wallet connect: wired on every install like the pool tools, listed on a
+    # public one only. mcp_handler() refuses on the operator's checkout
+    # (operator_install) before importing services.accounts.connect_wallet,
+    # so the maintainer's .env.local can never be written through it.
+    tool_handlers[wallet_connect_contract.TOOL_NAME] = wallet_connect_contract.mcp_handler()
+
     # Hidden aliases: old tool names from before the 2026-10-17 consolidation,
     # dispatched to the handler that now covers them but no longer listed in
     # TOOLS (tools/list). Every existing client that calls one of these by
@@ -1444,11 +1488,50 @@ def _tool_handlers() -> Dict[str, Any]:
     for _alias, _canonical in ALIASES.items():
         tool_handlers[_alias] = tool_handlers[_canonical]
 
+    # The public toolset (contracts/mcp_public): new names onto the handlers
+    # above. Wired on every install, listed only by a public server_tools().
+    # A rename IS its old tool (_canonical maps it back, so gate, fee notes
+    # and decoration are the old tool's); a composite calls old tools through
+    # _call_tool, each inner call gated and decorated on its own.
+    for _new, _old in public_toolset.RENAMES.items():
+        if _new == _old:
+            continue
+        if _new == "update_config":
+            tool_handlers[_new] = _update_config_handler(tool_handlers[_old])
+        else:
+            tool_handlers[_new] = tool_handlers[_old]
+    for _internal, _old in public_toolset.INTERNAL_ALIASES.items():
+        tool_handlers[_internal] = tool_handlers[_old]
+    for _composite in public_toolset.COMPOSITE_INNER:
+        if _composite in tool_handlers and not (runtime.is_public() or operator_v2()):
+            continue   # an operator tool of the same name (get_candles) stays the operator's
+        tool_handlers[_composite] = _composite_handler(_composite)
+
     _TOOL_HANDLERS = tool_handlers
     return tool_handlers
 
 
 _TOOL_HANDLERS: "Dict[str, Any] | None" = None
+
+
+def _inner_call(name: str, args: Dict[str, Any]) -> "tuple[str, bool]":
+    """One old tool, through the full MCP path (gate, handler, decoration,
+    output guard), for a composite public tool."""
+    result = _call_tool(name, args)
+    return result["content"][0]["text"], bool(result.get("isError"))
+
+
+def _composite_handler(name: str):
+    def handler(params: Dict[str, Any]) -> str:
+        return public_toolset.run(name, params, _inner_call)
+    return handler
+
+
+def _update_config_handler(config_handler):
+    def handler(params: Dict[str, Any]) -> str:
+        refused = public_toolset.validate_update_config(params)
+        return refused if refused is not None else config_handler(params)
+    return handler
 
 # old tool name -> canonical tool name. See the comment in _tool_handlers().
 ALIASES: Dict[str, str] = {
@@ -1514,6 +1597,7 @@ TOOL_CLASSES: Dict[str, frozenset] = {
     "market_read": MARKET_READ_TOOLS, "account_read": ACCOUNT_READ_TOOLS,
     "local_read": LOCAL_READ_TOOLS, "live_money": LIVE_MONEY_TOOLS,
     "live_config": LIVE_CONFIG_TOOLS, "local_write": LOCAL_WRITE_TOOLS,
+    "account_setup": ACCOUNT_SETUP_TOOLS,
 }
 
 # ── research pool: four tools, public installs only ─────────────────────────
@@ -1538,6 +1622,25 @@ TOOL_CLASSES["local_write"] = LOCAL_WRITE_TOOLS
 _annotate_tools(POOL_TOOLS)   # pool_join/pool_leave land in LOCAL_WRITE_TOOLS above, not
                               # LIVE_MONEY_TOOLS: destructiveHint false, never in LIVE_MONEY_TOOLS.
 
+# ── wallet connect: one tool, public installs only ──────────────────────────
+# Listed in server_tools() before the pool tools, only when runtime.is_public().
+# Never in TOOLS, so the operator's tools/list stays byte-identical at 60.
+if wallet_connect_contract.MCP_TOOL_CLASS != "account_setup":
+    raise RuntimeError("wallet_connect: unknown MCP_TOOL_CLASS "
+                       f"{wallet_connect_contract.MCP_TOOL_CLASS!r}")
+WALLET_CONNECT_TOOLS: List[Dict[str, Any]] = [copy.deepcopy(wallet_connect_contract.MCP_TOOL)]
+_annotate_tools(WALLET_CONNECT_TOOLS)   # ACCOUNT_SETUP_TOOLS: destructiveHint true
+# set_stop: the public toolset's stop mover (tighter only). Wired on every
+# install, listed on a public one only, so the operator's TOOLS stays at 60.
+SET_STOP_TOOLS: List[Dict[str, Any]] = [{
+    "name": "set_stop",
+    "description": next(t[2] for t in public_toolset.TOOLS if t[0] == "set_stop"),
+    "inputSchema": copy.deepcopy(next(t[3] for t in public_toolset.TOOLS if t[0] == "set_stop")),
+}]
+_annotate_tools(SET_STOP_TOOLS)   # LIVE_MONEY_TOOLS: destructiveHint true
+# Every tool a public install lists or answers that the operator's TOOLS does not.
+PUBLIC_ONLY_TOOLS: List[Dict[str, Any]] = WALLET_CONNECT_TOOLS + POOL_TOOLS + SET_STOP_TOOLS
+
 # An account read that is a what-if when any of these arguments is given: it
 # needs no account then.
 _ACCOUNT_READ_WHAT_IF: Dict[str, Tuple[str, ...]] = {
@@ -1557,10 +1660,11 @@ def _check_tool_classes() -> List[str]:
     and bracket_sweep while a position is open. The gate tests still fail on
     any problem (tests/test_mcp_public_mode.py).
 
-    Checks TOOLS + POOL_TOOLS together: the pool tools are never in TOOLS
-    itself (the operator's tools/list stays byte-identical), but they must
-    still land in exactly one class, same as every other tool."""
-    names = [t["name"] for t in TOOLS] + [t["name"] for t in POOL_TOOLS]
+    Checks TOOLS + PUBLIC_ONLY_TOOLS together: the pool tools and
+    wallet_connect are never in TOOLS itself (the operator's tools/list stays
+    byte-identical), but they must still land in exactly one class, same as
+    every other tool."""
+    names = [t["name"] for t in TOOLS] + [t["name"] for t in PUBLIC_ONLY_TOOLS]
     problems = []
     for name in names:
         homes = [k for k, s in TOOL_CLASSES.items() if name in s]
@@ -1569,7 +1673,7 @@ def _check_tool_classes() -> List[str]:
     listed = set(names)
     for k, s in TOOL_CLASSES.items():
         for name in sorted(s - listed):
-            problems.append(f"{name}: in {k} but not in TOOLS or POOL_TOOLS")
+            problems.append(f"{name}: in {k} but not in TOOLS or PUBLIC_ONLY_TOOLS")
     for alias, target in ALIASES.items():
         if target not in listed:
             problems.append(f"alias {alias} -> {target}: not a TOOLS name")
@@ -1588,7 +1692,10 @@ _check_tool_classes()
 
 
 def _canonical(name: str) -> str:
-    return ALIASES.get(name, name)
+    """The tool a name stands for: an old alias, or a public rename, maps to
+    the tool whose gate, classes and decoration apply."""
+    return (ALIASES.get(name) or public_toolset.INTERNAL_ALIASES.get(name)
+            or public_toolset.RENAMES.get(name, name))
 
 
 NO_ACCOUNT_MSG = ("no account configured: set HYPERLIQUID_WALLET_ADDRESS in ~/.pathiel/.env.local "
@@ -1615,22 +1722,73 @@ _PUBLIC_FORBIDDEN_TOOL_WORDS = ("dashboard", "account tab", "desk page", "localh
 _PUBLIC_TOOLS: "List[Dict[str, Any]] | None" = None
 
 
+def _old_schema(name: str) -> Dict[str, Any]:
+    tool = next(t for t in TOOLS + PUBLIC_ONLY_TOOLS if t["name"] == name)
+    return copy.deepcopy(tool["inputSchema"])
+
+
+_OPERATOR_V2_TOOLS: "List[Dict[str, Any]] | None" = None
+
+
 def server_tools() -> List[Dict[str, Any]]:
-    """tools/list. TOOLS itself on the operator's install (60, byte-identical).
-    On a public one, a deep copy with _PUBLIC_DESCRIPTION_OVERRIDES applied
-    (same names, order, inputSchema and annotations as TOOLS) plus the four
-    research-pool tools appended with the contract's own descriptions: 64."""
-    global _PUBLIC_TOOLS
+    """tools/list. TOOLS itself on the operator's install (60, byte-identical);
+    with PATHIEL_TOOLSET=v2, the scoped toolset less the public-only tools
+    (26). On a public one, the public toolset (contracts/mcp_public): 30
+    tools, verb_noun names, one per job. Every old name stays callable; it is
+    only no longer listed."""
+    global _PUBLIC_TOOLS, _OPERATOR_V2_TOOLS
     if not runtime.is_public():
-        return TOOLS
+        if not operator_v2():
+            return TOOLS
+        if _OPERATOR_V2_TOOLS is None:
+            _OPERATOR_V2_TOOLS = public_toolset.build_tools(_old_schema, public_toolset.operator_names())
+        return _OPERATOR_V2_TOOLS
     if _PUBLIC_TOOLS is None:
-        tools = copy.deepcopy(TOOLS)
-        for tool in tools:
-            override = _PUBLIC_DESCRIPTION_OVERRIDES.get(tool["name"])
-            if override is not None:
-                tool["description"] = override
-        _PUBLIC_TOOLS = tools + copy.deepcopy(POOL_TOOLS)
+        _PUBLIC_TOOLS = public_toolset.build_tools(_old_schema)
     return _PUBLIC_TOOLS
+
+
+def _check_public_toolset() -> List[str]:
+    """Every public name reaches a handler of the right class: a rename's old
+    tool exists and sits in the class its kind says; a composite only calls
+    tools that exist; set_stop is live money. Raises on a public install."""
+    known = {t["name"] for t in TOOLS + PUBLIC_ONLY_TOOLS} | set(public_toolset.INTERNAL_ALIASES)
+    cls = {n: k for k, s in TOOL_CLASSES.items() for n in s}
+    problems = [f"internal alias {internal} -> {old}: not a classed tool"
+                for internal, old in public_toolset.INTERNAL_ALIASES.items() if old not in cls]
+    for name in public_toolset.NAMES:
+        kind = public_toolset.KIND[name]
+        if not public_toolset.NAME_RE.match(name):
+            problems.append(f"{name}: not verb_noun")
+        if name in public_toolset.RENAMES:
+            old = public_toolset.RENAMES[name]
+            if old not in known:
+                problems.append(f"{name}: renames unknown tool {old}")
+            elif cls.get(old) != kind:
+                problems.append(f"{name}: kind {kind} but {old} is {cls.get(old)}")
+        elif name in public_toolset.COMPOSITE_INNER:
+            if kind == "live_money" or kind == "live_config":
+                problems.append(f"{name}: a composite may not write live")
+            for old in public_toolset.COMPOSITE_INNER[name]:
+                if old not in known:
+                    problems.append(f"{name}: calls unknown tool {old}")
+        elif name in public_toolset.OWN_HANDLER:
+            if cls.get(name) != kind:
+                problems.append(f"{name}: kind {kind} but class {cls.get(name)}")
+        else:
+            problems.append(f"{name}: no rename, composite or handler")
+    if len(set(public_toolset.NAMES)) != len(public_toolset.NAMES):
+        problems.append("duplicate public tool names")
+    if problems:
+        message = "pathiel-mcp-server public toolset is wrong: " + "; ".join(problems)
+        if runtime.is_public():
+            raise RuntimeError(message)
+        print(f"[pathiel-mcp] WARNING (public installs would refuse to start): {message}",
+              file=sys.stderr)
+    return problems
+
+
+_check_public_toolset()
 
 
 def _as_flag(v: Any) -> bool:
@@ -1663,8 +1821,8 @@ def _warm_builder() -> None:
 def _network_note(coin: str, status: str) -> str:
     net = runtime.network()
     hint = ("Testnet lists fewer live markets than mainnet: pick a listed coin "
-            "(market_list_instruments), or switch networks in ~/.pathiel/.env.local."
-            if net == "testnet" else "Pick a listed coin (market_list_instruments).")
+            "(list_markets), or switch networks in ~/.pathiel/.env.local."
+            if net == "testnet" else "Pick a listed coin (list_markets).")
     return f"{coin} is not tradable on {net} ({status}). {hint}"
 
 
@@ -1682,7 +1840,7 @@ def _profile_leverage_cap() -> "float | None":
 
 def _user_given(canon: str, args: Dict[str, Any]) -> bool:
     """True when the call names its own address and the tool honors it."""
-    tool = next((t for t in TOOLS + POOL_TOOLS if t["name"] == canon), None)
+    tool = next((t for t in TOOLS + PUBLIC_ONLY_TOOLS if t["name"] == canon), None)
     props = ((tool or {}).get("inputSchema") or {}).get("properties") or {}
     for key in ("user", "address"):
         if key in props and str(args.get(key) or "").strip():
@@ -1720,9 +1878,9 @@ def _public_gate(name: str, args: Dict[str, Any]) -> Optional[str]:
             return json.dumps({
                 "ok": False, "network": runtime.network(), "leverage": wanted, "max_leverage": cap,
                 "error": (f"leverage {wanted:g}x is above the risk profile cap of {cap:g}x "
-                          "(risk_profile.max_leverage). Raise the cap first with the config tool "
+                          "(risk_profile.max_leverage). Raise the cap first with update_config "
                           "or ~/.pathiel/.agent-config.json if you mean it.")})
-    if canon in ("place_bracket", "set_target", "set_leverage"):
+    if canon in ("place_bracket", "set_target", "set_stop", "set_leverage"):
         coin = _norm_coin(str(args.get("coin") or ""))
         if coin:
             from pathiel.client.exchange import coin_listing
@@ -1747,7 +1905,7 @@ def _public_gate(name: str, args: Dict[str, Any]) -> Optional[str]:
             return json.dumps({
                 "error": ("desk_refresh needs the Claude Code CLI (claude) on PATH to write a "
                           "thesis and it was not found. Install Claude Code or set "
-                          "CLAUDE_CLI_COMMAND. desk_brief still shows the last thesis."),
+                          "CLAUDE_CLI_COMMAND. get_desk_brief still shows the last thesis."),
                 "desk": str(args.get("desk") or "").strip()})
     return None
 
@@ -1789,6 +1947,10 @@ def _order_notional(canon: str, obj: Dict[str, Any]) -> "float | None":
         if canon == "set_target":
             if obj.get("size") is not None and obj.get("tp_px") is not None:
                 return float(obj["size"]) * float(obj["tp_px"])
+            return None
+        if canon == "set_stop":
+            if obj.get("size") is not None and obj.get("stop_px") is not None:
+                return float(obj["size"]) * float(obj["stop_px"])
             return None
         if canon == "bracket_sweep":
             merged = (obj.get("consolidated") or {}).get("merged") or []
@@ -2823,6 +2985,14 @@ def _limited_info() -> _LimitedInfo:
     return _LimitedInfo()
 
 
+def _by_time(rows: Any) -> List[Any]:
+    """History rows oldest first, whatever order the venue sent, so every
+    `rows[-limit:]` keeps the NEWEST rows. Rows without a time keep their place."""
+    if not isinstance(rows, list):
+        return []
+    return sorted(rows, key=lambda r: (r.get("time") or 0) if isinstance(r, dict) else 0)
+
+
 def _limit(params: Dict[str, Any], default: int, cap: int = 2000) -> int:
     """A positive row limit from params["limit"], clamped to `cap`."""
     try:
@@ -2848,7 +3018,7 @@ def _ledger(kinds: tuple, params: Dict[str, Any]) -> str:
     """
     try:
         start = int(params.get("startTime") or 0)
-        rows = _info("userNonFundingLedgerUpdates", user=_user(params), startTime=start) or []
+        rows = _by_time(_info("userNonFundingLedgerUpdates", user=_user(params), startTime=start) or [])
         hits = [r for r in rows
                 if str(((r or {}).get("delta") or {}).get("type", "")) in kinds]
         return json.dumps({"kinds": list(kinds), "count": len(hits),
@@ -2952,7 +3122,7 @@ def handle_get_historical_funding(params: Dict[str, Any]) -> str:
         kw: Dict[str, Any] = {"user": _user(params), "startTime": start}
         if end is not None:
             kw["endTime"] = int(end)
-        rows = _info("userFunding", **kw) or []
+        rows = _by_time(_info("userFunding", **kw) or [])
         coin = _norm_coin(params.get("coin", "")) if params.get("coin") else ""
         if coin:
             rows = [r for r in rows
@@ -2972,7 +3142,10 @@ def handle_get_trade_history(params: Dict[str, Any]) -> str:
     """
     coin = _norm_coin(params.get("coin", "")) if params.get("coin") else ""
     try:
-        rows = _info("userFills", user=_user(params)) or []
+        # The venue sends userFills NEWEST first (2000 max). Sort oldest
+        # first so [-limit:] keeps the newest: before 2026-11-13 it kept the
+        # oldest, and a wallet's "last 3 fills" came back from June.
+        rows = _by_time(_info("userFills", user=_user(params)) or [])
         if coin:
             rows = [r for r in rows if r.get("coin") == coin]
         return json.dumps({"coin": coin or "all", "count": len(rows),
@@ -4374,6 +4547,24 @@ def handle_set_target(params: Dict[str, Any]) -> str:
         return json.dumps(bracket.set_target(coin, tp), default=str)
     except Exception as e:
         return json.dumps({"ok": False, "coin": coin, "error": str(e)})
+
+
+def handle_set_stop(params: Dict[str, Any]) -> str:
+    from pathiel.agents import bracket
+    coin = _norm_coin(str(params.get("coin") or ""))
+    try:
+        stop = float(params["stop_px"])
+    except (KeyError, TypeError, ValueError):
+        return json.dumps({"ok": False, "coin": coin, "error": "stop_px is required"})
+    if not coin:
+        return json.dumps({"ok": False, "error": "coin is required"})
+    try:
+        out = bracket.set_stop(coin, stop)
+    except Exception as e:
+        return json.dumps({"ok": False, "coin": coin, "error": str(e)})
+    if not out.get("ok") and out.get("reason") and not out.get("error"):
+        out["error"] = out["reason"]   # a refusal reads as an error (isError true)
+    return json.dumps(out, default=str)
 
 
 def handle_bracket_sweep(params: Dict[str, Any]) -> str:

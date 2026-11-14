@@ -50,11 +50,11 @@ def keyed(monkeypatch, tmp_path, builder_jobs):
 # ── classification ────────────────────────────────────────────────────────────
 
 def test_every_tool_is_classified_exactly_once():
-    """TOOLS (the operator's 60, never listed with the four pool tools) plus
-    POOL_TOOLS (listed on a public install only, 4 more): every one of the 64
-    lands in exactly one class."""
-    names = [t["name"] for t in M.TOOLS] + [t["name"] for t in M.POOL_TOOLS]
-    assert len(names) == 64
+    """TOOLS (the operator's 60) plus PUBLIC_ONLY_TOOLS (wallet_connect, the
+    four pool tools and set_stop, 6 more): every one of the 66 handlers a
+    public name can reach lands in exactly one class."""
+    names = [t["name"] for t in M.TOOLS] + [t["name"] for t in M.PUBLIC_ONLY_TOOLS]
+    assert len(names) == 66
     for name in names:
         homes = [k for k, s in M.TOOL_CLASSES.items() if name in s]
         assert len(homes) == 1, (name, homes)
@@ -103,19 +103,28 @@ def test_the_shipped_classes_have_no_problems():
 
 # ── tools/list and instructions ───────────────────────────────────────────────
 
-def test_public_tools_list_same_names_and_schemas(no_key):
-    """The 60 operator-style tools, unchanged, plus the 4 research-pool tools
-    appended with the contract's own descriptions: 64 (tests/test_pool_mcp.py
-    covers the pool tools' own descriptions/classes/annotations in detail)."""
+def test_public_tools_list_is_the_public_toolset(no_key):
+    """A public install lists the scoped toolset of contracts/mcp_public (30
+    verb_noun tools), not the operator's 60. A renamed tool takes exactly its
+    old tool's arguments (descriptions added where the old schema had none);
+    every tool's annotations follow its kind. tests/test_mcp_public_toolset.py
+    covers dispatch; tests/test_pool_mcp.py the pool tools' own wording."""
+    import contracts.mcp_public as P
     listed = no_key.rpc("tools/list")["result"]["tools"]
-    operator_style = M.TOOLS + M.POOL_TOOLS
     assert listed is not M.TOOLS
-    assert len(listed) == 64
-    assert [t["name"] for t in listed] == [t["name"] for t in operator_style]
-    for pub, op in zip(listed, operator_style):
-        assert pub["inputSchema"] == op["inputSchema"]
-        assert pub["annotations"] == op["annotations"]
-        assert set(pub) == set(op)
+    assert [t["name"] for t in listed] == P.NAMES and len(listed) == 30
+    by_name = {t["name"]: t for t in M.TOOLS + M.PUBLIC_ONLY_TOOLS}
+    for pub in listed:
+        assert set(pub) == {"name", "description", "inputSchema", "annotations"}
+        assert pub["annotations"] == P.annotations(P.KIND[pub["name"]])
+        old = P.RENAMES.get(pub["name"])
+        if old is not None and P.TOOLS[P.NAMES.index(pub["name"])][3] is None:
+            want = by_name[old]["inputSchema"]
+            assert set(pub["inputSchema"]["properties"]) == set(want["properties"])
+            assert pub["inputSchema"].get("required") == want.get("required")
+            for k, v in want["properties"].items():
+                assert {kk: vv for kk, vv in pub["inputSchema"]["properties"][k].items()
+                        if kk != "description"} == {kk: vv for kk, vv in v.items() if kk != "description"}
     assert E.tools_hash(M.TOOLS) == E.BASE_TOOLS_SHA256   # the copy left TOOLS alone
 
 
@@ -129,9 +138,11 @@ def test_public_tools_list_has_no_dashboard_or_pause_wording(no_key):
     for tool in M.TOOLS:
         if any(w in tool["description"].lower() for w in E.FORBIDDEN_TOOL_WORDS):
             assert tool["name"] in M._PUBLIC_DESCRIPTION_OVERRIDES
-    # the baseline includes the four research-pool tools appended on every
-    # public install (M.POOL_TOOLS); the +200 slop is for the overrides alone
-    assert len(json.dumps(listed)) <= len(json.dumps(M.TOOLS + M.POOL_TOOLS)) + 200
+    # Every session pays for tools/list. The 30 scoped tools carry fuller
+    # descriptions (when to use, siblings, failures, returns: what directory
+    # graders and the model need) and cost ~37K chars against 31K for the 66
+    # they replace. This budget keeps that growth on purpose, not by drift.
+    assert len(json.dumps(listed)) <= 40_000
 
 
 SHIPPED_BUILDER = "0x2c2e4efF574B3Fd9879AdeF9c5CAC6fD7C916985"
@@ -356,7 +367,7 @@ def test_desk_refresh_without_claude_cli_fails_fast(no_key, monkeypatch):
     assert err is True
     assert body == {"error": ("desk_refresh needs the Claude Code CLI (claude) on PATH to write a "
                               "thesis and it was not found. Install Claude Code or set "
-                              "CLAUDE_CLI_COMMAND. desk_brief still shows the last thesis."),
+                              "CLAUDE_CLI_COMMAND. get_desk_brief still shows the last thesis."),
                     "desk": "oil"}
     assert no_key.facade.refresh_calls == []
 
@@ -621,7 +632,7 @@ class TestStdioFreshHome:
             out[msg.get("id")] = msg
         return proc, out
 
-    def test_starts_and_lists_64_tools(self, public_env):
+    def test_starts_and_lists_30_tools(self, public_env):
         proc, out = self._session(public_env, {"method": "tools/list"})
         assert proc.returncode == 0, proc.stderr[-2000:]
         init = out[1]["result"]
@@ -629,7 +640,7 @@ class TestStdioFreshHome:
         assert "Network: mainnet. REAL MONEY" in init["instructions"]   # the default, 2026-11-12
         assert "Trading: read-only" in init["instructions"]
         tools = out[2]["result"]["tools"]
-        assert len(tools) == 64
+        assert len(tools) == 30
         assert not any("dashboard" in t["description"].lower() for t in tools)
         assert "maintainer mode" not in proc.stderr
         notices = [ln for ln in proc.stderr.splitlines() if ln.startswith("pathiel: public install")]

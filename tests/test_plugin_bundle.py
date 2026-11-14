@@ -189,20 +189,20 @@ def test_no_bundled_text_file_downloads_and_runs_code(built, paths):
 
 def test_no_bundled_shell_file_uses_eval(built, paths):
     shell = shell_files(built, paths)
-    assert "scripts/_plugin_env.sh" in shell and "scripts/pathiel-mcp" in shell
+    assert {"scripts/_plugin_env.sh", "scripts/pathiel-mcp.sh", "scripts/pathiel-mcp"} <= set(shell)
     assert shell_eval_hits(built, paths) == []
 
 
 def test_the_bundle_declares_its_mcp_server_in_one_place_with_a_named_interpreter(built):
     plugin = json.loads((built / ".claude-plugin" / "plugin.json").read_text())
     assert plugin["mcpServers"] == {"pathiel": {
-        "command": "bash", "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/pathiel-mcp"]}}
+        "command": "bash", "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/pathiel-mcp.sh"]}}
     assert not (built / ".mcp.json").exists()
     assert sorted(p.name for p in (built / ".claude-plugin").iterdir()) == ["icon.png", "plugin.json"]
 
 
 def test_build_keeps_exec_bits(built):
-    for p in ("scripts/pathiel-mcp", "scripts/pathiel-py"):
+    for p in ("scripts/pathiel-mcp", "scripts/pathiel-mcp.sh", "scripts/pathiel-py"):
         assert (built / p).stat().st_mode & 0o100, p
 
 
@@ -278,7 +278,7 @@ def _tools(server: Path, public_env) -> list:
 def test_the_server_lists_the_same_tools_from_the_bundle_alone(built, public_env):
     from_bundle = _tools(built / "scripts" / "pathiel-mcp-server.py", public_env)
     from_checkout = _tools(ROOT / "scripts" / "pathiel-mcp-server.py", public_env)
-    assert from_bundle == from_checkout and len(from_bundle) >= 60
+    assert from_bundle == from_checkout and len(from_bundle) == 30   # the public toolset
 
 
 def test_every_bundled_module_imports_from_the_bundle_alone(built, paths, public_env):
@@ -365,6 +365,16 @@ def test_publish_is_idempotent_fast_forward_and_check_catches_drift(tmp_path, re
     _git(clone, "checkout", "-q", "--detach", head)
     (clone / "scripts").mkdir(exist_ok=True)
     shutil.copy(SCRIPT, clone / "scripts" / "build_plugin_bundle.py")  # this version, uncommitted
+    # A file this builder requires that HEAD does not have yet (the commit
+    # that adds it is the one under test): bring it in from the working tree.
+    missing = [p for p in B.LISTING_FILES + B.RUNTIME_FILES + B.ENTRY_SCRIPTS
+               if not (clone / p).exists()]
+    for p in missing:
+        (clone / p).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(ROOT / p, clone / p)
+    if missing:
+        _git(clone, "add", *missing)
+        _git(clone, "commit", "-q", "-m", "files the builder requires")
     run = [sys.executable, str(clone / "scripts" / "build_plugin_bundle.py")]
 
     def bundle(*args):
@@ -500,3 +510,22 @@ def test_publish_signs_the_bundle_commit_when_git_is_set_to_sign():
     (GitHub: Unverified) until publish passed -S itself (2026-11-13)."""
     src = SCRIPT.read_text(encoding="utf-8")
     assert '"commit.gpgsign"' in src and 'args.insert(1, "-S")' in src
+
+
+def test_the_changelog_and_the_icon_name_stay_out_of_shipped_text(built, paths):
+    """2026-11-13 directory review of the plugin branch: CHANGELOG.md named
+    .claude-plugin/icon.png (UNREAD_ASSET_REFERENCED) and carried a line read
+    as download-and-run. It no longer ships, and no shipped text names the
+    icon file."""
+    assert "CHANGELOG.md" not in paths
+    hits = [p for p in paths if p.endswith((".md", ".py", ".sh", ".json"))
+            and "icon.png" in (built / p).read_text(encoding="utf-8", errors="replace")
+            and p != ".claude-plugin/plugin.json"]
+    assert hits == []
+
+
+def test_the_launcher_file_name_matches_its_interpreter(built):
+    """INTERPRETER_DOES_NOT_FIT_FILE: bash starts a .sh file."""
+    import json as _json
+    server = _json.loads((built / ".claude-plugin" / "plugin.json").read_text())["mcpServers"]["pathiel"]
+    assert server["command"] == "bash" and server["args"][0].endswith(".sh")

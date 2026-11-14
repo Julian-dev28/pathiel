@@ -44,10 +44,15 @@ class _Page(html.parser.HTMLParser):
     def __init__(self) -> None:
         super().__init__()
         self.meta, self.links, self.scripts, self.hrefs = {}, {}, [], []
+        self.ids, self.srcs = set(), []
         self.title, self.h1, self._in, self._buf = "", "", None, []
 
     def handle_starttag(self, tag, attrs):
         a = dict(attrs)
+        if a.get("id"):
+            self.ids.add(a["id"])
+        if a.get("src") and tag != "script":
+            self.srcs.append(a["src"])
         if tag == "meta":
             key = a.get("name") or a.get("property") or a.get("http-equiv")
             if key:
@@ -165,8 +170,30 @@ def test_the_page_loads_nothing_from_elsewhere():
     assert "default-src 'none'" in p.meta.get("content-security-policy", "")
     assert not re.search(r'<link[^>]+rel="stylesheet"', page_text())
     for href in p.hrefs:
-        if not href.startswith("https://"):
+        if href.startswith("#"):
+            assert href[1:] in p.ids, f"{href} points at no id on the page"
+        elif not href.startswith("https://"):
             assert href in ("scoreboard/",), href
+    # images come from the site itself (img-src 'self'): the published icon only
+    assert set(p.srcs) <= {"icon.png"}, p.srcs
+    assert "icon.png" in S.FIXED
+
+
+def test_the_page_needs_no_script_to_move():
+    """The CSP allows no script, so every animation is CSS, and every one of
+    them stops for a visitor who asks for reduced motion."""
+    text = page_text()
+    style = text.split("<style>", 1)[1].split("</style>", 1)[0]
+    assert "@keyframes" in style
+    assert "prefers-reduced-motion: reduce" in style
+    reduced = style.split("prefers-reduced-motion: reduce", 1)[1]
+    assert "animation: none" in reduced and "transition: none" in reduced
+    # scroll-driven reveals only where the browser supports them; elsewhere
+    # .reveal has no rule at all, so the content is simply visible
+    assert re.search(r"@supports \(animation-timeline: view\(\)\)\s*\{\s*\.reveal", style)
+    assert not re.search(r"(^|\})\s*\.reveal\s*\{", style.split("@supports", 1)[0])
+    # no web fonts: nothing to fetch, nothing for a font host to log
+    assert "@font-face" not in style and "url(" not in style
 
 
 def test_copy_follows_the_style_rules(copy_lint):
@@ -273,3 +300,20 @@ def test_publish_check_and_drift_on_a_clone(tmp_path, real_repo_unchanged):
     readme.write_text(readme.read_text() + "\nchanged\n", encoding="utf-8")
     _git(clone, "commit", "-q", "-am", "an unpublished file")
     assert site("publish").stdout.strip() == second
+
+
+def test_the_bracket_chart_is_the_generators_output():
+    """The chart is drawn by scripts/site_chart.py (seeded), not by hand: the
+    page carries its exact output, and it draws the bracket (target and stop
+    zones, entry, stop and target lines) with no candle after the entry."""
+    gen = _load("_site_chart", ROOT / "scripts" / "site_chart.py")
+    body = gen.chart()
+    assert body in page_text()
+    assert gen.chart() == body, "seeded: same output every run"
+    for part in ('class="zone-tp"', 'class="zone-sl"', 'class="lvl tp"', 'class="lvl en"',
+                 'class="lvl sl"', ">TP<", ">ENTRY<", ">SL<"):
+        assert part in body, part
+    candle_x = [float(x) for x in re.findall(r'<g class="c (?:up|dn)"[^>]*><line x1="([\d.]+)"', body)]
+    zone_x = float(re.search(r'class="zone-tp" x="([\d.]+)"', body).group(1))
+    assert candle_x and max(candle_x) < zone_x, "no candle inside the bracket zones"
+    assert "Not market data, not a result." in visible_text()

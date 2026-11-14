@@ -230,10 +230,18 @@ def test_build_help_exits_0(capsys):
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 
-def test_the_committed_scoreboard_validates_and_holds_only_house_rows():
+def test_the_committed_scoreboard_validates_and_matches_the_member_files():
+    """What a committed build must always hold, placeholder or real. It used
+    to require 0 trades, which only the placeholder met; the first real build
+    (2026-11-13, 18 graded house trades) failed the commit on that."""
     with open(os.path.join(REPO_ROOT, "docs", "scoreboard", "scoreboard.json")) as fh:
         doc = json.load(fh)
     assert pool.validate_scoreboard(doc) == []
-    assert doc["counts"]["members"] == 0 and doc["counts"]["house"] == 1
-    assert doc["members"] and all(r["kind"] == "house" for r in doc["members"])
-    assert doc["counts"]["closed_trades"] == 0 and doc["counts"]["graded_trades"] == 0
+    rows = doc["members"]
+    assert sum(r["kind"] == "house" for r in rows) == doc["counts"]["house"] == 1
+    assert all(r["kind"] in ("house", "member") for r in rows)
+    members_dir = os.path.join(REPO_ROOT, "pool", "members")
+    files = [f for f in os.listdir(members_dir) if f.endswith(".json")]
+    assert sum(r["kind"] == "member" for r in rows) == doc["counts"]["members"] <= len(files)
+    assert 0 <= doc["counts"]["independent_trades"] <= doc["counts"]["graded_trades"] \
+        <= doc["counts"]["closed_trades"]

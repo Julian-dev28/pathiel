@@ -104,6 +104,46 @@
     };
   }
 
+  // The class for a label chip: one per contract label (contracts/pool
+  // LABELS), and a plain chip for anything else so a new label still shows
+  // its text. The colour is a reading aid; the word is the label.
+  var LABEL_CLASSES = {
+    'EDGE': 'chip chip-edge',
+    'LEAK': 'chip chip-leak',
+    'LEANING+': 'chip chip-lean-up',
+    'LEANING-': 'chip chip-lean-down',
+    'FLUKE': 'chip chip-fluke',
+    'NOISE': 'chip chip-noise',
+  };
+
+  function labelClass(label) {
+    return Object.prototype.hasOwnProperty.call(LABEL_CLASSES, label)
+      ? LABEL_CLASSES[label] : 'chip';
+  }
+
+  function labelTd(document, label) {
+    var td = document.createElement('td');
+    var chip = textEl(document, 'span', label);
+    chip.setAttribute('class', labelClass(label));
+    td.appendChild(chip);
+    return td;
+  }
+
+  // Green for a positive mean R, red for a negative one, nothing for zero
+  // or a missing stat. Like the chip colour, a reading aid: the number stays
+  // the number, and rows are never reordered by it.
+  function signClass(x) {
+    if (!isNum(x) || x === 0) return '';
+    return x > 0 ? 'up' : 'dn';
+  }
+
+  function signTd(document, text, x) {
+    var td = textEl(document, 'td', text);
+    var cls = signClass(x);
+    if (cls) td.setAttribute('class', cls);
+    return td;
+  }
+
   // The count tiles: graded trades, independent trades, members, house,
   // left, and pool slices with 10 or more trades as "K of M".
   function countTiles(doc) {
@@ -165,9 +205,12 @@
     pool.forEach(function (row) {
       var cells = poolCells(row);
       var tr = document.createElement('tr');
-      [cells.key, cells.n, cells.nTrades, cells.members, cells.winRate,
-        cells.winRange, cells.meanR, cells.rRange, cells.p, cells.label]
+      [cells.key, cells.n, cells.nTrades, cells.members, cells.winRate, cells.winRange]
         .forEach(function (v) { tr.appendChild(textEl(document, 'td', v)); });
+      tr.appendChild(signTd(document, cells.meanR, row.mean_r));
+      [cells.rRange, cells.p]
+        .forEach(function (v) { tr.appendChild(textEl(document, 'td', v)); });
+      tr.appendChild(labelTd(document, cells.label));
       tbody.appendChild(tr);
     });
     table.appendChild(tbody);
@@ -213,9 +256,13 @@
         addrTd.appendChild(badge);
       }
       tr.appendChild(addrTd);
-      [cells.since, cells.closed, cells.n, cells.winRate, cells.winRange,
-        cells.meanR, cells.rRange, cells.p, cells.label, cells.luck]
+      [cells.since, cells.closed, cells.n, cells.winRate, cells.winRange]
         .forEach(function (v) { tr.appendChild(textEl(document, 'td', v)); });
+      tr.appendChild(signTd(document, cells.meanR, row.mean_r));
+      [cells.rRange, cells.p]
+        .forEach(function (v) { tr.appendChild(textEl(document, 'td', v)); });
+      tr.appendChild(labelTd(document, cells.label));
+      tr.appendChild(textEl(document, 'td', cells.luck));
       tbody.appendChild(tr);
     });
     table.appendChild(tbody);
@@ -272,7 +319,7 @@
   var api = {
     fmtPct: fmtPct, fmtR: fmtR, fmtRange: fmtRange, fmtP: fmtP, fmtLuck: fmtLuck,
     safeExplorer: safeExplorer, memberCells: memberCells, poolCells: poolCells,
-    countTiles: countTiles, render: render,
+    countTiles: countTiles, labelClass: labelClass, signClass: signClass, render: render,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else Object.assign(root, api);

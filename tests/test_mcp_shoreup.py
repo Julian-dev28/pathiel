@@ -231,7 +231,7 @@ class TestAnnotationsAndInstructions:
         assert all("annotations" in t for t in M.TOOLS)
 
     def test_live_money_tools_are_destructive_and_say_so(self):
-        tools = {t["name"]: t for t in M.TOOLS}
+        tools = {t["name"]: t for t in M.TOOLS + M.PUBLIC_ONLY_TOOLS}   # set_stop is public-only
         for name in M.LIVE_MONEY_TOOLS:
             assert tools[name]["annotations"].get("destructiveHint") is True
             assert not tools[name]["annotations"].get("readOnlyHint")
@@ -245,9 +245,10 @@ class TestAnnotationsAndInstructions:
             assert ro == (t["name"] not in special), t["name"]
 
     def test_the_buckets_name_real_tools(self):
-        # LOCAL_WRITE_TOOLS also carries pool_join/pool_leave, listed only on
-        # a public install (M.POOL_TOOLS), never in the operator's M.TOOLS.
-        names = {t["name"] for t in M.TOOLS} | {t["name"] for t in M.POOL_TOOLS}
+        # LOCAL_WRITE_TOOLS also carries pool_join/pool_leave and LIVE_MONEY_TOOLS
+        # set_stop, listed only on a public install (M.PUBLIC_ONLY_TOOLS),
+        # never in the operator's M.TOOLS.
+        names = {t["name"] for t in M.TOOLS} | {t["name"] for t in M.PUBLIC_ONLY_TOOLS}
         assert (M.LIVE_MONEY_TOOLS | M.LIVE_CONFIG_TOOLS | M.LOCAL_WRITE_TOOLS) <= names
 
     def test_initialize_carries_short_instructions(self):

@@ -55,7 +55,7 @@ SECRET_NAME_RE = re.compile(r"(key|secret|token|password|passphrase|private|mnem
 # The key sets at 2816df7 (0.3.0). Claude Code validates these manifests; a new
 # key is a format change, not a description edit.
 PLUGIN_KEYS = {"name", "displayName", "version", "description", "author", "homepage",
-               "repository", "license", "keywords", "mcpServers"}
+               "repository", "documentationUrl", "privacyPolicyUrl", "supportUrl", "termsOfServiceUrl", "license", "keywords", "mcpServers"}
 MARKET_KEYS = {"name", "description", "owner", "plugins"}
 MARKET_ENTRY_KEYS = {"name", "source", "description", "category", "keywords"}
 
@@ -186,7 +186,7 @@ def network_defaults() -> List[Tuple[str, bool]]:
 
 def test_versions_agree_everywhere():
     sources = version_sources()
-    assert {v for _, v in sources} == {"0.5.0"}, sources
+    assert {v for _, v in sources} == {"0.7.0"}, sources
     assert oci_package()["identifier"].endswith(":" + package_version())
 
 
@@ -246,7 +246,7 @@ def test_plugin_and_marketplace_descriptions_disclose_fee_and_network():
     for label, desc in (("plugin.json", _json(PLUGIN_JSON)["description"]),
                         ("marketplace.json", _json(MARKET_JSON)["plugins"][0]["description"])):
         low = desc.lower()
-        assert "64 MCP tools" in desc, label
+        assert "30 MCP tools" in desc, label
         assert "exact stop and target" in low, label
         assert "mainnet by default" in low and "testnet opt-in" in low, label
         assert "read-only without a key" in low, label
@@ -274,7 +274,7 @@ def test_manifest_key_set_unchanged():
     assert set(market) == MARKET_KEYS
     assert len(market["plugins"]) == 1 and set(market["plugins"][0]) == MARKET_ENTRY_KEYS
     assert plugin["mcpServers"] == {"pathiel": {"command": "bash",
-                                                "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/pathiel-mcp"]}}
+                                                "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/pathiel-mcp.sh"]}}
     assert sorted(p.name for p in (ROOT / ".claude-plugin").iterdir()) == \
         ["icon.png", "marketplace.json", "plugin.json"]
 
@@ -294,3 +294,20 @@ def test_plugin_icon_meets_the_directory_rules():
 @pytest.mark.parametrize("path", [SERVER_JSON, GLAMA_JSON, PLUGIN_JSON, MARKET_JSON])
 def test_listing_json_files_parse(path):
     assert isinstance(_json(path), dict)
+
+
+def test_listing_urls_point_at_files_that_exist_and_terms_say_what_matters(copy_lint):
+    """The directory listing shows these four links (2026-11-13). Each repo
+    link must name a file on main, and the terms must carry the disclosures."""
+    plugin = _json(PLUGIN_JSON)
+    blob = "https://github.com/Julian-dev28/pathiel/blob/main/"
+    for key in ("documentationUrl", "privacyPolicyUrl", "termsOfServiceUrl"):
+        url = plugin[key]
+        assert url.startswith(blob) and (ROOT / url[len(blob):]).is_file(), (key, url)
+    assert plugin["supportUrl"] == "https://github.com/Julian-dev28/pathiel/issues"
+    assert plugin["homepage"] == "https://julian-dev28.github.io/pathiel/"
+    terms = " ".join((ROOT / "docs" / "TERMS.md").read_text(encoding="utf-8").split())
+    for must in ("MIT license", "without warranty", "Not financial advice", "US persons",
+                 "never withdraw", "charges no fee", "opt-in"):
+        assert must in terms, must
+    assert copy_lint.style_hits(terms) == [] and copy_lint.claim_hits(terms) == []

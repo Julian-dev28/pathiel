@@ -1,4 +1,28 @@
-# Privacy: the research pool
+# Privacy
+
+## The plugin
+
+pathiel runs on your computer. It has no account system, no analytics and
+no telemetry, and the project runs no server that receives your data.
+
+- **Keys** stay in `~/.pathiel/.env.local` (mode 600) on your machine. The
+  API wallet key signs requests to Hyperliquid and is never printed, logged
+  or sent anywhere else. Your master key is never stored; wallet connect has
+  your browser wallet sign one approval on a page served from 127.0.0.1.
+- **What leaves your machine:** requests to the Hyperliquid API (market and
+  account reads, the orders you ask for, the API wallet approval you sign),
+  and reads of public data feeds for the desk briefs (EIA, FRED, CFTC,
+  Congress and Federal Register, prediction markets, news). An optional API
+  key for one of those feeds goes only to that feed.
+- **What stays local:** theses, the desk journal, caches and your config,
+  under `~/.pathiel`, until you delete them.
+- **The research pool** below is the one thing that publishes anything, and
+  only if you join.
+
+Questions or a problem: <https://github.com/Julian-dev28/pathiel/issues>,
+or privately through <https://github.com/Julian-dev28/pathiel/security/advisories/new>.
+
+# The research pool
 
 pathiel's research pool is opt-in. It is off by default: if you do not join,
 nothing about how pathiel trades for you changes, and nothing about your

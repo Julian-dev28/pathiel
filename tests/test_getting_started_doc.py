@@ -58,7 +58,7 @@ def doc_text() -> str:
 @pytest.fixture(scope="module")
 def tool_names() -> Set[str]:
     mod = _load_server()
-    return {t["name"] for t in mod.TOOLS}
+    return {t["name"] for t in mod.TOOLS + getattr(mod, "PUBLIC_ONLY_TOOLS", [])}
 
 
 class TestDocExists:

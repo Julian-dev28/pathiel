@@ -72,7 +72,7 @@ jobs:
           EOF
 
       # The Claude plugin directory tracks the `plugin` branch, not main
-      # (docs/LISTINGS.md). Refuse to ship a version whose bundle was not
+      # (scripts/build_plugin_bundle.py). Refuse to ship a version whose bundle was not
       # published there first, byte for byte: same git tree.
       - name: The plugin branch holds this version's bundle
         run: |
@@ -140,7 +140,7 @@ jobs:
           tools = replies[2]["result"]["tools"]
           refusal = json.loads(replies[3]["result"]["content"][0]["text"])
           assert info == {"name": "pathiel", "version": version}, info
-          assert len(tools) >= 60, len(tools)
+          assert len(tools) == 30, len(tools)   # the public toolset (contracts/mcp_public)
           assert refusal.get("read_only") is True and refusal.get("ok") is False, refusal
           print(f"serverInfo {info}, {len(tools)} tools, place_bracket refused read-only")
           EOF

@@ -274,3 +274,86 @@ def test_submit_refuses_off_mainnet_before_any_post(monkeypatch):
     monkeypatch.setenv("PATHIEL_NETWORK", "mainnet")         # explicitly live: as today
     assert aa.submit_approve_agent("0x" + "2" * 40, "pathiel", 7, "0x" + "ab" * 65) == {"status": "ok"}
     assert len(posted) == 1
+
+
+# ── testnet (2026-11-13, wallet connect for the plugin) ──────────────────────
+
+def _sdk_signed(network: str, wallet, agent_address: str, nonce_ms: int):
+    """The installed SDK's own signature and wire action for approveAgent on
+    `network`, made with a local key: what Exchange.approve_agent sends."""
+    action = {"type": "approveAgent", "agentAddress": agent_address,
+              "agentName": AGENT_NAME, "nonce": nonce_ms}
+    signature = sign_agent(wallet, action, is_mainnet=(network == "mainnet"))
+    return action, signature
+
+
+@pytest.mark.parametrize("network", ["mainnet", "testnet"])
+def test_typed_data_hashes_identically_to_the_sdk_on_both_networks(network):
+    agent_address = Account.create().address
+    nonce_ms = 1794600000000
+    chain = aa.hyperliquid_chain_for(network)
+    ours = aa.build_typed_data(agent_address, nonce_ms, AGENT_NAME, hyperliquid_chain=chain)
+    action = {"agentAddress": agent_address, "agentName": AGENT_NAME, "nonce": nonce_ms,
+              "signatureChainId": aa.SIGNATURE_CHAIN_ID_HEX, "hyperliquidChain": chain}
+    sdk = user_signed_payload(aa.PRIMARY_TYPE, SDK_APPROVE_AGENT_FIELDS, action)
+    a, b = encode_typed_data(full_message=ours), encode_typed_data(full_message=sdk)
+    assert (a.header, a.body) == (b.header, b.body)
+    assert ours["message"]["hyperliquidChain"] == chain
+
+
+def test_mainnet_default_is_byte_identical_to_before():
+    """Every existing caller passes no chain: the object it gets is exactly
+    the one it got before testnet support (key order included)."""
+    import json
+    td = aa.build_typed_data("0x" + "a" * 40, 7, "pathiel", signature_chain_id=42161)
+    assert json.dumps(td) == json.dumps(aa.build_typed_data(
+        "0x" + "a" * 40, 7, "pathiel", signature_chain_id=42161, hyperliquid_chain="Mainnet"))
+    assert td["message"] == {"hyperliquidChain": "Mainnet", "agentAddress": "0x" + "a" * 40,
+                             "agentName": "pathiel", "nonce": 7}
+
+
+@pytest.mark.parametrize("network", ["mainnet", "testnet"])
+def test_exchange_payload_equals_the_sdks_wire_payload(network):
+    """Sign the SDK's way with a local key, then rebuild the payload from
+    our typed data and the SDK's signature: the action is the SDK's action
+    and the {r, s, v} integers are the SDK's."""
+    wallet = Account.create()
+    agent = Account.create().address
+    nonce_ms = 1794600000123
+    sdk_action, sdk_sig = _sdk_signed(network, wallet, agent, nonce_ms)
+    chain = aa.hyperliquid_chain_for(network)
+    td = aa.build_typed_data(agent, nonce_ms, AGENT_NAME, hyperliquid_chain=chain)
+    ours = Account.sign_message(encode_typed_data(full_message=td), private_key=wallet.key).signature.hex()
+    ours = "0x" + ours.removeprefix("0x")
+    payload = aa.build_exchange_payload(agent, AGENT_NAME, nonce_ms, ours, hyperliquid_chain=chain)
+    assert payload["action"] == sdk_action
+    assert {k: int(v, 16) if isinstance(v, str) else v for k, v in payload["signature"].items()} == \
+        {k: int(v, 16) if isinstance(v, str) else v for k, v in sdk_sig.items()}
+    assert payload["nonce"] == nonce_ms and payload["vaultAddress"] is None
+    signer = recover_user_from_user_signed_action(
+        payload["action"], payload["signature"], SDK_APPROVE_AGENT_FIELDS, aa.PRIMARY_TYPE,
+        network == "mainnet")
+    assert signer.lower() == wallet.address.lower()
+
+
+def test_a_testnet_signature_does_not_recover_as_mainnet():
+    wallet = Account.create()
+    agent = Account.create().address
+    td = aa.build_typed_data(agent, 5, AGENT_NAME, hyperliquid_chain="Testnet")
+    sig = "0x" + Account.sign_message(encode_typed_data(full_message=td),
+                                      private_key=wallet.key).signature.hex().removeprefix("0x")
+    mainnet_td = aa.build_typed_data(agent, 5, AGENT_NAME)
+    assert aa.recover_signer(td, sig).lower() == wallet.address.lower()
+    assert aa.recover_signer(mainnet_td, sig).lower() != wallet.address.lower()
+
+
+def test_chain_names_are_strict():
+    assert aa.hyperliquid_chain_for("mainnet") == "Mainnet"
+    assert aa.hyperliquid_chain_for("testnet") == "Testnet"
+    for bad in ("Mainnet", "devnet", "", None):
+        with pytest.raises(ValueError):
+            aa.hyperliquid_chain_for(bad)
+    with pytest.raises(ValueError):
+        aa.build_typed_data("0x" + "a" * 40, 1, hyperliquid_chain="mainnet")
+    with pytest.raises(ValueError):
+        aa.build_exchange_payload("0x" + "a" * 40, "p", 1, "0x" + "11" * 65, hyperliquid_chain="Devnet")

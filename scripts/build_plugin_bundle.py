@@ -12,7 +12,7 @@ tracks that branch.
 What goes in, decided by rules a test pins (tests/test_plugin_bundle.py):
 
   listing    .claude-plugin/plugin.json + icon.png, README, LICENSE,
-             SECURITY, CHANGELOG, docs/BUILDER_FEE.md
+             SECURITY, docs/BUILDER_FEE.md
   content    commands/, agents/, skills/ (what Claude Code loads)
   runtime    the launcher scripts, requirements.lock, config/public/, the
              pool's repo-side JSON (REPO_DATA), and
@@ -22,7 +22,7 @@ What goes in, decided by rules a test pins (tests/test_plugin_bundle.py):
              "services.intel.api:build_packet" all count), plus the
              package data files listed in DATA_INCLUDE
 
-The listing Markdown files (README, SECURITY, CHANGELOG, BUILDER_FEE) ship transformed,
+The listing Markdown files (README, SECURITY, BUILDER_FEE) ship transformed,
 by bundle_text(): a block between `<!-- bundle:omit -->` and
 `<!-- /bundle:omit -->` becomes one line pointing at that section on GitHub
 (the README's container command and maintainer clone setup, which the
@@ -73,7 +73,6 @@ LISTING_FILES = (
     "README.md",
     "LICENSE",
     "SECURITY.md",
-    "CHANGELOG.md",
     "docs/BUILDER_FEE.md",        # the fee disclosure the README links to
 )
 
@@ -85,7 +84,8 @@ RUNTIME_FILES = (
     "requirements.lock",          # pathiel_build_venv installs from it
     "config/public/agent-config.json",
     "config/public/env.local.example",
-    "scripts/pathiel-mcp",        # plugin.json starts this with bash
+    "scripts/pathiel-mcp.sh",     # plugin.json starts this with bash
+    "scripts/pathiel-mcp",        # the same launcher under its old name (a shim)
     "scripts/pathiel-py",         # commands/ and agents/ run scripts through it
     "scripts/_plugin_env.sh",
 )
@@ -107,6 +107,7 @@ ENTRY_SCRIPTS = (
     "scripts/config_preset.py",      # pathiel_seed_config
     "scripts/public_status.py",      # /pathiel:setup
     "scripts/approve_builder_fee.py",  # /pathiel:setup
+    "scripts/connect_wallet.py",     # /pathiel:setup step 3 (wallet_connect is the MCP twin)
     "scripts/desk_slot.py",          # desk-tick
     "scripts/thesis_due.py",         # desk-tick
     "scripts/oil_levels.py",         # desk-tick
@@ -146,7 +147,10 @@ DATA_EXCLUDE = (
 
 REPO_URL = "https://github.com/Julian-dev28/pathiel"
 # Shipped transformed by bundle_text(); everything else ships byte for byte.
-TRANSFORMED = ("README.md", "SECURITY.md", "CHANGELOG.md", "docs/BUILDER_FEE.md")
+# CHANGELOG.md does not ship (2026-11-13): it names .claude-plugin/icon.png
+# and old install lines, which the directory held as UNREAD_ASSET_REFERENCED
+# and RUNTIME_FETCH_EXEC. Links to it point at GitHub.
+TRANSFORMED = ("README.md", "SECURITY.md", "docs/BUILDER_FEE.md")
 OMIT_START, OMIT_END = "<!-- bundle:omit -->", "<!-- /bundle:omit -->"
 _LINK = re.compile(r"\]\((?!https?://|mailto:|#)([^)\s#]+)(#[^)\s]*)?\)")
 # A marker counts only alone on its line, so prose that names it (this

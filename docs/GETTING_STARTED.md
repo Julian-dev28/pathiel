@@ -103,8 +103,39 @@ cp .env.local.example .env.local
 
 pathiel trades on your own Hyperliquid account. Reading markets needs no
 account at all. Before it can trade, you need an account with funds on it
-and a separate key pathiel is allowed to sign orders with. Five steps, done
-once per network: on testnet, do each step in the testnet app instead.
+and a separate key pathiel is allowed to sign orders with.
+
+**The quick way, on a plugin install: connect your wallet.** Fund the
+account first (steps 1 and 2 below), then run `/pathiel:setup` and pick
+"Connect your wallet", or ask Claude to connect your wallet. Claude calls
+`wallet_connect`, which:
+
+- makes a new API wallet (agent) key on your machine,
+- opens a one-time local page (`http://127.0.0.1:<port>/...`, ten minutes)
+  that shows the network, MAINNET in red, and the new API wallet's
+  address,
+- asks your browser wallet (MetaMask, Rabby, Coinbase Wallet or any other)
+  for one signature: Hyperliquid's `approveAgent` for that address,
+- sends the approval to Hyperliquid, checks that Hyperliquid lists the new
+  API wallet for your account, and only then writes
+  `HYPERLIQUID_PRIVATE_KEY`, `HYPERLIQUID_WALLET_ADDRESS` and
+  `HYPERLIQUID_MASTER_ADDRESS` into `~/.pathiel/.env.local` (mode 0600,
+  your other lines kept).
+
+The key can trade and never withdraw, it never leaves your machine, and
+your main key never leaves your wallet. On testnet, add
+`PATHIEL_NETWORK=testnet` to the env file and reconnect pathiel in `/mcp`
+before you connect, so the approval is signed for testnet. When it says
+done, reconnect pathiel in `/mcp` so the server loads the key. Claude can
+also run the same flow as a script, `scripts/connect_wallet.py`:
+
+```bash
+"${CLAUDE_PLUGIN_ROOT}/scripts/pathiel-py" scripts/connect_wallet.py
+```
+
+**By hand.** Five steps, done once per network: on testnet, do each step
+in the testnet app instead. A checkout (the maintainer path) always uses
+these.
 
 1. **Connect your Hyperliquid account.** Go to app.hyperliquid.xyz and
    connect a wallet; this becomes your master account, the one that holds
@@ -163,7 +194,7 @@ the agent key against Hyperliquid, where the master account's funds sit.
 ### Connect
 
 In Claude Code, run `/mcp` and confirm the `pathiel` server shows connected
-with 60 tools. If it doesn't, the error is in the MCP panel; the usual cause
+with 30 tools on a plugin install (60 in a checkout). If it doesn't, the error is in the MCP panel; the usual cause
 for a plugin install is step 1 of `/pathiel:setup` not finishing.
 
 ### First read-only checks
