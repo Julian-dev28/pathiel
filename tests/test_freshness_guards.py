@@ -142,3 +142,18 @@ def test_every_repo_link_in_the_shipped_files_exists():
             if L.REPO_PREFIX.match(u) and not L.repo_path_ok(u, tracked):
                 bad.append((str(f.relative_to(ROOT)), u))
     assert bad == []
+
+
+# ── seo_compare: the token goes to the GitHub API only ─────────────────────
+
+@pytest.mark.parametrize("url,sends", [
+    ("https://api.github.com/repos/a/b", True),
+    ("https://api.github.com/search/repositories?q=x", True),
+    ("http://api.github.com/repos/a/b", False),                 # never over plain http
+    ("https://evil.example/?u=https://api.github.com/", False),
+    ("https://api.github.com.evil.example/repos", False),
+    ("https://evil.example/api.github.com", False),
+    ("https://glama.ai/mcp/servers/a/b", False),
+])
+def test_the_github_token_goes_only_to_the_github_api(url, sends):
+    assert _load("seo_compare").sends_token(url) is sends

@@ -43,9 +43,17 @@ QUERIES = {
 }
 
 
+def sends_token(url: str) -> bool:
+    """The GitHub token goes to the GitHub API over https and nowhere else:
+    the parsed host, exactly (a substring test would also match
+    https://evil.example/?api.github.com; CodeQL py/incomplete-url-substring-sanitization)."""
+    parts = urllib.parse.urlsplit(url)
+    return parts.scheme == "https" and parts.hostname == "api.github.com"
+
+
 def _get(url: str, token: str | None, accept_json: bool = True):
     req = urllib.request.Request(url, headers={"User-Agent": "pathiel-seo-compare"})
-    if token and "api.github.com" in url:
+    if token and sends_token(url):
         req.add_header("Authorization", f"Bearer {token}")
     try:
         with urllib.request.urlopen(req, timeout=30, context=S._ssl_context()) as r:
