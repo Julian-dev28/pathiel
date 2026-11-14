@@ -300,3 +300,20 @@ def test_publish_check_and_drift_on_a_clone(tmp_path, real_repo_unchanged):
     readme.write_text(readme.read_text() + "\nchanged\n", encoding="utf-8")
     _git(clone, "commit", "-q", "-am", "an unpublished file")
     assert site("publish").stdout.strip() == second
+
+
+def test_the_bracket_chart_is_the_generators_output():
+    """The chart is drawn by scripts/site_chart.py (seeded), not by hand: the
+    page carries its exact output, and it draws the bracket (target and stop
+    zones, entry, stop and target lines) with no candle after the entry."""
+    gen = _load("_site_chart", ROOT / "scripts" / "site_chart.py")
+    body = gen.chart()
+    assert body in page_text()
+    assert gen.chart() == body, "seeded: same output every run"
+    for part in ('class="zone-tp"', 'class="zone-sl"', 'class="lvl tp"', 'class="lvl en"',
+                 'class="lvl sl"', ">TP<", ">ENTRY<", ">SL<"):
+        assert part in body, part
+    candle_x = [float(x) for x in re.findall(r'<g class="c (?:up|dn)"[^>]*><line x1="([\d.]+)"', body)]
+    zone_x = float(re.search(r'class="zone-tp" x="([\d.]+)"', body).group(1))
+    assert candle_x and max(candle_x) < zone_x, "no candle inside the bracket zones"
+    assert "Not market data, not a result." in visible_text()

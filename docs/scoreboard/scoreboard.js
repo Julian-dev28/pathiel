@@ -129,6 +129,21 @@
     return td;
   }
 
+  // Green for a positive mean R, red for a negative one, nothing for zero
+  // or a missing stat. Like the chip colour, a reading aid: the number stays
+  // the number, and rows are never reordered by it.
+  function signClass(x) {
+    if (!isNum(x) || x === 0) return '';
+    return x > 0 ? 'up' : 'dn';
+  }
+
+  function signTd(document, text, x) {
+    var td = textEl(document, 'td', text);
+    var cls = signClass(x);
+    if (cls) td.setAttribute('class', cls);
+    return td;
+  }
+
   // The count tiles: graded trades, independent trades, members, house,
   // left, and pool slices with 10 or more trades as "K of M".
   function countTiles(doc) {
@@ -190,8 +205,10 @@
     pool.forEach(function (row) {
       var cells = poolCells(row);
       var tr = document.createElement('tr');
-      [cells.key, cells.n, cells.nTrades, cells.members, cells.winRate,
-        cells.winRange, cells.meanR, cells.rRange, cells.p]
+      [cells.key, cells.n, cells.nTrades, cells.members, cells.winRate, cells.winRange]
+        .forEach(function (v) { tr.appendChild(textEl(document, 'td', v)); });
+      tr.appendChild(signTd(document, cells.meanR, row.mean_r));
+      [cells.rRange, cells.p]
         .forEach(function (v) { tr.appendChild(textEl(document, 'td', v)); });
       tr.appendChild(labelTd(document, cells.label));
       tbody.appendChild(tr);
@@ -239,8 +256,10 @@
         addrTd.appendChild(badge);
       }
       tr.appendChild(addrTd);
-      [cells.since, cells.closed, cells.n, cells.winRate, cells.winRange,
-        cells.meanR, cells.rRange, cells.p]
+      [cells.since, cells.closed, cells.n, cells.winRate, cells.winRange]
+        .forEach(function (v) { tr.appendChild(textEl(document, 'td', v)); });
+      tr.appendChild(signTd(document, cells.meanR, row.mean_r));
+      [cells.rRange, cells.p]
         .forEach(function (v) { tr.appendChild(textEl(document, 'td', v)); });
       tr.appendChild(labelTd(document, cells.label));
       tr.appendChild(textEl(document, 'td', cells.luck));
@@ -300,7 +319,7 @@
   var api = {
     fmtPct: fmtPct, fmtR: fmtR, fmtRange: fmtRange, fmtP: fmtP, fmtLuck: fmtLuck,
     safeExplorer: safeExplorer, memberCells: memberCells, poolCells: poolCells,
-    countTiles: countTiles, labelClass: labelClass, render: render,
+    countTiles: countTiles, labelClass: labelClass, signClass: signClass, render: render,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else Object.assign(root, api);

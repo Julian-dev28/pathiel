@@ -8,12 +8,15 @@ All notable changes to pathiel. The format follows
 
 ### Changed
 
-- The Pages site has a new look: black with a blue and orange corner glow,
-  glass cards, mono eyebrows, serif italic accents, a stats strip and a
-  marquee. The landing page still loads nothing from elsewhere (no script, no
-  web font); motion is CSS only and stops under reduced motion. The
-  scoreboard matches it and shows each label (EDGE, LEAK, LEANING, FLUKE,
-  NOISE) as a coloured chip; the word stays the label.
+- The Pages site looks like a trading terminal: near-black with a chart
+  grid, green and red for long and short, a ticker tape of the default risk
+  limits, panels with tab headers, a risk-engine table and a markets
+  watchlist. The hero chart draws a long bracket (entry, stop zone, target
+  zone) from `scripts/site_chart.py`, seeded; it is labelled an
+  illustration, with no candles after the entry. Still no script and no web
+  font; motion is CSS only and stops under reduced motion. The scoreboard
+  matches it: label chips (EDGE, LEAK, LEANING, FLUKE, NOISE) and mean R in
+  green or red by sign; the word and the number stay the data.
 - The plugin starts its server as `bash scripts/pathiel-mcp.sh`, a name that
   matches its interpreter as the plugin directory asks.
   `scripts/pathiel-mcp` stays as a one-line shim for other MCP clients and
