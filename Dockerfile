@@ -2,7 +2,7 @@
 # Debian 13, resolved 2026-10-25). A tag is a pointer Docker Hub can move; the
 # digest is the bytes. Bump it on purpose:
 #   docker buildx imagetools inspect python:3.11-slim | grep Digest
-FROM python:3.11-slim@sha256:b7a9e5f6a93d6d4a31f129bbd4bdee69efccb6ded0fb230d78aafaf37af98377 AS base
+FROM python:3.15-slim@sha256:65a65fc7b30b06cb6df4930fd4650697cb23f4c2698ab81fc87e4b031bc36928 AS base
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
