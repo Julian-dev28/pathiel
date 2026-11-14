@@ -28,6 +28,13 @@ position.
 - Fill history returned a wallet's oldest fills instead of its newest. It
   now keeps the newest, and a time window works for any wallet's fills.
 
+## In the Claude plugin directory
+
+The directory's build carries no server and no scripts: `/pathiel:setup`
+installs the pathiel server as a container (Docker) with one command. The
+full plugin, with the 15-minute desk loop, stays one line away:
+`/plugin marketplace add Julian-dev28/pathiel`.
+
 ## For operators
 
 `PATHIEL_TOOLSET=v2` in `.mcp.json`'s env lists the same toolset on your own

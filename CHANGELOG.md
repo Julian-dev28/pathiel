@@ -23,6 +23,14 @@ All notable changes to pathiel. The format follows
 
 ### Added
 
+- A plugin directory build: `scripts/publish_directory_plugin.py` publishes
+  the `plugin-directory` branch with Markdown, JSON and the icon only (setup
+  and share commands, README, LICENSE, a `plugin.json` without
+  `mcpServers`). Its `/pathiel:setup` installs the server as the published
+  container with one `claude mcp add` line. The directory refused v0.6.0
+  because the `plugin` branch bundles the Python server and scripts, which
+  it accepts only from Verified organizations; that branch stays as it is
+  for the repository's own marketplace.
 - The operator's install can list the scoped toolset too: `PATHIEL_TOOLSET=v2`
   in `.mcp.json`'s env lists 26 of the 30 (not wallet connect or the pool,
   which refuse there) with instructions in the new names. Operator behavior

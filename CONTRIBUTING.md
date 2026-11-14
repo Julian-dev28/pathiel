@@ -113,6 +113,11 @@ it touches, and paste the gate's last line.
    `.claude/`, docs, tests or CI) to the `plugin` branch, which is what the
    Claude plugin directory tracks; it picks up the new `plugin.json` version
    from there. `tests/test_plugin_bundle.py` pins what goes in.
+   Then the directory's build, Markdown, JSON and the icon only (the
+   directory takes no bundled server or script from an organization that is
+   not Verified): `python3 scripts/publish_directory_plugin.py publish --ref
+   main --push`, to the `plugin-directory` branch, which the directory
+   listing tracks. `tests/test_directory_plugin.py` pins it.
 3. Tag `v<version>` on that commit and publish a GitHub release from the tag
    with the release notes as the body. Plugin users then get it with
    `claude plugin update pathiel@pathiel`.
