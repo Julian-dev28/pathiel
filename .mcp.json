@@ -2,7 +2,8 @@
   "mcpServers": {
     "pathiel": {
       "command": ".venv/bin/python",
-      "args": ["scripts/pathiel-mcp-server.py"]
+      "args": ["scripts/pathiel-mcp-server.py"],
+      "env": {"PATHIEL_TOOLSET": "v2"}
     }
   }
 }

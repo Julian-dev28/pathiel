@@ -9,7 +9,7 @@ a builder= keyword reaching them is a TypeError, not a silent pass.
 from __future__ import annotations
 
 import copy
-import hashlib
+import json
 import os
 from pathlib import Path
 
@@ -95,9 +95,17 @@ def operator_with_a_warm_approval(monkeypatch, builder_jobs):
     return sdk, reads
 
 
-def test_mcp_json_is_byte_identical():
-    digest = hashlib.sha256((ROOT / ".mcp.json").read_bytes()).hexdigest()
-    assert digest == "8edb54198025f4c1a99bbbf6907e5ef0d1e19d225e7fccb6eabd1f3b282c8ffc"
+def test_mcp_json_starts_the_operator_server_on_the_v2_toolset():
+    """Was a byte hash of .mcp.json until the 2026-11-13 cut-over, which set
+    PATHIEL_TOOLSET=v2 there on purpose. What the hash protected: the file
+    starts the operator's server (never a public install, never a network
+    override), and the only environment it sets is the toolset switch."""
+    cfg = json.loads((ROOT / ".mcp.json").read_text())
+    assert list(cfg["mcpServers"]) == ["pathiel"]
+    server = cfg["mcpServers"]["pathiel"]
+    assert server["command"] == ".venv/bin/python"
+    assert server["args"] == ["scripts/pathiel-mcp-server.py"]
+    assert server.get("env") == {"PATHIEL_TOOLSET": "v2"}
 
 
 def test_operator_resolves_mainnet():
