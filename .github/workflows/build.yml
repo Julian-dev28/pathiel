@@ -1,7 +1,7 @@
 name: Build
 
-# Builds both container images on every pull request to main, and on every
-# push to main, so a change that breaks a build (a Dockerfile base-image bump,
+# Builds both container images on every pull request (any base branch), and
+# on every push to main, so a change that breaks a build (a Dockerfile base-image bump,
 # a dependency pin, a missing file in the image) is caught in the pull request
 # instead of at release time. Added 2026-11-14 after Dependabot's
 # python:3.11 -> 3.15 bump (#10) merged with no build run on it.
@@ -11,8 +11,7 @@ name: Build
 # the only workflow that publishes.
 
 on:
-  pull_request:
-    branches: [main]
+  pull_request:          # every pull request, whatever branch it targets
   push:
     branches: [main]
   workflow_dispatch:
