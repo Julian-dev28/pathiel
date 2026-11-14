@@ -194,7 +194,7 @@ the agent key against Hyperliquid, where the master account's funds sit.
 ### Connect
 
 In Claude Code, run `/mcp` and confirm the `pathiel` server shows connected
-with 65 tools on a plugin install (60 in a checkout). If it doesn't, the error is in the MCP panel; the usual cause
+with 30 tools on a plugin install (60 in a checkout). If it doesn't, the error is in the MCP panel; the usual cause
 for a plugin install is step 1 of `/pathiel:setup` not finishing.
 
 ### First read-only checks

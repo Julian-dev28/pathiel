@@ -303,7 +303,7 @@ def test_setup_says_to_reconnect_after_the_env_file_changes():
     step6 = text[text.index("6. **Connect the tools.**"):text.index("7. **Prove it.**")]
     assert "reconnect pathiel in `/mcp`" in step6 and "restart Claude Code" in step6
     assert "~/.pathiel/.env.local" in step6
-    assert step6.index("reconnect") < step6.index("65 tools")
+    assert step6.index("reconnect") < step6.index("30 tools")
     step7 = text[text.index("7. **Prove it.**"):text.index("8. **Say what is next.**")]
     assert "match the `network` and `trading` lines" in step7
     assert "reconnect pathiel in `/mcp`" in step7
@@ -427,8 +427,8 @@ def test_a_due_rewrite_is_forced_through_desk_refresh():
     for path in (ROOT / ".claude" / "agents" / "desk-tick.md", ROOT / "agents" / "desk-tick.md"):
         text = path.read_text()
         assert "scripts/thesis_due.py --desk DESK" in text, path
-        assert "`desk_refresh {desk: DESK, force: true}` only when it says `\"due\": true`" in text, path
-        assert "desk_refresh {desk: DESK}`" not in text, f"{path}: an unforced refresh would skip the daily rewrite"
+        assert "`refresh_desk {desk: DESK, force: true}` only when it says `\"due\": true`" in text, path
+        assert "refresh_desk {desk: DESK}`" not in text, f"{path}: an unforced refresh would skip the daily rewrite"
 
 
 def test_routine_ticks_stay_quiet_in_the_chat():
@@ -485,7 +485,7 @@ def test_setup_offers_connect_your_wallet_first_and_paste_as_the_fallback():
     connect = step3.index("**Connect your wallet (recommended).**")
     paste = step3.index("**Paste an API wallet (fallback),**")
     assert connect < paste
-    assert "`wallet_connect`" in step3 and '{"status": true}' in step3
+    assert "`connect_wallet`" in step3 and '{"status": true}' in step3
     assert "scripts/connect_wallet.py" in step3 and "in the background" in step3
     assert "`key_exists`" in step3 and "ask the user before" in step3 and '{"replace": true}' in step3
     assert step3.index("`PATHIEL_NETWORK=testnet`") < connect and "reconnects pathiel in `/mcp`" in step3

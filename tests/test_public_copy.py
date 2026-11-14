@@ -310,18 +310,21 @@ def test_readme_section_order_puts_disclosures_before_faq_and_maintainer_last():
 
 
 def test_readme_badges_are_static_or_point_at_a_real_workflow():
-    """Badges must resolve: shields.io static badges, or the CI workflow that
-    exists in .github/workflows."""
+    """Badges must resolve: shields.io static badges, the CI workflow that
+    exists in .github/workflows, or a directory listing's own badge for this
+    server (both checked to serve an SVG on 2026-11-13)."""
+    listing_badges = ("https://glama.ai/mcp/servers/Julian-dev28/pathiel/badges/score.svg",
+                      "https://mcpservers.org/badge.svg")
     readme = _read("README.md")
     badges = re.findall(r"\[!\[[^\]]*\]\(([^)]+)\)\]", readme)
     assert len(badges) >= 4, badges
     for url in badges:
-        if url.startswith("https://img.shields.io/badge/"):
+        if url.startswith("https://img.shields.io/badge/") or url in listing_badges:
             continue
         m = re.match(r"https://github\.com/Julian-dev28/pathiel/actions/workflows/([\w.-]+)/badge\.svg", url)
         assert m, f"badge that may not resolve: {url}"
         assert (ROOT / ".github" / "workflows" / m.group(1)).is_file(), url
-    assert "version-0.6.0" in readme
+    assert "version-0.7.0" in readme
 
 
 def test_faq_has_five_to_seven_questions():
@@ -493,11 +496,10 @@ def test_readme_no_longer_claims_mode_off_or_an_edge():
 
 def test_readme_keeps_tool_count_and_getting_started_link():
     readme = _read("README.md")
-    assert "65 tools over stdio" in readme
+    assert "30 tools over stdio" in readme
     assert "docs/GETTING_STARTED.md" in readme
-    for tool in ("place_bracket", "bracket_sweep", "close_position", "set_leverage",
-                 "cancel_order", "connected_wallets", "wallet_account", "desk_brief",
-                 "pool_status", "pool_report", "pool_join", "pool_leave", "wallet_connect"):
+    import contracts.mcp_public as public_toolset
+    for tool in public_toolset.NAMES + ["connected_wallets", "wallet_account"]:
         assert f"`{tool}`" in readme, tool
 
 

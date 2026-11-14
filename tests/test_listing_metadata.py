@@ -186,7 +186,7 @@ def network_defaults() -> List[Tuple[str, bool]]:
 
 def test_versions_agree_everywhere():
     sources = version_sources()
-    assert {v for _, v in sources} == {"0.6.0"}, sources
+    assert {v for _, v in sources} == {"0.7.0"}, sources
     assert oci_package()["identifier"].endswith(":" + package_version())
 
 
@@ -246,7 +246,7 @@ def test_plugin_and_marketplace_descriptions_disclose_fee_and_network():
     for label, desc in (("plugin.json", _json(PLUGIN_JSON)["description"]),
                         ("marketplace.json", _json(MARKET_JSON)["plugins"][0]["description"])):
         low = desc.lower()
-        assert "65 MCP tools" in desc, label
+        assert "30 MCP tools" in desc, label
         assert "exact stop and target" in low, label
         assert "mainnet by default" in low and "testnet opt-in" in low, label
         assert "read-only without a key" in low, label

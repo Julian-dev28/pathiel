@@ -6,7 +6,32 @@ All notable changes to pathiel. The format follows
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-11-13
+
 ### Changed
+
+- A plugin install lists 30 tools instead of 65 (`contracts/mcp_public`):
+  one tool per job, every name verb_noun. `get_market` answers what
+  `get_price`, `get_asset_context`, `get_predicted_funding` and
+  `get_max_leverage` did; `get_account`, `get_orders` and `get_history`
+  replace six equity views, five order lookups and seven ledgers. Every
+  description says when to use the tool, which sibling covers the next job,
+  what it refuses and what it returns. Every old name still answers when
+  called, and the operator's install keeps its 60 unchanged. Directory
+  graders scored the old list 3.6/5 (Glama TDQS); `scripts/tdqs_eval.py`
+  runs the same six-part rubric locally through Claude Code.
+
+### Added
+
+- The operator's install can list the scoped toolset too: `PATHIEL_TOOLSET=v2`
+  in `.mcp.json`'s env lists 26 of the 30 (not wallet connect or the pool,
+  which refuse there) with instructions in the new names. Operator behavior
+  is unchanged: no public gate, no public decoration. Unset, the 60 tools
+  and their instructions are byte for byte what they were. The desk-tick
+  agent, its skill and the plugin's commands use the new names.
+- `set_stop`: move an open position's stop tighter, never wider. The new
+  stop goes on before the old one is cancelled, so the position is never
+  unprotected.
 
 - The Pages site looks like a trading terminal: near-black with a chart
   grid, green and red for long and short, a ticker tape of the default risk
@@ -29,6 +54,17 @@ All notable changes to pathiel. The format follows
 
 - `docs/LISTINGS.md`, the maintainer's listing notes and form answers. They
   live outside the repository now.
+
+### Security
+
+- `set_stop` can only reduce risk: it refuses a wider stop and a stop past
+  the mark, and places the new stop before cancelling the old one. On a
+  public install it passes the same gate as every live-money tool (no key:
+  read-only answer, nothing sent; a coin not listed on the network refused).
+- Every public name reaches its handler through the same safety gate as
+  the old name (`_canonical`), and a composite tool's inner calls are gated
+  one by one; `_check_public_toolset` refuses to start a public install
+  whose toolset points at an unknown or misclassed tool.
 
 ## [0.6.0] - 2026-11-13
 
@@ -267,7 +303,8 @@ builder fee, and listing metadata for the MCP directories. Release notes:
 - First Claude Code plugin release: the MCP server, the desk-tick skill and
   `/pathiel:setup`, installed from this repo. Mainnet only.
 
-[Unreleased]: https://github.com/Julian-dev28/pathiel/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/Julian-dev28/pathiel/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/Julian-dev28/pathiel/releases/tag/v0.7.0
 [0.6.0]: https://github.com/Julian-dev28/pathiel/releases/tag/v0.6.0
 [0.5.0]: https://github.com/Julian-dev28/pathiel/releases/tag/v0.5.0
 [0.4.1]: https://github.com/Julian-dev28/pathiel/releases/tag/v0.4.1

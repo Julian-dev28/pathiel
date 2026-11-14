@@ -1172,3 +1172,51 @@ def test_handler_holds_only_against_an_opposed_or_unknown_headline(monkeypatch, 
     assert place(entry_px=105.0, stop_px=100.0, tp_px=115.0, dry_run=True)[0]              # a dry run never blocks
     assert mcp._bracket_side(105.0, 100.0, 115.0) == "long" and mcp._bracket_side(None, 110.0, 95.0) == "short"
     assert mcp._bracket_side(100.0, 100.0, 115.0) is None
+
+
+# ------------------------------------------------- set_stop (2026-11-13)
+def test_set_stop_tightens_a_long_new_order_first_target_untouched():
+    ex = BookEx(pos=13.08, orders=[_leg(1, "sl", 13.08, 108.95), _leg(2, "tp", 13.08, 113.75)])
+    ex.mid = 110.40
+    out = bracket.set_stop(COIN, 109.60, ex=ex)
+    assert out["ok"] and out["replaced"] == ["108.95"]
+    stops = [(o["sz"], o["triggerPx"]) for o in ex.orders if "Stop" in o["orderType"]]
+    assert stops == [("13.08", "109.6")]
+    assert ex.calls.index(("sl", True, 13.08, 109.60)) < ex.calls.index(("cancel", 1))
+    assert [o["oid"] for o in ex.orders if "Take Profit" in o["orderType"]] == [2]
+
+
+def test_set_stop_tightens_a_short():
+    ex = BookEx(pos=-5.0, orders=[_leg(1, "sl", 5.0, 112.0)])
+    ex.mid = 110.0
+    out = bracket.set_stop(COIN, 111.0, ex=ex)
+    assert out["ok"] and ("sl", False, 5.0, 111.0) in ex.calls
+
+
+@pytest.mark.parametrize("pos,old,mid,new,why", [
+    (13.08, 108.95, 110.40, 108.50, "not tighter"),     # long, wider
+    (13.08, 108.95, 110.40, 108.95, "not tighter"),     # long, same price
+    (13.08, 108.95, 110.40, 110.60, "wrong side"),      # long, above the mark
+    (-5.0, 112.0, 110.0, 112.5, "not tighter"),         # short, wider
+    (-5.0, 112.0, 110.0, 109.0, "wrong side"),          # short, below the mark
+])
+def test_set_stop_never_widens_and_never_crosses_the_mark(pos, old, mid, new, why):
+    ex = BookEx(pos=pos, orders=[_leg(1, "sl", abs(pos), old)])
+    ex.mid = mid
+    out = bracket.set_stop(COIN, new, ex=ex)
+    assert not out["ok"] and why in out["reason"]
+    assert not ex.calls, "nothing placed or cancelled"
+    assert [o["oid"] for o in ex.orders] == [1]
+
+
+def test_set_stop_adds_one_where_none_exists_and_refuses_flat_and_keeps_old_on_refusal():
+    bare = BookEx(pos=13.08, orders=[_leg(2, "tp", 13.08, 113.75)])
+    bare.mid = 110.40
+    out = bracket.set_stop(COIN, 108.0, ex=bare)
+    assert out["ok"] and out["replaced"] == []
+    assert not bracket.set_stop(COIN, 108.0, ex=BookEx(pos=0.0, orders=[]))["ok"]
+    refused = BookEx(pos=13.08, orders=[_leg(1, "sl", 13.08, 108.95)], refuse={"sl"})
+    refused.mid = 110.40
+    out = bracket.set_stop(COIN, 109.6, ex=refused)
+    assert not out["ok"] and "old kept" in out["reason"]
+    assert [o["oid"] for o in refused.orders] == [1]

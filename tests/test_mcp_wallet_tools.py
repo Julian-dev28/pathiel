@@ -136,11 +136,12 @@ class TestTheReadmeTellsTheTruth:
         checkout sees TOOLS alone.
         The README states both, recomputed from the server so neither can go
         stale the way the 99-vs-88 count once did."""
+        import contracts.mcp_public as public_toolset
         readme = (_ROOT / "README.md").read_text()
-        public_total = len(MCP.TOOLS) + len(MCP.PUBLIC_ONLY_TOOLS)
+        public_total = len(public_toolset.NAMES)
         assert f"{public_total} tools over stdio" in readme, (
             f"README does not say '{public_total} tools over stdio'; a public install "
-            f"exposes {public_total} ({len(MCP.TOOLS)} plus {len(MCP.PUBLIC_ONLY_TOOLS)} public-only)")
+            f"lists the {public_total}-tool public toolset (contracts/mcp_public)")
         assert f"lists the {len(MCP.TOOLS)} only" in readme, (
             f"README does not say the maintainer's checkout lists {len(MCP.TOOLS)} only")
 

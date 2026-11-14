@@ -409,6 +409,51 @@ def set_target(coin: str, tp_px: float, ex: Any = None) -> Dict[str, Any]:
             "replaced": [o.get("triggerPx") for o in old], **({"cancel_failed": failed} if failed else {})}
 
 
+def set_stop(coin: str, stop_px: float, ex: Any = None) -> Dict[str, Any]:
+    """Move the open position's stop-loss to `stop_px`, TIGHTER ONLY: one stop
+    for the whole size goes on FIRST, then every other stop the position owns
+    is cancelled, so the position is never without a stop and a refused new
+    order leaves the old one in place.
+
+    Refused: no open position; a stop on the wrong side of the mark (it would
+    fire at once); a stop wider than, or equal to, the one it replaces (a
+    long's new stop must sit above every current stop, a short's below). With
+    no stop at all, any stop on the right side of the mark is allowed: it
+    only adds protection. Never touches the target or the size. Stops that
+    belong to a resting top-up entry (normalTpsl children) are left alone.
+    Added 2026-11-13: the public toolset's order-modification tool (the
+    other half of set_target), a stop that can only reduce risk."""
+    if ex is None:
+        from pathiel.client import exchange as ex   # noqa: N813
+    user = ex.resolve_user_address()
+    pos = ex._position_size_on_coin(user, coin)
+    if pos is None:
+        return {"coin": coin, "ok": False, "reason": "position read failed"}
+    if pos == 0:
+        return {"coin": coin, "ok": False, "reason": "no open position"}
+    is_long, size = pos > 0, abs(pos)
+    mark = float(ex.get_hl_price(coin))
+    if (is_long and stop_px >= mark) or (not is_long and stop_px <= mark):
+        return {"coin": coin, "ok": False, "mark": mark,
+                "reason": f"stop {stop_px:g} is on the wrong side of the mark {mark:g} (it would fire at once)"}
+    orders = _position_protection(ex, ex._resting_orders_for_coin(user, coin))
+    old = [o for o in orders if o.get("reduceOnly") and "Stop" in str(o.get("orderType", ""))]
+    old_px = [float(o.get("triggerPx") or 0) for o in old if o.get("triggerPx") is not None]
+    if old_px:
+        current = max(old_px) if is_long else min(old_px)
+        tighter = stop_px > current if is_long else stop_px < current
+        if not tighter:
+            return {"coin": coin, "ok": False, "mark": mark, "current_stop": current,
+                    "reason": (f"stop {stop_px:g} is not tighter than the current stop {current:g}: "
+                               "set_stop only moves a stop toward the mark (less risk), never away")}
+    new = ex.place_hl_trigger_order(is_long, size, stop_px, "sl", coin)
+    if not new.get("ok"):
+        return {"coin": coin, "ok": False, "reason": f"new stop refused, old kept: {new.get('error') or new}"}
+    failed = [o.get("oid") for o in old if not ex.cancel_orders(int(o.get("oid") or 0), coin).get("ok")]
+    return {"coin": coin, "ok": True, "position": pos, "stop_px": stop_px, "size": size, "mark": mark,
+            "replaced": [o.get("triggerPx") for o in old], **({"cancel_failed": failed} if failed else {})}
+
+
 def sweep(coin: str, ex: Any = None) -> Dict[str, Any]:
     """One tick of housekeeping for `coin`: cancel reduce-only orders left on a
     flat coin (the sibling of a stop or target that fired), and report whether

@@ -45,7 +45,7 @@ AGENT_RULES = (
     # Public copy (2026-11-12). These run first, while the source still says
     # `python3 scripts/...`, so the interpreter rules below keep their counts.
     # No operator leverage or share numbers: a plugin install reads its own
-    # from `risk_limits` (a fresh one is 3x) and place_bracket caps and fits
+    # from `get_risk_limits` (a fresh one is 3x) and place_bracket caps and fits
     # leverage by itself. No research-doc pointers: the rules stay inline.
     ("tried hourly for one\nevening, the backtest showed it giving up about half the journaled return,\n"
      "back to 15m the same night)",
@@ -60,7 +60,7 @@ AGENT_RULES = (
      "never lower (`next_trade.LEVERAGE_FIT`); `place_bracket` does it by itself,\n"
      "so never pass `leverage` on a new entry.",
      "Leverage up to the `max_leverage` that\n"
-     "`risk_limits` reports (a fresh install is 3x; `place_bracket` caps it and\n"
+     "`get_risk_limits` reports (a fresh install is 3x; `place_bracket` caps it and\n"
      "runs the liquidation rule: the stop must use under half the distance to\n"
      "liquidation). Brent, gold and silver fit their leverage to the stop\n"
      "(`next_trade.LEVERAGE_FIT`); `place_bracket` caps and fits it by itself,\n"
@@ -72,11 +72,11 @@ AGENT_RULES = (
      "   level: the R gate and the 20x line.",
      "`python3 scripts/oil_levels.py --check ENTRY STOP TP --lev L` judges a\n"
      "   level: the R gate and the liquidation line, where L is the\n"
-     "   `max_leverage` that `risk_limits` reports.", 1),
+     "   `max_leverage` that `get_risk_limits` reports.", 1),
     ("`python3 scripts/oil_levels.py --coin COIN --next SIDE --thesis-entry ENTRY`\n"
      "     (gold: add `--max-lev 25`; SIDE and ENTRY are the brief's call).",
      "`python3 scripts/oil_levels.py --coin COIN --next SIDE --thesis-entry ENTRY --risk-lev L`\n"
-     "     (gold: add `--max-lev 25`; L is the `max_leverage` that `risk_limits`\n"
+     "     (gold: add `--max-lev 25`; L is the `max_leverage` that `get_risk_limits`\n"
      "     reports; SIDE and ENTRY are the brief's call).", 1),
     ("\n     edge; docs/strategy/OIL_STRATEGY.md):", "\n     edge):", 1),
     ("2026-11-02 on silver (docs/strategy/SILVER_STOP_FLOOR_TEST_2026-11-02.md)\n",

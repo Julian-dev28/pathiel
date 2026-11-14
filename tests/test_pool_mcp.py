@@ -137,15 +137,20 @@ def test_check_tool_classes_has_no_problems_with_the_pool_wired_in():
 
 # ── public tools/list: 65, the pool's own descriptions ──────────────────────
 
-def test_public_tools_list_has_65_names_with_pool_tools_last(no_key):
+def test_public_tools_list_has_the_pool_tools_last(no_key):
+    """The public toolset lists the pool as get_pool_status (pool_status, plus
+    pool_report with report=true), join_pool and leave_pool, last; the two
+    signing tools take exactly the contract's arguments. The old names stay
+    callable (tests below call them)."""
     listed = no_key.rpc("tools/list")["result"]["tools"]
-    assert len(listed) == 65
-    assert [t["name"] for t in listed][-4:] == POOL_TOOL_NAMES
+    assert len(listed) == 30
+    assert [t["name"] for t in listed][-3:] == ["get_pool_status", "join_pool", "leave_pool"]
     by_name = {t["name"]: t for t in listed}
-    for contract_tool in pool_contract.MCP_TOOLS:
-        listed_tool = by_name[contract_tool["name"]]
-        assert listed_tool["description"] == contract_tool["description"]
-        assert listed_tool["inputSchema"] == contract_tool["inputSchema"]
+    contract = {t["name"]: t for t in pool_contract.MCP_TOOLS}
+    for new, old in (("join_pool", "pool_join"), ("leave_pool", "pool_leave")):
+        assert by_name[new]["inputSchema"] == contract[old]["inputSchema"]
+        assert "SIGNS" in by_name[new]["description"] and "no money moves" in by_name[new]["description"].lower()
+    assert set(POOL_TOOL_NAMES) <= set(M._tool_handlers())
 
 
 # ── operator byte-identity (the pool changes nothing on that path) ──────────

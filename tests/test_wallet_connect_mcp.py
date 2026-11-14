@@ -75,9 +75,10 @@ def test_wallet_connect_is_never_in_the_operators_tools():
 def test_public_lists_it_once_before_the_pool_tools(monkeypatch, tmp_path, builder_jobs):
     h = E.install(monkeypatch, tmp_path, M, builder_jobs)
     names = [t["name"] for t in h.rpc("tools/list")["result"]["tools"]]
-    assert len(names) == 65 and names.count("wallet_connect") == 1
-    assert names[60] == "wallet_connect" and names[61:] == [
-        "pool_status", "pool_report", "pool_join", "pool_leave"]
+    assert len(names) == 30 and names.count("connect_wallet") == 1
+    assert "wallet_connect" not in names            # listed by its public name
+    assert names.index("connect_wallet") < names.index("get_pool_status")
+    assert "wallet_connect" in M._tool_handlers()   # the old name still answers
 
 
 def test_operator_tools_list_does_not_show_it(monkeypatch, tmp_path, builder_jobs):

@@ -51,9 +51,16 @@ def test_starts_with_frontmatter_that_has_a_description():
 
 
 def test_names_all_four_pool_tools():
+    """By their public names (contracts/mcp_public): pool_status and
+    pool_report are get_pool_status (report=true), the two signers
+    join_pool and leave_pool."""
+    import contracts.mcp_public as public_toolset
     text = _text()
-    missing = [tool["name"] for tool in pool.MCP_TOOLS if tool["name"] not in text]
-    assert missing == [], missing
+    for name in ("get_pool_status", "join_pool", "leave_pool"):
+        assert f"`{name}" in text, name
+    assert "report: true" in text
+    assert public_toolset.RENAMES["join_pool"] == "pool_join"
+    assert public_toolset.RENAMES["leave_pool"] == "pool_leave"
     assert len(pool.MCP_TOOLS) == 4
 
 
@@ -65,7 +72,7 @@ def test_never_names_a_live_money_tool():
 
 def test_the_dry_run_comes_before_the_confirm_call():
     text = _text()
-    dry_run_at = text.index("Call `pool_join` with no arguments")
+    dry_run_at = text.index("Call `join_pool` with no arguments")
     confirm_at = text.index("confirm: true")
     assert dry_run_at < confirm_at
 

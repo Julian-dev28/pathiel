@@ -99,6 +99,7 @@ WRITE_ARGS: Dict[str, Dict[str, Any]] = {
     "place_bracket": {"coin": "BTC", "stop_px": 72000, "tp_px": 77000},
     "bracket_sweep": {"coin": "ETH"},
     "set_target": {"coin": "ETH", "tp_px": 2100},
+    "set_stop": {"coin": "ETH", "stop_px": 1900},
     "close_position": {"coin": "ETH"},
     "set_leverage": {"coin": "BTC", "leverage": 3},
     "cancel_order": {"order_id": 1, "coin": "BTC"},
@@ -509,7 +510,8 @@ def scenario_a(h: Harness) -> List[Dict[str, Any]]:
         if (err and isinstance(body, dict) and body.get("read_only") is True
                 and body.get("error") == READ_ONLY_NO_KEY and body.get("network") == "testnet"):
             ro += 1
-    rows.append({"check": "A writes are read-only", "got": ro, "want": 6, "ok": ro == 6})
+    rows.append({"check": "A writes are read-only", "got": ro, "want": len(s.LIVE_MONEY_TOOLS),
+                 "ok": ro == len(s.LIVE_MONEY_TOOLS) == 7})
     for n in sorted(s.LOCAL_READ_TOOLS):
         h.call(n, {"desk": "oil"} if n.startswith("desk_") and n != "desk_list" else {})
     bad = scan(h.outputs, FORBIDDEN_OUTPUT)
