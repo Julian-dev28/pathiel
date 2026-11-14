@@ -1903,7 +1903,7 @@ def _public_gate(name: str, args: Dict[str, Any]) -> Optional[str]:
         from services.llm.config import claude_binary
         if shutil.which(claude_binary()) is None:
             return json.dumps({
-                "error": ("desk_refresh needs the Claude Code CLI (claude) on PATH to write a "
+                "error": ("refresh_desk needs the Claude Code CLI (claude) on PATH to write a "
                           "thesis and it was not found. Install Claude Code or set "
                           "CLAUDE_CLI_COMMAND. get_desk_brief still shows the last thesis."),
                 "desk": str(args.get("desk") or "").strip()})
@@ -3324,7 +3324,7 @@ def handle_get_max_trade_size(params: Dict[str, Any]) -> str:
             "leverage_ceiling": lev, "coin_max_leverage": coin_max,
             "profile_max_leverage": resolved_max,
             "book_check": depth,
-            "note": "the most the margin allows, not a recommendation: use risk_size_trade",
+            "note": "the most the margin allows, not a recommendation: size the trade with size_trade",
         }, default=str)
     except Exception as e:
         return json.dumps({"error": str(e)}, default=str)
@@ -4583,7 +4583,7 @@ def handle_bracket_sweep(params: Dict[str, Any]) -> str:
         return json.dumps(_bounded(bracket.sweep, coin), default=str)
     except TimeoutError:
         return json.dumps({"ok": False, "coin": coin, "timed_out": True,
-                           "error": f"bracket_sweep did not finish within {HANDLER_DEADLINE_S:.0f}s "
+                           "error": f"sweep_brackets did not finish within {HANDLER_DEADLINE_S:.0f}s "
                                     "(the venue may be degraded); it is still running in the "
                                     "background and does not need to be resent immediately"})
     except Exception as e:

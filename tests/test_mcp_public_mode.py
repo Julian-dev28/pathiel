@@ -365,7 +365,7 @@ def test_desk_refresh_without_claude_cli_fails_fast(no_key, monkeypatch):
     err, body = no_key.call("desk_refresh", {"desk": "oil"})
     assert time.monotonic() - t0 < 1.0
     assert err is True
-    assert body == {"error": ("desk_refresh needs the Claude Code CLI (claude) on PATH to write a "
+    assert body == {"error": ("refresh_desk needs the Claude Code CLI (claude) on PATH to write a "
                               "thesis and it was not found. Install Claude Code or set "
                               "CLAUDE_CLI_COMMAND. get_desk_brief still shows the last thesis."),
                     "desk": "oil"}
