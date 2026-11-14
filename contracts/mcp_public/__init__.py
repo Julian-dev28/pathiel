@@ -152,12 +152,12 @@ TOOLS: List[Tuple[str, str, str, Optional[Dict[str, Any]]]] = [
          "limit": {"type": "integer", "minimum": 1, "description": "view=instruments: most rows to return."},
      })),
     ("get_candles", "market_read",
-     "Get OHLCV candles for one coin as [{t, o, h, l, c, v}], oldest first, t in unix ms. Two "
+     "Get OHLCV candles for one coin. Returns [{t, o, h, l, c, v}], oldest first, t in unix ms. Two "
      "modes: the last `count` candles at `interval` (default 100 x 1h), or a fixed window when "
      "start_time is given (end_time defaults to now; count is then ignored). interval is one of "
      "Hyperliquid's: 1m, 3m, 5m, 15m, 30m, 1h, 2h, 4h, 8h, 12h, 1d, 3d, 1w, 1M. Use for trend, "
      "levels, volatility and backtests. For the price right now use get_market; for depth use "
-     "get_order_book. Read-only; needs no key. Returns the candle list.",
+     "get_order_book. Read-only; needs no key.",
      _schema({
          "coin": _COIN,
          "interval": {"type": "string", "description": "Candle size: 1m, 5m, 15m, 1h, 4h, 1d, ... (default 1h)."},
@@ -483,12 +483,15 @@ TOOLS: List[Tuple[str, str, str, Optional[Dict[str, Any]]]] = [
      "the statement, then the signed member file path.",
      None),
     ("leave_pool", "local_write",
-     "Leave the research pool. Two steps: without confirm it shows the exact statement and signs "
-     "nothing; with confirm=true and the left_at that first call returned, it SIGNS that statement "
-     "with your key and writes the leave file for a pull request. No order is placed and no money "
-     "moves. Call only when the user asked to leave, and confirm only after they read the "
-     "statement. Needs a trading key and mainnet: on testnet it returns {error, code: testnet} and "
-     "signs nothing. Check get_pool_status first. Returns the statement, then the signed leave file path.",
+     "Leave the research pool: the next scoreboard build drops your address and every row of it, "
+     "and the leave stays in force until a later join. Two steps: without confirm it shows the "
+     "exact statement and signs nothing; with confirm=true and the left_at that first call "
+     "returned, it SIGNS that statement with your key and writes the leave file, which the user "
+     "opens a pull request with, as for join_pool. No order is placed and no money moves. Call "
+     "only when the user asked to leave, and confirm only after they read the statement; check "
+     "membership first with get_pool_status. Needs a trading key and mainnet: on testnet it "
+     "returns {error, code: testnet} and signs nothing. Returns the statement, then the signed "
+     "leave file path.",
      None),
 ]
 
