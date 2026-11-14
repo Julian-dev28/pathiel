@@ -6,6 +6,37 @@ All notable changes to pathiel. The format follows
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-11-14
+
+### Changed
+
+- Plugin content names only tools a plugin install lists: the desk-tick
+  agent read the balance with `account_overview`, which 0.7.0 no longer
+  lists, so the model could not call it; it now uses `get_account`. The
+  README, the `pathiel-agent` skill and run-time tool messages use the new
+  names and counts too.
+- Every pull request builds both container images (`build.yml`); the five
+  test and build checks are required before anything merges to `main`.
+
+### Added
+
+- `.github/workflows/freshness.yml`, daily: `scripts/plugin_freshness.py`
+  fails when a change to a shipped file has waited on `main` more than 7
+  days without a release (2 days for `requirements.lock`), and
+  `scripts/link_check.py` fails on any dead link in the README, the plugin's
+  Markdown, the docs or the site. A gate test keeps shipped agent-facing
+  Markdown on listed tool names.
+- `scripts/seo_compare.py`: GitHub signals, search ranks and directory
+  listings for pathiel against another repository.
+
+### Security
+
+- msgpack 1.2.2 -> 1.2.3 (GHSA-j586-36cw-2gc2, a memory leak in the C
+  decoder on malformed input). Order signing bytes are unchanged, checked on
+  six action shapes and pinned by `tests/test_signing_bytes.py`.
+- The Docker base image is back on the python:3.11 digest the lock is built
+  for; a Dependabot bump to 3.15 had broken both images.
+
 ## [0.7.0] - 2026-11-13
 
 ### Changed
@@ -303,7 +334,8 @@ builder fee, and listing metadata for the MCP directories. Release notes:
 - First Claude Code plugin release: the MCP server, the desk-tick skill and
   `/pathiel:setup`, installed from this repo. Mainnet only.
 
-[Unreleased]: https://github.com/Julian-dev28/pathiel/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/Julian-dev28/pathiel/compare/v0.7.1...HEAD
+[0.7.1]: https://github.com/Julian-dev28/pathiel/releases/tag/v0.7.1
 [0.7.0]: https://github.com/Julian-dev28/pathiel/releases/tag/v0.7.0
 [0.6.0]: https://github.com/Julian-dev28/pathiel/releases/tag/v0.6.0
 [0.5.0]: https://github.com/Julian-dev28/pathiel/releases/tag/v0.5.0

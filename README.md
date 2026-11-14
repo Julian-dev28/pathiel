@@ -5,7 +5,7 @@
 [![Claude Code plugin](https://img.shields.io/badge/Claude_Code-plugin-d97757.svg)](#install-in-30-seconds)
 [![pathiel MCP server – quality and maintenance score on Glama](https://glama.ai/mcp/servers/Julian-dev28/pathiel/badges/score.svg)](https://glama.ai/mcp/servers/Julian-dev28/pathiel)
 [![Listed on mcpservers.org](https://mcpservers.org/badge.svg)](https://mcpservers.org/servers/julian-dev28/pathiel)
-[![Version 0.7.0](https://img.shields.io/badge/version-0.7.0-informational.svg)](CHANGELOG.md)
+[![Version 0.7.1](https://img.shields.io/badge/version-0.7.1-informational.svg)](CHANGELOG.md)
 [![MCP server](https://img.shields.io/badge/MCP-30_tools-6f42c1.svg)](docs/overhaul/MCP.md)
 [![CI](https://github.com/Julian-dev28/pathiel/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Julian-dev28/pathiel/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -64,7 +64,7 @@ registry as `io.github.Julian-dev28/pathiel`.
 
 ```bash
 docker run -i --rm --user "$(id -u):$(id -g)" -v "$HOME/.pathiel:/data" \
-  ghcr.io/julian-dev28/pathiel-mcp:0.7.0
+  ghcr.io/julian-dev28/pathiel-mcp:0.7.1
 ```
 
 To build it yourself: `docker build -f Dockerfile.mcp -t pathiel-mcp .`
@@ -83,10 +83,10 @@ Paste these into Claude Code once `/mcp` shows `pathiel` connected.
 | you type | what answers |
 |---|---|
 | What's the oil desk's call right now? | `get_desk_brief`: direction, entry, stop, target, the R it pays, and "Your size" |
-| Show me BTC's order book and funding. | `get_l2_book`, `get_funding_rate` |
-| What's my balance and what's open? | `account_overview` |
-| What are my risk limits? | `risk_limits` |
-| Size a long on gold with the stop under today's low. | `risk_size_trade` |
+| Show me BTC's order book and funding. | `get_order_book`, `get_market` |
+| What's my balance and what's open? | `get_account`, `get_positions` |
+| What are my risk limits? | `get_risk_limits` |
+| Size a long on gold with the stop under today's low. | `size_trade` |
 | Dry-run that as a bracket. | `place_bracket` with `dry_run: true`: judged and sized, nothing sent |
 | Place it. | `place_bracket`: **live money**, Claude Code asks you first |
 | Run one oil desk tick. | `/pathiel:desk-tick oil`: brief, sweep, levels, one decision |
@@ -110,10 +110,10 @@ listed. The full table, generated from the server's own tool lists, is
 | Setup | 4 | `get_status`, `get_config`, `update_config`, `connect_wallet` (approve an API wallet with one signature) |
 | Research pool | 3 | `get_pool_status`, `join_pool`, `leave_pool` |
 
-`connected_wallets` and `wallet_account` read other addresses and nothing
-else. The server signs with one key, yours, so it has no path to place,
-close or resize an order on any other account; `connected_wallets` says so
-in its own output (`can_this_server_trade_them: false`).
+`get_account`, `get_positions`, `get_orders` and `get_history` take an
+`address` to read any other wallet, and only read it. The server signs with
+one key, yours, so it has no path to place, close or resize an order on any
+other account.
 
 The oil desk is the one active desk on a fresh install. It trades Brent
 (`xyz:BRENTOIL`) on mainnet, and WTI (`xyz:CL`) on testnet, where Brent is
@@ -159,14 +159,14 @@ reconnect pathiel in `/mcp`.
 - **Default profile: 3x, 1%, one position.** At most 3x leverage, 1% of
   equity at the stop per trade (up to 2% only when the venue's minimum order
   size forces it), one position at a time. `set_leverage` refuses above the
-  cap. You change the profile with the `config` tool or in
+  cap. You change the profile with `update_config` or in
   `~/.pathiel/.agent-config.json`; nothing raises it for you.
 - **Read-only without a key.** No key, no orders. The API wallet key can
   trade and can never withdraw.
 - **Testnet when you want it.** `PATHIEL_NETWORK=testnet` in
   `~/.pathiel/.env.local` switches to test funds.
-- **Claude Code asks before each live-money call.** The six order tools,
-  and `config`, are marked destructive, so Claude Code asks you before each
+- **Claude Code asks before each live-money call.** The seven order tools,
+  and `update_config`, are marked destructive, so Claude Code asks you before each
   call unless you allow the tool for good. Nothing runs in the background:
   no bot, no scheduler. The `/loop` desk tick trades only while your session runs it.
 
@@ -227,7 +227,7 @@ on its own trades, and published on a public scoreboard at least 24 hours
 late.
 
 What you get: your own graded report (fluke or edge on your trades, with
-ranges, through `pool_report`), and pool-level stats on which desks and
+ranges, through `get_pool_status` with `report: true`), and pool-level stats on which desks and
 setups hold up across members.
 
 What it is not: not a fee waiver, since pathiel charges no fee to anyone,
@@ -266,7 +266,7 @@ with no key; add an API wallet key to `~/.pathiel/.env.local` to trade.
 Claude Desktop, Cursor and other MCP clients use the launcher or the
 container described in [Other MCP clients](#other-mcp-clients). No
 Anthropic API key is needed: the one model step, the desk thesis behind
-`desk_refresh`, runs through your local Claude Code CLI.
+`refresh_desk`, runs through your local Claude Code CLI.
 
 **Is pathiel a Hyperliquid trading bot?**
 No, and it never trades on its own. It is an MCP server that gives Claude
@@ -291,7 +291,7 @@ pathiel in `/mcp`. The oil desk trades WTI (`xyz:CL`) there.
 
 **Is there an edge?**
 None is demonstrated. The desk briefs are a structured, written call with
-levels, not a forecast. `desk_track_record` grades every call in the open.
+levels, not a forecast. `get_desk_record` grades every call in the open.
 
 **How do I remove it?**
 Revoke the API wallet in the Hyperliquid app (More, API), then

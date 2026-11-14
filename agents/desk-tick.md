@@ -90,7 +90,7 @@ ToolSearch call: `select:mcp__pathiel__get_desk_brief,mcp__pathiel__sweep_bracke
    shares saved, the desk's own slot).
    (`place_bracket` refuses a taken slot on its own as well.) The only
    wallet this loop tracks is the active account's own (the one
-   `account_overview` reports).
+   `get_account` reports).
 5. **Decide.** Exactly one of:
    - **In a position on COIN:** HOLD. `close_position` only if the thesis
      invalidation triggered on a CLOSED hourly candle, or a headline from

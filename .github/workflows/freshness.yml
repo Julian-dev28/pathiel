@@ -1,0 +1,43 @@
+name: Freshness
+
+# Daily: do plugin users have main's fixes, and does every link people and
+# agents follow still resolve? A red run is the alert (GitHub mails the
+# owner). Added 2026-11-14 after the Midnight Expert review: its fixes sat on
+# main for weeks while its marketplace shipped a June commit, and its content
+# went stale on a retired URL. Read only.
+#
+#   plugin freshness  scripts/plugin_freshness.py: unreleased changes to
+#                     shipped files older than 7 days (2 for requirements.lock)
+#   links             scripts/link_check.py: every URL in the README, the
+#                     plugin's commands, agents and skills, the docs and site
+
+on:
+  schedule:
+    - cron: "29 6 * * *"   # 06:29 UTC daily
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  plugin:
+    name: Plugin users have main's fixes
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Fetch the plugin branch
+        run: git fetch --no-tags origin "+refs/heads/plugin:refs/remotes/origin/plugin"
+      - name: Freshness
+        run: python3 scripts/plugin_freshness.py --ref HEAD --against origin/plugin
+
+  links:
+    name: Links resolve
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Links
+        run: python3 scripts/link_check.py

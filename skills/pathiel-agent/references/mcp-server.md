@@ -1,6 +1,6 @@
 # MCP Server Structure
 
-`scripts/pathiel-mcp-server.py` — a stdio JSON-RPC MCP server exposing 60 tools, every one of them implemented. Registered in `~/.pathiel/config.yaml` under `mcp_servers.pathiel`, and for Claude Code in the repo's `.mcp.json`.
+`scripts/pathiel-mcp-server.py` — a stdio JSON-RPC MCP server; it lists 30 tools on a plugin install, 26 on the operator's with `PATHIEL_TOOLSET=v2`, or the legacy 60 tools without it (`contracts/mcp_public`), every one of them implemented. Registered in `~/.pathiel/config.yaml` under `mcp_servers.pathiel`, and for Claude Code in the repo's `.mcp.json`.
 
 ## Transport and safety (2026-10-18)
 

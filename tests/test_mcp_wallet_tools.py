@@ -9,6 +9,8 @@ wallet as tradeable would be reaching for the house key on a stranger's behalf.
 
 from __future__ import annotations
 
+import re
+
 import importlib.util
 import json
 from pathlib import Path
@@ -146,12 +148,17 @@ class TestTheReadmeTellsTheTruth:
             f"README does not say the maintainer's checkout lists {len(MCP.TOOLS)} only")
 
     def test_the_wallet_tools_are_documented(self):
+        """Since 0.7.0 a plugin install reads another wallet through the
+        listed account reads with an address (wallet_account and
+        connected_wallets are operator-only, unlisted on a plugin install)."""
         readme = (_ROOT / "README.md").read_text()
-        for name in ("connected_wallets", "wallet_account"):
+        for name in ("get_account", "get_positions", "get_orders", "get_history"):
             assert f"`{name}`" in readme, f"{name} is not in the README"
+        assert "`address`" in readme
 
     def test_the_readme_states_the_read_only_boundary(self):
         """Someone wiring an agent reads this and nothing else before deciding
         what the agent may be told to do with a visitor's wallet."""
-        readme = (_ROOT / "README.md").read_text()
-        assert "can_this_server_trade_them" in readme
+        readme = re.sub(r"\s+", " ", (_ROOT / "README.md").read_text())
+        assert "to read any other wallet, and only read it" in readme
+        assert "it has no path to place, close or resize an order on any other account" in readme
