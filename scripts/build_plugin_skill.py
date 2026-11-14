@@ -97,7 +97,7 @@ AGENT_RULES = (
      "   `0x2c2e4efF574B3Fd9879AdeF9c5CAC6fD7C916985` (operator, 2026-10-24:\n"
      "   his hand-traded wallet is no longer watched).",
      "The only\n   wallet this loop tracks is the active account's own (the one\n"
-     "   `account_overview` reports).", 1),
+     "   `get_account` reports).", 1),
 )
 
 JOBS = (

@@ -324,7 +324,7 @@ def test_readme_badges_are_static_or_point_at_a_real_workflow():
         m = re.match(r"https://github\.com/Julian-dev28/pathiel/actions/workflows/([\w.-]+)/badge\.svg", url)
         assert m, f"badge that may not resolve: {url}"
         assert (ROOT / ".github" / "workflows" / m.group(1)).is_file(), url
-    assert "version-0.7.0" in readme
+    assert "version-0.7.1" in readme
 
 
 def test_faq_has_five_to_seven_questions():
@@ -499,7 +499,7 @@ def test_readme_keeps_tool_count_and_getting_started_link():
     assert "30 tools over stdio" in readme
     assert "docs/GETTING_STARTED.md" in readme
     import contracts.mcp_public as public_toolset
-    for tool in public_toolset.NAMES + ["connected_wallets", "wallet_account"]:
+    for tool in public_toolset.NAMES:
         assert f"`{tool}`" in readme, tool
 
 

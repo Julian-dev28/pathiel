@@ -44,8 +44,9 @@ mcp_servers:
 
 ## Primary Tools
 
-The server exposes 60 tools, every one of them implemented. The 7 trading-core tools below
-are the ones you call directly.
+The server lists 30 tools on a plugin install, 26 on the operator's with `PATHIEL_TOOLSET=v2`, or the legacy 60 tools without it (`contracts/mcp_public`).
+Every older name still answers when called. The trading-core tools below are the ones you call directly;
+the table keeps the operator's legacy names, and the public names are in `docs/overhaul/MCP.md`.
 
 Six stubs were promoted on 2026-09-06 after an audit found the capability
 already sat in `pathiel.client`: `get_coin_price`, `get_leverage`,
@@ -87,7 +88,7 @@ are **not** read by this process. They belong to
 In Pathiel Agent, after the MCP server connects:
 
 ```
-mcp pathiel desk_brief { desk: "oil" }
-mcp pathiel bracket_sweep { coin: "xyz:BRENTOIL" }
-mcp pathiel state
+mcp pathiel get_desk_brief { desk: "oil" }
+mcp pathiel sweep_brackets { coin: "xyz:BRENTOIL" }
+mcp pathiel get_status
 ```

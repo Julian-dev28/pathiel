@@ -116,6 +116,9 @@ it touches, and paste the gate's last line.
 3. Tag `v<version>` on that commit and publish a GitHub release from the tag
    with the release notes as the body. Plugin users then get it with
    `claude plugin update pathiel@pathiel`.
+   `.github/workflows/freshness.yml` fails daily once a change to a shipped
+   file has waited on `main` more than 7 days unreleased (2 days for
+   `requirements.lock`): that red run means cut this release.
 4. Publishing the release starts `.github/workflows/release.yml`. It checks
    the versions agree with the tag and that the `plugin` branch holds the
    bundle of the tag (else it stops and prints the publish command), builds the MCP image natively on amd64
