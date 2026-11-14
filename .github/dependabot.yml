@@ -1,0 +1,27 @@
+# Dependabot version updates. Security alerts and automatic security fixes are
+# repository settings (on since 2026-11-14); this file adds weekly version PRs.
+# Each PR still has to pass CI and scripts/supply_chain_check.py: actions stay
+# pinned to a commit SHA (Dependabot rewrites the SHA and its version comment),
+# and requirements.lock keeps its hashes (regenerate it in the PR if needed).
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      actions:
+        patterns: ["*"]
+
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 3

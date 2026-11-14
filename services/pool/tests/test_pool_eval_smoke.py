@@ -20,12 +20,20 @@ def test_the_scorecard_runs_and_every_gate_holds_at_a_small_seed_count():
     assert by["no_quiet_hour.seconds"]["ok"] is None
 
 
+def _without_timings(rows):
+    """no_quiet_hour.seconds reports wall-clock time ("reported, not gated"):
+    it differs run to run by design (0.1 vs 0.2 failed CI on 2026-11-14), so
+    determinism is checked on every other value."""
+    return [{**r, "got": None} if r["check"].endswith(".seconds") else r for r in rows]
+
+
 def test_the_scorecard_is_deterministic():
     E._VALID_DOCS.clear()
     first = E.run(seeds=1, quiet_seeds=1, **SMALL)
     E._VALID_DOCS.clear()
     second = E.run(seeds=1, quiet_seeds=1, **SMALL)
-    assert first == second
+    assert [r["check"] for r in first if r["check"].endswith(".seconds")] == ["no_quiet_hour.seconds"]
+    assert _without_timings(first) == _without_timings(second)
 
 
 def test_main_prints_the_summary_line_and_exits_1_on_a_failed_gate(capsys, monkeypatch):
