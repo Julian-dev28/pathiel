@@ -2,11 +2,14 @@
 
 **An AI trading agent for Hyperliquid: Claude trades perps from Claude Code, with an exact stop and target on every order.**
 
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Claude Code plugin](https://img.shields.io/badge/Claude_Code-plugin-d97757.svg)](#install-in-30-seconds)
+[![pathiel MCP server – quality and maintenance score on Glama](https://glama.ai/mcp/servers/Julian-dev28/pathiel/badges/score.svg)](https://glama.ai/mcp/servers/Julian-dev28/pathiel)
+[![Listed on mcpservers.org](https://mcpservers.org/badge.svg)](https://mcpservers.org/servers/julian-dev28/pathiel)
 [![Version 0.7.0](https://img.shields.io/badge/version-0.7.0-informational.svg)](CHANGELOG.md)
 [![MCP server](https://img.shields.io/badge/MCP-30_tools-6f42c1.svg)](docs/overhaul/MCP.md)
-[![Claude Code plugin](https://img.shields.io/badge/Claude_Code-plugin-d97757.svg)](#install-in-30-seconds)
 [![CI](https://github.com/Julian-dev28/pathiel/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Julian-dev28/pathiel/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 
 > **Real money.** A public install runs on Hyperliquid mainnet. With no key
 > it only reads; once you add a key, orders are real. Read

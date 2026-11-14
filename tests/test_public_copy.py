@@ -310,13 +310,16 @@ def test_readme_section_order_puts_disclosures_before_faq_and_maintainer_last():
 
 
 def test_readme_badges_are_static_or_point_at_a_real_workflow():
-    """Badges must resolve: shields.io static badges, or the CI workflow that
-    exists in .github/workflows."""
+    """Badges must resolve: shields.io static badges, the CI workflow that
+    exists in .github/workflows, or a directory listing's own badge for this
+    server (both checked to serve an SVG on 2026-11-13)."""
+    listing_badges = ("https://glama.ai/mcp/servers/Julian-dev28/pathiel/badges/score.svg",
+                      "https://mcpservers.org/badge.svg")
     readme = _read("README.md")
     badges = re.findall(r"\[!\[[^\]]*\]\(([^)]+)\)\]", readme)
     assert len(badges) >= 4, badges
     for url in badges:
-        if url.startswith("https://img.shields.io/badge/"):
+        if url.startswith("https://img.shields.io/badge/") or url in listing_badges:
             continue
         m = re.match(r"https://github\.com/Julian-dev28/pathiel/actions/workflows/([\w.-]+)/badge\.svg", url)
         assert m, f"badge that may not resolve: {url}"
