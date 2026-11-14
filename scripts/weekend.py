@@ -44,7 +44,7 @@ def answer(coin: str, at_ms: int, warn_hours: float = 24.0, config: Optional[Dic
         out["flatten"] = True
         out["window"] = {k: active[k] for k in ("start_ms", "end_ms", "start_utc", "until_utc", "reason")}
         out["what"] = ("close an open position with close_position, cancel a resting entry, "
-                       "then bracket_sweep; no new entry or top-up until " + active["until_utc"])
+                       "then sweep_brackets; no new entry or top-up until " + active["until_utc"])
         ov = hold_override(active["start_ms"], config)
         if ov:
             out["flatten"] = False

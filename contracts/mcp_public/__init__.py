@@ -105,6 +105,16 @@ COMPOSITE_INNER: Dict[str, Tuple[str, ...]] = {
 # Tools with their own handler on every install (listed on public only).
 OWN_HANDLER = frozenset({"set_stop"})
 
+# The operator's install can list this toolset too (PATHIEL_TOOLSET=v2 in
+# .mcp.json), minus the tools that refuse on the operator's own install
+# (wallet connect and the research pool write the user's env file or sign as
+# a pool member; tests/test_pool_mcp.py, tests/test_wallet_connect_mcp.py).
+OPERATOR_EXCLUDED = frozenset({"connect_wallet", "get_pool_status", "join_pool", "leave_pool"})
+
+
+def operator_names() -> List[str]:
+    return [n for n in NAMES if n not in OPERATOR_EXCLUDED]
+
 _COIN = {"type": "string", "description": "Coin: a main-dex perp by name (BTC, ETH) or a HIP-3 perp as dex:SYMBOL (xyz:GOLD, xyz:BRENTOIL)."}
 _ADDRESS = {"type": "string", "description": "Any 0x address to read instead of the configured account (read-only; needs no key)."}
 _LIMIT = {"type": "integer", "minimum": 1, "description": "Most rows to return."}
@@ -545,11 +555,15 @@ NAMES: List[str] = [t[0] for t in TOOLS]
 KIND: Dict[str, str] = {t[0]: t[1] for t in TOOLS}
 
 
-def build_tools(old_schema: Callable[[str], Dict[str, Any]]) -> List[Dict[str, Any]]:
+def build_tools(old_schema: Callable[[str], Dict[str, Any]],
+                names: Optional[List[str]] = None) -> List[Dict[str, Any]]:
     """The tools/list entries. old_schema(old_name) gives a renamed tool's own
-    inputSchema, so a rename takes exactly the arguments it always did."""
+    inputSchema, so a rename takes exactly the arguments it always did.
+    names: only these (operator_names() for the operator's v2 listing)."""
     out = []
     for name, kind, desc, schema in TOOLS:
+        if names is not None and name not in names:
+            continue
         if schema is None:
             schema = old_schema(RENAMES[name])
             for key, prop in (schema.get("properties") or {}).items():

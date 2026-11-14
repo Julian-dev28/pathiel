@@ -313,3 +313,54 @@ def test_another_wallets_fills_honour_the_time_window():
     call, _ = _fake({"get_trade_history": (json.dumps({"fills": full}), False)})
     out = json.loads(P.run("get_history", {"address": "0xa", "start_time": 1}, call))
     assert "newest 2000" in out["window"]["note"]
+
+
+# ── the operator's install on the scoped toolset (PATHIEL_TOOLSET=v2) ────────
+
+def _fresh_server(name):
+    return E.load_server(name)
+
+
+def test_operator_default_is_unchanged_without_the_switch(monkeypatch):
+    monkeypatch.delenv("PATHIEL_INSTALL", raising=False)
+    monkeypatch.delenv("PATHIEL_TOOLSET", raising=False)
+    m = _fresh_server("srv_v2_off")
+    assert m.server_tools() is m.TOOLS and not m.operator_v2()
+    assert m.server_instructions() == m.SERVER_INSTRUCTIONS
+
+
+def test_operator_v2_lists_the_scoped_toolset_without_public_only_tools(monkeypatch, tmp_path, builder_jobs):
+    monkeypatch.setenv("PATHIEL_TOOLSET", "v2")
+    m = _fresh_server("srv_v2_on")
+    h = E.install(monkeypatch, tmp_path, m, builder_jobs, public=False, network="mainnet", key=True)
+    monkeypatch.setenv("PATHIEL_TOOLSET", "v2")
+    names = [t["name"] for t in h.rpc("tools/list")["result"]["tools"]]
+    assert names == P.operator_names() and len(names) == 26
+    assert not set(names) & P.OPERATOR_EXCLUDED
+    init = h.rpc("initialize", {})["result"]["instructions"]
+    assert init == m.OPERATOR_V2_INSTRUCTIONS
+    for old in ("bracket_sweep", "desk_brief", "risk_size_trade", "account_overview"):
+        assert not re.search(rf"(?<![a-z_]){old}\b", init), old
+    for new in ("sweep_brackets", "get_desk_brief", "size_trade", "get_account", "set_stop"):
+        assert new in init, new
+    assert E.tools_hash(m.TOOLS) == E.BASE_TOOLS_SHA256, "the 60 definitions are untouched"
+    # composites answer on the operator's path, and the old names still do too
+    E.seed_positions(h.venue)
+    for name, args in (("get_market", {"coin": "BTC"}), ("get_candles", {"coin": "BTC", "count": 3}),
+                       ("get_positions", {"coin": "ETH"}), ("get_account", {}), ("get_status", {}),
+                       ("bracket_sweep", {"coin": "ETH"}), ("desk_brief", {"desk": "oil"})):
+        err, body = h.call(name, args)
+        assert not err, (name, body)
+        assert "Traceback" not in json.dumps(body), name
+    # operator path: no public decoration on live-money output
+    err, body = h.call("sweep_brackets", {"coin": "ETH"})
+    assert not err and "builder_fee" not in body and "network" not in body
+
+
+def test_operator_v2_instructions_name_only_listed_tools(monkeypatch):
+    monkeypatch.setenv("PATHIEL_TOOLSET", "v2")
+    m = _fresh_server("srv_v2_words")
+    listed = set(P.operator_names())
+    named = set(re.findall(r"\b([a-z]+_[a-z_]+)\b", m.OPERATOR_V2_INSTRUCTIONS))
+    tools_named = {n for n in named if n in set(P.NAMES) | {t["name"] for t in m.TOOLS}}
+    assert tools_named <= listed, tools_named - listed

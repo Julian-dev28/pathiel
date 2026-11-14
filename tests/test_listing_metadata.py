@@ -186,7 +186,7 @@ def network_defaults() -> List[Tuple[str, bool]]:
 
 def test_versions_agree_everywhere():
     sources = version_sources()
-    assert {v for _, v in sources} == {"0.6.0"}, sources
+    assert {v for _, v in sources} == {"0.7.0"}, sources
     assert oci_package()["identifier"].endswith(":" + package_version())
 
 

@@ -35,7 +35,7 @@ keeping a resting entry honest. Between ticks the resting stop and target
 orders do the guarding, so an entry never goes on without both attached.
 
 If the `mcp__pathiel__*` tools are deferred, load the ones you need with one
-ToolSearch call: `select:mcp__pathiel__desk_brief,mcp__pathiel__bracket_sweep,mcp__pathiel__place_bracket,mcp__pathiel__cancel_order,mcp__pathiel__close_position`.
+ToolSearch call: `select:mcp__pathiel__get_desk_brief,mcp__pathiel__sweep_brackets,mcp__pathiel__place_bracket,mcp__pathiel__cancel_order,mcp__pathiel__close_position`.
 
 ## Steps, in order
 
@@ -47,7 +47,7 @@ ToolSearch call: `select:mcp__pathiel__desk_brief,mcp__pathiel__bracket_sweep,mc
    `DESK-TICK DESK <utc> action=SKIP slot held by <holder>` and STOP. No
    brief, no levels, no MCP calls. An `error` output: log
    `action=NONE <the error>` and STOP.
-1. **Thesis first.** `desk_brief {desk: "DESK"}` (quick). The call's
+1. **Thesis first.** `get_desk_brief {desk: "DESK"}` (quick). The call's
    instrument is COIN for the rest of the tick (oil: xyz:BRENTOIL, metals:
    xyz:GOLD since 2026-11-05 (xyz:SILVER from 2026-10-31 to 11-05), ai:
    whichever equity the call names, gas: xyz:NATGAS). A thesis whose
@@ -56,10 +56,10 @@ ToolSearch call: `select:mcp__pathiel__desk_brief,mcp__pathiel__bracket_sweep,mc
    with "instrument ... is not the desk's primary" for it, past every gap).
    The card shows "Pays X.XR"; a call under 1.5R never trades.
    **Rewrite check:** `python3 scripts/thesis_due.py --desk DESK`. Call
-   `desk_refresh {desk: DESK, force: true}` only when it says `"due": true`,
+   `refresh_desk {desk: DESK, force: true}` only when it says `"due": true`,
    and put its first reason in your report. `force: true` is required:
    thesis_due is the one gate for the operator's rewrite rule, and without it
-   desk_refresh applies its own narrower trigger (expiry, a big move or a
+   refresh_desk applies its own narrower trigger (expiry, a big move or a
    headline) and skips the daily and after-catalyst rewrites with
    `no_trigger` (2026-11-01: silver ran on a 40h-old thesis that way). It is due once a day, after an API, EIA or
    OPEC release the thesis listed, after a position on the desk closed, and
@@ -73,7 +73,7 @@ ToolSearch call: `select:mcp__pathiel__desk_brief,mcp__pathiel__bracket_sweep,mc
    alert <utc>: ...", and the check answers `"headline: ..."` past the
    hourly gap (it still waits 30 minutes after the last thesis). After a
    rewrite, read the brief again.
-2. **Housekeeping.** `bracket_sweep {coin: COIN}`. Cancels the sibling left
+2. **Housekeeping.** `sweep_brackets {coin: COIN}`. Cancels the sibling left
    after a stop or target fired; reports a resting entry with its attached
    stop and target; says whether an open position is covered. "NOT FULLY
    COVERED" means a leveraged position is naked: `close_position` it in the
@@ -178,7 +178,7 @@ ToolSearch call: `select:mcp__pathiel__desk_brief,mcp__pathiel__bracket_sweep,mc
   (`--next` runs that same check; its `ok: true` is the pass).
 - Never widen a stop. One position per desk (per account when no desk
   shares are saved).
-- If `place_bracket` or `bracket_sweep` is missing from the tool list, do
+- If `place_bracket` or `sweep_brackets` is missing from the tool list, do
   nothing on the exchange and log `action=NONE reconnect pathiel MCP (/mcp)`.
 - Any tool error on a live-money call: stop the tick and report it verbatim.
   An error saying `API wallet ... does not exist` (2026-11-09: 11 hours of
@@ -203,7 +203,7 @@ ToolSearch call: `select:mcp__pathiel__desk_brief,mcp__pathiel__bracket_sweep,mc
   Every oil tick runs `python3 scripts/weekend.py --coin COIN` right after
   the slot step. When it says `"flatten": true` AND the desk holds a
   position on COIN: `close_position {coin: COIN}` in this tick, cancel any
-  resting entry on COIN, then `bracket_sweep`, and log
+  resting entry on COIN, then `sweep_brackets`, and log
   `action=CLOSED weekend flat until <until_utc>` with one operator
   sentence (size, entry, exit mid, net). `"flatten": true` and nothing
   held: no entry, log `action=NONE weekend flat until <utc>` and stop.

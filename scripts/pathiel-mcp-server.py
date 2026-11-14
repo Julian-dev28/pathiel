@@ -224,12 +224,41 @@ LIVE MONEY: place_bracket, set_stop, set_target, sweep_brackets, close_position,
     return text[:MAX_PUBLIC_INSTRUCTIONS_CHARS]
 
 
+def operator_v2() -> bool:
+    """The operator's install listing the scoped toolset: PATHIEL_TOOLSET=v2
+    in .mcp.json's env (2026-11-13). Operator behavior is unchanged (no public
+    gate, no public decoration); only tools/list and the instructions use the
+    new names. Unset: TOOLS and SERVER_INSTRUCTIONS, byte for byte."""
+    return not runtime.is_public() and os.environ.get("PATHIEL_TOOLSET", "").strip().lower() == "v2"
+
+
 def server_instructions() -> str:
     """The MCP initialize instructions: SERVER_INSTRUCTIONS, byte for byte, on
-    the operator's install; the public text on a public one."""
-    if not runtime.is_public():
-        return SERVER_INSTRUCTIONS
-    return _public_instructions()
+    the operator's install; OPERATOR_V2_INSTRUCTIONS with PATHIEL_TOOLSET=v2;
+    the public text on a public one."""
+    if runtime.is_public():
+        return _public_instructions()
+    return OPERATOR_V2_INSTRUCTIONS if operator_v2() else SERVER_INSTRUCTIONS
+
+
+# The operator's instructions with the scoped toolset's names
+# (PATHIEL_TOOLSET=v2). Same rules as SERVER_INSTRUCTIONS, word for word where
+# no tool is named.
+OPERATOR_V2_INSTRUCTIONS = """pathiel: a headless trading desk on live Hyperliquid. Real money. Claude is the trader; there is no autonomous bot. Active desks: get_config active_desks (oil; silver = metals desk). Each trades its own slice of equity (desk_equity_share), one position per desk. Other desks are off.
+
+Start here
+- list_desks, then get_desk_brief {desk} for that desk's call. Quick mode is short markdown, call first, with "Your size" for the active account. The Desk page (http://localhost:8000/) shows the same call as a card plus the open position with margin in use.
+- refresh_desk {desk} writes a NEW thesis (news + one local model call, about a minute). Use it when asked, when the brief says the thesis is stale, or when its target has already been hit.
+- place_bracket {coin, entry_px, stop_px, tp_px}: one entry with an exact stop and target, sized to the coin's desk slice of equity less the opening fee, capped by free margin (20x cap, ONE position per desk), stop inside half the distance to liquidation. Refuses under 2R and a second position, except add=true: one same-side top-up to full size, stop no wider. sweep_brackets {coin}: cancel a stranded sibling, confirm the stop covers the position, fold per-fill stops/targets into one pair. Run it after every close.
+- set_stop {coin, stop_px} moves a stop tighter only; set_target moves the target. Neither is part of a desk's rules unless the operator says so.
+- set_leverage {coin, leverage}: keeps an open position's own margin type; a venue refusal is an error. Confirm with get_positions.
+- get_account: equity and where it sits. HIP-3 money (xyz:BRENTOIL, xyz:CL, xyz:NVDA, ...) lives on its own dex (xyz), not main; main-dex-only reads look empty for it.
+- get_risk_limits / size_trade: what this account may trade and how big, from the saved risk profile. Size every suggested trade with size_trade, never by hand.
+- A missing position or dashes on the Desk page while the venue shows one: GET /api/health/system -> hl_budget names who spent or was refused the venue budget.
+
+Coins: main-dex perps by name (BTC, ETH). HIP-3 perps as dex:SYMBOL (xyz:BRENTOIL = Brent, the oil desk's price; xyz:CL = WTI; xyz:GOLD; xyz:NATGAS).
+
+LIVE MONEY: place_bracket, sweep_brackets, set_stop, set_target, close_position, set_leverage, cancel_order act on the real account, and update_config rewrites the live trading config. Call them only when the operator asked for that exact action in this conversation. Every other tool only reads (refresh_desk, submit_desk_call and get_desk_record with grade=true write the desk journal; grading never places or touches an order, it only grades what already happened)."""
 
 
 # Tools definition
@@ -1474,7 +1503,7 @@ def _tool_handlers() -> Dict[str, Any]:
     for _internal, _old in public_toolset.INTERNAL_ALIASES.items():
         tool_handlers[_internal] = tool_handlers[_old]
     for _composite in public_toolset.COMPOSITE_INNER:
-        if _composite in tool_handlers and not runtime.is_public():
+        if _composite in tool_handlers and not (runtime.is_public() or operator_v2()):
             continue   # an operator tool of the same name (get_candles) stays the operator's
         tool_handlers[_composite] = _composite_handler(_composite)
 
@@ -1698,14 +1727,22 @@ def _old_schema(name: str) -> Dict[str, Any]:
     return copy.deepcopy(tool["inputSchema"])
 
 
+_OPERATOR_V2_TOOLS: "List[Dict[str, Any]] | None" = None
+
+
 def server_tools() -> List[Dict[str, Any]]:
-    """tools/list. TOOLS itself on the operator's install (60, byte-identical).
-    On a public one, the public toolset (contracts/mcp_public): 30 tools,
-    verb_noun names, one per job. Every old public name stays callable; it
-    is only no longer listed."""
-    global _PUBLIC_TOOLS
+    """tools/list. TOOLS itself on the operator's install (60, byte-identical);
+    with PATHIEL_TOOLSET=v2, the scoped toolset less the public-only tools
+    (26). On a public one, the public toolset (contracts/mcp_public): 30
+    tools, verb_noun names, one per job. Every old name stays callable; it is
+    only no longer listed."""
+    global _PUBLIC_TOOLS, _OPERATOR_V2_TOOLS
     if not runtime.is_public():
-        return TOOLS
+        if not operator_v2():
+            return TOOLS
+        if _OPERATOR_V2_TOOLS is None:
+            _OPERATOR_V2_TOOLS = public_toolset.build_tools(_old_schema, public_toolset.operator_names())
+        return _OPERATOR_V2_TOOLS
     if _PUBLIC_TOOLS is None:
         _PUBLIC_TOOLS = public_toolset.build_tools(_old_schema)
     return _PUBLIC_TOOLS

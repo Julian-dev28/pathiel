@@ -321,7 +321,7 @@ def test_readme_badges_are_static_or_point_at_a_real_workflow():
         m = re.match(r"https://github\.com/Julian-dev28/pathiel/actions/workflows/([\w.-]+)/badge\.svg", url)
         assert m, f"badge that may not resolve: {url}"
         assert (ROOT / ".github" / "workflows" / m.group(1)).is_file(), url
-    assert "version-0.6.0" in readme
+    assert "version-0.7.0" in readme
 
 
 def test_faq_has_five_to_seven_questions():

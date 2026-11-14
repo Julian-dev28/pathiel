@@ -141,13 +141,13 @@ def test_generated_tick_files_reference_no_research_docs():
 def test_generated_tick_files_point_at_risk_limits():
     agent = (ROOT / "agents" / "desk-tick.md").read_text(encoding="utf-8")
     flat = " ".join(agent.split())
-    assert "`max_leverage` that `risk_limits` reports (a fresh install is 3x" in flat
+    assert "`max_leverage` that `get_risk_limits` reports (a fresh install is 3x" in flat
     assert "`place_bracket` caps and fits it by itself" in flat
     assert "scripts/oil_levels.py --check ENTRY STOP TP --lev L`" in flat
     assert "scripts/oil_levels.py --coin COIN --next SIDE --thesis-entry ENTRY --risk-lev L`" in flat
     # one definition of L per oil_levels.py call that takes it (--check, --next)
-    assert flat.count("L is the `max_leverage` that `risk_limits` reports") == 2
-    assert "where L is the `max_leverage` that `risk_limits` reports" in flat
+    assert flat.count("L is the `max_leverage` that `get_risk_limits` reports") == 2
+    assert "where L is the `max_leverage` that `get_risk_limits` reports" in flat
     assert "On testnet the oil desk trades WTI (xyz:CL) as the Brent stand-in" in flat
     assert "says plainly when a coin is not tradable there" in flat
 
@@ -191,7 +191,7 @@ def test_operator_tick_sources_are_untouched(tmp_path, monkeypatch):
 def test_pathiel_agent_skill_names_the_public_layout():
     text = (ROOT / "skills" / "pathiel-agent" / "SKILL.md").read_text(encoding="utf-8")
     head = text[:text.index("## How a trade happens now")]
-    for needle in ("~/.pathiel", "**mainnet**", "real", "PATHIEL_NETWORK=testnet", "`risk_limits`"):
+    for needle in ("~/.pathiel", "**mainnet**", "real", "PATHIEL_NETWORK=testnet", "`get_risk_limits`"):
         assert needle in head, needle
     assert "60 tools" in text
 
