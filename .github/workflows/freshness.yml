@@ -2,9 +2,8 @@ name: Freshness
 
 # Daily: do plugin users have main's fixes, and does every link people and
 # agents follow still resolve? A red run is the alert (GitHub mails the
-# owner). Added 2026-11-14 after the Midnight Expert review: its fixes sat on
-# main for weeks while its marketplace shipped a June commit, and its content
-# went stale on a retired URL. Read only.
+# owner). Added 2026-11-14: a plugin's fixes are worth nothing until users get
+# them, and docs that point at retired URLs mislead agents. Read only.
 #
 #   plugin freshness  scripts/plugin_freshness.py: unreleased changes to
 #                     shipped files older than 7 days (2 for requirements.lock)

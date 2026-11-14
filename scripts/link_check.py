@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Every link users and agents follow still resolves.
 
-Why (2026-11-14): the Midnight memo's content-freshness metric ("CI pings
-every URL; nothing stale > 7 days"): its harness went stale within a day when
-an indexer was decommissioned and an example repo archived. This checks the
+Why (2026-11-14): content freshness. Docs go stale quietly when an indexer
+is retired or an example repository is archived, and an agent follows the
+dead link anyway. This checks the
 files people and agents read: README.md, the plugin's commands, agents and
 skills, the public docs and the site.
 

@@ -11,7 +11,7 @@ Same inputs every run, so the comparison is measured, not eyeballed:
   Directory listings     whether Glama, mcpservers.org and the official
                          MCP registry list it (HTTP status of its page)
 
-    python3 scripts/seo_compare.py                         # pathiel vs midnight-expert
+    python3 scripts/seo_compare.py OTHER_OWNER/REPO        # pathiel vs another repository
     python3 scripts/seo_compare.py OWNER/REPO OWNER/REPO
 
 Uses GITHUB_TOKEN (or `gh auth token`) for the API. Read only. The search
@@ -31,14 +31,12 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import seo_rank as S  # noqa: E402  (search, rank_of, _token, _ssl_context)
 
-PAIR = ("Julian-dev28/pathiel", "midnightntwrk/midnight-expert")
-# queries a stranger would type for each repo's category, and for the shared
-# category (a Claude Code plugin / MCP server)
+PATHIEL = "Julian-dev28/pathiel"
+# queries a stranger would type for pathiel's category, and for the shared
+# category (a Claude Code plugin / MCP server); the other repo is ranked on all
 QUERIES = {
     "Julian-dev28/pathiel": ("hyperliquid mcp", "hyperliquid trading agent", "ai trading agent",
                              "claude trading", "trading mcp server"),
-    "midnightntwrk/midnight-expert": ("midnight blockchain", "compact language", "midnight network",
-                                      "midnight claude", "zk smart contracts"),
     "shared": ("claude code plugin", "mcp server", "claude code skills"),
 }
 
@@ -138,7 +136,10 @@ def report(repos, token) -> str:
 
 
 def main(argv) -> int:
-    repos = tuple(argv[:2]) if len(argv) >= 2 else PAIR
+    if not argv:
+        print(__doc__)
+        return 2
+    repos = tuple(argv[:2]) if len(argv) >= 2 else (PATHIEL, argv[0])
     print(report(repos, S._token()))
     return 0
 

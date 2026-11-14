@@ -1,5 +1,4 @@
-"""Guards against the three ways Midnight Expert's fixes never reached its
-users (midnight-takehome-assignment/ADDENDUM.md and MEMO.md, 2026-11-14):
+"""Guards that keep plugin users on what main actually is (2026-11-14):
 
 1. release lag   main is fixed, the marketplace ships an old commit
                  -> scripts/plugin_freshness.py (daily, .github/workflows/freshness.yml)
