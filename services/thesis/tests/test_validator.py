@@ -243,12 +243,13 @@ def test_r_multiple_below_minimum_fails():
     call = Call(side="long", instrument="xyz:CL", one_liner="x", entry_px=100.0, stop_px=98.0,
                 targets=[100.5], confidence=0.5, invalidation="i")
     errors = validator.check_r_multiple(call)
-    assert len(errors) == 1 and "0.25R" in errors[0] and "1.5R minimum" in errors[0]
+    assert len(errors) == 1 and "0.25R" in errors[0] and f"{validator.DEFAULT_MIN_R:g}R minimum" in errors[0]
 
 
 def test_r_multiple_at_exactly_the_minimum_passes():
     call = Call(side="long", instrument="xyz:CL", one_liner="x", entry_px=100.0, stop_px=98.0,
-                targets=[103.0], confidence=0.5, invalidation="i")   # R = 3/2 = 1.5 exactly
+                targets=[104.0], confidence=0.5, invalidation="i")   # R = 4/2 = 2.0, the live gate exactly
+    assert validator.DEFAULT_MIN_R == 2.0
     assert validator.check_r_multiple(call) == []
 
 
@@ -636,9 +637,9 @@ def test_a_realistic_version_of_the_same_call_passes():
     all-time high - the shape the fix is supposed to produce."""
     call = Call(
         side="long", instrument="xyz:BRENTOIL",
-        one_liner="Long Brent 5x at 113.87, stop 111.29, target 116.5.",
-        entry_px=113.87, stop_px=112.5, targets=[116.5], leverage=5, confidence=0.5,
-        invalidation="Daily close below 112.5.",
+        one_liner="Long Brent 5x at 113.87, stop 112.6, target 116.5.",
+        entry_px=113.87, stop_px=112.6, targets=[116.5], leverage=5, confidence=0.5,
+        invalidation="Daily close below 112.6.",
     )
     structure = _brent_structure_with_extremes()
     from contracts.strategies.models import Quantiles

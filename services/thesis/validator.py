@@ -27,7 +27,7 @@ Rule inventory, and why each one is the shape it is:
 - stop side, entry-near-mid, targets-consistent, leverage-not-avoid,
   instrument-known: structural sanity on the Call the LLM is authoring as
   the actual trade idea.
-- r-multiple, stop-within-ladder: the call must pay at least 1.5R to its
+- r-multiple, stop-within-ladder: the call must pay at least DEFAULT_MIN_R (2R) to its
   first target (pathiel.agents.bracket.check_levels, the same gate
   place_bracket runs before a live order), and the stop may never sit wider
   than the matching leverage ladder rung's own stop_px - that rung's stop is
@@ -576,7 +576,10 @@ def check_scenarios_calibrated(
     return []
 
 
-DEFAULT_MIN_R = 1.5
+# The live gate's own minimum (pathiel.agents.bracket.DEFAULT_MIN_R, 2R since
+# 2026-10-30). Read from there, not copied: this said 1.5 until 2026-11-14,
+# so a 1.5R to 2R thesis passed here and was then refused by place_bracket.
+from pathiel.agents.bracket import DEFAULT_MIN_R  # noqa: E402
 
 
 def check_r_multiple(call: Call, min_r: float = DEFAULT_MIN_R) -> List[str]:

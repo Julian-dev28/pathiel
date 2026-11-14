@@ -73,6 +73,13 @@ def estimate_tokens(text: str) -> int:
 
 # Everything from "Hard rules:" on. One string object, shared by the operator
 # and the public persona, so the thesis quality rules can never fork.
+# The R floor the live gate refuses below (pathiel.agents.bracket), stated
+# from the constant so the prompt and the gate cannot disagree again (this
+# said 1.5R while place_bracket refused under 2R, 2026-10-30 to 2026-11-14).
+from pathiel.agents.bracket import DEFAULT_MIN_R as _GATE_MIN_R  # noqa: E402
+
+_MIN_R_TEXT = f"{_GATE_MIN_R:g}R"
+
 _RULES_BLOCK = (
     "Hard rules:\n"
     "- No em dashes. No hedging filler (\"could\", \"might\", "
@@ -104,10 +111,10 @@ _RULES_BLOCK = (
     "targets must sit at the next real structural level beyond entry in "
     "the direction of your trade (the next range edge, or a level named "
     "in the market snapshot) - never an arbitrary round number. The "
-    "call must pay at least 1.5R to its first target, where R is the "
+    f"call must pay at least {_MIN_R_TEXT} to its first target, where R is the "
     "distance from entry to stop (reward divided by risk) - if the "
     "nearest structural stop and the nearest structural target do not "
-    "clear 1.5R together, either tighten the stop to the next edge in, "
+    f"clear {_MIN_R_TEXT} together, either tighten the stop to the next edge in, "
     "or pick a different leverage/instrument; never widen the stop past "
     "the ladder limit to force a target to qualify.\n"
     "- Targets are the MOST LIKELY reachable price, never an "
@@ -123,10 +130,10 @@ _RULES_BLOCK = (
     "short) is not a real ceiling/floor yet, and a target may sit past "
     "it, still bounded by the REACH quantiles above.\n"
     "- side is the direction the evidence supports. Do not go flat only "
-    "because no bracket at the CURRENT price clears 1.5R: keep the side "
+    f"because no bracket at the CURRENT price clears {_MIN_R_TEXT}: keep the side "
     "and set entry_px at the pullback level (a dip for a long, a rally "
     "for a short, inside the entry sanity band) where the structural "
-    "stop and a reachable target do clear 1.5R; the desk executes its "
+    f"stop and a reachable target do clear {_MIN_R_TEXT}; the desk executes its "
     "own bracket and treats your entry as the most it will pay. Choose "
     "flat only when the evidence itself has no direction.\n"
     "- scenarios must be calibrated to FORWARD's final-return quantiles: "
