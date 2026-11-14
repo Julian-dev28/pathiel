@@ -212,6 +212,31 @@
   .risk { border-color: rgba(246, 70, 93, 0.35); }
   .risk .ph { color: var(--down); background: rgba(246, 70, 93, 0.06); }
 
+  /* ── why this desk ──────────────────────────────────────────────────── */
+  .three { display: grid; gap: 16px; }
+  @media (min-width: 1040px) { .three { grid-template-columns: 1fr 1fr 1fr; } }
+  .why .pb { color: var(--dim); font-size: 14px; display: flex; flex-direction: column; gap: 12px; }
+  .why h3 { margin: 0; font: 700 20px/1.2 var(--sans); color: var(--ink); letter-spacing: -0.01em; }
+  .why h3 em { font-style: normal; color: var(--amber); }
+  .why p { margin: 0; }
+  .facts { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; }
+  .facts li { display: grid; grid-template-columns: 14px 1fr; gap: 8px; }
+  .facts li::before { content: "\25B8"; color: var(--up); font-size: 11px; line-height: 1.9; }
+  .facts b { color: var(--ink); font-weight: 600; }
+  .scen { display: grid; gap: 7px; font: 500 12px var(--mono); }
+  .scen .row { display: grid; grid-template-columns: 1fr 44px; gap: 8px; align-items: center; }
+  .scen .bar { position: relative; height: 22px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 3px; overflow: hidden; }
+  .scen .bar i { position: absolute; inset: 0 auto 0 0; background: var(--up-bg); border-right: 2px solid var(--up); }
+  .scen .bar.dn i { background: var(--down-bg); border-right-color: var(--down); }
+  .scen .bar span { position: relative; padding: 0 8px; line-height: 22px; color: var(--dim); }
+  .scen .pct { text-align: right; color: var(--ink); font-weight: 700; }
+  .brief { margin: 0; padding: 10px 12px; border-left: 2px solid var(--amber); background: var(--panel-2); font: 12px/1.7 var(--mono); color: var(--dim); }
+  .brief b { color: var(--ink); }
+  .scroll-x.tested table { min-width: 0; }
+  .tested td.v { white-space: normal; font-size: 12px; min-width: 120px; }
+  .dropped { font-size: 13px; color: var(--muted); }
+  .dropped s { color: var(--faint); }
+
   /* ── footer: status bar ─────────────────────────────────────────────── */
   footer { margin-top: 48px; border-top: 1px solid var(--line); background: var(--panel); }
   .status { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 22px; min-height: 40px; padding: 10px 0;
@@ -245,6 +270,7 @@
     <a class="logo" href="#top" aria-label="pathiel, back to top"><i aria-hidden="true"></i>PATHIEL</a>
     <span class="pair"><b>AI AGENT</b> / HYPERLIQUID PERPS</span>
     <nav aria-label="Sections">
+      <a href="#desk">Desk</a>
       <a href="#install">Install</a>
       <a href="#risk-engine">Risk engine</a>
       <a href="#markets">Markets</a>
@@ -260,8 +286,8 @@
 
 <div class="tape" aria-hidden="true">
   <div class="tape-track">
-    <span class="q">MAX LEV <b>3.00x</b></span><span class="q">RISK / TRADE <b>1.00%</b></span><span class="q">MIN R:R <b>2.00</b></span><span class="q">OPEN POSITIONS <b>1</b></span><span class="q">STOP VS LIQ <b>&lt; 0.5</b></span><span class="q">PATHIEL FEE <b class="up">0.00%</b></span><span class="q">MCP TOOLS <b>30</b></span><span class="q">VENUE <b>HYPERLIQUID</b></span><span class="q">MARKETS <b>PERPS + HIP-3</b></span><span class="q">LICENSE <b>MIT</b></span><span class="q">VERSION <b class="am">0.7.1</b></span>
-    <span class="q">MAX LEV <b>3.00x</b></span><span class="q">RISK / TRADE <b>1.00%</b></span><span class="q">MIN R:R <b>2.00</b></span><span class="q">OPEN POSITIONS <b>1</b></span><span class="q">STOP VS LIQ <b>&lt; 0.5</b></span><span class="q">PATHIEL FEE <b class="up">0.00%</b></span><span class="q">MCP TOOLS <b>30</b></span><span class="q">VENUE <b>HYPERLIQUID</b></span><span class="q">MARKETS <b>PERPS + HIP-3</b></span><span class="q">LICENSE <b>MIT</b></span><span class="q">VERSION <b class="am">0.7.1</b></span>
+    <span class="q">ACTIVE DESK <b class="am">OIL</b></span><span class="q">TICK <b>15M</b></span><span class="q">MAX LEV <b>3.00x</b></span><span class="q">RISK / TRADE <b>1.00%</b></span><span class="q">MIN R:R <b>2.00</b></span><span class="q">OPEN POSITIONS <b>1</b></span><span class="q">STOP VS LIQ <b>&lt; 0.5</b></span><span class="q">PATHIEL FEE <b class="up">0.00%</b></span><span class="q">MCP TOOLS <b>30</b></span><span class="q">VENUE <b>HYPERLIQUID</b></span><span class="q">MARKETS <b>PERPS + HIP-3</b></span><span class="q">LICENSE <b>MIT</b></span><span class="q">VERSION <b class="am">0.7.1</b></span>
+    <span class="q">ACTIVE DESK <b class="am">OIL</b></span><span class="q">TICK <b>15M</b></span><span class="q">MAX LEV <b>3.00x</b></span><span class="q">RISK / TRADE <b>1.00%</b></span><span class="q">MIN R:R <b>2.00</b></span><span class="q">OPEN POSITIONS <b>1</b></span><span class="q">STOP VS LIQ <b>&lt; 0.5</b></span><span class="q">PATHIEL FEE <b class="up">0.00%</b></span><span class="q">MCP TOOLS <b>30</b></span><span class="q">VENUE <b>HYPERLIQUID</b></span><span class="q">MARKETS <b>PERPS + HIP-3</b></span><span class="q">LICENSE <b>MIT</b></span><span class="q">VERSION <b class="am">0.7.1</b></span>
   </div>
 </div>
 
@@ -368,6 +394,63 @@
       <p class="note">Illustration of how a bracket is built. Not market data, not a result.</p>
     </div>
   </div>
+
+  <section id="desk" class="three">
+    <div class="panel why reveal">
+      <div class="ph"><span class="tabs"><span>One market</span><span>Focus</span></span><span>Oil desk</span></div>
+      <div class="pb">
+        <h3>One market at a time, <em>studied hard.</em></h3>
+        <p>One desk trades at a time, crude oil by default, holding one position. Every input it reads is chosen for that market.</p>
+        <ul class="facts">
+          <li><span><b>Brent</b> (xyz:BRENTOIL) on mainnet, WTI on testnet; one position per account</span></li>
+          <li><span><b>EIA</b> weekly crude stocks, read as the surprise against the 4-week average</span></li>
+          <li><span><b>CFTC</b> positioning, <b>Polymarket</b> and <b>Kalshi</b> odds on Iran, Hormuz and OPEC+</span></li>
+          <li><span><b>Sanctions</b> and the Federal Register; Hyperliquid funding and open interest</span></li>
+          <li><span>The weekly <b>EIA</b> and <b>API</b> prints, plus a <b>47-event</b> calendar: OPEC and IEA reports, FOMC, CPI, jobs, expiries</span></li>
+          <li><span>A tick every <b>15 minutes</b>; the thesis is rewritten daily, after each listed catalyst, a 1.5% move, a stop break or a headline alert</span></li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="panel why reveal">
+      <div class="ph"><span class="tabs"><span>The brief</span><span>Scenarios</span></span><span>Every call</span></div>
+      <div class="pb">
+        <h3>The most likely moves, <em>written down.</em></h3>
+        <p>Every brief prices the next week as 3 to 5 scenarios whose odds must sum to 100%, or the brief is rejected and rewritten.</p>
+        <div class="scen" aria-label="Example scenario layout">
+          <div class="row"><div class="bar"><i style="width:40%"></i><span>Grinds higher</span></div><span class="pct">40%</span></div>
+          <div class="row"><div class="bar"><i style="width:26%"></i><span>Range holds</span></div><span class="pct">26%</span></div>
+          <div class="row"><div class="bar dn"><i style="width:22%"></i><span>Surplus wins, retest lows</span></div><span class="pct">22%</span></div>
+          <div class="row"><div class="bar dn"><i style="width:12%"></i><span>Headline shock lower</span></div><span class="pct">12%</span></div>
+        </div>
+        <p class="brief"><b>Out if:</b> a 1h close below the stop<br><b>Biggest risk:</b> the worst scenario, with its odds<br><b>Next catalyst:</b> named, with its UTC time</p>
+        <p>Every call is graded afterwards: direction hit rate and a Brier score on the odds it gave.</p>
+      </div>
+      <p class="note">Example of the brief's format, not a live call.</p>
+    </div>
+
+    <div class="panel why reveal">
+      <div class="ph"><span class="tabs"><span>Rules</span><span>Evidence</span></span><span>Tested first</span></div>
+      <div class="pb">
+        <h3>Rules that earned <em>their place.</em></h3>
+        <p>A rule goes live only after a backtest or a fluke-or-edge review of real trades says so.</p>
+        <div class="scroll-x rules tested">
+          <table>
+            <thead><tr><th scope="col">Rule</th><th scope="col">Tested by</th></tr></thead>
+            <tbody>
+              <tr><td class="k">Target rests as a limit order</td><td class="v">26 target exits, limit vs market</td></tr>
+              <tr><td class="k">Target 0.5% inside the day's range</td><td class="v">540-combination sweep</td></tr>
+              <tr><td class="k">2R minimum, buy dips only</td><td class="v">Brent sweep, 30 and 50 days</td></tr>
+              <tr><td class="k">No long under the 24h low</td><td class="v">Flagged by the review on 10 real trades</td></tr>
+              <tr><td class="k">No entry 2h around EIA</td><td class="v">52-day event study</td></tr>
+              <tr><td class="k">Flat over the weekend</td><td class="v">Monday-gap study, 8 Brent datasets</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="dropped">Tested and dropped: <s>breakeven stops</s> <s>regime filter</s> <s>funding-spike filter</s>, and every rule from an 8,747-combination sweep. The review calls nothing an edge with fewer than 10 trades or p of 0.05 or more.</p>
+      </div>
+    </div>
+  </section>
 
   <section id="install" class="two">
     <div class="panel term reveal">
