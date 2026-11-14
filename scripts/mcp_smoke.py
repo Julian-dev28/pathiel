@@ -43,6 +43,7 @@ SKIPPED: Dict[str, str] = {
     "set_leverage": "changes live leverage",
     "cancel_order": "cancels a live order",
     "set_target": "moves a live take-profit order",
+    "set_stop": "moves a live stop-loss order",
     "desk_refresh": "spends LLM tokens (run it on purpose, not in a smoke)",
     "desk_submit_call": "writes to the desk journal",
     "desk_grade": "writes grades into the desk journal (the server's hourly sweep runs it)",

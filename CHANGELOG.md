@@ -8,6 +8,23 @@ All notable changes to pathiel. The format follows
 
 ### Changed
 
+- A plugin install lists 30 tools instead of 65 (`contracts/mcp_public`):
+  one tool per job, every name verb_noun. `get_market` answers what
+  `get_price`, `get_asset_context`, `get_predicted_funding` and
+  `get_max_leverage` did; `get_account`, `get_orders` and `get_history`
+  replace six equity views, five order lookups and seven ledgers. Every
+  description says when to use the tool, which sibling covers the next job,
+  what it refuses and what it returns. Every old name still answers when
+  called, and the operator's install keeps its 60 unchanged. Directory
+  graders scored the old list 3.6/5 (Glama TDQS); `scripts/tdqs_eval.py`
+  runs the same six-part rubric locally through Claude Code.
+
+### Added
+
+- `set_stop`: move an open position's stop tighter, never wider. The new
+  stop goes on before the old one is cancelled, so the position is never
+  unprotected.
+
 - The Pages site looks like a trading terminal: near-black with a chart
   grid, green and red for long and short, a ticker tape of the default risk
   limits, panels with tab headers, a risk-engine table and a markets

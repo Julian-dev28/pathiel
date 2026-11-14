@@ -4,7 +4,7 @@
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Version 0.6.0](https://img.shields.io/badge/version-0.6.0-informational.svg)](CHANGELOG.md)
-[![MCP server](https://img.shields.io/badge/MCP-65_tools-6f42c1.svg)](docs/overhaul/MCP.md)
+[![MCP server](https://img.shields.io/badge/MCP-30_tools-6f42c1.svg)](docs/overhaul/MCP.md)
 [![Claude Code plugin](https://img.shields.io/badge/Claude_Code-plugin-d97757.svg)](#install-in-30-seconds)
 [![CI](https://github.com/Julian-dev28/pathiel/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Julian-dev28/pathiel/actions/workflows/ci.yml)
 
@@ -15,7 +15,7 @@
 
 ## What it does
 
-pathiel is a free, open-source Hyperliquid MCP server and Claude Code plugin: 65 tools that read Hyperliquid perpetual futures (perps) markets and your account, and place orders, from Claude Code, Claude Desktop, Cursor or any MCP client.
+pathiel is a free, open-source Hyperliquid MCP server and Claude Code plugin: 30 tools that read Hyperliquid perpetual futures (perps) markets and your account, and place orders, from Claude Code, Claude Desktop, Cursor or any MCP client.
 Every trade is one bracket order: an entry, a stop-loss and a take-profit target, sized from your risk profile (3x and 1% of equity per trade by default).
 Desk briefs for crude oil (Brent and WTI) and metals (gold and silver) on Hyperliquid's HIP-3 markets give Claude a written call to trade from; nothing trades unless you ask.
 
@@ -79,7 +79,7 @@ Paste these into Claude Code once `/mcp` shows `pathiel` connected.
 
 | you type | what answers |
 |---|---|
-| What's the oil desk's call right now? | `desk_brief`: direction, entry, stop, target, the R it pays, and "Your size" |
+| What's the oil desk's call right now? | `get_desk_brief`: direction, entry, stop, target, the R it pays, and "Your size" |
 | Show me BTC's order book and funding. | `get_l2_book`, `get_funding_rate` |
 | What's my balance and what's open? | `account_overview` |
 | What are my risk limits? | `risk_limits` |
@@ -90,21 +90,22 @@ Paste these into Claude Code once `/mcp` shows `pathiel` connected.
 
 ## What Claude can do
 
-`scripts/pathiel-mcp-server.py` exposes 65 tools over stdio to a plugin
-install: the 60 trading tools, `wallet_connect`, and the opt-in research
-pool's 4. The maintainer's own checkout lists the 60 only. The full table, generated from
-the server's own tool list, is [docs/overhaul/MCP.md](docs/overhaul/MCP.md).
+`scripts/pathiel-mcp-server.py` lists 30 tools over stdio to a plugin
+install: one tool per job, verb_noun names (`contracts/mcp_public`). The
+maintainer's own checkout lists the 60 only, the operator set the live desks
+use. Every older tool name still answers when called; it is just no longer
+listed. The full table, generated from the server's own tool lists, is
+[docs/overhaul/MCP.md](docs/overhaul/MCP.md).
 
-| group | tools | examples |
+| group | tools | names |
 |---|---|---|
-| Desks | 6 | `desk_list`, `desk_brief`, `desk_refresh`, `desk_track_record` |
-| Account, risk and config | 6 | `account_overview`, `risk_limits`, `risk_size_trade`, `state`, `config` |
-| Orders (live money) | 6 | `place_bracket`, `bracket_sweep`, `set_target`, `close_position`, `set_leverage`, `cancel_order` |
-| Market data | 19 | `get_price`, `get_candles`, `get_l2_book`, `get_funding_rate`, `market_list_instruments` |
-| Account history | 21 | `get_open_orders`, `get_trade_history`, `get_user_fills_by_time`, `get_portfolio_pnl` |
-| Wallet reads | 2 | `connected_wallets`, `wallet_account` |
-| Wallet connect | 1 | `wallet_connect`: approve a new API wallet with one signature |
-| Research pool | 4 | `pool_status`, `pool_report`, `pool_join`, `pool_leave` |
+| Market data (no key) | 5 | `get_market`, `list_markets`, `get_candles`, `get_order_book`, `get_funding_regime` |
+| Account reads | 4 | `get_account`, `get_positions`, `get_orders`, `get_history` |
+| Risk and sizing | 2 | `get_risk_limits`, `size_trade` |
+| Orders (live money) | 7 | `place_bracket`, `set_stop` (tighter only), `set_target`, `cancel_order`, `close_position`, `set_leverage`, `sweep_brackets` |
+| Desks | 5 | `list_desks`, `get_desk_brief`, `refresh_desk`, `submit_desk_call`, `get_desk_record` |
+| Setup | 4 | `get_status`, `get_config`, `update_config`, `connect_wallet` (approve an API wallet with one signature) |
+| Research pool | 3 | `get_pool_status`, `join_pool`, `leave_pool` |
 
 `connected_wallets` and `wallet_account` read other addresses and nothing
 else. The server signs with one key, yours, so it has no path to place,
@@ -114,7 +115,7 @@ in its own output (`can_this_server_trade_them: false`).
 The oil desk is the one active desk on a fresh install. It trades Brent
 (`xyz:BRENTOIL`) on mainnet, and WTI (`xyz:CL`) on testnet, where Brent is
 not listed. The metals desk (gold, silver) is registered and off by default;
-`desk_brief` still reads it. The rules each bracket must pass are in
+`get_desk_brief` still reads it. The rules each bracket must pass are in
 [docs/strategy/OIL_RULES.md](docs/strategy/OIL_RULES.md).
 
 ## Before you trade
@@ -130,7 +131,7 @@ The mode follows from what is in `~/.pathiel/.env.local`:
 | a key and `PATHIEL_NETWORK=testnet` | testnet | everything, with test funds; the oil desk trades WTI (`xyz:CL`) |
 
 **Connect your wallet** is the quick way to a key: `/pathiel:setup` (or
-asking Claude to connect your wallet) runs `wallet_connect`. It makes a new
+asking Claude to connect your wallet) runs `connect_wallet`. It makes a new
 API wallet key on your machine and opens a local page where your browser
 wallet approves it with one signature, on the network you run. The key goes
 into `~/.pathiel/.env.local` (mode 600) and nowhere else: it can trade, never
@@ -150,7 +151,7 @@ reconnect pathiel in `/mcp`.
   entry, stop and target together. It refuses a bracket that pays under 2R,
   and a stop that sits outside half the distance to liquidation. A market
   entry fills first and its stop goes on right after; if the venue refuses
-  that stop, the output says `FILLED WITHOUT A STOP` and `bracket_sweep`
+  that stop, the output says `FILLED WITHOUT A STOP` and `sweep_brackets`
   checks every open position for one.
 - **Default profile: 3x, 1%, one position.** At most 3x leverage, 1% of
   equity at the stop per trade (up to 2% only when the venue's minimum order
@@ -301,7 +302,7 @@ the keys and state gone.
 | [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md) | account setup, permissions, prompts from first read to first trade |
 | [docs/BUILDER_FEE.md](docs/BUILDER_FEE.md) | the fee is waived; revoking a 0.4.0 approval; how it works if it returns |
 | [docs/strategy/OIL_RULES.md](docs/strategy/OIL_RULES.md) | the rules every oil bracket must pass, and what is not known |
-| [docs/overhaul/MCP.md](docs/overhaul/MCP.md) | all 65 tools |
+| [docs/overhaul/MCP.md](docs/overhaul/MCP.md) | all 30 public tools, and the operator's 60 |
 | [docs/PRIVACY.md](docs/PRIVACY.md) | the research pool: what is public, what is not, how to join, leave and come back |
 | [Scoreboard](https://julian-dev28.github.io/pathiel/scoreboard/) | the research pool's public, graded results |
 | [SECURITY.md](SECURITY.md) | where keys live, what pathiel never does, how to report a problem |

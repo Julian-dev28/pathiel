@@ -278,7 +278,7 @@ def _tools(server: Path, public_env) -> list:
 def test_the_server_lists_the_same_tools_from_the_bundle_alone(built, public_env):
     from_bundle = _tools(built / "scripts" / "pathiel-mcp-server.py", public_env)
     from_checkout = _tools(ROOT / "scripts" / "pathiel-mcp-server.py", public_env)
-    assert from_bundle == from_checkout and len(from_bundle) >= 60
+    assert from_bundle == from_checkout and len(from_bundle) == 30   # the public toolset
 
 
 def test_every_bundled_module_imports_from_the_bundle_alone(built, paths, public_env):

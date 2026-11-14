@@ -303,7 +303,7 @@ def test_setup_says_to_reconnect_after_the_env_file_changes():
     step6 = text[text.index("6. **Connect the tools.**"):text.index("7. **Prove it.**")]
     assert "reconnect pathiel in `/mcp`" in step6 and "restart Claude Code" in step6
     assert "~/.pathiel/.env.local" in step6
-    assert step6.index("reconnect") < step6.index("65 tools")
+    assert step6.index("reconnect") < step6.index("30 tools")
     step7 = text[text.index("7. **Prove it.**"):text.index("8. **Say what is next.**")]
     assert "match the `network` and `trading` lines" in step7
     assert "reconnect pathiel in `/mcp`" in step7
