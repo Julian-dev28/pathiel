@@ -65,9 +65,10 @@ def test_system_prompt_names_the_desk_and_its_lessons(oil):
 # The operator's thesis prompt for the fixture spec, as it was at 2816df7.
 # A public-install persona was added on 2026-11-12; the operator text must not
 # move by one byte. Changing the operator prompt on purpose means updating
-# this pin in the same commit.
-OPERATOR_PROMPT_SHA256 = "fc6794201c10e43d5214bd268fa4d4edd950f0c25e095c897e6a5584b72eca8c"
-OPERATOR_PROMPT_CHARS = 5497
+# this pin in the same commit. 2026-11-14: the R floor now comes from the live
+# gate (2R, pathiel.agents.bracket.DEFAULT_MIN_R); it said 1.5R.
+OPERATOR_PROMPT_SHA256 = "9e2a3914172b5670d9ef93e5957002c30feb4f66ef7536d89c59adf146913382"
+OPERATOR_PROMPT_CHARS = 5489
 
 
 def test_operator_system_prompt_hash_is_the_base_value(oil, monkeypatch):
@@ -132,7 +133,8 @@ def test_system_prompt_states_the_160_char_cap_and_the_grounding_rule(oil):
 def test_system_prompt_states_the_structural_stop_and_r_rules(oil):
     text = prompt_mod.build_system_prompt(oil.spec)
     assert "structural edge" in text
-    assert "1.5R" in text
+    from pathiel.agents.bracket import DEFAULT_MIN_R
+    assert f"{DEFAULT_MIN_R:g}R" in text and "1.5R" not in text   # the live gate, 2R
     assert "LIMIT" in text
 
 

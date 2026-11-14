@@ -82,11 +82,11 @@ def test_score_thesis_flags_a_stop_wider_than_the_ladder_limit_even_at_1_5r(oil)
 def test_score_thesis_flags_a_stop_beyond_two_atr_even_inside_the_ladder_limit(oil):
     """Independent of the ladder gate: 8% from entry is more than 2x the
     fixture's 2.78% daily ATR14, but still comfortably inside the 5x
-    ladder rung's own 10.77% limit, and the target is set for a clean 1.5R+
+    ladder rung's own 10.77% limit, and the target is set for a clean 2R+
     - stop_within_2_atr must fail on its own, with r_gate_pass passing."""
     entry = oil.thesis.call.entry_px
     stop = entry * 0.92   # 8% away: > 2 ATR (5.56%), < the ladder's 10.77% limit
-    target = entry + 1.6 * (entry - stop)
+    target = entry + 2.1 * (entry - stop)
     call = oil.thesis.call.model_copy(update={"stop_px": stop, "targets": [target, target + 5]})
     thesis = oil.thesis.model_copy(update={"call": call})
     result = E.score_thesis(thesis, oil.spec, oil.analytics, oil.intel)
