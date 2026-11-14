@@ -285,7 +285,7 @@ def get_call_line(desk_id: str, leverage: float = Query(20, gt=0, le=100)) -> Di
     except desks.UnknownDeskError:
         raise _unknown_desk(desk_id)
     if brief.thesis is None:
-        return {"ok": False, "reason": "no thesis yet — call desk_refresh"}
+        return {"ok": False, "reason": "no thesis yet — call refresh_desk"}
 
     from pathiel.client.exchange import get_max_leverage
     coin = brief.thesis.call.instrument
@@ -319,7 +319,7 @@ def desk_next_trade(desk_id: str, leverage: float, brief=None) -> Dict[str, obje
     if brief is None:
         brief = facade.get_brief(desk_id)
     if brief.thesis is None:
-        return {"ok": False, "source": "desk_rules", "reason": "no thesis yet — call desk_refresh"}
+        return {"ok": False, "source": "desk_rules", "reason": "no thesis yet — call refresh_desk"}
     call = brief.thesis.call
     coin = call.instrument or _primary_coin(desk_id)
     try:

@@ -435,14 +435,15 @@ TOOLS: List[Tuple[str, str, str, Optional[Dict[str, Any]]]] = [
      }, ["desk"])),
     # ── setup ──────────────────────────────────────────────────────────────
     ("get_status", "local_read",
-     "Start here. Get the install's status: network (mainnet or testnet), whether trading is "
-     "enabled (an API wallet key is configured) or read-only, the builder fee, the trading mode, "
-     "equity with open positions in brief, and the registered accounts with the one that trades. "
-     "Use first in a session and whenever an order is refused as read-only. For full balances and "
-     "liquidation risk use get_account; for settings use get_config. Read-only. With no wallet "
-     "connected it still answers, showing trading as read-only; a venue that cannot be reached "
-     "shows in the equity fields. Returns {status: {mode, equity, equity_by_dex, positions, "
-     "install: {network, trading, builder_fee}}, accounts: {count, accounts[], bot_trades_with}}.",
+     "Start here. Get the install's status: the trading mode, equity with open positions in brief, "
+     "and the registered accounts with the one that trades; on a public install also the network "
+     "(mainnet or testnet), whether trading is enabled (an API wallet key is configured) or "
+     "read-only, and the builder fee. Use first in a session and whenever an order is refused as "
+     "read-only. For full balances and liquidation risk use get_account; for settings use "
+     "get_config. Read-only. With no wallet connected it still answers, showing trading as "
+     "read-only; a venue that cannot be reached shows in the equity fields. Returns {status: "
+     "{mode, equity, equity_by_dex, positions, install (public installs): {network, trading, "
+     "builder_fee}}, accounts: {count, accounts[], bot_trades_with}}.",
      _schema({})),
     ("get_config", "local_read",
      "Get the trading config from ~/.pathiel/.agent-config.json: mode (LIVE or OFF), HIP-3 on or "
