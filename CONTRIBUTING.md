@@ -120,7 +120,7 @@ it touches, and paste the gate's last line.
    the versions agree with the tag and that the `plugin` branch holds the
    bundle of the tag (else it stops and prints the publish command), builds the MCP image natively on amd64
    and arm64, smoke-tests each over stdio (`initialize` answers with
-   `serverInfo.version == <version>`, 60 tools, `place_bracket` refused
+   `serverInfo.version == <version>`, the 30 public tools, `place_bracket` refused
    read-only with no key), pushes `<version>` and `latest` for both, then
    publishes `server.json` to the official MCP registry with GitHub OIDC.
    No token or secret to set up. It is the only workflow allowed to write
