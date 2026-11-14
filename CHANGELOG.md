@@ -8,6 +8,12 @@ All notable changes to pathiel. The format follows
 
 ### Changed
 
+- The Pages site has a new look: black with a blue and orange corner glow,
+  glass cards, mono eyebrows, serif italic accents, a stats strip and a
+  marquee. The landing page still loads nothing from elsewhere (no script, no
+  web font); motion is CSS only and stops under reduced motion. The
+  scoreboard matches it and shows each label (EDGE, LEAK, LEANING, FLUKE,
+  NOISE) as a coloured chip; the word stays the label.
 - The plugin starts its server as `bash scripts/pathiel-mcp.sh`, a name that
   matches its interpreter as the plugin directory asks.
   `scripts/pathiel-mcp` stays as a one-line shim for other MCP clients and
