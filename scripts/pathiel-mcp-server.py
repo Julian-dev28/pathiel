@@ -2948,6 +2948,14 @@ def _limited_info() -> _LimitedInfo:
     return _LimitedInfo()
 
 
+def _by_time(rows: Any) -> List[Any]:
+    """History rows oldest first, whatever order the venue sent, so every
+    `rows[-limit:]` keeps the NEWEST rows. Rows without a time keep their place."""
+    if not isinstance(rows, list):
+        return []
+    return sorted(rows, key=lambda r: (r.get("time") or 0) if isinstance(r, dict) else 0)
+
+
 def _limit(params: Dict[str, Any], default: int, cap: int = 2000) -> int:
     """A positive row limit from params["limit"], clamped to `cap`."""
     try:
@@ -2973,7 +2981,7 @@ def _ledger(kinds: tuple, params: Dict[str, Any]) -> str:
     """
     try:
         start = int(params.get("startTime") or 0)
-        rows = _info("userNonFundingLedgerUpdates", user=_user(params), startTime=start) or []
+        rows = _by_time(_info("userNonFundingLedgerUpdates", user=_user(params), startTime=start) or [])
         hits = [r for r in rows
                 if str(((r or {}).get("delta") or {}).get("type", "")) in kinds]
         return json.dumps({"kinds": list(kinds), "count": len(hits),
@@ -3077,7 +3085,7 @@ def handle_get_historical_funding(params: Dict[str, Any]) -> str:
         kw: Dict[str, Any] = {"user": _user(params), "startTime": start}
         if end is not None:
             kw["endTime"] = int(end)
-        rows = _info("userFunding", **kw) or []
+        rows = _by_time(_info("userFunding", **kw) or [])
         coin = _norm_coin(params.get("coin", "")) if params.get("coin") else ""
         if coin:
             rows = [r for r in rows
@@ -3097,7 +3105,10 @@ def handle_get_trade_history(params: Dict[str, Any]) -> str:
     """
     coin = _norm_coin(params.get("coin", "")) if params.get("coin") else ""
     try:
-        rows = _info("userFills", user=_user(params)) or []
+        # The venue sends userFills NEWEST first (2000 max). Sort oldest
+        # first so [-limit:] keeps the newest: before 2026-11-13 it kept the
+        # oldest, and a wallet's "last 3 fills" came back from June.
+        rows = _by_time(_info("userFills", user=_user(params)) or [])
         if coin:
             rows = [r for r in rows if r.get("coin") == coin]
         return json.dumps({"coin": coin or "all", "count": len(rows),

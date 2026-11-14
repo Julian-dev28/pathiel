@@ -271,3 +271,45 @@ def test_old_public_names_still_answer(keyed):
             args = {"address": E.ACCT}
         err, body = keyed.call(old, args)
         assert not err, (old, body)
+
+
+# ── history keeps the newest rows (found live, 2026-11-13) ───────────────────
+
+@pytest.mark.parametrize("handler,info_type,key", [
+    ("handle_get_trade_history", "userFills", "fills"),
+    ("handle_get_historical_funding", "userFunding", "rows"),
+])
+def test_history_keeps_the_newest_rows_whatever_order_the_venue_sends(monkeypatch, handler, info_type, key):
+    """A real Claude Code session asked for a wallet's last 3 fills and got
+    June's: the venue sends userFills newest first and the handler kept
+    rows[-limit:]. Rows are now sorted oldest first before the limit."""
+    newest_first = [{"time": t, "coin": "BTC", "delta": {"coin": "BTC"}} for t in (500, 400, 300, 200, 100)]
+    monkeypatch.setattr(M, "_info", lambda typ, **kw: list(newest_first) if typ == info_type else [])
+    monkeypatch.setattr(M, "_user", lambda params=None: "0x" + "1" * 40)
+    out = json.loads(getattr(M, handler)({"limit": 2, "startTime": 0}))
+    assert [r["time"] for r in out[key]] == [400, 500]
+
+
+def test_ledger_keeps_the_newest_rows(monkeypatch):
+    rows = [{"time": t, "delta": {"type": "deposit", "usdc": "1"}} for t in (300, 100, 200)]
+    monkeypatch.setattr(M, "_info", lambda typ, **kw: list(rows))
+    monkeypatch.setattr(M, "_user", lambda params=None: "0x" + "1" * 40)
+    out = json.loads(M.handle_get_deposits({"limit": 2}))
+    assert [r["time"] for r in out["rows"]] == [200, 300]
+
+
+def test_another_wallets_fills_honour_the_time_window():
+    """Live 2026-11-13: get_history(address, start_time) ignored the window.
+    The venue cannot time-filter another wallet's fills, so the composite
+    takes its newest 2000 and cuts the window itself, newest kept."""
+    fills = [{"time": t, "coin": "BTC"} for t in range(100, 1100, 100)]   # oldest first, 10 rows
+    call, calls = _fake({"get_trade_history": (json.dumps({"count": 10, "fills": fills}), False)})
+    out = json.loads(P.run("get_history", {"address": "0xa", "start_time": 300, "end_time": 800,
+                                           "limit": 2}, call))
+    assert calls == [("get_trade_history", {"limit": 2000, "user": "0xa"})]
+    assert [r["time"] for r in out["fills"]] == [700, 800] and out["window"]["matched"] == 6
+    assert "note" not in out["window"]
+    full = [{"time": t} for t in range(5000, 7000)]   # 2000 rows, all after the window start
+    call, _ = _fake({"get_trade_history": (json.dumps({"fills": full}), False)})
+    out = json.loads(P.run("get_history", {"address": "0xa", "start_time": 1}, call))
+    assert "newest 2000" in out["window"]["note"]

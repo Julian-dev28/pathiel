@@ -141,8 +141,9 @@ TOOLS: List[Tuple[str, str, str, Optional[Dict[str, Any]]]] = [
      "top 100 by open interest. view=assets: size decimals and max leverage per main-dex perp, for "
      "order sizing. limit defaults to 50 (max 1000). For one coin's full snapshot use get_market "
      "instead; for price history use get_candles. Read-only; needs no key. Returns "
-     "{instruments[], counts, matched} for instruments, a coin-to-price map for mids, and ranked "
-     "rows for the other views; a venue failure returns {error} with isError true.",
+     "{instruments[], counts, matched} for instruments, {count, mids} for mids, {count, rows[]} "
+     "for funding and open_interest, and {count, assets[]} for assets; a venue failure returns "
+     "{error} with isError true.",
      _schema({
          "view": {"type": "string", "enum": ["instruments", "mids", "funding", "open_interest", "assets"],
                   "default": "instruments", "description": "Which board to return."},
@@ -153,11 +154,13 @@ TOOLS: List[Tuple[str, str, str, Optional[Dict[str, Any]]]] = [
      })),
     ("get_candles", "market_read",
      "Get OHLCV candles for one coin. Returns [{t, o, h, l, c, v}], oldest first, t in unix ms. Two "
-     "modes: the last `count` candles at `interval` (default 100 x 1h), or a fixed window when "
+     "modes: the last `count` candles at `interval` (default 100 x 1h; the newest one may still be "
+     "forming, so one extra can come back), or a fixed window when "
      "start_time is given (end_time defaults to now; count is then ignored). interval is one of "
      "Hyperliquid's: 1m, 3m, 5m, 15m, 30m, 1h, 2h, 4h, 8h, 12h, 1d, 3d, 1w, 1M. Use for trend, "
      "levels, volatility and backtests. For the price right now use get_market; for depth use "
-     "get_order_book. Read-only; needs no key.",
+     "get_order_book. Read-only; needs no key. Window mode returns {coin, interval, start, end, "
+     "count, candles[]}.",
      _schema({
          "coin": _COIN,
          "interval": {"type": "string", "description": "Candle size: 1m, 5m, 15m, 1h, 4h, 1d, ... (default 1h)."},
@@ -236,8 +239,9 @@ TOOLS: List[Tuple[str, str, str, Optional[Dict[str, Any]]]] = [
      })),
     ("get_history", "account_read",
      "Get the account's ledger, one kind per call. kind=fills (default): executed trades with "
-     "price, size, side, fee and closed PnL; give start_time (and end_time) for a time "
-     "window on the configured account, otherwise the latest fills, narrowed by coin and limit. "
+     "price, size, side, fee and closed PnL, the latest fills by default, narrowed by coin and "
+     "limit; start_time and end_time cut a time window (for another wallet, within its newest "
+     "2000 fills, the venue's cap). "
      "kind=funding: funding paid or received per coin between start_time and end_time. "
      "kind=deposits, withdrawals or transfers: money in, out and between perp, spot, sub-accounts "
      "and vaults since start_time; withdrawal_id checks one withdrawal's settlement. pathiel cannot "
@@ -666,6 +670,10 @@ def plan(name: str, args: Dict[str, Any]) -> List[Tuple[str, str, Dict[str, Any]
         if kind == "fills":
             if start is not None and not addr:
                 return [("", "get_user_fills_by_time", _clean({"start_time": start, "end_time": end}))]
+            if addr and (start is not None or end is not None):
+                # the venue has no time filter for another wallet's fills: take
+                # its newest 2000 and let run() cut the window (_window_fills)
+                return [("", "get_trade_history", _clean({"coin": coin, "limit": 2000, "user": addr}))]
             return [("", "get_trade_history", _clean({"coin": coin, "limit": limit, "user": addr}))]
         if kind == "funding":
             return [("", "get_historical_funding", _clean({"coin": coin, "startTime": start, "endTime": end,
@@ -709,12 +717,41 @@ def run(name: str, args: Dict[str, Any], call: Call) -> str:
         return json.dumps({"error": f"{name}: nothing matches those arguments"})
     if len(steps) == 1 and steps[0][0] == "":
         text, _ = call(steps[0][1], steps[0][2])
+        a = args or {}
+        if (name == "get_history" and (a.get("kind") or "fills") == "fills" and a.get("address")
+                and (a.get("start_time") is not None or a.get("end_time") is not None)):
+            return _window_fills(text, a)
         return text
     head: Dict[str, Any] = {}
     if name == "get_market":
         head["coin"] = (args or {}).get("coin")
     parts = {key: call(old, sub) for key, old, sub in steps}
     return _merge(parts, head)
+
+
+def _window_fills(text: str, a: Dict[str, Any]) -> str:
+    """Another wallet's fills cut to [start_time, end_time] and to limit
+    (newest kept), from the newest 2000 the venue returns. Says so when the
+    window may reach past those 2000."""
+    obj = _parse(text)
+    if not isinstance(obj, dict) or not isinstance(obj.get("fills"), list):
+        return text
+    lo = a.get("start_time")
+    hi = a.get("end_time")
+    rows = [r for r in obj["fills"] if isinstance(r, dict)
+            and (lo is None or (r.get("time") or 0) >= lo) and (hi is None or (r.get("time") or 0) <= hi)]
+    try:
+        limit = max(1, min(2000, int(a.get("limit") or 100)))
+    except (TypeError, ValueError):
+        limit = 100
+    out = {**obj, "fills": rows[-limit:], "count": len(rows[-limit:]),
+           "window": {"start_time": lo, "end_time": hi, "matched": len(rows)}}
+    if len(obj["fills"]) >= 2000 and lo is not None:
+        oldest = min((r.get("time") or 0) for r in obj["fills"] if isinstance(r, dict))
+        if oldest > lo:
+            out["window"]["note"] = ("the venue returns another wallet's newest 2000 fills only; "
+                                     "fills before the oldest of those are not included")
+    return json.dumps(out, default=str)
 
 
 def validate_update_config(args: Dict[str, Any]) -> Optional[str]:
