@@ -1,10 +1,8 @@
 #!/usr/bin/env python3
 """Do plugin users get main's fixes? Fail when they wait too long.
 
-Why (2026-11-14): Midnight Expert fixed two bugs on main in early October,
-but its marketplace kept installing a June commit, 118 commits behind, so
-users never got the fixes (midnight-takehome-assignment/ADDENDUM.md). pathiel
-had the same gap in miniature: the msgpack security fix (GHSA-j586-36cw-2gc2)
+Why (2026-11-14): a fix on main reaches nobody until it ships. pathiel had
+that gap: the msgpack security fix (GHSA-j586-36cw-2gc2)
 sat on main while the `plugin` branch, which every plugin install reads,
 still shipped the vulnerable lock.
 
