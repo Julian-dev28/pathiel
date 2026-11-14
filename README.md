@@ -2,6 +2,7 @@
 
 **An AI trading agent for Hyperliquid: Claude trades perps from Claude Code, with an exact stop and target on every order.**
 
+[![Listed on mcpservers.org](https://mcpservers.org/badge.svg)](https://mcpservers.org/servers/julian-dev28/pathiel)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Version 0.6.0](https://img.shields.io/badge/version-0.6.0-informational.svg)](CHANGELOG.md)
 [![MCP server](https://img.shields.io/badge/MCP-65_tools-6f42c1.svg)](docs/overhaul/MCP.md)
