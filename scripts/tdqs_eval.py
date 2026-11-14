@@ -15,6 +15,14 @@ the --surface public score is worth trusting; the report prints both.
     .venv/bin/python scripts/tdqs_eval.py                     # public toolset
     .venv/bin/python scripts/tdqs_eval.py --surface legacy    # the 65 of v0.6.0
     .venv/bin/python scripts/tdqs_eval.py --surface both
+    .venv/bin/python scripts/tdqs_eval.py --hosted --surface both   # Glama's scorer
+
+--hosted sends the tool list to tdqs.dev (built by Glama, the published TDQS
+rubric and weights; its model is not disclosed) with TDQS_API_KEY from the
+environment or .env.local (a free key, 30 calls a day; one per surface). It
+returns Glama's own numbers: per-tool TDQS, description quality, coherence and
+the overall server score. 2026-11-13: legacy 3.0 (B, tools 3.81, min 1.7),
+public 4.4 (A, tools 4.61, min 4.3, coherence 4).
 
 Writes <out>/<surface>.json (default /tmp/pathiel-tdqs) and prints a table.
 Paid: one LLM call per batch of tools. tests/test_eval_tdqs.py (marked live)
@@ -24,6 +32,9 @@ from __future__ import annotations
 
 import argparse
 import copy
+import time
+import urllib.error
+import urllib.request
 import importlib.util
 import json
 import os
@@ -127,6 +138,61 @@ def grade(tools: List[Dict[str, Any]], batch_size: int = 8) -> Dict[str, Any]:
             "by_dimension": by_dim, "rows": rows}
 
 
+TDQS_API = "https://tdqs.dev/api/v1"
+
+
+def _tdqs_key() -> str:
+    key = os.environ.get("TDQS_API_KEY", "")
+    if not key:
+        sys.path.insert(0, str(ROOT / "scripts"))
+        import _state_env  # noqa: E402
+        _state_env.load_env_local(str(ROOT))
+        key = os.environ.get("TDQS_API_KEY", "")
+    if not key:
+        raise SystemExit("TDQS_API_KEY is not set (environment or .env.local); a free key: tdqs.dev/account/api-keys")
+    return key
+
+
+def _tdqs_call(method: str, path: str, key: str, body: Any = None) -> Dict[str, Any]:
+    req = urllib.request.Request(TDQS_API + path, method=method,
+                                 data=json.dumps(body).encode() if body is not None else None,
+                                 headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=60) as r:
+            return json.loads(r.read())
+    except urllib.error.HTTPError as e:
+        raise SystemExit(f"tdqs.dev {method} {path}: HTTP {e.code} {e.read()[:300]!r}")
+
+
+def grade_hosted(tools: List[Dict[str, Any]], poll_s: float = 10.0, max_wait_s: float = 900.0) -> Dict[str, Any]:
+    """Glama's own scoring (tdqs.dev): one report, polled until done."""
+    key = _tdqs_key()
+    queued = _tdqs_call("POST", "/reports", key, {"serverName": "pathiel", "tools": tools})
+    deadline = time.time() + max_wait_s
+    while True:
+        rep = _tdqs_call("GET", f"/reports/{queued['uid']}", key)
+        if rep.get("status") in ("completed", "failed") or time.time() > deadline:
+            break
+        time.sleep(poll_s)
+    if rep.get("status") != "completed":
+        raise SystemExit(f"tdqs.dev report {queued['uid']}: {rep.get('status')} {rep.get('failureMessage', '')}")
+    score = rep["score"]
+    rows = sorted(({"name": t["name"], "score": t["tdqs"], "tier": t["tier"], **t["scores"],
+                    "smells": t.get("smells", [])} for t in score["tools"]), key=lambda r: r["score"])
+    return {"url": queued.get("url"), "server": score.get("serverScore") or {}, "rows": rows,
+            "mean": round(statistics.mean(r["score"] for r in rows), 2), "min": rows[0]["score"]}
+
+
+def report_hosted(surface: str, result: Dict[str, Any]) -> str:
+    ss = result["server"]
+    lines = [f"## {surface} (tdqs.dev): overall {ss.get('overallScore')} {ss.get('overallTier')}, "
+             f"description quality {ss.get('descriptionQualityScore')}, coherence {ss.get('coherenceScore')}",
+             f"tools: mean {result['mean']}, min {result['min']}; report {result['url']}"]
+    for r in result["rows"][:10]:
+        lines.append(f"  {r['name']:24} {r['score']} {r['tier']} smells={r['smells']}")
+    return "\n".join(lines)
+
+
 def report(surface: str, result: Dict[str, Any]) -> str:
     lines = [f"## {surface}: {result['mean']}/5 over {result['tools_graded']} of {result['tools_listed']} tools",
              "by dimension: " + ", ".join(f"{d} {v}" for d, v in result["by_dimension"].items()), "",
@@ -141,6 +207,7 @@ def main(argv: List[str]) -> int:
     ap.add_argument("--surface", choices=("public", "legacy", "both"), default="public")
     ap.add_argument("--out", default="/tmp/pathiel-tdqs")
     ap.add_argument("--batch", type=int, default=8)
+    ap.add_argument("--hosted", action="store_true", help="score with tdqs.dev (Glama), needs TDQS_API_KEY")
     args = ap.parse_args(argv)
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
@@ -149,6 +216,11 @@ def main(argv: List[str]) -> int:
     os.environ.setdefault("PATHIEL_STATE_DIR", str(out))
     surfaces = ("legacy", "public") if args.surface == "both" else (args.surface,)
     for surface in surfaces:
+        if args.hosted:
+            result = grade_hosted(surface_tools(surface))
+            (out / f"{surface}.hosted.json").write_text(json.dumps(result, indent=1))
+            print(report_hosted(surface, result) + "\n")
+            continue
         result = grade(surface_tools(surface), batch_size=args.batch)
         (out / f"{surface}.json").write_text(json.dumps(result, indent=1))
         print(report(surface, result))
