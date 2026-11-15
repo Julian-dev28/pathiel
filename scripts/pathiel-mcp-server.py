@@ -185,6 +185,10 @@ def _public_trading_line() -> str:
         reason = trading_block_reason()
     except Exception:   # noqa: BLE001 - an import failure reads as no key
         reason = "no key could be read"
+    if reason and reason.startswith("refused: HYPERLIQUID_PRIVATE_KEY is a main account"):
+        return ("Trading: BLOCKED. The configured key is a main account's key, which can withdraw "
+                "funds, so the seven live-money tools refuse. Replace it with an API wallet key "
+                "(connect_wallet), delete the main key from ~/.pathiel/.env.local, and reconnect.")
     if reason:
         return ("Trading: read-only. No key is configured, so the seven live-money tools refuse; "
                 "every read works. connect_wallet adds a key with one wallet signature.")

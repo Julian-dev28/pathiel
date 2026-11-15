@@ -224,7 +224,7 @@ and what it can break.
 ## Do today
 
 1. Update the live interpreter to the fixed lock (certifi, urllib3). Operator runs:
-   `/Users/julian_dev/Documents/code/pathiel/.venv/bin/pip install --require-hashes -r requirements.lock`
+   `.venv/bin/pip install --require-hashes -r requirements.lock`
    then `scripts/restart.sh restart` so the server loads the new CA bundle.
 2. Merge this branch; confirm CI's new steps pass on GitHub (`npm ci --ignore-scripts`, `npm audit signatures`, `build.mjs --verify`).
 3. In `services/wallet_ui`, reinstall once with `npm ci --ignore-scripts` (the new `.npmrc` makes that the default from now on).

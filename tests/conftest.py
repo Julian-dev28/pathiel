@@ -46,6 +46,17 @@ def _outside_eia_blackout(monkeypatch):
     monkeypatch.setattr(event_blackout, "now_ms", lambda: 1793635200000)  # Mon 2026-11-02 16:00Z
 
 
+@pytest.fixture(autouse=True)
+def _no_venue_role_reads(monkeypatch):
+    """The public trading gate asks the venue whether the signing key is a
+    main account (exchange.main_key_reason). Gate tests stay offline: the
+    read answers "no answer", which leaves the offline check alone. Tests of
+    the online check set their own role."""
+    from pathiel.client import exchange
+    monkeypatch.setattr(exchange, "_read_user_role", lambda address: None)
+    monkeypatch.setattr(exchange, "_SIGNER_ROLE", {})
+
+
 # ── Public-install test kit (2026-11-12, pathiel 0.4.0 public plugin) ────────
 #
 # Three things every public-install unit needs and would otherwise each

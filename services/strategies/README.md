@@ -337,7 +337,7 @@ duration) regardless of outcome, so cost per thesis is visible.
 ## Running it
 
 ```
-ln -s /Users/julian_dev/Documents/code/pathiel/.venv .venv   # once, at the repo/worktree root
+ln -s "$(git rev-parse --path-format=absolute --git-common-dir)/../.venv" .venv   # once, at the repo/worktree root
 export PATHIEL_STATE_DIR="$(mktemp -d)"                      # never the live one
 
 .venv/bin/python -m pytest -q services/strategies                       # gate tests, offline, <1s

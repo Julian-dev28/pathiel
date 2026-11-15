@@ -12,6 +12,11 @@ from typing import Any, Dict
 
 
 
+# Keys that can withdraw funds; same set as scripts/_state_env.WITHDRAW_KEYS
+# (tests/test_key_hardening.py holds them equal). The dashboard never needs one.
+_WITHDRAW_KEYS = frozenset({"HYPERLIQUID_MASTER_PRIVATE_KEY"})
+
+
 def _load_env_local_early() -> None:
     """Pull `.env.local` into os.environ BEFORE any pathiel imports.
 
@@ -36,6 +41,8 @@ def _load_env_local_early() -> None:
                     line = line.strip()
                     if line and not line.startswith("#") and "=" in line:
                         k, _, v = line.partition("=")
+                        if k.strip() in _WITHDRAW_KEYS:
+                            continue   # never in the dashboard's env (scripts/_state_env.WITHDRAW_KEYS)
                         os.environ.setdefault(k.strip(), v.strip())
             return
 

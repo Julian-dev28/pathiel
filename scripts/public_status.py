@@ -253,8 +253,10 @@ def check_agent_not_master(env: Mapping[str, str]) -> Check:
     return Check("PASS", "agent key", "the signing key is an API wallet, not the main account")
 
 
-def check_master_key_absent(env: Mapping[str, str]) -> Check:
-    present = bool(_get(env, "HYPERLIQUID_MASTER_PRIVATE_KEY"))
+def check_master_key_absent(env: Mapping[str, str], in_file: Sequence[str] = ()) -> Check:
+    """in_file: withdraw-capable key names set in the env file
+    (_state_env.withdraw_keys_in_file); the loader keeps them out of env."""
+    present = bool(_get(env, "HYPERLIQUID_MASTER_PRIVATE_KEY")) or "HYPERLIQUID_MASTER_PRIVATE_KEY" in in_file
     if not present:
         return Check("PASS", "master key", "HYPERLIQUID_MASTER_PRIVATE_KEY is not set")
     if runtime.is_public(env):
@@ -330,7 +332,7 @@ def run_checks(env: Mapping[str, str], online: bool = False) -> List[Check]:
     checks = [check_install(env), check_network(env), check_state_dir(env), check_config(env),
               check_key_present(env)]
     checks += check_addresses(env)
-    checks += [check_agent_not_master(env), check_master_key_absent(env), check_trading_mode(env),
+    checks += [check_agent_not_master(env), check_master_key_absent(env, _state_env.withdraw_keys_in_file(str(ROOT))), check_trading_mode(env),
                check_builder(env, online), check_claude_cli()]
     return checks
 
