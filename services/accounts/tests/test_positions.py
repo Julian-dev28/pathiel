@@ -214,3 +214,19 @@ def test_cache_does_not_store_a_failed_snapshot_when_there_is_nothing_better(mon
     n = calls["n"]
     positions.fetch_positions_for_account("0xabc", dexes=["xyz"])
     assert calls["n"] > n                                      # retried at once, not served for 15 s
+
+
+def test_assess_counts_a_position_level_tpsl_as_covering_the_whole_position():
+    """2026-11-16: the app's whole-position TP/SL rests with sz 0.0; the hand
+    long of 26.84 Brent read as naked with stop_covers 0."""
+    state = {"marginSummary": {"accountValue": "214"},
+             "assetPositions": [{"position": {"coin": "xyz:BRENTOIL", "szi": "26.84", "entryPx": "92.9622",
+                                              "liquidationPx": "90.57", "leverage": {"type": "isolated", "value": 20},
+                                              "positionValue": "2499.4", "unrealizedPnl": "4.34"}}]}
+    orders = [{"coin": "xyz:BRENTOIL", "reduceOnly": True, "orderType": "Stop Market", "triggerPx": "92.695",
+               "sz": "0.0", "isPositionTpsl": True, "oid": 1},
+              {"coin": "xyz:BRENTOIL", "reduceOnly": True, "orderType": "Take Profit Market", "triggerPx": "93.709",
+               "sz": "0.0", "isPositionTpsl": True, "oid": 2}]
+    out = positions.assess(state, orders)
+    pos = out["positions"][0]
+    assert pos["stop_covers"] == pytest.approx(26.84) and pos["naked"] is False

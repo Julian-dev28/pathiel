@@ -136,7 +136,10 @@ def assess(state: Dict[str, Any], orders: List[Dict[str, Any]], dex: str = "",
         mine = [o for o in orders if o.get("coin") == coin and o.get("reduceOnly")]
         stops = [o for o in mine if "Stop" in str(o.get("orderType", ""))]
         tps = [o for o in mine if "Take Profit" in str(o.get("orderType", ""))]
-        covered = sum(float(o.get("sz") or 0) for o in stops)
+        # a position-level TP/SL rests with sz 0.0 and covers the whole
+        # position (2026-11-16: the hand-placed 26.84 Brent long read as naked)
+        covered = sum(abs(szi) if (float(o.get("sz") or 0) == 0 and o.get("isPositionTpsl"))
+                      else float(o.get("sz") or 0) for o in stops)
         lev = p.get("leverage") or {}
         entry = float(p.get("entryPx") or 0)
         liq = p.get("liquidationPx")

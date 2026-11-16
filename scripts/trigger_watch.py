@@ -163,7 +163,8 @@ def fetch_odds(desk: str) -> List[Dict[str, Any]]:
     from services.intel.sources.predictions import fetch_polymarket
     from services.strategies.desks import get_spec
     rows, _err = fetch_polymarket(get_spec(desk))
-    return [{"id": r.id, "question": r.question, "probability": r.probability, "url": r.url} for r in rows]
+    return [{"id": r.id, "question": r.question, "probability": r.probability, "url": r.url,
+             "closes_ms": int(r.closes_at.timestamp() * 1000) if r.closes_at else None} for r in rows]
 
 
 def headline_pass(targets: List[Tuple[str, str, str]], now_s: float, state: Dict[str, Any],

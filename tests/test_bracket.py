@@ -1220,3 +1220,41 @@ def test_set_stop_adds_one_where_none_exists_and_refuses_flat_and_keeps_old_on_r
     out = bracket.set_stop(COIN, 109.6, ex=refused)
     assert not out["ok"] and "old kept" in out["reason"]
     assert [o["oid"] for o in refused.orders] == [1]
+
+
+# ── a position-level TP/SL (sz 0.0) covers the whole position (2026-11-16) ──
+def _position_tpsl_book():
+    """The live book at 06:10Z on 2026-11-16: a hand-placed 26.84 Brent long
+    protected by the app's whole-position TP/SL, which rest with sz 0.0."""
+    stop = {**_leg(606725363722, "sl", 0.0, 92.695), "isPositionTpsl": True, "sz": "0.0"}
+    tp = {**_leg(606725363723, "tp", 0.0, 93.709), "isPositionTpsl": True, "sz": "0.0"}
+    return [stop, tp]
+
+
+def test_sweep_counts_a_position_level_stop_as_full_cover():
+    """Regression: stop_covers read 0.0 and the sweep said NOT FULLY COVERED,
+    which the desk tick answers by closing the position."""
+    ex = BookEx(pos=26.84, orders=_position_tpsl_book())
+    out = bracket.sweep(COIN, ex=ex)
+    assert out["ok"] and out["stop_covers"] == pytest.approx(26.84)
+    assert "reason" not in out
+
+
+def test_sweep_never_rewrites_position_level_tpsl():
+    """They are already one pair for the whole position: no fold, no cancel."""
+    ex = BookEx(pos=26.84, orders=_position_tpsl_book())
+    out = bracket.sweep(COIN, ex=ex)
+    assert "consolidated" not in out and not ex.calls
+    assert {606725363722, 606725363723} == {int(o["oid"]) for o in ex.orders}
+
+
+def test_a_zero_size_stop_without_the_position_flag_still_covers_nothing():
+    ex = BookEx(pos=26.84, orders=[_leg(1, "sl", 0.0, 92.695)])
+    out = bracket.sweep(COIN, ex=ex)
+    assert not out["ok"] and out["stop_covers"] == 0 and "NOT FULLY COVERED" in out["reason"]
+
+
+def test_order_cover_is_position_size_only_for_position_tpsl():
+    assert bracket.order_cover({"sz": "0.0", "isPositionTpsl": True}, -9.27) == pytest.approx(9.27)
+    assert bracket.order_cover({"sz": "3.22", "isPositionTpsl": False}, -9.27) == pytest.approx(3.22)
+    assert bracket.order_cover({"sz": "0.0"}, 5) == 0

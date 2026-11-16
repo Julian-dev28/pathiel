@@ -620,7 +620,10 @@ def post_alerts(group: str, posts: Iterable[Dict[str, Any]], seen: set, now_ms: 
 def odds_alerts(group: str, odds: Iterable[Dict[str, Any]], prev: Dict[str, float],
                 now_ms: int) -> List[Dict[str, Any]]:
     """Markets whose probability moved ODDS_JUMP or more since `prev` (id ->
-    probability; updated in place). odds rows: {id, question, probability, url}."""
+    probability; updated in place). odds rows: {id, question, probability, url,
+    closes_ms?}. A row whose closes_ms is at or before now_ms is past its
+    deadline and never alerts (2026-11-16: an expired "ceasefire by November
+    8?" market drifted 24% -> 32% and woke the oil desk)."""
     out = []
     rx = ODDS_TERMS.get(group)
     for o in odds:
@@ -629,6 +632,10 @@ def odds_alerts(group: str, odds: Iterable[Dict[str, Any]], prev: Dict[str, floa
             continue
         mid = o.get("id")
         if mid is None:
+            continue
+        closes_ms = o.get("closes_ms")
+        if closes_ms is not None and closes_ms <= now_ms:
+            prev.pop(mid, None)
             continue
         p = float(o["probability"])
         old = prev.get(mid)
