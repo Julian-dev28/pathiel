@@ -162,6 +162,20 @@ def test_odds_jump_threshold_and_first_sighting():
     assert prev["a"] == 0.19
 
 
+def test_expired_odds_market_never_alerts_and_is_forgotten():
+    """2026-11-16: "US x Iran Effective Ceasefire by November 8?" (endDate
+    2026-11-08 20:29Z) moved 24% -> 32% on 11-16 and woke the oil desk."""
+    end_ms = 1794169740000            # 2026-11-08T20:29:00Z
+    prev = {"x": 0.24}
+    row = {"id": "x", "question": "US x Iran Effective Ceasefire by November 8?",
+           "probability": 0.32, "closes_ms": end_ms}
+    assert HW.odds_alerts("oil", [row], prev, end_ms + 7 * 86_400_000) == []
+    assert "x" not in prev            # dropped, so it cannot fire later either
+    live = dict(row, closes_ms=end_ms + 30 * 86_400_000)
+    prev = {"x": 0.24}
+    assert len(HW.odds_alerts("oil", [live], prev, end_ms + 7 * 86_400_000)) == 1
+
+
 # ── price_shock ─────────────────────────────────────────────────────────────
 
 def _hist(start_ms, mids, step_min=1):

@@ -26,7 +26,7 @@ Verified live 2026-10-17:
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 from contracts.strategies.models import DeskSpec, MarketOdds
@@ -45,10 +45,29 @@ KALSHI_CATEGORIES = ("Commodities", "Financials")
 MIN_VOLUME_USD = 1.0  # "keep active, liquid markets" — drop zero-volume noise
 
 
-def fetch_polymarket(spec: DeskSpec, *, per_query: int = 15
+def _parse_end(raw: Any) -> Optional[datetime]:
+    if not raw:
+        return None
+    try:
+        dt = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+
+
+def fetch_polymarket(spec: DeskSpec, *, per_query: int = 15, now: Optional[datetime] = None
                       ) -> Tuple[List[MarketOdds], Optional[str]]:
+    """Active Polymarket markets for the desk's queries.
+
+    A market past its endDate is dropped even while Polymarket still lists it
+    as active and open (2026-11-16: "US x Iran Effective Ceasefire by
+    November 8?" stayed active=True, closed=False eight days after its
+    deadline, waiting on resolution; its 24% -> 32% drift woke the oil desk,
+    started a 30-minute entry blackout and fed a thesis rewrite). An expired
+    question says nothing about what happens next."""
     if not spec.prediction_market_queries:
         return [], None
+    now = now or datetime.now(timezone.utc)
     out: Dict[str, MarketOdds] = {}
     errors = []
     for q in spec.prediction_market_queries:
@@ -68,6 +87,9 @@ def fetch_polymarket(spec: DeskSpec, *, per_query: int = 15
             for m in event.get("markets") or []:
                 if not m.get("active") or m.get("closed"):
                     continue
+                closes_dt = _parse_end(m.get("endDate"))
+                if closes_dt is not None and closes_dt <= now:
+                    continue   # past its deadline, waiting on resolution
                 try:
                     outcomes = json.loads(m.get("outcomes") or "[]")
                     prices = json.loads(m.get("outcomePrices") or "[]")
@@ -85,13 +107,6 @@ def fetch_polymarket(spec: DeskSpec, *, per_query: int = 15
                     continue
                 mkt_slug = m.get("slug") or m.get("id")
                 mid = stable_id("odds", "polymarket", str(m.get("id") or mkt_slug))
-                closes = m.get("endDate")
-                closes_dt = None
-                if closes:
-                    try:
-                        closes_dt = datetime.fromisoformat(closes.replace("Z", "+00:00"))
-                    except ValueError:
-                        closes_dt = None
                 out[mid] = MarketOdds(
                     id=mid, venue="polymarket",
                     question=(m.get("question") or event.get("title") or "")[:300],

@@ -18,9 +18,11 @@ def _oil_prediction_spec() -> DeskSpec:
 # ── Polymarket ───────────────────────────────────────────────────────
 
 def test_polymarket_real_fixture_extracts_wti_markets(monkeypatch):
+    from datetime import datetime, timezone
     fixture = fixture_json("polymarket_search_oil.json")
     monkeypatch.setattr(http_client, "fetch_json", lambda *a, **k: (fixture, None))
-    odds, err = predictions.fetch_polymarket(_oil_prediction_spec())
+    captured = datetime(2026, 10, 17, tzinfo=timezone.utc)   # its WTI markets end 2026-11-01
+    odds, err = predictions.fetch_polymarket(_oil_prediction_spec(), now=captured)
     assert err is None
     assert len(odds) > 0
     assert all(o.venue == "polymarket" for o in odds)
@@ -121,3 +123,42 @@ def test_kalshi_filters_illiquid_wide_spread_markets():
     series = [{"title": "WTI oil weekly range", "ticker": "KXWTIW"}]
     tickers = predictions._matching_series_tickers(series, ["oil price"])
     assert "KXWTIW" in tickers
+
+
+# 2026-11-16 regression: Polymarket still listed "US x Iran Effective Ceasefire
+# by November 8?" as active and open eight days after its endDate. Its drift
+# woke the oil desk and started an entry blackout.
+
+def _ceasefire_events():
+    def mkt(mid, q, end, price):
+        return {"active": True, "closed": False, "acceptingOrders": True, "id": mid,
+                "question": q, "endDate": end, "outcomes": '["Yes","No"]',
+                "outcomePrices": f'["{price}","{1 - price:.2f}"]', "volumeNum": 250000}
+    return {"events": [{"active": True, "closed": False, "slug": "us-x-iran-ceasefire", "markets": [
+        mkt("nov8", "US x Iran Effective Ceasefire by November 8?", "2026-11-08T20:29:00Z", 0.32),
+        mkt("nov22", "US x Iran Effective Ceasefire by November 22?", "2026-11-22T20:29:00Z", 0.18),
+        mkt("noend", "US x Iran Effective Ceasefire ever?", None, 0.40),
+    ]}]}
+
+
+def test_polymarket_drops_markets_past_their_end_date(monkeypatch):
+    from datetime import datetime, timezone
+    monkeypatch.setattr(http_client, "fetch_json", lambda *a, **k: (_ceasefire_events(), None))
+    now = datetime(2026, 11, 16, 0, 43, tzinfo=timezone.utc)
+    odds, err = predictions.fetch_polymarket(_oil_prediction_spec(), now=now)
+    qs = sorted(o.question for o in odds)
+    assert err is None
+    assert qs == ["US x Iran Effective Ceasefire by November 22?", "US x Iran Effective Ceasefire ever?"]
+    nov22 = next(o for o in odds if "22" in o.question)
+    assert nov22.closes_at == datetime(2026, 11, 22, 20, 29, tzinfo=timezone.utc)
+
+
+def test_polymarket_keeps_a_market_until_its_end_minute(monkeypatch):
+    from datetime import datetime, timezone
+    monkeypatch.setattr(http_client, "fetch_json", lambda *a, **k: (_ceasefire_events(), None))
+    before = datetime(2026, 11, 8, 20, 28, tzinfo=timezone.utc)
+    at_end = datetime(2026, 11, 8, 20, 29, tzinfo=timezone.utc)
+    assert any("November 8" in o.question
+               for o in predictions.fetch_polymarket(_oil_prediction_spec(), now=before)[0])
+    assert not any("November 8" in o.question
+                   for o in predictions.fetch_polymarket(_oil_prediction_spec(), now=at_end)[0])
