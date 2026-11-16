@@ -14,10 +14,13 @@ The SDK handles:
 
 from __future__ import annotations
 
+import contextlib
+import contextvars
 import logging
 import math
 import os
-from typing import Any, Callable, Dict, List, Optional, Tuple
+import re
+from typing import Any, Callable, Dict, Iterator, List, Optional, Tuple
 
 # Hyperliquid rejects any order below $10 notional. Target a small buffer above
 # it so the IOC price offset and mark-vs-limit rounding can't dip under.
@@ -161,6 +164,62 @@ _exchange_instance = None  # Singleton instance
 _exchange_identity_key: Optional[Tuple[str, str, Optional[str], str]] = None
 
 
+# ── Account target: a sub-account of the signing master (2026-11-16) ──────────
+#
+# Hyperliquid nets one position per coin per account, so a second strategy on
+# a coin the desk already trades needs its own account. A sub-account has no
+# key: "To perform actions on behalf of a subaccount or vault signing should
+# be done by the master account and the vaultAddress field should be set to
+# the address of the subaccount or vault" (Hyperliquid docs, exchange
+# endpoint, "Subaccounts and vaults"), and "A master account can approve API
+# wallets to sign on behalf of the master account or any of the sub-accounts"
+# (docs, "Nonces and API wallets"). The SDK does exactly that when its
+# Exchange is built with vault_address: the address goes into the signed
+# action hash (utils/signing.action_hash) and into the posted payload
+# (Exchange._post_action, hyperliquid-python-sdk 0.24.0).
+#
+# The target is OPT-IN and scoped: `with account_target(addr):` (or the
+# pathiel.client.subaccount.AccountExchange facade, which wraps every call in
+# it). Outside such a block the target is None and every function in this
+# module does what it always did: the same singleton, vaultAddress None, the
+# same user address.
+_account_target: "contextvars.ContextVar[Optional[str]]" = contextvars.ContextVar(
+    "pathiel_account_target", default=None)
+_ADDRESS_RE = re.compile(r"0x[0-9a-fA-F]{40}")
+_target_exchanges: Dict[Tuple[Any, ...], Exchange] = {}
+
+
+def current_account_target() -> Optional[str]:
+    """The sub-account this call acts on, or None (the signing account itself)."""
+    return _account_target.get()
+
+
+@contextlib.contextmanager
+def account_target(address: Optional[str]) -> Iterator[Optional[str]]:
+    """Run the block against sub-account `address`: orders, cancels, leverage
+    and trigger orders carry vaultAddress=address, and this module's own
+    position and order reads ask for that address. None is a no-op (the
+    default account). A malformed address raises before anything is sent."""
+    if address is not None and not _ADDRESS_RE.fullmatch(str(address)):
+        raise ValueError(f"account target must be a 0x address of 40 hex characters, got {address!r}")
+    token = _account_target.set(str(address).lower() if address is not None else None)
+    try:
+        yield _account_target.get()
+    finally:
+        _account_target.reset(token)
+
+
+_main_user_address = resolve_user_address
+
+
+def resolve_user_address() -> str:   # noqa: F811 - wraps the hl_client import above
+    """The address whose positions and orders this module reads: the account
+    target inside `account_target(...)`, else hl_client.resolve_user_address()
+    exactly as before."""
+    target = _account_target.get()
+    return target if target else _main_user_address()
+
+
 def _resolve_perp_dexs() -> Optional[List[str]]:
     """Discover HIP-3 perpDex names so the SDK can resolve colon-namespaced coins.
 
@@ -210,6 +269,9 @@ def _make_exchange() -> Exchange:
     key_hex, main_address, agent_address, is_agent = _resolve_identity()
 
     identity_key = (key_hex, main_address, agent_address, _api())
+    target = _account_target.get()
+    if target is not None:
+        return _make_target_exchange(identity_key, is_agent, target)
     if _exchange_instance is not None and _exchange_identity_key == identity_key:
         return _exchange_instance
 
@@ -243,6 +305,34 @@ def _make_exchange() -> Exchange:
     ))
     _exchange_identity_key = identity_key
     return _exchange_instance
+
+
+def _make_target_exchange(identity_key: Tuple[str, str, Optional[str], str], is_agent: bool,
+                          target: str) -> Exchange:
+    """The SDK client that signs with the SAME key as the default one and
+    acts on sub-account `target` (vault_address). One client per (identity,
+    target), kept apart from the default singleton so a targeted call can
+    never leave the default client pointing at a sub-account. Refuses the
+    signing account's own address: the venue rejects vaultAddress = the
+    account itself, and "no target" is how that account is traded."""
+    key_hex, main_address, _agent_address, _url = identity_key
+    if target.lower() == str(main_address or "").lower():
+        raise ValueError("account target is the signing account itself; trade it without a target")
+    cache_key = identity_key + (target,)
+    cached = _target_exchanges.get(cache_key)
+    if cached is not None:
+        return cached
+    clean_key = key_hex[2:] if key_hex.startswith("0x") else key_hex
+    client = _set_session_timeout(Exchange(
+        wallet=Account.from_key(clean_key),
+        base_url=_api(),
+        vault_address=target,
+        account_address=main_address if is_agent else None,
+        perp_dexs=_resolve_perp_dexs(),
+        timeout=SDK_TIMEOUT_S,
+    ))
+    _target_exchanges[cache_key] = client
+    return client
 
 
 _info_instance: Optional[Info] = None
@@ -601,6 +691,9 @@ def _order_builder() -> Optional[Dict[str, Any]]:
     install: builder.builder_for_order(main account), which is cache only.
     Never raises."""
     if not _runtime.is_public():
+        return None
+    if _account_target.get() is not None:
+        # A builder fee is approved per account; a sub-account has approved none.
         return None
     try:
         from pathiel.client import builder as _builder
