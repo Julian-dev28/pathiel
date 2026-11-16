@@ -20,7 +20,7 @@ It prints names and paths, never the key. Run it yourself, in your terminal:
 Then pass the key to the one script that needs it, for one run:
 
     HYPERLIQUID_MASTER_PRIVATE_KEY="$(security find-generic-password -a "$USER" -s pathiel-master-key -w)" \\
-      .venv/bin/python scripts/treasury.py
+      .venv/bin/python scripts/treasury.py move --from spot --to xyz --amount 50
 """
 from __future__ import annotations
 
@@ -39,6 +39,8 @@ import _state_env  # noqa: E402
 
 KEY_NAME = "HYPERLIQUID_MASTER_PRIVATE_KEY"
 SERVICE = "pathiel-master-key"
+# A real signing command: treasury.py exits with a usage error without one.
+EXAMPLE = "scripts/treasury.py move --from spot --to xyz --amount 50"
 KEY_RE = re.compile(r"^(0x)?[0-9a-fA-F]{64}$")
 
 
@@ -116,7 +118,7 @@ def move(env_path: str, account: str, service: str, dry_run: bool = False,
     return 0, (f"stored in the login Keychain as {service} (account {account}) and removed from "
                f"{env_path}. Use it for one run: "
                f'{KEY_NAME}="$(security find-generic-password -a "$USER" -s {service} -w)" '
-               ".venv/bin/python scripts/treasury.py")
+               f".venv/bin/python {EXAMPLE}")
 
 
 def main(argv: Optional[List[str]] = None) -> int:
