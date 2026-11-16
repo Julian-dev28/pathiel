@@ -36,10 +36,16 @@ def no_network_no_env(tmp_path, monkeypatch):
 def test_defaults_load_disabled_with_no_override_file():
     cfg = C.load()
     assert cfg == C.SleeveConfig() and cfg.enabled is False
+    assert cfg.swing == "range24"                              # the live default since 2026-11-16
     assert (cfg.zigzag_k, cfg.level, cfg.direction, cfg.stop, cfg.target, cfg.ratchet) == (
-        2.0, 0.382, "with", "atr1", 0.618, "be75")
+        2.0, 0.382, "with", "atr1", 0.272, "be50")
     assert (cfg.risk_frac, cfg.leverage, cfg.min_r, cfg.max_consecutive_losses, cfg.max_drawdown_frac) == (
         0.06, 20, 2.0, 3, 0.20)
+
+
+def test_swing_can_switch_to_zigzag_via_override(state_dir):
+    cfg = C.write_override({"swing": "zigzag"})
+    assert cfg.swing == "zigzag"
 
 
 def test_override_file_is_validated_and_merged(state_dir):
@@ -52,7 +58,7 @@ def test_override_file_is_validated_and_merged(state_dir):
 @pytest.mark.parametrize("bad", [
     {"enabeld": True}, {"enabled": "yes"}, {"level": 0.4}, {"zigzag_k": 2.5}, {"risk_frac": 0.10},
     {"leverage": 25}, {"min_r": 1.5}, {"max_drawdown_frac": 0.5}, {"account": "0x123"}, {"ratchet": "fib75"},
-    {"entry": "confirm"}, {"direction": "thesis"}, {"target": 1.0}, {"stop": "wide"},
+    {"entry": "confirm"}, {"direction": "thesis"}, {"target": 1.0}, {"stop": "wide"}, {"swing": "vwap"},
 ])
 def test_untested_or_misspelled_settings_are_refused_and_nothing_is_written(bad, state_dir):
     with pytest.raises(C.ConfigError):

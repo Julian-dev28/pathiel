@@ -1,18 +1,62 @@
 """The fib sleeve's settings: one frozen dataclass, defaults in code, an
 optional operator override file in the state directory.
 
-The defaults ARE the variant the operator picked on 2026-11-16: the best
-1h-zigzag row of `docs/strategy/FIB_RETRACE_TEST_2026-11-16.md`
-(`zz2_with_L382_limit_atr1_T618`, 3 trades, 3 wins, +$240.50 beside live on
-the Brent journal at 6% risk, verdict NOISE) with the 75% break-even
-ratchet. On Brent the be50, be75 and off twins of that row are the same
-trades to the cent (the ratchet never changed an exit), so be75 is the row
-the operator asked for at the number the doc prints.
+Two swing anchors, `swing`: "range24" (the DEFAULT since 2026-11-16) or
+"zigzag" (the sleeve's first anchor, kept as an option). Only one is active
+at a time; `direction`, `level`, `entry`, `stop`, `target` and `ratchet` are
+shared knobs read against whichever swing is active.
+
+**range24** (default): the operator, 2026-11-16 ~08:30Z, "for the fib make
+it [the] low high range" - the swing anchor is the 24h range `services.
+strategies.levels` already reports (the same low and high the Desk page's
+Levels card and `scripts/oil_levels.py` show: `price_range` on the last 24
+CLOSED 1h bars), not a zigzag pivot. Direction is the range's last leg: the
+high after the low is an up-swing (buy the retrace), the low after the high
+a down-swing (sell the retrace) - `services.strategies.evals.
+fib_retrace_test.swing_from_window`, the backtest's own "range24" anchor,
+called on that same window (`rule.current_swing_range24`), not re-derived.
+The defaults are the best "24h range, with the swing, resting-limit entry"
+row of `docs/strategy/FIB_RETRACE_TEST_2026-11-16.md`'s own grid
+(`range24_with_L382_limit_atr1_T272_be50`: `fib_retrace_test.variants()`
+narrowed to swing="range24", direction="with", entry="limit" and re-judged
+on the doc's own cache, since the doc's own "best variant per family" table
+only prints the ceiling across EVERY entry type, and that ceiling uses
+"confirm", which this sleeve does not place): on the
+Brent journal, beside the live book, at 6% risk, 10 trades, 50% wins,
++$117.11, max drawdown 22.6% (vs the live book's 27.9%), avg R +0.98. Beside
+the replay: 20 trades, +$99.18. Beside WTI: 13 trades, +$73.75. Alone on
+the Brent journal it loses (-$14.86 on 23 trades), and alone on both
+208-day sets it loses (-$127.14 Brent, -$119.65 WTI): **verdict FAIL** (the
+family's own bar in the doc: 10+ trades beside live, none pass or lean).
+Worse evidence than the zigzag row below (FAIL means tried-and-failed, NOISE
+means not enough trades to judge) - the operator asked for this anchor
+anyway, same footing as running a NOISE-verdict rule small.
+
+**zigzag** (kept as an option, no longer the default): the sleeve's first
+row, the best 1h-zigzag row of the same doc (`zz2_with_L382_limit_atr1_
+T618`, 3 trades, 3 wins, +$240.50 beside live on the Brent journal at 6%
+risk, verdict NOISE) with the 75% break-even ratchet. On Brent the be50,
+be75 and off twins of that row are the same trades to the cent (the ratchet
+never changed an exit), so be75 was the row the operator asked for at the
+number the doc prints. Switching `swing` to "zigzag" via the override file
+does NOT restore `level`/`stop`/`target`/`ratchet` to these zigzag-tuned
+values; override those too (0.382, "atr1", 0.618, "be75") for the exact row
+above - every value is independently valid (part of the grid F.variants()
+crossed), just not the one this doc names.
 
 `enabled` is False in code. Only the override file can turn it on:
 `<state dir>/fib_sleeve/config.json`, written by
 `scripts/fib_sleeve_tick.py --enable`. An unknown key or a value outside
 the tested grid is refused, so a typo cannot run an untested rule.
+
+A resting entry or an open position already working under the OTHER swing
+mode when `swing` changes is left alone, managed to completion with its own
+levels (`services/fib_sleeve/rule.py`'s `resting_matches`/`other_swing_mode`,
+`services/fib_sleeve/tick.py`'s flat-with-a-resting-entry branch); the
+active `swing` only governs a brand NEW entry. An open position never reads
+`cfg.swing` at all (the stop/target it manages are whatever already rests
+on the venue; the break-even ratchet never reads the swing either), so it
+is swing-change-safe by construction.
 """
 from __future__ import annotations
 
@@ -39,13 +83,14 @@ class SleeveConfig:
     account: str = SUB_ACCOUNT            # the account target: orders carry vaultAddress = this
     enabled: bool = False                 # nothing is placed, cancelled or moved while False
     # the rule (names and values are fib_retrace_test's)
-    zigzag_k: float = 2.0                 # a pivot is confirmed after a reversal of k x ATR14 on 1h bars
+    swing: str = "range24"                # "range24" (the 24h range) or "zigzag" (a 1h pivot); see module doc
+    zigzag_k: float = 2.0                 # swing=="zigzag" only: a pivot confirmed after k x ATR14 on 1h bars
     direction: str = "with"               # buy a retrace of an up-swing, sell a retrace of a down-swing
     level: float = 0.382                  # the retracement the limit rests at
     entry: str = "limit"
     stop: str = "atr1"                    # the level less 1 x ATR14 (1h)
-    target: float = 0.618                 # the -61.8% extension beyond the swing extreme
-    ratchet: str = "be75"                 # stop to the entry once price covers 75% of the way to target
+    target: float = 0.272                 # the -27.2% extension beyond the swing extreme
+    ratchet: str = "be50"                 # stop to the entry once price covers 50% of the way to target
     # size
     risk_frac: float = 0.06               # of the sub-account's equity, lost at the stop
     leverage: int = 20                    # the cap
@@ -61,8 +106,11 @@ class SleeveConfig:
 
     @property
     def variant_name(self) -> str:
-        """The row's name in fib_retrace_test's variants.csv."""
-        return (f"zz{self.zigzag_k:g}_{self.direction}_L{self.level * 1000:.0f}_{self.entry}_{self.stop}"
+        """The row's name in fib_retrace_test's variants.csv: "range24" when
+        that swing is active, "zz{k}" for the zigzag (fib_retrace_test.
+        Variant.name's own convention, exactly)."""
+        swing_tag = f"zz{self.zigzag_k:g}" if self.swing == "zigzag" else self.swing
+        return (f"{swing_tag}_{self.direction}_L{self.level * 1000:.0f}_{self.entry}_{self.stop}"
                 f"_T{self.target * 1000:.0f}_{self.ratchet}")
 
     def public(self) -> Dict[str, Any]:
@@ -74,6 +122,8 @@ def validate(cfg: SleeveConfig) -> SleeveConfig:
     problems = []
     if not _ADDRESS_RE.fullmatch(str(cfg.account)):
         problems.append("account must be a 0x address of 40 hex characters")
+    if cfg.swing not in ("zigzag", "range24"):
+        problems.append("swing must be 'zigzag' or 'range24'")
     if f"zz{cfg.zigzag_k:g}" not in F.ZZ_K:
         problems.append(f"zigzag_k {cfg.zigzag_k:g} was not tested (2, 3, 4)")
     if cfg.direction not in ("with", "long"):

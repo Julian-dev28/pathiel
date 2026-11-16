@@ -1,15 +1,27 @@
 """The fib sleeve's rule, pure: candles in, one plan out. No network, no
 clock, no state.
 
-It is the backtest's rule by construction, not a copy of it: the zigzag,
-the swing, the level, the stop, the target and the ratchet are the
-functions of `services/strategies/evals/fib_retrace_test.py`, called with
-the data a live tick has. `tests/test_parity.py` replays the backtest's
-walker on synthetic candles and asserts this module names the same entry,
-stop and target at every fill.
+It is the backtest's rule by construction, not a copy of it: the swing (the
+24h range or the zigzag), the level, the stop, the target and the ratchet
+are the functions of `services/strategies/evals/fib_retrace_test.py`,
+called with the data a live tick has. `tests/test_parity.py` replays the
+backtest's walker on synthetic candles and asserts this module names the
+same entry, stop and target at every fill, for both swings.
 
 What a tick knows, exactly as the walker does at the open of a 15m bar:
 1h bars that have CLOSED, 15m bars that have closed, and one current price.
+
+Two swing anchors, `cfg.swing` ("range24" default, "zigzag" kept as an
+option; see `config.py`'s module doc for which is live and why):
+`current_swing` dispatches to `current_swing_range24` or
+`current_swing_zigzag`. `SWING_MODES`, `other_swing_mode` and
+`resting_matches` are `tick.py`'s tools for a resting entry placed under
+the OTHER mode before `cfg.swing` changed: it is managed to completion
+under ITS OWN mode's plan, never cancelled on the mode flip alone (the
+active mode only governs a brand new entry). An open position never calls
+any of this: its stop and target are whatever already rests on the venue,
+and the break-even ratchet never reads the swing either, so it is
+swing-change-safe by construction (`tick.py`'s "in a position" branch).
 """
 from __future__ import annotations
 
@@ -28,6 +40,8 @@ HOUR_MS, FIFTEEN_MS = F.HOUR_MS, F.FIFTEEN_MS
 EPS = F.EPS
 HOURS_WANTED = 500        # 1h bars a tick reads: the zigzag needs a long run-in to settle
 BARS_WANTED = 1500        # 15m bars a tick reads: 15.6 days, far past a k=2 swing's life
+SWING_MODES = ("zigzag", "range24")
+RANGE24_WINDOW = 24       # closed 1h bars: services.strategies.levels' own "24h range" window
 
 
 def closed(bars: Sequence[Candle], step_ms: int, now_ms: int) -> List[Candle]:
@@ -35,7 +49,8 @@ def closed(bars: Sequence[Candle], step_ms: int, now_ms: int) -> List[Candle]:
     return sorted((b for b in bars if b.t + step_ms <= now_ms), key=lambda b: b.t)
 
 
-def current_swing(hours: Sequence[Candle], k: float) -> Tuple[Optional[F.Swing], Optional[int], Optional[float]]:
+def current_swing_zigzag(hours: Sequence[Candle], k: float
+                         ) -> Tuple[Optional[F.Swing], Optional[int], Optional[float]]:
     """(the last confirmed zigzag leg, the ms its extreme was confirmed, the
     ATR14 of the last closed hour) from CLOSED 1h bars. The swing is the
     backtest's `swing_from_pivots(zigzag_pivots(...), n_closed)`."""
@@ -48,6 +63,55 @@ def current_swing(hours: Sequence[Candle], k: float) -> Tuple[Optional[F.Swing],
         return None, None, atr[-1]
     last = [p for p in pivots if p.confirmed_i < len(hours)][-1]
     return swing, hours[last.confirmed_i].t + HOUR_MS, atr[-1]
+
+
+def current_swing_range24(hours: Sequence[Candle]
+                          ) -> Tuple[Optional[F.Swing], Optional[int], Optional[float]]:
+    """(the 24h-range swing, the ms its extreme's own hour closed, the ATR14
+    of the last closed hour) from CLOSED 1h bars.
+
+    The window is exactly `services.strategies.levels`' own "24h range" -
+    the last 24 closed 1h bars, the same slice `price_range(closed[-24:])`
+    reads for the Desk page's Levels card and `scripts/oil_levels.py`: its
+    low and high are this swing's origin and extreme by construction
+    (`tests/test_rule.py::test_range24_low_high_match_the_levels_service`
+    proves the two never drift). The DIRECTION is the window's later
+    extreme - the high after the low is an up-swing (buy the retrace), the
+    low after the high a down-swing (sell the retrace) -
+    `fib_retrace_test.swing_from_window`, the backtest's own "range24"
+    anchor, called here on that same window, not re-derived."""
+    if len(hours) < RANGE24_WINDOW:
+        return None, None, None
+    atr = I5._atr(hours, F.ATR_N)
+    a = atr[-1]
+    swing = F.swing_from_window(hours[-RANGE24_WINDOW:], a, "r24")
+    if swing is None:
+        return None, None, a
+    return swing, swing.t_ext + HOUR_MS, a
+
+
+def current_swing(cfg: SleeveConfig, hours: Sequence[Candle]
+                  ) -> Tuple[Optional[F.Swing], Optional[int], Optional[float]]:
+    """The swing `cfg.swing` names right now, from CLOSED 1h bars."""
+    if cfg.swing == "zigzag":
+        return current_swing_zigzag(hours, cfg.zigzag_k)
+    if cfg.swing == "range24":
+        return current_swing_range24(hours)
+    raise ValueError(f"unknown swing {cfg.swing!r}")
+
+
+def other_swing_mode(mode: str) -> Optional[str]:
+    """The sleeve's other swing mode (for `tick.py`: managing an entry that
+    rests from before a swing-mode change under ITS OWN mode)."""
+    others = [m for m in SWING_MODES if m != mode]
+    return others[0] if others else None
+
+
+def resting_matches(plan: Dict[str, Any], resting_px: float, resting_long: bool, tick_size: float) -> bool:
+    """Does a resting entry at (`resting_px`, `resting_long`) still match
+    what `plan` (`plan_entry`'s answer) names right now?"""
+    return bool(plan.get("ok")) and abs(resting_px - plan["entry"]) <= tick_size / 2 + 1e-9 \
+        and resting_long == (plan["side"] == "long")
 
 
 def deepest_retrace(bars: Sequence[Candle], swing: F.Swing) -> Tuple[bool, Optional[float]]:
@@ -89,7 +153,7 @@ def plan_entry(cfg: SleeveConfig, hours: Sequence[Candle], bars: Sequence[Candle
     block = session_block(now_ms)
     if block:
         return {**out, "reason": block}
-    swing, confirmed_ms, atr = current_swing(hours, cfg.zigzag_k)
+    swing, confirmed_ms, atr = current_swing(cfg, hours)
     if swing is None or not atr:
         return {**out, "reason": "no_swing"}
     side = swing.side

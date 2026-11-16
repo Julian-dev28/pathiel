@@ -10,7 +10,10 @@ Brent candles, then does at most ONE thing:
                           2R floor, the leverage rule and the one-position
                           check are the desk's own), sized from the
                           sub-account's equity
-  flat, entry resting     keep it while the rule still names that level;
+  flat, entry resting     keep it while ITS OWN swing mode still names that
+                          level (a resting entry from the other mode, left
+                          over from a `cfg.swing` change, is managed under
+                          that mode, not cancelled on the flip alone);
                           cancel it when the swing changed, the level is
                           spent, the weekend opened or the kill switch fired
   in a position           move the stop to the entry once price covered 75%
@@ -28,7 +31,7 @@ the whole tick on fakes.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional
 
@@ -196,10 +199,24 @@ def run_tick(cfg: SleeveConfig, *, live: bool, now_ms: int, deps: Deps) -> Dict[
     if entries:
         resting_px = _px(entries[0], "limitPx")
         resting_long = str(entries[0].get("side")) == "B"
+        entry_plan = plan
+        if not rule.resting_matches(plan, resting_px, resting_long, cfg.tick_size):
+            # cfg.swing may have changed since this entry was placed. Manage
+            # an entry from the OTHER mode under ITS OWN rule until it
+            # resolves (fills, is spent, hits the weekend...) rather than
+            # cancelling it on the mode flip alone: the active mode only
+            # governs a brand new entry.
+            alt = rule.other_swing_mode(cfg.swing)
+            if alt is not None:
+                alt_plan = rule.plan_entry(replace(cfg, swing=alt), hours, bars, price, now_ms, max_lev,
+                                           resting=True)
+                if rule.resting_matches(alt_plan, resting_px, resting_long, cfg.tick_size):
+                    entry_plan = alt_plan
+                    d["resting_entry_swing_mode"] = alt
         stale = (f"kill switch: {kill['reason']}" if kill
-                 else plan.get("reason") if not plan["ok"]
-                 else "swing_changed" if (abs(resting_px - plan["entry"]) > cfg.tick_size / 2 + 1e-9
-                                          or resting_long != (plan["side"] == "long"))
+                 else entry_plan.get("reason") if not entry_plan["ok"]
+                 else "swing_changed" if not rule.resting_matches(entry_plan, resting_px, resting_long,
+                                                                   cfg.tick_size)
                  else None)
         d["resting_entry"] = {"px": resting_px, "side": "long" if resting_long else "short",
                               "oid": entries[0].get("oid")}
