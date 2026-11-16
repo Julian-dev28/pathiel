@@ -374,8 +374,11 @@ Allow" stops asking.
 
 ```bash
 HYPERLIQUID_MASTER_PRIVATE_KEY="$(security find-generic-password -a "$USER" -s pathiel-master-key -w)" \
-  .venv/bin/python scripts/treasury.py
+  .venv/bin/python scripts/treasury.py move --from spot --to xyz --amount 50
 ```
+
+`treasury.py` needs a command (`move`, `spot-perp`, `swap`, `fund-km`,
+`fund-cash`); `treasury.py status` only reads balances and needs no key.
 
 Or run any of the three without it and paste the key at its hidden prompt.
 

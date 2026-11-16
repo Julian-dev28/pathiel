@@ -193,7 +193,9 @@ read back and compare, then remove the line), printing no key. By hand:
    **Allow** asks again next time, **Always Allow** stops asking.
 
        HYPERLIQUID_MASTER_PRIVATE_KEY="$(security find-generic-password -a "$USER" -s pathiel-master-key -w)" \
-         .venv/bin/python scripts/treasury.py ...
+         .venv/bin/python scripts/treasury.py move --from spot --to xyz --amount 50
+
+   `treasury.py status` only reads balances and needs no key.
 
    The same works for `scripts/approve_api_wallet.py` and
    `scripts/approve_builder_fee.py`. Or run any of the three without it and
