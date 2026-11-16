@@ -25,8 +25,11 @@ def test_info_is_built_with_a_timeout(monkeypatch):
 
 
 def test_every_sdk_constructor_in_the_client_passes_the_timeout():
-    """exchange.py builds Info and Exchange, hl_client.py builds Info."""
+    """exchange.py builds Info, the default Exchange and (2026-11-16) the
+    sub-account Exchange of _make_target_exchange; hl_client.py builds Info."""
     from pathlib import Path
     root = Path(__file__).resolve().parents[1] / "pathiel" / "client"
-    assert (root / "exchange.py").read_text().count("timeout=SDK_TIMEOUT_S") == 2
+    src = (root / "exchange.py").read_text()
+    assert src.count("timeout=SDK_TIMEOUT_S") == 3
+    assert src.count("Exchange(\n") == 2          # both Exchange constructors, each with the timeout
     assert (root / "hl_client.py").read_text().count("timeout=SDK_TIMEOUT_S") == 1
