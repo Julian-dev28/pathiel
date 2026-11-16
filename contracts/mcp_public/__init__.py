@@ -327,7 +327,7 @@ TOOLS: List[Tuple[str, str, str, Optional[Dict[str, Any]]]] = [
      "a target and a refused new order leaves the old one in place. Refused: no open position, or "
      "a target on the losing side of the mark (it would fill at once). Never changes the stop or "
      "the size. Use to raise or lower a target. To move the stop use set_stop; to exit now use "
-     "close_position. Needs a trading key. Returns {ok, tp_px, size, replaced: old target prices}; "
+     "close_position; to fold duplicate targets left by several fills use sweep_brackets. Needs a trading key. Returns {ok, tp_px, size, replaced: old target prices}; "
      "a refusal is {ok: false, reason} with isError true and nothing sent.",
      None),
     ("set_stop", "live_money",
@@ -338,7 +338,7 @@ TOOLS: List[Tuple[str, str, str, Optional[Dict[str, Any]]]] = [
      "wider than or equal to the current one (a long's new stop must be above it, a short's below). "
      "With no stop at all, any stop on the right side of the mark is placed. Never changes the "
      "target or the size. To widen a stop, close and re-enter with place_bracket; to move the "
-     "target use set_target. Needs a trading key. Returns {ok, stop_px, size, mark, replaced: old "
+     "target use set_target; to fold duplicate stops left by several fills use sweep_brackets. Needs a trading key. Returns {ok, stop_px, size, mark, replaced: old "
      "stop prices}; a refusal is {ok: false, reason, mark, current_stop} with isError true and "
      "nothing sent.",
      _schema({
@@ -349,20 +349,27 @@ TOOLS: List[Tuple[str, str, str, Optional[Dict[str, Any]]]] = [
      "Cancel one resting order by its order id. order_id comes from get_orders; pass coin with it "
      "(asset, the numeric index, only when coin is unknown). Cancelling a position's only stop "
      "leaves it unprotected: to move a stop use set_stop, and to clear leftover orders on a flat "
-     "coin use sweep_brackets. Use for a stale entry or a mistaken order. Needs a trading key. Returns "
+     "coin use sweep_brackets. Orders cannot be modified in place: to change a resting entry, "
+     "cancel it here and place a new one with place_bracket. Use for a stale entry or a mistaken order. Needs a trading key. Returns "
      "{ok}; an order already filled or cancelled, or a missing coin and asset, returns the "
      "venue's {error} with isError true.",
      None),
     ("close_position", "live_money",
-     "Close a coin's entire open position now with one market order for the full size; partial "
-     "closes are not supported, and like any market order it pays the spread and slippage of the "
-     "book. A flat coin returns ok=true with noop already_flat and sends nothing. Closes are "
-     "never refused for a delisted coin. Afterwards run "
-     "sweep_brackets on the coin to cancel the stop and target that no longer protect anything. "
-     "Use when the user asks to exit now; to exit at a price instead, move the level with set_stop "
-     "or set_target. Needs a trading key. Returns {ok, result: {total_sz, avg_px}} or {error} "
-     "with isError true.",
-     None),
+     "Close a coin's open position now with one reduce-only market order. Omit fraction (or pass "
+     "1) to close it all: the stop and target are then cancelled. fraction between 0 and 1 closes "
+     "that share (0.5 = half) and keeps the stop and target, which still cover what is left; a "
+     "share worth under the venue's $10 minimum closes $10 worth. Like any market order it pays "
+     "the spread and slippage of the book. A flat coin returns ok=true with noop already_flat and "
+     "sends nothing; closes are never refused for a delisted coin. Afterwards run sweep_brackets "
+     "on the coin. Use when the user asks to exit now, fully or in part; to exit at a price "
+     "instead, move the level with set_stop or set_target. Needs a trading key. Returns {closed, "
+     "result: {total_sz, avg_px, partial, fraction}} or {error} with isError true; a fraction "
+     "outside (0, 1] is refused with nothing sent.",
+     _schema({
+         "coin": _COIN,
+         "fraction": {"type": "number", "exclusiveMinimum": 0, "maximum": 1,
+                      "description": "Share of the position to close, e.g. 0.5 for half. Omit to close it all."},
+     }, ["coin"])),
     ("set_leverage", "live_money",
      "Set a coin's leverage, a whole number from 1 up to the coin's max (default 5 when omitted). "
      "It is capped by the risk profile's max_leverage and refused "
