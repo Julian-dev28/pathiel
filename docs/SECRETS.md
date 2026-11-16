@@ -163,6 +163,50 @@ password manager, not `.env.local`. `scripts/preflight_secrets.py` warns if it's
 present locally and **fails** if it detects a deploy context (`FLY_APP_NAME`
 or `KUBERNETES_SERVICE_HOST` set) and finds it anyway.
 
+## Keep the master key in the macOS Keychain
+
+The master key (`HYPERLIQUID_MASTER_PRIVATE_KEY`) is the one key that can
+withdraw. No long-running pathiel process loads it, but while it sits in
+`.env.local` anything that can read that file can read it. The macOS
+Keychain is built in and free: the key is encrypted at rest, and macOS asks
+before a program reads it.
+
+`scripts/master_key_to_keychain.py` does steps 1 to 3 in one run (store,
+read back and compare, then remove the line), printing no key. By hand:
+
+1. **Store it.** With `-w` last, `security` prompts for the value, so it
+   never lands on the command line or in shell history. Paste the key, then
+   paste it again to confirm:
+
+       security add-generic-password -a "$USER" -s pathiel-master-key -w
+
+2. **Check it is there.** This prints the item's details, not the key:
+
+       security find-generic-password -a "$USER" -s pathiel-master-key
+
+3. **Delete the `HYPERLIQUID_MASTER_PRIVATE_KEY=` line** from `.env.local`
+   and save.
+
+4. **Use it for one command.** The key goes into that one process's
+   environment and nowhere else; the shell history keeps the command, not
+   the key. The first time, macOS asks whether `security` may read the item:
+   **Allow** asks again next time, **Always Allow** stops asking.
+
+       HYPERLIQUID_MASTER_PRIVATE_KEY="$(security find-generic-password -a "$USER" -s pathiel-master-key -w)" \
+         .venv/bin/python scripts/treasury.py ...
+
+   The same works for `scripts/approve_api_wallet.py` and
+   `scripts/approve_builder_fee.py`. Or run any of the three without it and
+   paste the key at their hidden prompt.
+
+5. **Remove it** when the wallet is retired:
+
+       security delete-generic-password -a "$USER" -s pathiel-master-key
+
+The item shows in the Keychain Access app under the login keychain, named
+`pathiel-master-key`. Every command above was run on macOS 15 with a dummy
+item on 2026-11-16.
+
 ## Rotation procedure
 
 General shape for every credential below: generate/rotate at the provider,

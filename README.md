@@ -164,6 +164,10 @@ reconnect pathiel in `/mcp`.
   `~/.pathiel/.agent-config.json`; nothing raises it for you.
 - **Read-only without a key.** No key, no orders. The API wallet key can
   trade and can never withdraw.
+- **Your main wallet's key never goes in pathiel.** It is the one key that
+  can withdraw. A public install refuses to trade with it, and no pathiel
+  process loads it from the env file. On a Mac, keep it in the Keychain
+  ([how](https://github.com/Julian-dev28/pathiel/blob/main/docs/SECRETS.md#keep-the-master-key-in-the-macos-keychain)).
 - **Testnet when you want it.** `PATHIEL_NETWORK=testnet` in
   `~/.pathiel/.env.local` switches to test funds.
 - **Claude Code asks before each live-money call.** The seven order tools,
@@ -348,6 +352,43 @@ scripts/restart.sh status
   `.venv/bin/python scripts/mcp_smoke.py` is a live, read-only MCP smoke.
 - **Keys.** `scripts/preflight_secrets.py` checks the env file without
   printing it; `docs/SECRETS.md` lists every secret and how to rotate it.
+
+### Master key in the macOS Keychain
+
+`HYPERLIQUID_MASTER_PRIVATE_KEY` can withdraw, and only `treasury.py`,
+`approve_api_wallet.py` and `approve_builder_fee.py` sign with it. Keep it in
+the Keychain (built into macOS, free, encrypted at rest), not in `.env.local`.
+
+**One command** moves it there. It stores the key, reads it back to check,
+and only then deletes the line from `.env.local`. It never prints the key,
+and the key never appears in a process list or your shell history.
+
+```bash
+.venv/bin/python scripts/master_key_to_keychain.py --dry-run   # what it would do
+.venv/bin/python scripts/master_key_to_keychain.py             # do it
+```
+
+**Use it for one run.** The key reaches that one script and nothing else.
+The first time, macOS asks to allow access: "Allow" asks every time, "Always
+Allow" stops asking.
+
+```bash
+HYPERLIQUID_MASTER_PRIVATE_KEY="$(security find-generic-password -a "$USER" -s pathiel-master-key -w)" \
+  .venv/bin/python scripts/treasury.py
+```
+
+Or run any of the three without it and paste the key at its hidden prompt.
+
+**By hand**, without the script:
+
+```bash
+security add-generic-password -a "$USER" -s pathiel-master-key -w   # -w last: prompts, paste twice
+security find-generic-password -a "$USER" -s pathiel-master-key     # check: details, not the key
+# then delete the HYPERLIQUID_MASTER_PRIVATE_KEY= line from .env.local
+security delete-generic-password -a "$USER" -s pathiel-master-key   # remove, when retiring the wallet
+```
+
+It shows in the Keychain Access app, login keychain, as `pathiel-master-key`.
 
 More: [CONTRIBUTING.md](CONTRIBUTING.md) for the code layout,
 [SECURITY.md](SECURITY.md) for the hardening checks.
