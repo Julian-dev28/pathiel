@@ -13,6 +13,7 @@ desk_page()'s docstring.
 """
 from __future__ import annotations
 
+import html
 import logging
 import threading
 import uuid
@@ -325,7 +326,11 @@ def desk_next_trade(desk_id: str, leverage: float, brief=None) -> Dict[str, obje
     try:
         lv = levels.summarize_coin(coin)
     except Exception as e:  # noqa: BLE001 - no live levels means no answer, never a guess
-        return {"ok": False, "source": "desk_rules", "reason": f"could not read live levels for {coin}: {e}"}
+        # The exception's text stays in the log, not the answer: it can carry
+        # URLs and internals (CodeQL py/stack-trace-exposure).
+        logger.warning(f"[strategies.api] live levels for {coin!r} failed: {e!r}")
+        return {"ok": False, "source": "desk_rules",
+                "reason": f"could not read live levels for {coin} ({type(e).__name__})"}
     r24 = lv.get("range_24h") or {}
     if lv.get("mid") is None or r24.get("low") is None or r24.get("high") is None:
         return {"ok": False, "source": "desk_rules", "reason": f"not enough closed candles for {coin}'s 24h range"}
@@ -395,6 +400,7 @@ def _render_or_placeholder(filename: str, title: str, body: str) -> HTMLResponse
         # Same no-cache policy as every other dashboard page: a stale cached
         # page would pair new JS with old markup after a deploy.
         return HTMLResponse(path.read_text(encoding="utf-8"), headers=_NO_CACHE)
+    title, body = html.escape(title), html.escape(body)   # desk_id reaches both (CodeQL py/reflective-xss)
     placeholder = (
         f"<!doctype html><html><head><title>{title}</title></head><body>"
         f"<h1>{title}</h1><p>{body}</p>"

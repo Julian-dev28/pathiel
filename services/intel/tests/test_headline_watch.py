@@ -452,3 +452,36 @@ def test_the_tick_agent_and_the_loops_skill_mention_the_headline_rules():
         assert "Say the headline in your operator sentence" in text, path
     loops = (ROOT / ".claude" / "skills" / "desk-loops" / "SKILL.md").read_text()
     assert '"reason": "headline"' in loops and '"also"' in loops and "one agent per desk" in loops
+
+
+# ── empty posts without exponential backtracking (2026-11-15, CodeQL py/redos) ──
+
+import time as _time
+
+# What the replaced regex answered for each post, run once on 2026-11-15 and
+# written out so the regex itself (CodeQL py/redos) is not kept in the tree.
+OLD_ANSWERS = [
+    ("View Image", True), ("VIEW VIDEO", True), ("RT @ realDonaldTrump", True), ("RT:", True),
+    ("rt", True), ("https://truthsocial.com/@realDonaldTrump/posts/1", True),
+    ("RT @ x https://t.co/abc", True), ("ReTruthed: https://www.truthsocial.com/x", False),
+    ("Reposted Donald J. Trump", True), ("Quoted Donald J. Trump https://truthsocial.com/a View Image", True),
+    ("  view image   view video  ", True), ("", True),
+    ("Oil prices will come down!", False), ("View Image of the GREAT tariff deal", False),
+    ("RT @ x Gold is going up", False), ("https://x.com tariffs on silver", False),
+    ("start", False), ("art https://x", False),
+    ("truthsocial.com/@realDonaldTrump", True), ("www.truthsocial.com/x View Video", True),
+]
+
+
+@pytest.mark.parametrize("text,empty", OLD_ANSWERS)
+def test_post_is_empty_matches_the_old_regex(text, empty):
+    assert HW.post_is_empty(text) is empty
+
+
+def test_post_is_empty_is_linear_on_hostile_input():
+    """Inputs that sent the old pattern into exponential backtracking."""
+    for hostile in ("rt @ " + "a " * 5000 + "!", "truthsocial.com" * 5000 + " !",
+                    "view image" * 3000 + "!", "\t" * 20000 + "x"):
+        t0 = _time.perf_counter()
+        assert HW.post_is_empty(hostile) is False
+        assert _time.perf_counter() - t0 < 0.5

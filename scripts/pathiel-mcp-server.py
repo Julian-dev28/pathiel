@@ -154,8 +154,13 @@ LIVE MONEY: place_bracket, bracket_sweep, set_target, close_position, set_levera
 # plugin launcher and the container): a stranger's Claude reads this instead.
 # Built per call because the network, the key and the builder address are the
 # user's. Never mentions the operator's dashboard, his 20x profile or his desk
-# shares. MAX_PUBLIC_INSTRUCTIONS_CHARS keeps it inside the operator's budget.
-MAX_PUBLIC_INSTRUCTIONS_CHARS = 2500
+# shares. MAX_PUBLIC_INSTRUCTIONS_CHARS bounds it. 2500 mirrored the operator's
+# own text (2491) and was never a client limit: OPERATOR_V2_INSTRUCTIONS runs
+# 2651 and Claude Code delivers it whole. Raised to 3000 on 2026-11-15, when
+# the fee-on mainnet text already ran 2540 and a longer trading line would
+# have cut the LIVE MONEY rule off the end (tests/test_mcp_public_mode.py
+# holds a 300-char trading line plus the longest fee sentence inside it).
+MAX_PUBLIC_INSTRUCTIONS_CHARS = 3000
 
 
 def _public_network_line(net: str) -> str:
@@ -216,11 +221,13 @@ Start here
 - get_status: network, trading, fee, account. get_account: balances.
 - list_desks, then get_desk_brief {{desk}}: the desk's call as short markdown, with "Your size".
 - refresh_desk {{desk}}: a NEW thesis (news + one local Claude Code call, ~1 min; needs the claude CLI).
-- size_trade sizes every trade (never by hand); get_risk_limits shows the profile.
-- place_bracket {{coin, entry_px, stop_px, tp_px}}: one entry with an exact stop and target, sized by the profile. dry_run=true checks only. set_stop (tighter only) and set_target move levels. sweep_brackets {{coin}} after every close.
+- size_trade sizes every trade and sends nothing (never size by hand); get_risk_limits shows the profile.
+- place_bracket {{coin, entry_px, stop_px, tp_px}}: one entry with an exact stop and target, sized by the profile. dry_run=true checks only.
+- set_stop (tighter only) and set_target move one level; sweep_brackets {{coin}} moves none, it tidies leftovers: run it after every close.
+- close_position: all, or a fraction (0.5 = half, levels stay). To change an order: cancel_order, then place_bracket.
 - Market reads (get_market, list_markets, get_candles, get_order_book) need no key.
 
-Coins: main-dex perps by name (BTC, ETH). HIP-3 perps as dex:SYMBOL (xyz:GOLD). Testnet lists fewer live markets than mainnet: a coin that is delisted or missing on this network is refused for new entries (xyz:BRENTOIL is delisted on testnet, so the oil desk trades xyz:CL, WTI, there). Closes are never refused.
+Coins: main-dex perps by name (BTC, ETH); HIP-3 as dex:SYMBOL (xyz:GOLD). Testnet lists fewer live markets: a coin delisted or missing there is refused for new entries (the oil desk trades xyz:CL, WTI, as xyz:BRENTOIL is delisted). Closes are never refused.
 
 {_public_fee_sentence()}
 
@@ -2626,9 +2633,10 @@ def handle_close_position(params: Dict[str, Any]) -> str:
     from pathiel.agents.bracket import close_position as close_position_market
 
     coin = _norm_coin(params.get('coin', 'BTC'))
+    fraction = params.get('fraction')
 
     try:
-        result = close_position_market(coin)
+        result = close_position_market(coin) if fraction is None else close_position_market(coin, fraction=fraction)
         closed = bool(result.get('ok')) and not bool(result.get('noop'))
         payload = {'closed': closed, 'coin': coin, 'result': result}
         if not closed:

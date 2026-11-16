@@ -229,3 +229,56 @@ def test_a_filled_close_cancels_every_order_on_the_coin(monkeypatch, close_env):
     assert res["ok"] is True
     assert res["leverage"] == 10
     assert close_env["cleared"] == ["xyz:CL"] and close_env["swept"] == []
+
+
+# ── 4. partial closes (2026-11-15) ───────────────────────────────────────────
+
+def _open_short(monkeypatch, close_env, sent):
+    monkeypatch.setattr(close_env["hlc"], "fetch_account_state", lambda u, **kw: {
+        "asset_positions": [{"position": {"coin": "xyz:CL", "szi": "-0.4", "entryPx": "98.8",
+                                           "leverage": {"value": 10}}}]})
+    monkeypatch.setattr(xc, "get_hl_price", lambda c: 99.0)
+    monkeypatch.setattr(xc, "place_hl_order", lambda **kw: sent.append(kw) or {"ok": True, "avg_px": 99.0})
+
+
+def test_a_partial_close_sends_that_share_reduce_only_and_keeps_the_stop_and_target(monkeypatch, close_env):
+    """The stop and target are reduce-only: on the smaller position they still
+    fire and fill only what is left. Cancelling them (as the full close does)
+    would leave the rest unprotected."""
+    sent: List[dict] = []
+    _open_short(monkeypatch, close_env, sent)
+    res = br.close_position("xyz:CL", fraction=0.25)
+    assert res["ok"] is True and res["partial"] is True and res["fraction"] == 0.25
+    assert res["position_before"] == -0.4
+    assert len(sent) == 1
+    assert sent[0]["is_buy"] is True and sent[0]["reduce_only"] is True   # buying back a short
+    assert sent[0]["size"] == pytest.approx(0.1)
+    assert close_env["cleared"] == []                                      # levels stay
+
+
+@pytest.mark.parametrize("fraction", [None, 1, 1.0])
+def test_fraction_one_or_none_is_the_full_close(monkeypatch, close_env, fraction):
+    sent: List[dict] = []
+    _open_short(monkeypatch, close_env, sent)
+    res = br.close_position("xyz:CL", fraction=fraction)
+    assert "partial" not in res
+    assert sent[0]["size"] == pytest.approx(0.4)
+    assert close_env["cleared"] == ["xyz:CL"]
+
+
+@pytest.mark.parametrize("fraction", [0, -0.5, 1.5, "half", float("nan")])
+def test_a_bad_fraction_is_refused_before_anything_is_read_or_sent(monkeypatch, close_env, fraction):
+    sent: List[dict] = []
+    _open_short(monkeypatch, close_env, sent)
+    monkeypatch.setattr(close_env["hlc"], "fetch_account_state",
+                        lambda u, **kw: pytest.fail("refused before reading the account"))
+    res = br.close_position("xyz:CL", fraction=fraction)
+    assert res["ok"] is False and "fraction" in res["error"]
+    assert sent == [] and close_env["cleared"] == []
+
+
+def test_a_failed_partial_close_touches_nothing(monkeypatch, close_env):
+    _open_short(monkeypatch, close_env, [])
+    monkeypatch.setattr(xc, "place_hl_order", lambda **kw: {"ok": False, "error": "venue said no"})
+    res = br.close_position("xyz:CL", fraction=0.5)
+    assert res["ok"] is False and close_env["cleared"] == []

@@ -499,8 +499,14 @@ def sweep(coin: str, ex: Any = None) -> Dict[str, Any]:
             **({} if covered + 1e-9 >= abs(pos) else {"reason": "POSITION NOT FULLY COVERED BY A STOP"})}
 
 
-def close_position(coin: str) -> Dict[str, Any]:
+def close_position(coin: str, fraction: Optional[float] = None) -> Dict[str, Any]:
     """Market-close any open perp position for `coin`.
+
+    fraction (2026-11-15, partial closes): 0 < fraction < 1 closes that share
+    of the position and LEAVES the stop and target in place: they are
+    reduce-only, so on the smaller position they still fire and fill only
+    what is left. None or 1 is the full close, which cancels them. Outside
+    (0, 1] is refused with nothing sent.
 
     Moved out of `pathiel/agents/executor.py` 2026-10-23 (wave 2), trimmed to
     its live-money essentials: the retired executor's DSL tracker lookup
@@ -526,6 +532,15 @@ def close_position(coin: str) -> Dict[str, Any]:
         place_hl_order,
     )
     from pathiel.client.hl_client import fetch_account_state, resolve_user_address
+
+    if fraction is not None:
+        try:
+            fraction = float(fraction)
+        except (TypeError, ValueError):
+            return {"ok": False, "coin": coin, "error": "fraction must be a number in (0, 1]"}
+        if not 0 < fraction <= 1:
+            return {"ok": False, "coin": coin, "error": "fraction must be in (0, 1]: 0.5 closes half"}
+    partial = fraction is not None and fraction < 1
 
     user = resolve_user_address()
     if not user:
@@ -575,15 +590,22 @@ def close_position(coin: str) -> Dict[str, Any]:
     # reduce_only: a close must only FLATTEN. Without it, the $10-min size floor in
     # place_hl_order overshoots a sub-$10 position and flips it to the opposite side
     # (the BIRD short<->long churn loop). reduce_only makes HL ignore the excess.
-    res = place_hl_order(is_buy=not is_long, size=abs(szi), mid_price=mid_price, coin=coin,
+    close_sz = abs(szi) * fraction if partial else abs(szi)
+    res = place_hl_order(is_buy=not is_long, size=close_sz, mid_price=mid_price, coin=coin,
                          reduce_only=True)
     out: Dict[str, Any] = {**res, "coin": coin, "side": side,
                             "entry_px": entry_px, "leverage": leverage}
+    if partial:
+        out["partial"] = True
+        out["fraction"] = fraction
+        out["position_before"] = szi
 
-    if res.get("ok"):
+    if res.get("ok") and not partial:
         # Cancel the now-stranded reduce-only SL/TP trigger bracket so stale
         # orders don't pile up and reject a future reduce-only order on this coin.
+        # Never on a partial close: those orders protect what is left.
         cancel_open_orders_for_coin(coin)
+    if res.get("ok"):
         fill_px = res.get("avg_px")
         if fill_px and entry_px > 0:
             # Spot move from the perspective of the position: long earns when
