@@ -923,7 +923,8 @@ def health_system(response: Response):
     except Exception as exc:
         # An unavailable disk check must not itself fail the healthcheck, or a
         # monitoring gap becomes an outage.
-        checks["disk"] = {"ok": True, "detail": f"unavailable: {str(exc)[:80]}"}
+        logger.warning(f"health: disk check failed: {exc!r}")   # text in the log, not the answer
+        checks["disk"] = {"ok": True, "detail": f"unavailable ({type(exc).__name__})"}
 
     # 2. Can this process reach its state directory? Every desk journal, the
     #    intel cache and the account registry live under PATHIEL_STATE_DIR; a
@@ -937,7 +938,8 @@ def health_system(response: Response):
                            "detail": ("ok" if writable else
                                       "state directory missing or not writable")}
     except Exception as exc:
-        checks["state"] = {"ok": True, "detail": f"unavailable: {str(exc)[:80]}"}
+        logger.warning(f"health: state check failed: {exc!r}")
+        checks["state"] = {"ok": True, "detail": f"unavailable ({type(exc).__name__})"}
 
     ok = all(c.get("ok") for c in checks.values())
     if not ok:

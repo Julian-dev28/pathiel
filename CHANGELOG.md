@@ -6,6 +6,13 @@ All notable changes to pathiel. The format follows
 
 ## [Unreleased]
 
+### Security
+
+- Code scanning fixes: a post filter in the headline watch could backtrack
+  exponentially on a crafted post (now linear); the desk page escapes the
+  desk id it echoes; HTTP answers name a failure's exception class and keep
+  its text in the log; the Telegram webhook check matches the host exactly.
+
 ## [0.7.1] - 2026-11-14
 
 ### Changed
