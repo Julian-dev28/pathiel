@@ -312,9 +312,11 @@ def test_readme_section_order_puts_disclosures_before_faq_and_maintainer_last():
 def test_readme_badges_are_static_or_point_at_a_real_workflow():
     """Badges must resolve: shields.io static badges, the CI workflow that
     exists in .github/workflows, or a directory listing's own badge for this
-    server (both checked to serve an SVG on 2026-11-13)."""
+    server (Glama and mcpservers.org checked to serve an SVG on 2026-11-13,
+    mcprush on 2026-11-15)."""
     listing_badges = ("https://glama.ai/mcp/servers/Julian-dev28/pathiel/badges/score.svg",
-                      "https://mcpservers.org/badge.svg")
+                      "https://mcpservers.org/badge.svg",
+                      "https://mcprush.com/badge/pathiel-mcp/score.svg")
     readme = _read("README.md")
     badges = re.findall(r"\[!\[[^\]]*\]\(([^)]+)\)\]", readme)
     assert len(badges) >= 4, badges
