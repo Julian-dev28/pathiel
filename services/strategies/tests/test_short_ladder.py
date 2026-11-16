@@ -574,6 +574,150 @@ def test_baseline_is_the_live_rule_with_six_percent_risk_and_the_leverage_fit():
     assert P.no_break_entry and P.weekend_off == "flatten" and P.min_r == 2.0
 
 
+# ── E: the long ladder sized in equity ─────────────────────────────────────
+
+E1 = Variant("equity", step=E.E_FIRST, tiers=E.E_TIERS, scheme="eq20_10", confirm="touch", target="thesis", stop="lo24")
+
+
+def test_equity_grid_holds_the_operators_tiers():
+    """"20% equity at .5%+, 10% equity at 1%+"."""
+    grid = E.equity_variants()
+    assert len(grid) == 3 * 3 * 2 * 3 * 3 == 162 and len({v.name for v in grid}) == 162
+    assert E1.name == E.E_PRIMARY and E1.name in {v.name for v in grid}
+    assert E1.risk == (0.20, 0.10)                                  # shares of EQUITY, not of risk
+    assert E.long_levels(100.0, E1.step, E1.tiers) == pytest.approx([100.5, 101.0])
+    assert {n.scheme for n in E.neighbours(E1)} >= {"eq10_5", "eq30_15"}
+    assert [n.min_r for n in E.neighbours(E1) if n.min_r != E1.min_r] == [1.0]
+
+
+def test_equity_tier_is_margin_times_leverage_not_a_risk_size():
+    n20 = E.equity_tier_notional(EQ, P, 20.0, 0.20)
+    assert n20 == pytest.approx(0.20 * EQ / (1 + 20.0 * P.taker_fee) * 20.0)
+    assert 3.9 * EQ < n20 < 4.0 * EQ                                # 20% of equity at 20x is about 4x equity
+    assert E.equity_tier_notional(EQ, P, 15.0, 0.20) == pytest.approx(0.20 * EQ / (1 + 15.0 * P.taker_fee) * 15.0)
+    assert E.equity_tier_notional(EQ, P, 20.0, 0.10) == pytest.approx(n20 / 2)
+    full = _full_size_notional(EQ, P, 20.0)
+    assert E.equity_tier_notional(EQ, P, 20.0, 0.20, open_notional=full - 100.0) == pytest.approx(100.0)
+    assert E.equity_tier_notional(EQ, P, 20.0, 0.20, open_notional=full + 1.0) == 0.0
+
+
+def test_stop_risk_pct_says_what_the_equity_tier_really_risks():
+    n20 = E.equity_tier_notional(EQ, P, 20.0, 0.20)
+    pct = E.stop_risk_pct(n20, 100.5, 99.25, EQ, P)
+    assert pct == pytest.approx(n20 * (1.25 / 100.5 + 2 * P.taker_fee + P.slippage) / EQ * 100)
+    assert 5.0 < pct < 6.0                                          # about the desk's whole normal 6%, on tier 1 alone
+    assert E.stop_risk_pct(n20, 100.5, 99.25, 0.0, P) == 0.0
+    # the risk-sized tier D uses carries its share by construction
+    n = E.tier_notional(EQ, P, 20.0, 100.5, 99.25, 0.2)
+    assert E.stop_risk_pct(n, 100.5, 99.25, EQ, P) == pytest.approx(1.2)
+
+
+def test_equity_ladder_buys_20_then_10_percent_of_equity_and_records_the_risk():
+    bars = [tk(0, 100.2, 100.6, 100.1, 100.5, lo24=100.0), tk(1, 100.6, 101.1, 100.5, 101.0, lo24=100.0),
+            tk(2, 100.9, 101.0, 99.2, 99.3, lo24=100.0)]
+    t = one(E.walk_long(bars, E1, P, EQ))
+    assert t["reason"] == "stop" and t["tiers"] == 2 and t["stop_px"] == pytest.approx(99.25)
+    assert t["leverage"] == 20.0
+    assert t["size"] * t["entry_px"] == pytest.approx(0.30 * EQ / (1 + 20.0 * P.taker_fee) * 20.0, rel=2e-3)
+    r1, r2 = t["tier_risk_pct"]
+    assert r1 == pytest.approx(E.stop_risk_pct(E.equity_tier_notional(EQ, P, 20.0, 0.20), 100.5, 99.25, EQ, P), abs=0.01)
+    assert 5.0 < r1 < 6.0 and 3.0 < r2 < 4.0
+    assert t["net_usd"] == pytest.approx(-(r1 + r2) / 100 * EQ, rel=0.08)      # the loss is what the tiers said
+    s = E.summarize_short({"trades": [t], "curve": [t["net_usd"]], "refused": {}}, [EQ])
+    assert s["tier_risk_pct_mean"] == [r1, r2] and s["trade_risk_pct_max"] == pytest.approx(r1 + r2, abs=0.01)
+
+
+def test_equity_ladder_only_first_tier_when_price_stops_short_of_one_percent():
+    bars = [tk(0, 100.2, 100.6, 100.1, 100.5, lo24=100.0), tk(1, 100.6, 100.9, 100.5, 100.8, lo24=100.0)]
+    t = one(E.walk_long(bars, E1, P, EQ))
+    assert t["tiers"] == 1 and len(t["tier_risk_pct"]) == 1
+    assert E.walk_long([tk(0, 100.2, 100.4, 100.1, 100.3, lo24=100.0)], E1, P, EQ)["trades"] == []
+
+
+# ── realistic weekend-reopen fills ─────────────────────────────────────────
+
+SUN = int(datetime(2026, 11, 8, 23, 0, tzinfo=timezone.utc).timestamp() * 1000)     # a reopen tick
+M5 = E.FIVE_MS
+
+
+def test_reopen_fill_is_the_mid_five_minutes_in_not_the_open_print():
+    c15 = [_c(SUN - Q, 98.0, 98.1, 97.9, 98.1), _c(SUN, 98.1, 98.2, 96.0, 96.8), _c(SUN + Q, 96.8, 97.0, 96.5, 96.6)]
+    c5 = [_c(SUN, 98.1, 98.2, 96.0, 96.9), _c(SUN + M5, 96.9, 97.2, 96.8, 96.88), _c(SUN + 2 * M5, 96.88, 96.95, 96.7, 96.8)]
+    f = E.reopen_fills(c15, c5, floor_slip=0.0003)
+    assert set(f) == {SUN}
+    got = f[SUN]
+    assert got["source"] == "5m" and got["px"] == 96.9 and got["open_px"] == 98.1
+    assert got["high"] == 97.2 and got["low"] == 96.7              # the first five minutes are not the desk's to trade
+    assert got["slip"] == pytest.approx((97.2 - 96.8) / 96.9 / 2)
+    assert E.REOPEN_DELAY_MS == 5 * 60_000
+
+
+def test_reopen_fill_slippage_floor_and_the_fallback_without_5m_candles():
+    week = 7 * DAY
+    c15 = [_c(SUN - week, 110.0, 110.1, 109.5, 109.7), _c(SUN, 98.1, 98.2, 96.0, 96.8)]
+    quiet = [_c(SUN + M5, 96.9, 96.91, 96.9, 96.9), _c(SUN + 2 * M5, 96.9, 96.9, 96.85, 96.85)]
+    f = E.reopen_fills(c15, quiet, floor_slip=0.0003)
+    assert f[SUN]["slip"] == pytest.approx(0.0003)                  # never under the sim's own slippage
+    old = f[SUN - week]
+    assert old["source"] == "next_tick" and old["px"] == 109.7 and old["high"] == old["low"] == 109.7
+    assert old["slip"] == pytest.approx(f[SUN]["slip"])            # the median of what was measured
+    none = E.reopen_fills(c15, [], floor_slip=0.0004)
+    assert {v["source"] for v in none.values()} == {"next_tick"} and none[SUN]["slip"] == pytest.approx(0.0004)
+
+
+def test_apply_reopen_reprices_only_the_reopen_tick():
+    ticks = [tk(0, 98.1, 98.2, 96.0, 96.8, t=SUN, reopen=True, ceiling=97.2),
+             tk(0, 96.8, 97.0, 96.5, 96.6, t=SUN + Q, ceiling=97.2)]
+    fills = {SUN: {"px": 96.9, "high": 97.1, "low": 96.7, "slip": 0.002, "source": "5m", "open_px": 98.1}}
+    out = E.apply_reopen(ticks, fills)
+    assert (out[0].o, out[0].h, out[0].l, out[0].c, out[0].slip) == (96.9, 97.1, 96.7, 96.8, 0.002)
+    assert out[1] is ticks[1] and ticks[0].o == 98.1               # the input is not touched
+    assert E.apply_reopen(ticks, {})[0] is ticks[0]
+
+
+def test_the_reopen_short_only_exists_on_the_open_print():
+    """98.1 printed at the reopen, 96.9 five minutes later, thesis entry 97.2:
+    the open-print backtest shorts 98.1 and covers at the entry; the desk,
+    five minutes in, is already under its entry and has nothing to short."""
+    ticks = [tk(0, 98.1, 98.2, 96.0, 96.8, t=SUN, reopen=True, ceiling=97.2),
+             tk(0, 96.8, 97.0, 96.5, 96.6, t=SUN + Q, ceiling=97.2)]
+    paper = one(E.walk(ticks, A1, P, EQ))
+    assert paper["reopen"] and paper["net_usd"] > 0
+    fills = {SUN: {"px": 96.9, "high": 97.1, "low": 96.7, "slip": 0.002, "source": "5m", "open_px": 98.1}}
+    assert E.walk(E.apply_reopen(ticks, fills), A1, P, EQ)["trades"] == []
+
+
+def test_a_market_fill_on_a_reopen_tick_pays_the_reopen_slippage():
+    ticks = [tk(0, 98.1, 98.2, 97.9, 98.0, t=SUN, reopen=True, ceiling=97.2)]
+    fills = {SUN: {"px": 98.0, "high": 98.05, "low": 97.9, "slip": 0.002, "source": "5m", "open_px": 98.1}}
+    t = one(E.walk(E.apply_reopen(ticks, fills), A1, P, EQ))
+    assert t["entry_px"] == pytest.approx(98.0 * (1 - 0.002), abs=1e-4)
+    v = Variant("long", step=0.005, tiers=1, scheme="flat20", stop="atr2.0")
+    long_t = one(E.walk_long(E.apply_reopen(ticks, fills), v, P, EQ))
+    assert long_t["entry_px"] == pytest.approx(98.0 * (1 + 0.002), abs=1e-4)
+
+
+def test_judge_on_realistic_fills_uses_the_five_older_legs():
+    row = _row(ex=-0.5)
+    assert E.judge(row, [1.0])["verdict"] == "FAIL"
+    j = E.judge(row, [1.0], reopen_leg=False)
+    assert j["verdict"] == "PASS" and j["reopen_leg"] is False
+    assert E.judge(_row(net=-5.0), [1.0], reopen_leg=False)["verdict"] == "FAIL"
+    assert E.judge(_row(n=9, ex=-0.5), [1.0], reopen_leg=False)["verdict"] == "LEANING"
+
+
+def test_reopen_profit_says_how_much_survives():
+    def r(net, reopen, n):
+        return {"kind": "entry", "datasets": {E.PRIMARY: {"combined": {"net_usd": net, "reopen_usd": reopen, "reopen_n": n}}}}
+    got = E.reopen_profit({"a": r(10.0, 8.0, 2), "b": r(5.0, 2.0, 1)}, {"a": r(3.0, 1.0, 2), "b": r(4.0, 1.5, 1)}, [E.PRIMARY])
+    assert got == {"entry": {E.PRIMARY: {"variants": 2, "net_open_print_usd": 15.0, "net_realistic_usd": 7.0,
+                                         "reopen_open_print_usd": 10.0, "reopen_realistic_usd": 2.5,
+                                         "reopen_trades_open_print": 3, "reopen_trades_realistic": 3,
+                                         "survives_pct": 25.0}}}
+    lost = E.reopen_profit({"a": r(-1.0, -2.0, 1)}, {"a": r(-1.0, -3.0, 1)}, [E.PRIMARY])
+    assert lost["entry"][E.PRIMARY]["survives_pct"] is None        # there was no reopen profit to keep
+
+
 # ── CLI ────────────────────────────────────────────────────────────────────
 
 def test_help_runs(capsys):

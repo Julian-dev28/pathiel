@@ -48,6 +48,26 @@ C. Fit with the live long book. The account holds one position per desk.
    new position while the live long is open, an open one closed at the
    tick the live long enters. Collisions are counted on the alone run.
 
+E. Long ladder sized in EQUITY ("equity" variants; operator: "test the
+   tiered entry 20% equity at .5%+ 10% equity at 1%+"). Tier 1 at +0.5%
+   over the thesis entry posts 20% of desk equity as margin, tier 2 at +1%
+   another 10%, each times the fitted leverage (20% at 20x is a notional
+   of about 4x equity). The stop does not enter the size, so the report
+   says what each tier really risks at its stop in % of equity. Same
+   stops, targets, confirmations and R gates as D; margin schemes 10/5,
+   20/10, 30/15.
+
+Realistic weekend-reopen fills (second pass, every study). The first
+pass fills a reopen-tick entry at the 15m bar's open print. The desk
+cannot: its cron runs at :03/:18/:33/:48 and a tick takes a minute or
+two. `reopen_fills` moves that fill to the open of the 5m bar five
+minutes after the reopen, with half that bar's high-low range as
+slippage (measured on 5m candles, not the book-impact curve, which was
+walked on a weekday book); where the venue no longer serves 5m candles
+(only its last 5,000) the fill is the next 15m tick at the median
+measured slippage. That pass is judged on the five older legs: nothing
+is removed, so the no-reopen leg has nothing to do.
+
 The live long book is `desk_tick_sim.simulate` with
 `trend_gate_test.base_params` (the live Brent rule, 6% risk, the 20/15
 leverage fit, size slippage), the same baseline the fusion sweep judges
@@ -84,6 +104,7 @@ import csv
 import dataclasses
 import json
 import os
+import statistics
 import time
 from collections import Counter
 from dataclasses import dataclass
@@ -129,13 +150,21 @@ D_TARGETS = ("thesis", "hi24")
 D_STOPS = ("lo24", "atr1.5", "atr2.0")   # the live rule's structural stop, or N x ATR14 under the first fill
 D_ATR_STOPS = D_STOPS[1:]
 D_MIN_R = (0.0, 1.0, 2.0)
+# E: the long ladder sized in EQUITY, not risk. Margin per tier as a share of
+# desk equity: tier 1 at +0.5% over the thesis entry, tier 2 at +1%.
+E_SCHEMES: Dict[str, Tuple[float, ...]] = {"eq10_5": (0.10, 0.05), "eq20_10": (0.20, 0.10), "eq30_15": (0.30, 0.15)}
+E_ORDER = tuple(E_SCHEMES)
+E_FIRST, E_TIERS = 0.005, 2
+E_PRIMARY = "E_eq20_10_touch_thesis_lo24_r0"      # the operator's words: 20% equity at +0.5%, 10% at +1%
+FIVE_MS = 300_000
+REOPEN_DELAY_MS = FIVE_MS      # the desk cron runs at :03/:18/:33/:48 and a tick takes 1-2 min: first real fill ~5 min in
 
 
 # ── variants (pure) ────────────────────────────────────────────────────────
 
 @dataclass(frozen=True)
 class Variant:
-    kind: str                     # "long" (D, long ladder) | "entry" (A, short to the entry) | "ladder" (B)
+    kind: str                     # "long" (D) | "equity" (E, long ladder sized in equity) | "entry" (A) | "ladder" (B)
     stop: str = "hi24"            # A: hi24 | atr1.0 | atr1.5 | atr2.0; D: lo24 | atr1.5 | atr2.0
     min_r: float = 0.0            # A, D: planned R the trade (D: each tier) must pay at its fill
     reentry: bool = False         # A: another short under the same thesis after one closed
@@ -152,6 +181,8 @@ class Variant:
         """Share of the normal per-trade risk each tier takes."""
         if self.kind == "entry":
             return (self.risk_scale,)
+        if self.kind == "equity":
+            return E_SCHEMES[self.scheme]          # shares of EQUITY used as margin, not shares of risk
         return B_SCHEMES[self.scheme][:self.tiers]
 
     @property
@@ -159,6 +190,8 @@ class Variant:
         if self.kind == "entry":
             return (f"A_{self.stop}_r{self.min_r:g}_{'re' if self.reentry else 'once'}"
                     f"_risk{round(self.risk_scale * 100)}")
+        if self.kind == "equity":
+            return f"E_{self.scheme}_{self.confirm}_{self.target}_{self.stop}_r{self.min_r:g}"
         if self.kind == "long":
             return (f"D_f{self.step * 100:g}_t{self.tiers}_{self.scheme}_{self.confirm}_{self.target}"
                     f"_{self.stop}_r{self.min_r:g}")
@@ -181,6 +214,11 @@ def long_variants() -> List[Variant]:
             for st in D_STOPS for r in D_MIN_R]
 
 
+def equity_variants() -> List[Variant]:
+    return [Variant("equity", step=E_FIRST, tiers=E_TIERS, scheme=sc, confirm=cf, target=tg, stop=st, min_r=r)
+            for sc in E_SCHEMES for cf in B_CONFIRMS for tg in D_TARGETS for st in D_STOPS for r in D_MIN_R]
+
+
 def _shift(levels: Sequence[Any], value: Any) -> List[Any]:
     if value not in levels:
         return []
@@ -195,6 +233,10 @@ def neighbours(v: Variant) -> List[Variant]:
     multiple. The unordered choices (hi24 / lo24, reference, confirmation,
     re-entry, ramp, target) have no neighbour."""
     out: List[Variant] = []
+    if v.kind == "equity":      # E: the margin scheme, minimum R and ATR stop multiple
+        return ([dataclasses.replace(v, scheme=sc) for sc in _shift(E_ORDER, v.scheme)]
+                + [dataclasses.replace(v, min_r=r) for r in _shift(D_MIN_R, v.min_r)]
+                + [dataclasses.replace(v, stop=st) for st in _shift(D_ATR_STOPS, v.stop)])
     if v.kind == "entry":
         out += [dataclasses.replace(v, stop=s) for s in _shift(A_ATR_STOPS, v.stop)]
         out += [dataclasses.replace(v, min_r=r) for r in _shift(A_MIN_R, v.min_r)]
@@ -275,6 +317,73 @@ def tier_notional(equity: float, params: Params, leverage: Optional[float], entr
     want = risk_capped_notional(equity, p, leverage, entry, stop)
     room = _full_size_notional(equity, params, leverage) - open_notional
     return max(0.0, min(want, room))
+
+
+def equity_tier_notional(equity: float, params: Params, leverage: Optional[float], share: float,
+                         open_notional: float = 0.0) -> float:
+    """E's tier size: `share` of equity posted as margin (net of the opening
+    taker fee, as place_bracket does) times the position's leverage, capped
+    by what is left of the full-port size. 20% of equity at 20x is a
+    notional of about 4x equity. The stop does not enter the size; the
+    risk is whatever that notional loses at the stop (`stop_risk_pct`)."""
+    lev = leverage or params.leverage
+    margin = share * equity / (1.0 + lev * params.taker_fee)
+    room = _full_size_notional(equity, params, lev) - open_notional
+    return max(0.0, min(margin * lev, room))
+
+
+def stop_risk_pct(notional: float, entry: float, stop: float, equity: float, params: Params) -> float:
+    """What a tier loses at its stop, percent of equity: price to the stop,
+    the taker fee both ways and the stop slippage, the same per-dollar cost
+    `risk_capped_notional` sizes the live trade by."""
+    if equity <= 0 or entry <= 0:
+        return 0.0
+    return notional * (abs(entry - stop) / entry + 2.0 * params.taker_fee + params.slippage) / equity * 100.0
+
+
+def reopen_fills(c15: Sequence[Candle], c5: Sequence[Candle], floor_slip: float,
+                 delay_ms: int = REOPEN_DELAY_MS) -> Dict[int, Dict[str, Any]]:
+    """The fill the desk really gets on the first tick after a weekend, per
+    reopen tick t: {"px", "high", "low", "slip", "source", "open_px"}.
+
+    The cron runs at :03/:18/:33/:48 and a tick takes a minute or two, so
+    the earliest order lands about five minutes after the reopen, not on
+    the reopen bar's open print. Measured ("5m", where the venue still
+    serves 5m candles, its last 5,000): the mid is the OPEN of the 5m bar
+    at t + 5 min, the rest of the 15m bar is the high/low of the 5m bars
+    from there on, and the slippage is half that 5m bar's high-low range
+    (the uncertainty of where in it a market order fills), never under
+    `floor_slip`. Older reopens ("next_tick"): the order is taken at the
+    15m bar's close, i.e. the next tick, with the median measured slippage
+    of this coin. Pure."""
+    five = {c.t: c for c in c5}
+    reopens = [b for b in sorted(c15, key=lambda c: c.t) if reopen_tick(b.t)]
+    measured: Dict[int, Dict[str, Any]] = {}
+    for b in reopens:
+        first = five.get(b.t + delay_ms)
+        if first is None or first.o <= 0:
+            continue
+        rest = [c for c in (five.get(b.t + delay_ms + k * FIVE_MS) for k in range((FIFTEEN_MS - delay_ms) // FIVE_MS))
+                if c is not None]
+        measured[b.t] = {"px": first.o, "high": max(c.h for c in rest), "low": min(c.l for c in rest),
+                         "slip": max(floor_slip, (first.h - first.l) / first.o / 2.0), "source": "5m", "open_px": b.o}
+    fallback = statistics.median(m["slip"] for m in measured.values()) if measured else floor_slip
+    out: Dict[int, Dict[str, Any]] = {}
+    for b in reopens:
+        out[b.t] = measured.get(b.t) or {"px": b.c, "high": b.c, "low": b.c, "slip": fallback, "source": "next_tick",
+                                         "open_px": b.o}
+    return out
+
+
+def apply_reopen(ticks: Sequence["Tick"], fills: Dict[int, Dict[str, Any]]) -> List["Tick"]:
+    """`ticks` with every reopen tick repriced to its realistic fill: the
+    mid, high and low a walker sees are those of `reopen_fills`, and market
+    fills on that tick pay at least its slippage. Other ticks untouched."""
+    out: List[Tick] = []
+    for tk in ticks:
+        f = fills.get(tk.t) if tk.reopen else None
+        out.append(dataclasses.replace(tk, o=f["px"], h=f["high"], l=f["low"], slip=f["slip"]) if f else tk)
+    return out
 
 
 def waiting_for_dip(side: Optional[str], mid: float, ceiling: Optional[float]) -> bool:
@@ -360,6 +469,7 @@ class Tick:
     target: Optional[float] = None     # a long thesis's first target
     invalid: Optional[float] = None    # its 1h-close invalidation price
     reopen: bool = False               # the first tick after the weekend
+    slip: float = 0.0                  # minimum slippage for a market fill on this tick (realistic reopen fills)
 
 
 ThesisAt = Callable[[int], Optional[Tuple[str, Optional[float], str, Optional[float], Optional[float]]]]
@@ -450,8 +560,11 @@ def build_ticks(c15: Sequence[Candle], c1h: Sequence[Candle], thesis_at: ThesisA
 
 # ── the short walker ───────────────────────────────────────────────────────
 
-def _fill(pos: Dict[str, Any], k: int, px: float, notional: float, fee_rate: float, t: int) -> float:
+def _fill(pos: Dict[str, Any], k: int, px: float, notional: float, fee_rate: float, t: int,
+          risk_pct: Optional[float] = None) -> float:
     """Add one tier to the position; returns the entry fee paid."""
+    if risk_pct is not None:
+        pos.setdefault("risk_pcts", []).append(round(risk_pct, 2))
     size = notional / px
     total = pos["size"] + size
     pos["avg"] = (pos["avg"] * pos["size"] + px * size) / total
@@ -474,7 +587,8 @@ def _close(pos: Dict[str, Any], exit_px: float, t: Optional[int], reason: str, f
             "leverage": pos["lev"], "reason": reason, "gross_usd": gross, "exit_fee_usd": exit_fee,
             "fees_usd": pos["fees"] + exit_fee, "funding_usd": pos["funding"], "net_usd": net,
             "risk_usd": pos["risk"], "r": net / pos["risk"] if pos["risk"] > 1e-12 else None,
-            "thesis_id": pos["thesis_id"], "reopen": bool(pos.get("reopen"))}
+            "thesis_id": pos["thesis_id"], "reopen": bool(pos.get("reopen")),
+            "tier_risk_pct": list(pos.get("risk_pcts", []))}
 
 
 def walk(ticks: Sequence[Tick], v: Variant, params: Params, start_equity: float,
@@ -554,7 +668,7 @@ def walk(ticks: Sequence[Tick], v: Variant, params: Params, start_equity: float,
                         refused["leverage"] += 1
                     else:
                         notional = tier_notional(eq, params, lev, mid, stop, v.risk[0], 0.0, risk_frac)
-                        px = mid * (1.0 - _market_exit_slip(params, notional))
+                        px = mid * (1.0 - max(_market_exit_slip(params, notional), tk.slip))
                         pos = {"opened": t, "avg": 0.0, "size": 0.0, "stop": stop, "target": tk.ceiling, "ref": tk.ceiling,
                                "lev": lev, "fees": 0.0, "funding": 0.0, "risk": 0.0, "tiers": [], "last_fill": t,
                                "thesis_id": tk.thesis_id, "reopen": tk.reopen}
@@ -590,7 +704,7 @@ def walk(ticks: Sequence[Tick], v: Variant, params: Params, start_equity: float,
                             refused["margin"] += 1
                             continue
                         if not maker:
-                            px = px * (1.0 - _market_exit_slip(params, notional))
+                            px = px * (1.0 - max(_market_exit_slip(params, notional), tk.slip))
                         if pos is None:
                             pos = {"opened": t, "avg": 0.0, "size": 0.0, "stop": stop, "target": ref, "ref": ref,
                                    "lev": lev, "fees": 0.0, "funding": 0.0, "risk": 0.0, "tiers": [], "last_fill": t,
@@ -648,6 +762,8 @@ def walk_long(ticks: Sequence[Tick], v: Variant, params: Params, start_equity: f
     last_exit_t = -1
     n_tiers = len(v.risk)
     cands = params.entry_fit_leverage or ()
+
+    by_equity = v.kind == "equity"
 
     def sell(px: float) -> float:
         return px * (1.0 - _market_exit_slip(params, pos["size"] * px))
@@ -707,17 +823,21 @@ def walk_long(ticks: Sequence[Tick], v: Variant, params: Params, start_equity: f
                 else:
                     lev = pos["lev"]
                 open_notional = pos["size"] * px if pos is not None else 0.0
-                notional = tier_notional(eq, params, lev, px, stop, v.risk[k], open_notional, risk_frac)
+                if by_equity:
+                    notional = equity_tier_notional(eq, params, lev, v.risk[k], open_notional)
+                else:
+                    notional = tier_notional(eq, params, lev, px, stop, v.risk[k], open_notional, risk_frac)
                 if notional <= 0:
                     refused["margin"] += 1
                     continue
-                px = px * (1.0 + _market_exit_slip(params, notional))
+                at_stop = stop_risk_pct(notional, px, stop, eq, params)
+                px = px * (1.0 + max(_market_exit_slip(params, notional), tk.slip))
                 if pos is None:
                     pos = {"opened": t, "avg": 0.0, "size": 0.0, "stop": stop, "target": target, "ref": ref,
                            "lev": lev, "fees": 0.0, "funding": 0.0, "risk": 0.0, "tiers": [], "last_fill": t,
                            "thesis_id": tk.thesis_id, "reopen": tk.reopen, "sign": 1.0}
                     done_ids.add(tk.thesis_id)
-                pnl -= _fill(pos, k, px, notional, params.taker_fee, t)
+                pnl -= _fill(pos, k, px, notional, params.taker_fee, t, at_stop)
         if pos is not None:
             if tk.l <= pos["stop"]:
                 trig = min(pos["stop"], tk.o) if pos["opened"] < t else pos["stop"]
@@ -798,7 +918,13 @@ def summarize_short(run: Dict[str, Any], base_equity: Sequence[float]) -> Dict[s
     start = base_equity[0] if len(base_equity) else 0.0
     reopen = [t for t in trades if t.get("reopen")]
     reopen_usd = sum(t["net_usd"] for t in reopen)
+    pcts = [t["tier_risk_pct"] for t in trades if t.get("tier_risk_pct")]
+    depth = max((len(p) for p in pcts), default=0)
+    by_tier = [[p[i] for p in pcts if len(p) > i] for i in range(depth)]
     return {"reopen_n": len(reopen), "reopen_usd": round(reopen_usd, 2), "ex_reopen_usd": round(net - reopen_usd, 2),
+            "tier_risk_pct_mean": [round(sum(x) / len(x), 2) for x in by_tier],
+            "tier_risk_pct_max": [round(max(x), 2) for x in by_tier],
+            "trade_risk_pct_max": round(max((sum(p) for p in pcts), default=0.0), 2),
             "n": n, "wins": wins, "win_rate": round(wins / n * 100.0, 1) if n else None,
             "net_usd": round(net, 2), "avg_r": round(sum(rs) / len(rs), 2) if rs else None,
             "total_r": round(sum(rs), 2),
@@ -862,7 +988,7 @@ def drop_best_day(trades: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
 
 
 def judge(row: Dict[str, Any], neighbour_nets: Sequence[Optional[float]], primary: str = PRIMARY,
-          min_n: int = MIN_N) -> Dict[str, Any]:
+          min_n: int = MIN_N, reopen_leg: bool = True) -> Dict[str, Any]:
     """The bar on one variant. `row["datasets"][ds]` holds "combined" (the
     short sleeve beside the live book), "live" ({"net_usd", "max_dd_pct"})
     and "combined_dd_pct"; `row["halves"]` the sleeve's net in each half of
@@ -874,7 +1000,9 @@ def judge(row: Dict[str, Any], neighbour_nets: Sequence[Optional[float]], primar
     weekend removed (`reopen_tick`: a fill at that open is not a fill the
     desk gets). `repo_bar_without_reopen_leg` says whether the variant
     would pass on the five older legs alone, so the effect of the added
-    leg is visible.
+    leg is visible. `reopen_leg=False` judges on those five only: the
+    reading for a run whose reopen ticks already carry realistic fills
+    (`apply_reopen`), where there is nothing left to remove.
 
     Beating live = the sleeve adds money beside the live book (the combined
     net is the live net plus the sleeve's). PASS needs every leg and at
@@ -893,14 +1021,14 @@ def judge(row: Dict[str, Any], neighbour_nets: Sequence[Optional[float]], primar
             "plateau": plateau, "drop_best_day": bool(row["drop_best_day"]["pass"]),
             "holds_without_reopen_ticks": all(ex)}
     n = ds[primary]["combined"]["n"] if primary in ds else 0
-    money = all(legs.values())
+    money = all(ok for k, ok in legs.items() if reopen_leg or k != "holds_without_reopen_ticks")
     if n >= min_n:
         verdict = "PASS" if money else "FAIL"
     else:
         verdict = "LEANING" if money else "NOISE"
     repo_bar = all(ok for k, ok in legs.items() if k != "holds_without_reopen_ticks")
     return {"legs": legs, "beats": beats, "dd": dd, "n_primary": n, "verdict": verdict,
-            "repo_bar_without_reopen_leg": repo_bar and n >= min_n}
+            "repo_bar_without_reopen_leg": repo_bar and n >= min_n, "reopen_leg": reopen_leg}
 
 
 VERDICT_RANK = {"PASS": 0, "LEANING": 1, "FAIL": 2, "NOISE": 2}
@@ -965,7 +1093,7 @@ def run_variant(v: Variant, ctx: Dict[str, Any], risk_frac: float = RISK_FRAC, k
     bp: Params = ctx["params"]
     start = bp.starting_equity
     ticks = ctx["ticks"]
-    w = walk_long if v.kind == "long" else walk
+    w = walk_long if v.kind in ("long", "equity") else walk
     alone = w(ticks, v, bp, start, risk_frac=risk_frac)
     comb = w(ticks, v, bp, start, ctx["long_curve"], ctx["long_open"], ctx["long_entry"], risk_frac)
     s_alone = summarize_short(alone, [start] * len(ticks))
@@ -984,7 +1112,7 @@ def run_variant(v: Variant, ctx: Dict[str, Any], risk_frac: float = RISK_FRAC, k
 
 def evaluate(variants: Sequence[Variant], contexts: Dict[str, Dict[str, Any]], halves: Sequence[Dict[str, Any]],
              risk_frac: float = RISK_FRAC, log: Optional[Callable[[str], None]] = None,
-             primary: str = PRIMARY) -> Dict[str, Dict[str, Any]]:
+             primary: str = PRIMARY, reopen_leg: bool = True) -> Dict[str, Dict[str, Any]]:
     """Every variant on every dataset and both halves of the primary, judged."""
     rows: Dict[str, Dict[str, Any]] = {}
     t0 = time.time()
@@ -1007,7 +1135,7 @@ def evaluate(variants: Sequence[Variant], contexts: Dict[str, Dict[str, Any]], h
         nets = [rows[n.name]["datasets"][primary]["combined"]["net_usd"] if n.name in rows and primary in
                 rows[n.name]["datasets"] else None for n in neighbours(v)]
         rows[v.name]["neighbour_nets"] = nets
-        rows[v.name]["judge"] = judge(rows[v.name], nets, primary)
+        rows[v.name]["judge"] = judge(rows[v.name], nets, primary, reopen_leg=reopen_leg)
     return rows
 
 
@@ -1030,7 +1158,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--out-dir", default="/tmp/short-ladder")
     ap.add_argument("--start-equity", type=float, default=START)
     ap.add_argument("--risk-frac", type=float, default=RISK_FRAC, help="the normal per-trade risk (default 0.06)")
-    ap.add_argument("--only", choices=("A", "B", "D"), default=None, help="run one study only")
+    ap.add_argument("--only", choices=("A", "B", "D", "E"), default=None, help="run one study only")
+    ap.add_argument("--no-realistic", action="store_true",
+                    help="skip the second pass with realistic weekend-reopen fills")
     ap.add_argument("--no-wti", action="store_true", help="skip the WTI cross-check")
     ap.add_argument("--op-short", type=float, nargs=3, metavar=("ENTRY", "STOP", "TARGET"),
                     default=(92.714, 93.80, 92.48), help="the operator's own short, costed in the report")
@@ -1086,82 +1216,84 @@ def main(argv: Optional[List[str]] = None) -> int:
     mid -= mid % FIFTEEN_MS
     halves = [prepare(b15, b1h, journaled_direction(theses), thesis_lookup(theses), bp, b_fund, s, e)
               for s, e in ((start, mid), (mid, b_end))]
-    variants = ((long_variants() if a.only in (None, "D") else []) + (entry_variants() if a.only in (None, "A") else [])
-                + (ladder_variants() if a.only in (None, "B") else []))
+    variants = ((equity_variants() if a.only in (None, "E") else []) + (long_variants() if a.only in (None, "D") else [])
+                + (entry_variants() if a.only in (None, "A") else []) + (ladder_variants() if a.only in (None, "B") else []))
     log(f"{len(theses)} theses {_iso(start)} -> {_iso(b_end)}; datasets {list(contexts)}; halves split at {_iso(mid)}; "
         f"{len(variants)} variants; live {({k: c['live']['net_usd'] for k, c in contexts.items()})}")
-    rows = evaluate(variants, contexts, halves, a.risk_frac, log)
-    kinds = (("D", "long"), ("A", "entry"), ("B", "ladder"))
-    best = {k: best_of(rows, kind) for k, kind in kinds}
-    detail: Dict[str, Any] = {}
     by_name = {v.name: v for v in variants}
-    for name in list(best.values()) + list(a.detail):
-        if name and name in by_name and name not in detail:
-            detail[name] = {ds: run_variant(by_name[name], ctx, a.risk_frac, keep_trades=True)
-                            for ds, ctx in contexts.items()}
-    passing = sorted(n for n, r in rows.items() if r["judge"]["verdict"] == "PASS")
-    passing_old = sorted(n for n, r in rows.items() if r["judge"]["repo_bar_without_reopen_leg"])
-    counts = {kind: dict(Counter(r["judge"]["verdict"] for r in rows.values() if r["kind"] == kind))
-              for _, kind in kinds}
-    positive = {kind: {ds: sum(1 for r in rows.values() if r["kind"] == kind and r["datasets"][ds]["combined"]["net_usd"] > EPS)
-                       for ds in contexts} for _, kind in kinds}
+    rows = evaluate(variants, contexts, halves, a.risk_frac, log)
+    study = summarize_study(rows, contexts)
+    wanted = list(dict.fromkeys(n for n in list(study["best"].values()) + [E_PRIMARY] + list(a.detail)
+                                if n and n in by_name))
+    detail = {n: {ds: run_variant(by_name[n], ctx, a.risk_frac, keep_trades=True) for ds, ctx in contexts.items()}
+              for n in wanted}
     missed_summary = {"long_theses": len(missed), "touched": sum(1 for m in missed if m["touched"]),
                       "never_touched": sum(1 for m in missed if not m["touched"]),
                       "missed_right_never_touched": sum(1 for m in missed if m["missed"]),
                       "missed_and_hit_target": sum(1 for m in missed if m["missed"] and m["hit_target"]),
                       "rows": missed}
-
     csv_path = os.path.join(a.out_dir, "variants.csv")
-    with open(csv_path, "w", newline="") as fh:
-        w = csv.writer(fh)
-        head = ["name", "kind", "verdict", "n_primary", "h1_usd", "h2_usd", "drop_best_day_rest_usd",
-                "ex_reopen_usd", "missed_caught", "missed_caught_net_usd"]
-        for ds in contexts:
-            head += [f"{ds}:{c}" for c in ("alone_n", "alone_wins", "alone_net", "alone_avg_r", "alone_dd", "comb_n",
-                                           "comb_wins", "comb_net", "comb_avg_r", "comb_dd", "live_net", "live_dd",
-                                           "collision_pct", "long_entered_inside")]
-        w.writerow(head)
-        for n in sorted(rows, key=lambda n: (rows[n]["kind"], -rows[n]["datasets"][PRIMARY]["combined"]["net_usd"], n)):
-            r = rows[n]
-            cg = r["datasets"][PRIMARY].get("caught", {}).get("combined", {})
-            line = [n, r["kind"], r["judge"]["verdict"], r["judge"]["n_primary"], r["halves"][0], r["halves"][1],
-                    r["drop_best_day"]["rest_usd"], r["datasets"][PRIMARY]["combined"]["ex_reopen_usd"],
-                    cg.get("caught"), cg.get("caught_net_usd")]
-            for ds in contexts:
-                d = r["datasets"][ds]
-                al, cb = d["alone"], d["combined"]
-                line += [al["n"], al["wins"], al["net_usd"], al["avg_r"], al["max_dd_pct"], cb["n"], cb["wins"],
-                         cb["net_usd"], cb["avg_r"], cb["max_dd_pct"], d["live"]["net_usd"], d["live"]["max_dd_pct"],
-                         d["collisions"]["rate_pct"], d["collisions"]["long_entered_inside"]]
-            w.writerow(line)
+    write_variants_csv(csv_path, rows, list(contexts))
+
+    realistic: Optional[Dict[str, Any]] = None
+    if not a.no_realistic:
+        # second pass: the same grid with the fill the desk really gets on the first tick after a weekend
+        fills = {BRENT: reopen_fills(b15, D.fetch_candles_cached(BRENT, "5m", 5000, a.cache_dir), bp.slippage)}
+        if not a.no_wti:
+            fills[WTI] = reopen_fills(w15, D.fetch_candles_cached(WTI, "5m", 5000, a.cache_dir), bp.slippage)
+
+        def coin_of(name: str) -> str:
+            return WTI if name.startswith("wti") else BRENT
+        r_ctx = {name: {**ctx, "ticks": apply_reopen(ctx["ticks"], fills[coin_of(name)])}
+                 for name, ctx in contexts.items()}
+        r_halves = [{**h, "ticks": apply_reopen(h["ticks"], fills[BRENT])} for h in halves]
+        log(f"second pass, realistic reopen fills: {({c: Counter(f['source'] for f in fl.values()) for c, fl in fills.items()})}")
+        r_rows = evaluate(variants, r_ctx, r_halves, a.risk_frac, log, reopen_leg=False)
+        r_study = summarize_study(r_rows, r_ctx)
+        r_wanted = list(dict.fromkeys(wanted + [n for n in r_study["best"].values() if n]))
+        realistic = {
+            "model": "first fill 5 min after the reopen: the open of the 5m bar at +5 min, slippage half that bar's "
+                     "high-low range; where the venue no longer serves 5m candles, the next 15m tick at the median "
+                     "measured slippage. Judged on the five older legs (nothing is removed).",
+            "fills": {coin: [{"reopen": _iso(t), "open_px": f["open_px"], "fill_px": f["px"],
+                              "open_to_fill_pct": round((f["px"] / f["open_px"] - 1.0) * 100.0, 2),
+                              "slip_bps": round(f["slip"] * 1e4, 1), "source": f["source"]}
+                             for t, f in sorted(fl.items())] for coin, fl in fills.items()},
+            **r_study, "reopen_profit": reopen_profit(rows, r_rows, list(contexts)), "rows": r_rows,
+            "best_trades": {n: {ds: run_variant(by_name[n], ctx, a.risk_frac, keep_trades=True)
+                                for ds, ctx in r_ctx.items()} for n in r_wanted},
+        }
+        write_variants_csv(os.path.join(a.out_dir, "variants_realistic.csv"), r_rows, list(contexts))
+
     trades_path = os.path.join(a.out_dir, "best_trades.csv")
     with open(trades_path, "w", newline="") as fh:
-        fields = ["variant", "dataset", "mode", "entry", "exit", "entry_px", "exit_px", "stop_px", "target_px", "tiers",
-                  "leverage", "reason", "net_usd", "r", "risk_usd", "fees_usd", "funding_usd"]
+        fields = ["fills", "variant", "dataset", "mode", "entry", "exit", "entry_px", "exit_px", "stop_px", "target_px",
+                  "tiers", "leverage", "reason", "net_usd", "r", "risk_usd", "tier_risk_pct", "fees_usd", "funding_usd",
+                  "reopen"]
         w = csv.DictWriter(fh, fieldnames=fields, extrasaction="ignore")
         w.writeheader()
-        for name, per in detail.items():
-            for ds, d in per.items():
-                for mode in ("alone", "combined"):
-                    for t in d[f"trades_{mode}"]:
-                        w.writerow({"variant": name, "dataset": ds, "mode": mode, **t})
+        for label, block in (("open_print", detail), ("realistic", realistic["best_trades"] if realistic else {})):
+            for name, per in block.items():
+                for ds, d in per.items():
+                    for mode in ("alone", "combined"):
+                        for t in d[f"trades_{mode}"]:
+                            w.writerow({"fills": label, "variant": name, "dataset": ds, "mode": mode, **t})
     report = {
         "generated_at": time.strftime("%Y-%m-%dT%H:%MZ", time.gmtime()), "seconds": round(time.time() - t0, 1),
         "brent_data_end": _iso(b_end), "start_equity": a.start_equity, "risk_frac": a.risk_frac,
         "entry_fit_leverage": bp.entry_fit_leverage, "datasets": meta, "halves_split": _iso(mid),
         "live": {k: c["live"] for k, c in contexts.items()},
         "live_halves": [h["live"] for h in halves],
-        "n_variants": len(variants), "verdicts": counts, "positive_beside_live": positive, "passing": passing,
-        "passing_without_reopen_leg": passing_old,
-        "best": best, "missed_theses": missed_summary, "operator_short": operator_short(*a.op_short, bp),
-        "rows": rows, "best_trades": detail,
+        "n_variants": len(variants), **study,
+        "missed_theses": missed_summary, "operator_short": operator_short(*a.op_short, bp),
+        "equity_primary": E_PRIMARY, "rows": rows, "best_trades": detail, "realistic": realistic,
     }
     out_path = os.path.join(a.out_dir, "report.json")
     with open(out_path, "w") as fh:
         json.dump(report, fh, indent=1, default=str)
     _print(report)
     print(f"\nreport: {out_path}\nvariants: {csv_path}\nbest trades: {trades_path}")
-    return 0 if passing else 1
+    return 0 if study["passing"] or (realistic and realistic["passing"]) else 1
 
 
 def _fmt(r: Dict[str, Any], datasets: Sequence[str]) -> str:
@@ -1177,9 +1309,104 @@ def _fmt(r: Dict[str, Any], datasets: Sequence[str]) -> str:
                      f"coll {coll:>4}")
     parts.append(f"| halves {r['halves'][0]:+.2f} / {r['halves'][1]:+.2f} n {r['halves_n']}")
     cg = r["datasets"][PRIMARY].get("caught", {}).get("combined")
-    if cg and r["kind"] == "long":
+    if cg and r["kind"] in ("long", "equity"):
         parts.append(f"| caught {cg['caught']}/{cg['missed']} missed, {cg['caught_net_usd']:+.2f}")
     return " ".join(parts)
+
+
+KINDS = (("E", "equity"), ("D", "long"), ("A", "entry"), ("B", "ladder"))
+LABELS = {"equity": "E. long ladder sized in equity (20% at +0.5%, 10% at +1%)", "long": "D. long ladder above the entry",
+          "entry": "A. short to the entry", "ladder": "B. tiered short ladder"}
+
+
+def summarize_study(rows: Dict[str, Dict[str, Any]], contexts: Dict[str, Any]) -> Dict[str, Any]:
+    """Verdict counts, how many variants add money per dataset, who passes, and the best of each study."""
+    kinds = [kind for _, kind in KINDS if any(r["kind"] == kind for r in rows.values())]
+    return {
+        "verdicts": {kind: dict(Counter(r["judge"]["verdict"] for r in rows.values() if r["kind"] == kind))
+                     for kind in kinds},
+        "positive_beside_live": {kind: {ds: sum(1 for r in rows.values() if r["kind"] == kind
+                                                and r["datasets"][ds]["combined"]["net_usd"] > EPS)
+                                        for ds in contexts} for kind in kinds},
+        "passing": sorted(n for n, r in rows.items() if r["judge"]["verdict"] == "PASS"),
+        "passing_without_reopen_leg": sorted(n for n, r in rows.items() if r["judge"]["repo_bar_without_reopen_leg"]),
+        "best": {k: best_of(rows, kind) for k, kind in KINDS if kind in kinds},
+    }
+
+
+def reopen_profit(open_rows: Dict[str, Dict[str, Any]], real_rows: Dict[str, Dict[str, Any]],
+                  datasets: Sequence[str]) -> Dict[str, Dict[str, Dict[str, Any]]]:
+    """Per study and dataset, summed over the grid beside the live book: the
+    net and the part made by trades entered on a reopen tick, on the open
+    print and on the realistic fill, and the share of the old reopen profit
+    that survives."""
+    out: Dict[str, Dict[str, Dict[str, Any]]] = {}
+    for _, kind in KINDS:
+        names = [n for n, r in open_rows.items() if r["kind"] == kind and n in real_rows]
+        if not names:
+            continue
+        out[kind] = {}
+        for ds in datasets:
+            def tot(rows: Dict[str, Dict[str, Any]], key: str) -> float:
+                return sum(rows[n]["datasets"][ds]["combined"][key] for n in names)
+            old, new = tot(open_rows, "reopen_usd"), tot(real_rows, "reopen_usd")
+            out[kind][ds] = {"variants": len(names), "net_open_print_usd": round(tot(open_rows, "net_usd"), 2),
+                             "net_realistic_usd": round(tot(real_rows, "net_usd"), 2),
+                             "reopen_open_print_usd": round(old, 2), "reopen_realistic_usd": round(new, 2),
+                             "reopen_trades_open_print": int(tot(open_rows, "reopen_n")),
+                             "reopen_trades_realistic": int(tot(real_rows, "reopen_n")),
+                             "survives_pct": round(new / old * 100.0, 1) if old > EPS else None}
+    return out
+
+
+def write_variants_csv(path: str, rows: Dict[str, Dict[str, Any]], datasets: Sequence[str]) -> None:
+    with open(path, "w", newline="") as fh:
+        w = csv.writer(fh)
+        head = ["name", "kind", "verdict", "n_primary", "h1_usd", "h2_usd", "drop_best_day_rest_usd",
+                "ex_reopen_usd", "missed_caught", "missed_caught_net_usd", "tier_risk_pct_mean", "tier_risk_pct_max"]
+        for ds in datasets:
+            head += [f"{ds}:{c}" for c in ("alone_n", "alone_wins", "alone_net", "alone_avg_r", "alone_dd", "comb_n",
+                                           "comb_wins", "comb_net", "comb_avg_r", "comb_dd", "live_net", "live_dd",
+                                           "collision_pct", "long_entered_inside")]
+        w.writerow(head)
+        for n in sorted(rows, key=lambda n: (rows[n]["kind"], -rows[n]["datasets"][PRIMARY]["combined"]["net_usd"], n)):
+            r = rows[n]
+            cg = r["datasets"][PRIMARY].get("caught", {}).get("combined", {})
+            al0 = r["datasets"][PRIMARY]["alone"]
+            line = [n, r["kind"], r["judge"]["verdict"], r["judge"]["n_primary"], r["halves"][0], r["halves"][1],
+                    r["drop_best_day"]["rest_usd"], r["datasets"][PRIMARY]["combined"]["ex_reopen_usd"],
+                    cg.get("caught"), cg.get("caught_net_usd"), "/".join(str(x) for x in al0["tier_risk_pct_mean"]),
+                    "/".join(str(x) for x in al0["tier_risk_pct_max"])]
+            for ds in datasets:
+                d = r["datasets"][ds]
+                al, cb = d["alone"], d["combined"]
+                line += [al["n"], al["wins"], al["net_usd"], al["avg_r"], al["max_dd_pct"], cb["n"], cb["wins"],
+                         cb["net_usd"], cb["avg_r"], cb["max_dd_pct"], d["live"]["net_usd"], d["live"]["max_dd_pct"],
+                         d["collisions"]["rate_pct"], d["collisions"]["long_entered_inside"]]
+            w.writerow(line)
+
+
+def _print_study(rep: Dict[str, Any], rows: Dict[str, Dict[str, Any]], study: Dict[str, Any], datasets: Sequence[str]) -> None:
+    for _, kind in KINDS:
+        names = sorted((n for n, r in rows.items() if r["kind"] == kind),
+                       key=lambda n: -rows[n]["datasets"][PRIMARY]["combined"]["net_usd"])
+        if not names:
+            continue
+        print(f"\n{LABELS[kind]}: {len(names)} variants, verdicts {study['verdicts'][kind]}, "
+              f"positive beside live {study['positive_beside_live'][kind]}")
+        print(f"  top 8 and bottom 3 by net beside live on {PRIMARY} (columns per dataset: {', '.join(datasets)})")
+        for n in names[:8] + names[-3:]:
+            print(_fmt(rows[n], datasets))
+        if kind == "equity" and rep["equity_primary"] in rows:
+            r = rows[rep["equity_primary"]]
+            print("  the operator's tiers:")
+            print(_fmt(r, datasets))
+            for ds in datasets:
+                al = r["datasets"][ds]["alone"]
+                print(f"    {ds}: risk at the stop per tier, % of equity: mean {al['tier_risk_pct_mean']}, "
+                      f"max {al['tier_risk_pct_max']}, worst trade {al['trade_risk_pct_max']}%")
+    print(f"\nbest: {study['best']}")
+    print(f"passing the bar: {study['passing'] or 'NONE'}")
 
 
 def _print(rep: Dict[str, Any]) -> None:
@@ -1190,27 +1417,30 @@ def _print(rep: Dict[str, Any]) -> None:
         lv = rep["live"][ds]
         print(f"  live long book, {ds}: {lv['trades']} trades, {lv['wins']} wins, net {lv['net_usd']:+.2f}, "
               f"max DD {lv['max_dd_pct']}%  ({rep['datasets'][ds]['window'][0]} -> {rep['datasets'][ds]['window'][1]})")
-    rows = rep["rows"]
     ms = rep["missed_theses"]
     print(f"  long theses {ms['long_theses']}: entry touched {ms['touched']}, never touched {ms['never_touched']}, "
           f"of those right (the live rule's misses) {ms['missed_right_never_touched']}, "
           f"of those reaching the first target {ms['missed_and_hit_target']}")
-    for label, kind in (("D. long ladder above the entry", "long"), ("A. short to the entry", "entry"),
-                        ("B. tiered short ladder", "ladder")):
-        names = sorted((n for n, r in rows.items() if r["kind"] == kind),
-                       key=lambda n: -rows[n]["datasets"][PRIMARY]["combined"]["net_usd"])
-        if not names:
-            continue
-        print(f"\n{label}: {len(names)} variants, verdicts {rep['verdicts'][kind]}, "
-              f"positive beside live {rep['positive_beside_live'][kind]}")
-        print(f"  top 8 and bottom 3 by net beside live on {PRIMARY} (columns per dataset: {', '.join(datasets)})")
-        for n in names[:8] + names[-3:]:
-            print(_fmt(rows[n], datasets))
-    print(f"\nbest: {rep['best']}")
-    print(f"passing the bar: {rep['passing'] or 'NONE'}")
+    print("\n=== pass 1: reopen ticks filled at the 15m open print; the bar includes the no-reopen-fills leg ===")
+    _print_study(rep, rep["rows"], rep, datasets)
     print(f"passing the five older legs only (weekend-reopen fills counted): {rep['passing_without_reopen_leg'] or 'NONE'}")
+    real = rep.get("realistic")
+    if real:
+        print("\n=== pass 2: realistic reopen fills; judged on the five older legs ===")
+        print(f"  {real['model']}")
+        for coin, fl in real["fills"].items():
+            for f in fl:
+                print(f"  {coin} {f['reopen']}: open print {f['open_px']} -> fill {f['fill_px']} ({f['open_to_fill_pct']:+.2f}%), "
+                      f"slip {f['slip_bps']} bps, {f['source']}")
+        _print_study(rep, real["rows"], real, datasets)
+        print("\n  reopen profit, summed over each grid beside live (open print -> realistic):")
+        for kind, per in real["reopen_profit"].items():
+            for ds, x in per.items():
+                keep = f"{x['survives_pct']}% survives" if x["survives_pct"] is not None else "nothing to survive"
+                print(f"    {kind:<7} {ds:<15} reopen trades {x['reopen_open_print_usd']:>+9.2f} -> {x['reopen_realistic_usd']:>+9.2f} "
+                      f"({keep}); grid net {x['net_open_print_usd']:>+10.2f} -> {x['net_realistic_usd']:>+10.2f}")
     op = rep["operator_short"]
-    print(f"operator's short {op['entry']} -> {op['target']}, stop {op['stop']}: {op['planned_r']}R planned, "
+    print(f"\noperator's short {op['entry']} -> {op['target']}, stop {op['stop']}: {op['planned_r']}R planned, "
           f"{op['r_after_costs']}R after costs, needs {op['breakeven_win_rate_pct']}% wins to break even")
 
 

@@ -2,6 +2,8 @@
 
 **Verdict: nothing passes, nothing is adopted. The long ladder above the entry (D) loses beside the live rule on every dataset: 0 of 1,728 variants beat live on all three. Shorting down to our own entry (A) and the short ladder (B) only make money on the first tick after a weekend, a fill the desk does not get.** Research only. No live config, order or rule changed.
 
+**Follow-up, same day (sections E and F below). E, the long ladder sized in equity (20% of equity at +0.5%, 10% at +1%): FAIL, it loses beside the live rule on all three datasets and risks up to 10.3% of equity per trade. F, realistic Sunday-reopen fills for the shorts: none of the journal's reopen profit survives; two of 48 short-to-entry variants clear the bar on paper at +$3 to +$17 per dataset, with +$0.07 and +$0.08 in the second half. B still fails. Nothing adopted.**
+
 Data: Brent 15m candles to 2026-11-16 01:00Z, 74 journal theses from 2026-10-18, $182.09 start, normal risk 6% of equity. Every number below is from `services/strategies/evals/short_ladder_test.py`; reproduce commands at the end.
 
 The live long book on the same data (dip entry only, the rule as it trades):
@@ -218,6 +220,137 @@ No live money on any of it.
 - **B (short ladder):** no. High win rate, losses several times the wins, negative on the replay.
 - **Worth a follow-up, not a trade:** the reopen tick itself. On three Sundays in this window the perp opened 0.7% to 1.7% above where the short was covered 15 minutes to two hours later. That is a fill question (1m candles and the book at 22:00Z / 23:00Z), not a strategy yet, and n = 3.
 
+## E. Long ladder sized in equity (follow-up)
+
+Operator: "test the tiered entry 20% equity at .5%+ 10% equity at 1%+". When Brent is +0.5% over the thesis long entry, buy with 20% of desk equity as margin; at +1%, add 10%. Size = margin x the fitted leverage (20x, 15x on a wide stop), so tier 1 is a notional of about 4x equity. Stop: the live rule's, 0.75 under the 24h low. Target: the thesis's first target. Buy stop at the tier, taker fees, one ladder per thesis.
+
+**FAIL. It loses beside the live rule on every dataset, and alone on every dataset.**
+
+The operator's tiers (`E_eq20_10_touch_thesis_lo24_r0`):
+
+| fills | where | n | wins | win % | net $ | avg R | max DD vs live | verdict |
+|---|---|---|---|---|---|---|---|---|
+| open print | journal alone | 13 | 6 | 46% | -16.20 | -0.24 | 33.5% | |
+| | journal beside live | 10 | 1 | 10% | -85.24 | -0.67 | 42.7% vs 27.7% | **FAIL** |
+| | replay30 alone | 10 | 4 | 40% | -7.62 | -0.21 | 25.6% | |
+| | replay30 beside live | 9 | 2 | 22% | -51.55 | -0.55 | 39.3% vs 26.0% | |
+| | WTI alone | 15 | 6 | 40% | -12.44 | -0.23 | 28.7% | |
+| | WTI beside live | 5 | 1 | 20% | -18.92 | -0.50 | 54.4% vs 49.0% | |
+| realistic reopen | journal alone | 12 | 6 | 50% | -9.76 | -0.20 | 33.5% | |
+| | journal beside live | 9 | 1 | 11% | -75.92 | -0.66 | 42.7% vs 27.7% | **NOISE** (n under 10; every leg fails) |
+| | replay30 beside live | 9 | 2 | 22% | -51.75 | -0.56 | 40.4% vs 26.0% | |
+| | WTI beside live | 5 | 1 | 20% | -17.67 | -0.47 | 54.4% vs 49.0% | |
+
+Walk-forward, beside live: first half -$25.51 (3 trades), second half -$34.03 (7 trades); with realistic reopen fills -$25.51 / -$28.75. Neighbours (10/5% and 30/15% margin, 1R gate): -$45.41, -$119.98, -$79.89.
+
+**What each tier really risks at its stop** (price to the stop, fees and stop slippage, % of equity; the desk's normal trade risks 6%):
+
+| | tier 1: 20% of equity at +0.5% | tier 2: 10% of equity at +1% | both tiers, worst trade |
+|---|---|---|---|
+| journal, mean / max | 5.4% / 6.6% | 3.5% / 3.9% | 10.3% |
+| replay30, mean / max | 5.4% / 6.3% | 3.0% / 3.8% | 10.0% |
+| WTI, mean / max | 5.4% / 6.7% | 3.4% / 4.1% | 10.8% |
+
+Said plainly: "20% of equity" sounds small and is not. At 20x it is a position four times the account, and the first tier alone carries about the desk's whole normal risk (5.4% on average, up to 6.7%). With the second tier the trade risks up to 10.8% of equity, 1.7 to 1.8 times what the live rule allows, on an entry the live rule refuses. The risk-sized ladder of section D put 1.2% on its first tier.
+
+Why it loses:
+
+- **The live long cuts it.** 5 of its 10 journal trades (3 of 9 on the replay, 3 of 5 on WTI) end when price falls back to the thesis entry and the live rule buys. The ladder bought 0.5% to 1% higher and is closed there at a loss on a 4x-equity position. That is the design: it buys the part of the move the dip rule waits out, and the dip usually comes.
+- **The live stop rarely fits.** 147 ticks on the journal and 535 on the replay were refused because 0.75 under the 24h low was too wide for 15x from that far up.
+- **It caught 1 of the 16 missed theses** beside live (+$10.55 on it), 2 alone.
+
+The grid (162 variants: margins 10/5, 20/10, 30/15; touch or a daily close; thesis or 24h-high target; live or ATR stop; 0 / 1 / 2R gate), beside live:
+
+| | brent_journal | brent_replay30 | wti_journal |
+|---|---|---|---|
+| variants that traded | 120 | 141 | 105 |
+| of those, above zero (open print / realistic) | 15 / 15 | 0 / 0 | 15 / 18 |
+| median net $ (open print / realistic) | -29.56 / -26.39 | -23.63 / -24.06 | -5.42 / -5.42 |
+| variants with 10+ trades, above zero | 0 of 18 | 0 of 33 | 6 of 9 |
+| above zero on all three | 0 | | |
+
+Verdicts: 0 PASS, 0 LEANING on either fill model (18 FAIL and 144 NOISE on the open print; 9 FAIL and 153 NOISE with realistic fills). The best by net is a daily-close variant with one trade (+$33.79 on the journal, -$61.50 on the replay, -$24.99 on WTI).
+
+## F. Realistic Sunday-reopen fills for A and B (follow-up)
+
+Operator: "why can't you just make them apply when realistic like the Sunday reopen". The post-weekend entries are kept and filled the way the desk would get them.
+
+**The model.** The desk cron runs at :03/:18/:33/:48 and a tick takes a minute or two, so the earliest order after the reopen lands about five minutes in. The fill is the OPEN of the 5m candle that starts five minutes after the reopen; the rest of the 15m bar is that candle's and the next one's high and low; slippage is half that 5m candle's high-low range, never under the sim's own 3 bps. This is measured on candles, not taken from the repo's book-impact curve (`desk_tick_sim.EXIT_SLIP_CURVE`), which was walked on a weekday book and says 0.9 bps at this size. The venue serves only its last 5,000 candles per interval, so 5m data exists for the last three reopens. For the older ones the fill is the next 15m tick (the reopen bar's close) at the median measured slippage of that coin.
+
+| reopen | coin | open print | realistic fill | move | slippage | source |
+|---|---|---|---|---|---|---|
+| 10-18 22:00Z | Brent | 107.15 | 106.01 | -1.06% | 11.2 bps | next tick |
+| 10-25 22:00Z | Brent | 110.55 | 110.25 | -0.27% | 11.2 bps | next tick |
+| 11-01 23:00Z | Brent | 111.81 | 111.88 | +0.06% | 11.2 bps | 5m |
+| 11-08 23:00Z | Brent | 98.099 | 96.899 | -1.22% | 20.1 bps | 5m |
+| 11-15 23:00Z | Brent | 93.407 | 92.842 | -0.60% | 9.6 bps | 5m |
+| 11-08 23:00Z | WTI | 91.87 | 90.392 | -1.61% | 24.2 bps | 5m |
+| 11-15 23:00Z | WTI | 87.393 | 87.004 | -0.45% | 5.7 bps | 5m |
+
+On the 1m candles of 11-15 Brent traded 93.41, 93.01, 92.96, 92.86, 92.78 in the first five minutes: 0.4% of the 0.8% drop was gone inside the first minute. The reprice is over before the desk's first tick.
+
+**How much of the old reopen profit survives** (summed over each grid, beside live; "reopen trades" = trades entered on a reopen tick):
+
+| study | dataset | reopen trades: open print -> realistic | survives | grid net: open print -> realistic |
+|---|---|---|---|---|
+| A short to entry (48) | journal | +2,185.53 -> -87.34 | none | +2,096.09 -> +149.92 |
+| | replay30 | +1,199.12 -> +752.96 | 63% | +1,583.48 -> +939.65 |
+| | WTI | +1,878.32 -> -172.19 | none | +1,662.87 -> +82.65 |
+| B short ladder (192) | journal | +307.48 -> +44.80 | 15% | +313.03 -> +2.37 |
+| | replay30 | +76.26 -> +146.06 | all (and more) | -769.48 -> -669.42 |
+| | WTI | +320.38 -> +53.91 | 17% | -250.78 -> -571.50 |
+
+On the journal and WTI the reopen profit is gone. On the replay 63% of A's survives, and every reopen in that window (10-04 to 10-25) is a "next tick" fill, because the venue no longer has the 5m candles: it is the weaker of the two measurements.
+
+### A with realistic fills
+
+48 variants: **2 PASS**, 30 FAIL, 16 NOISE (judged on the five older legs: with real fills there is nothing to remove). 22 are above zero beside live on all three datasets (36 on the open print); 13 keep drawdown no worse; 9 are positive in both halves.
+
+| variant | where | n | wins | win % | net $ | avg R | max DD vs live | verdict |
+|---|---|---|---|---|---|---|---|---|
+| **1 ATR stop, no R gate, once per thesis, 20% risk** | journal alone | 52 | 32 | 62% | -6.42 | -0.04 | 8.8% | |
+| | journal beside live | 22 | 15 | 68% | +6.81 | +0.17 | 27.5% vs 27.7% | **PASS** |
+| | replay30 beside live | 23 | 10 | 43% | +16.54 | +0.33 | 24.9% vs 26.0% | |
+| | WTI beside live | 13 | 9 | 69% | +6.62 | +0.31 | 47.3% vs 49.0% | |
+| **2 ATR stop, 1R gate, re-entry, 20% risk** (the near-pass of section A) | journal alone | 23 | 12 | 52% | +3.00 | +0.07 | 4.2% | |
+| | journal beside live | 14 | 8 | 57% | +4.86 | +0.16 | 27.4% vs 27.7% | **PASS** |
+| | replay30 beside live | 29 | 15 | 52% | +9.03 | +0.14 | 24.8% vs 26.0% | |
+| | WTI beside live | 9 | 5 | 56% | +3.15 | +0.22 | 48.7% vs 49.0% | |
+| old best by net: 1 ATR, 1R, once, full risk | journal beside live | 10 | 5 | 50% | +28.96 (was +156.02) | +0.22 | 22.4% vs 27.7% | FAIL |
+| | replay30 beside live | 21 | 9 | 43% | +106.81 (was +177.15) | +0.49 | 27.0% vs 26.0% | |
+| | WTI beside live | 8 | 5 | 63% | +39.02 (was +181.53) | +0.57 | 40.0% vs 49.0% | |
+
+Walk-forward: 1 ATR / no gate / once / 20%: +$6.67 (9 trades) then +$0.08 (13 trades). 2 ATR / 1R / re-entry / 20%: +$4.73 (13 trades) then +$0.07 (1 trade). Old best: -$37.38 then +$39.43.
+
+Read the two PASS rows for what they are:
+
+- The money is $3 to $17 per dataset on $182, at one fifth of normal risk. At full risk the same two rules fail on drawdown.
+- The second half of the window made 8 cents and 7 cents. All of it is October.
+- Alone, the first one loses on the journal (-$6.42) and WTI (-$3.38). It only "beats live" because the one-position rule removes the shorts opened while the long was working.
+- With its best day dropped the second keeps +$0.99.
+- 2 of 48 clearing five legs by cents is what this grid produces by chance. On the open print 5 cleared the same legs; 4 of those 5 no longer do.
+
+### B with realistic fills
+
+192 variants: 0 PASS, 0 LEANING, 20 FAIL, 172 NOISE. None is above zero beside live on all three datasets.
+
+| variant | where | n | wins | win % | net $ | avg R | max DD vs live | verdict |
+|---|---|---|---|---|---|---|---|---|
+| best by net: thesis entry, +1% steps, 2 tiers, 60% each, touch | journal beside live | 13 | 10 | 77% | +54.44 | +0.37 | 22.9% vs 27.7% | **FAIL** |
+| | replay30 beside live | 16 | 10 | 63% | +19.03 | +0.07 | 42.8% vs 26.0% | |
+| | WTI beside live | 6 | 3 | 50% | -22.93 | -0.20 | 57.2% vs 49.0% | |
+| old best: +0.5% steps, 3 tiers, 60% each, touch | journal beside live | 23 | 16 | 70% | +42.02 (was +68.05) | +0.20 | 29.1% vs 27.7% | FAIL |
+| | replay30 beside live | 22 | 13 | 59% | -13.62 (was -3.07) | +0.15 | 38.8% vs 26.0% | |
+| | WTI beside live | 19 | 13 | 68% | -23.52 (was +22.84) | -0.01 | 58.6% vs 49.0% | |
+
+Walk-forward of the new best: +$50.80 (8 trades) then +$1.47 (5 trades).
+
+### Gut call on the follow-up
+
+- **E (equity ladder): no.** It is the D ladder with four to five times the risk on tier 1 (5.4% of equity against 1.2%), and it loses the same way, faster.
+- **A with real fills: no live money.** It passes a bar by cents on one month, with nothing in November. If the operator wants to keep watching one rule, it is "2 ATR stop, 1R gate, 20% risk", on paper only.
+- **B: no.**
+
 ## Method
 
 One script, deterministic, no LLM call: `services/strategies/evals/short_ladder_test.py`. Same candles and cache in, same numbers out (two runs on one cache gave byte-identical `variants.csv`).
@@ -233,12 +366,14 @@ One script, deterministic, no LLM call: `services/strategies/evals/short_ladder_
 - **Beside live:** sized off the live book's marked equity plus the variant's own P&L. The live trades keep their own sizes, so the combined net is the live net plus the variant's. Drawdown is measured on the summed marked curve, tick by tick.
 - **The bar:** `RULE_FUSION_2026-11-13.md` and `FINAL_STRATEGY_TEST_2026-11-04.md`, strict reading. Beside live, the variant must (1) add money on every dataset, (2) have max drawdown no worse than live on every dataset, (3) add money in both halves of the primary, (4) have every grid neighbour add money on the primary, (5) still add money with its best exit day removed. Added here: (6) legs 1 and 3 must hold with the trades entered on the first tick after a weekend removed. The script reports who would pass legs 1 to 5 alone (`passing_without_reopen_leg`): five A variants, all at 20% risk.
 - **Multiple testing:** 1,968 variants were tried. A lone survivor of a grid this size would not be evidence. There is none.
+- **Follow-up (E, F):** the grid is 2,130 variants with E's 162, run twice: pass 1 as above (reopen ticks at the 15m open print, six legs), pass 2 with `reopen_fills` / `apply_reopen` repricing every reopen tick (five legs, nothing removed). The live long book is the same sim run in both passes; its own trades are not repriced. E sizes with `equity_tier_notional` (margin share x equity x leverage, net of the opening fee, capped by the full-port size) and reports `stop_risk_pct` per tier. The journal held 75 theses by the follow-up run (one written after the candle end); every pass-1 number above reproduced to the cent.
 
 Where it would break: the 15m bar model cannot order a fill and a stop inside one bar (handled by always taking the loss); the WTI rows lean on a price ratio, not a WTI thesis; the replay overlaps the journal for 10-18 to 10-30; one month of journal is one regime (Brent 113 to 89); the reopen-tick finding rests on three Sundays.
 
 ## Reproduce
 
-    # the full run (about 25 s, one process); exit 1 = nothing passes
+    # the full run, both passes (about 50 s, one process); exit 0 = a variant passes in either pass
+    # (two A variants do in pass 2, see section F); --no-realistic runs pass 1 only
     PATHIEL_STATE_DIR=<pathia>/.state .venv/bin/python -m services.strategies.evals.short_ladder_test \
         --cache-dir <fresh dir> --out-dir <dir>
 
@@ -246,7 +381,7 @@ Where it would break: the 15m bar model cannot order a fill and a stop inside on
     PATHIEL_STATE_DIR=<pathia>/.state .venv/bin/python -m services.strategies.evals.short_ladder_test \
         --cache-dir <same dir> --out-dir <dir> --only D --detail D_f1_t3_ramp_touch_thesis_lo24_r0
 
-    # gate tests (62, no network)
+    # gate tests (74, no network)
     .venv/bin/python -m pytest -q services/strategies/tests/test_short_ladder.py
 
-Outputs: `<out>/report.json` (every variant on every dataset, alone and beside live, the legs, the missed theses, the best variants' trades), `<out>/variants.csv` (one row per variant), `<out>/best_trades.csv`, `<out>/progress.log`. The replay set is read from `--oil-replay-dir` (default `/tmp/thesis-replay-30b/oil/theses`) and skipped when missing.
+Outputs: `<out>/report.json` (every variant on every dataset, alone and beside live, the legs, the missed theses, the best variants' trades), `<out>/variants.csv` (one row per variant), `<out>/variants_realistic.csv` (the same grid with realistic reopen fills; in the report under `realistic`, with the fill table and `reopen_profit`), `<out>/best_trades.csv`, `<out>/progress.log`. The replay set is read from `--oil-replay-dir` (default `/tmp/thesis-replay-30b/oil/theses`) and skipped when missing.
