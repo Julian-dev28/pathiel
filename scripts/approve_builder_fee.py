@@ -221,7 +221,7 @@ def main(argv: Optional[List[str]] = None, *,
     as_json = bool(args.json)
 
     import _state_env
-    _state_env.load_env_local(_ROOT)
+    _state_env.load_env_local(_ROOT, allow_withdraw_keys=True)
     import contracts.runtime as runtime
 
     public = runtime.is_public()

@@ -1,5 +1,23 @@
 {
   "enabledPlugins": {
     "andrej-karpathy-skills@karpathy-skills": true
+  },
+  "permissions": {
+    "deny": [
+      "Read(**/.env.local)",
+      "Read(~/.pathiel/.env.local)",
+      "Read(**/.env)",
+      "Edit(**/.env.local)",
+      "Edit(~/.pathiel/.env.local)",
+      "Write(**/.env.local)",
+      "Bash(cat *.env.local*)",
+      "Bash(head *.env.local*)",
+      "Bash(tail *.env.local*)",
+      "Bash(less *.env.local*)",
+      "Bash(more *.env.local*)",
+      "Bash(grep *.env.local*)",
+      "Bash(printenv*)",
+      "Bash(env)"
+    ]
   }
 }

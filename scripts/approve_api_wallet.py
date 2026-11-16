@@ -58,7 +58,7 @@ def main(argv=None, *, post: Optional[Callable[[str, Dict[str, Any]], Any]] = No
     ap.add_argument("--send", action="store_true")
     a = ap.parse_args(argv)
     import _state_env
-    _state_env.load_env_local(os.path.dirname(_SCRIPTS))
+    _state_env.load_env_local(os.path.dirname(_SCRIPTS), allow_withdraw_keys=True)
     import contracts.runtime as runtime
     if runtime.is_public():
         # A stranger's install: the master wallet lives in their browser
@@ -69,8 +69,12 @@ def main(argv=None, *, post: Optional[Callable[[str, Dict[str, Any]], Any]] = No
     is_mainnet = runtime.is_mainnet()
     from eth_account import Account
     key = os.environ.get("HYPERLIQUID_MASTER_PRIVATE_KEY", "").strip()
+    if not key and sys.stdin.isatty():
+        import getpass   # kept out of the env file: typed here, used once, never stored
+        key = getpass.getpass("Master wallet private key (hidden): ").strip()
     if not key:
-        print(json.dumps({"ok": False, "error": "HYPERLIQUID_MASTER_PRIVATE_KEY is not set"}))
+        print(json.dumps({"ok": False, "error": "HYPERLIQUID_MASTER_PRIVATE_KEY is not set and no "
+                          "terminal to ask for it"}))
         return 1
     master = Account.from_key(key).address
     nonce = int(time.time() * 1000)

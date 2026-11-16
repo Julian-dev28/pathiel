@@ -1,7 +1,7 @@
 """services/llm - the project's one LLM gateway.
 
 Shells out to the local Claude Code CLI
-(``/Users/julian_dev/.local/bin/claude -p ...``). Hosted LLM APIs (Anthropic
+(``claude -p ...``, found on PATH or ~/.local/bin). Hosted LLM APIs (Anthropic
 API, OpenAI, any hosted inference endpoint) are banned by project rule
 (CLAUDE.md, "LLM access") unless Julien explicitly instructs otherwise - this
 module is meant to be the only sanctioned path from the rest of the codebase
@@ -50,7 +50,7 @@ from dataclasses import dataclass, field
 from typing import Any, Mapping, Optional, Sequence
 
 from services.llm import config, model_probe, usage_log
-from services.llm.cli import build_args, run_cli
+from services.llm.cli import build_args, run_cli, scrub_env
 from services.llm.errors import LlmError
 
 logger = logging.getLogger(__name__)
@@ -247,17 +247,19 @@ def _fallback_chain(model: str) -> Sequence[str]:
     return ("opus", "sonnet")
 
 
-def _subprocess_env(model: str, web_search: bool) -> dict[str, str] | None:
+def _subprocess_env(model: str, web_search: bool) -> dict[str, str]:
     """Pins every model knob (ported from the retired ai_brain._cli_env):
     knob so no auxiliary model (fable/haiku riding along for free) ever does
     brain work. Only when web_search is requested does a small model
     (haiku) get the nod - to execute the search tool, not to write the
     answer - because the brain model itself 400s on the native WebSearch
     tool at high effort on at least one model family (ai_brain's comment:
-    "output_config.effort 'xhigh' not supported")."""
+    "output_config.effort 'xhigh' not supported").
+
+    Always a scrubbed copy of os.environ (scrub_env), model or not."""
+    env = scrub_env(os.environ)
     if not model:
-        return None
-    env = dict(os.environ)
+        return env
     env["CLAUDE_CODE_SUBAGENT_MODEL"] = model
     env["ANTHROPIC_SMALL_FAST_MODEL"] = config.WEB_SEARCH_EXEC_MODEL if web_search else model
     return env
