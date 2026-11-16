@@ -118,15 +118,19 @@ def test_next_route_uses_the_live_range_and_the_thesis_side(client, monkeypatch)
     assert body["stop_px"] != 111.29                          # the thesis's stop is not the tick's
 
 
-def test_next_route_with_no_thesis_or_no_levels_says_so(client, monkeypatch):
+def test_next_route_with_no_thesis_or_no_levels_says_so(client, monkeypatch, caplog):
     assert "no thesis yet" in client.get("/api/desks/oil/next").json()["reason"]
     journal.save_thesis(make_thesis(desk_id="oil", entry_px=113.87, stop_px=111.29, targets=[118.87]))
 
     def boom(coin):
         raise RuntimeError("venue down")
     monkeypatch.setattr(strategies_api.levels, "summarize_coin", boom)
-    body = client.get("/api/desks/oil/next").json()
-    assert body["ok"] is False and "venue down" in body["reason"]
+    with caplog.at_level("WARNING"):
+        body = client.get("/api/desks/oil/next").json()
+    # The answer names the failure; its text (URLs, internals) stays in the log
+    # (2026-11-15, CodeQL py/stack-trace-exposure).
+    assert body["ok"] is False and body["reason"].endswith("(RuntimeError)")
+    assert "venue down" not in body["reason"] and "venue down" in caplog.text
 
 
 def test_the_page_reads_the_next_trade_not_the_thesis_line():
@@ -251,3 +255,10 @@ def test_fit_leverage_without_a_venue_max_keeps_the_leverage_and_never_raises():
     for cands in ((), LEVERAGE_FIT):
         lev, gate = fit_leverage(100.0, 98.2, 20.0, None, cands)
         assert lev == 20.0 and gate["ok"] is False
+
+
+def test_the_placeholder_page_escapes_what_it_echoes():
+    """CodeQL py/reflective-xss (2026-11-15): the desk id reaches the page."""
+    page = strategies_api._render_or_placeholder("no-such-template.html", "Desk: <script>x</script>",
+                                                  "body <b>&</b>").body.decode()
+    assert "<script>" not in page and "&lt;script&gt;" in page and "&amp;" in page
