@@ -6,6 +6,28 @@ All notable changes to pathiel. The format follows
 
 ## [Unreleased]
 
+### Security
+
+- Code scanning fixes: a post filter in the headline watch could backtrack
+  exponentially on a crafted post (now linear); the desk page escapes the
+  desk id it echoes; HTTP answers name a failure's exception class and keep
+  its text in the log; the Telegram webhook check matches the host exactly.
+
+### Added
+
+- `close_position` takes an optional `fraction` (0.5 closes half). A partial
+  close keeps the stop and target, which are reduce-only and still cover
+  what is left; the full close cancels them as before.
+
+### Changed
+
+- Tool descriptions name the sibling for each job that is easy to confuse:
+  `set_stop` and `set_target` point at `sweep_brackets` for duplicate
+  levels, and `cancel_order` says how to change a resting entry (cancel,
+  then `place_bracket`). The server instructions say the same in four lines.
+- The public instructions cap is 3000 characters (was 2500), so a long
+  trading or fee line can never cut the LIVE MONEY rule off the end.
+
 ## [0.7.1] - 2026-11-14
 
 ### Changed

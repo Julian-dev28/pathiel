@@ -92,7 +92,8 @@ def webhook_url() -> Optional[str]:
 def webhook_body(url: str, line: str, event: Dict[str, Any]) -> Dict[str, Any]:
     """The POST body for `url`. Pure."""
     u = urlparse(url)
-    if u.hostname and u.hostname.endswith("api.telegram.org"):
+    host = (u.hostname or "").lower()
+    if host == "api.telegram.org" or host.endswith(".api.telegram.org"):
         chat = (parse_qs(u.query).get("chat_id") or [""])[0]
         return {"chat_id": chat, "text": line}
     return {"content": line[:1900], "text": line, "event": {k: event.get(k) for k in

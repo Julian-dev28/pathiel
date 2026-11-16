@@ -148,6 +148,18 @@ def test_public_tools_list_has_no_dashboard_or_pause_wording(no_key):
 SHIPPED_BUILDER = "0x2c2e4efF574B3Fd9879AdeF9c5CAC6fD7C916985"
 
 
+def test_public_instructions_leave_room_for_a_long_trading_line(monkeypatch, tmp_path, builder_jobs,
+                                                                 fee_on):
+    """The cap truncates from the end, and the end is the LIVE MONEY rule. A
+    trading line of 300 chars (a refusal that explains itself runs ~250) with
+    the longest fee sentence must still fit whole (2026-11-15: the fee-on mainnet text
+    ran 2540 against a 2500 cap; the cap is now 3000)."""
+    E.install(monkeypatch, tmp_path, M, builder_jobs, key=True, builder_address=None, network="mainnet")
+    monkeypatch.setattr(M, "_public_trading_line", lambda: "T" * 300)
+    text = M._public_instructions()
+    assert text.endswith("placing no order and moving no money).")
+
+
 @pytest.mark.parametrize("case", ["no_key", "testnet_key", "mainnet_key", "builder_set",
                                   "builder_unset", "builder_shipped", "waived_shipped"])
 def test_public_instructions_content_and_length(case, monkeypatch, tmp_path, builder_jobs, request):
@@ -162,7 +174,7 @@ def test_public_instructions_content_and_length(case, monkeypatch, tmp_path, bui
     text = h.rpc("initialize", {})["result"]["instructions"]
     low = text.lower()
     net = kw.get("network", "testnet")
-    assert len(text) <= 2500
+    assert len(text) <= M.MAX_PUBLIC_INSTRUCTIONS_CHARS == 3000
     assert text.endswith("placing no order and moving no money).")      # never truncated
     assert f"network: {net}" in low
     assert "not financial advice" in low
@@ -666,3 +678,20 @@ class TestStdioFreshHome:
         assert body["read_only"] is True and body["network"] == "mainnet"
         assert body["tool"] == "place_bracket"
         assert "Traceback" not in proc.stderr
+
+
+def test_close_position_passes_a_fraction_through_and_lists_it(monkeypatch, no_key):
+    """Partial closes (2026-11-15): the public schema lists fraction and the
+    handler hands it to bracket.close_position; without it, the call is the
+    full close exactly as before."""
+    import pathiel.agents.bracket as br
+    seen = []
+    monkeypatch.setattr(br, "close_position", lambda coin, **kw: seen.append((coin, kw)) or {"ok": True})
+    json.loads(M.handle_close_position({"coin": "BTC", "fraction": 0.5}))
+    json.loads(M.handle_close_position({"coin": "BTC"}))
+    assert seen == [("BTC", {"fraction": 0.5}), ("BTC", {})]
+    listed = {t["name"]: t for t in no_key.rpc("tools/list")["result"]["tools"]}
+    props = listed["close_position"]["inputSchema"]["properties"]
+    assert set(props) == {"coin", "fraction"}
+    assert props["fraction"]["exclusiveMinimum"] == 0 and props["fraction"]["maximum"] == 1
+    assert "fraction" not in next(t for t in M.TOOLS if t["name"] == "close_position")["inputSchema"]["properties"]

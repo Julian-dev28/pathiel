@@ -47,6 +47,7 @@ import os
 import re
 from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+from urllib.parse import urlparse
 
 ALERTS_PATH = os.environ.get("PATHIEL_HEADLINE_ALERTS") or "/tmp/trigger-watch/headline_alerts.json"
 STATE_PATH = os.environ.get("PATHIEL_HEADLINE_STATE") or "/tmp/trigger-watch/headline_state.json"
@@ -178,8 +179,27 @@ POST_PATTERNS: Dict[str, List[Tuple[str, re.Pattern]]] = {
     ],
 }
 # An archived image/video post with no words, or a bare link: nothing to read.
-_POST_EMPTY = re.compile(r"^(\s*(view (image|video)|rt:?|rt @ \w+|reposted donald j\. trump|quoted donald j\. trump|"
-                         r"https?://\S*|\S*truthsocial\.com\S*)\s*)*$", re.I)
+# Was one regex, ^(\s*(view image|...|https?://\S*|\S*truthsocial\.com\S*)\s*)*$,
+# whose nested repetition backtracks exponentially on a crafted post (CodeQL
+# py/redos, 2026-11-15). Now linear: drop link words, then the filler phrases.
+_POST_FILLER = re.compile(r"view (?:image|video)|rt @ \w+|rt:?|reposted donald j\. trump|quoted donald j\. trump",
+                          re.I)
+
+
+def _is_link_word(word: str) -> bool:
+    """A URL, or a bare truthsocial.com address (truthsocial.com/@x)."""
+    w = word.lower()
+    if w.startswith(("http://", "https://")):
+        return True
+    host = (urlparse("//" + w).hostname or "")
+    return host == "truthsocial.com" or host.endswith(".truthsocial.com")
+
+
+def post_is_empty(text: str) -> bool:
+    """True for a post with no words: only links, "View Image", "RT @ name",
+    "ReTruthed" filler. Linear in the length of the text."""
+    words = " ".join(w for w in (text or "").split() if not _is_link_word(w))
+    return not _POST_FILLER.sub(" ", words).strip()
 # Endorsements and get-out-the-vote lists: the bulk of the feed, never market
 # news, and the text that mentions "Oil & Gas", "Iraq War Veteran", "STEEL
 # TARIFFS" or a candidate named Powell (22 of 503 real posts matched before
@@ -509,7 +529,7 @@ def match_post(group: str, text: str) -> Optional[str]:
     """The first POST_PATTERNS label a Trump post `text` matches for `group`,
     else None. An image/video/link-only post never matches."""
     text = (text or "").strip()
-    if not text or _POST_EMPTY.match(text) or _POST_ROUTINE.search(text):
+    if not text or post_is_empty(text) or _POST_ROUTINE.search(text):
         return None
     for label, rx in POST_PATTERNS.get(group, []):
         if rx.search(text):

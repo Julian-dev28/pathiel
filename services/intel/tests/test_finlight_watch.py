@@ -362,3 +362,15 @@ def test_asyncio_loop_in_the_runner_thread_does_not_leak_into_the_caller():
     r.stop()
     with pytest.raises(RuntimeError):
         asyncio.get_running_loop()
+
+
+@pytest.mark.parametrize("url,telegram", [
+    ("https://api.telegram.org/bot1/sendMessage?chat_id=7", True),
+    ("https://API.Telegram.org/bot1/sendMessage?chat_id=7", True),
+    ("https://evilapi.telegram.org/x?chat_id=7", False),          # CodeQL py/incomplete-url-substring-sanitization
+    ("https://api.telegram.org.evil.example/x?chat_id=7", False),
+    ("https://discord.com/api/webhooks/1/abc", False),
+])
+def test_only_the_real_telegram_host_gets_the_telegram_body(url, telegram):
+    body = EL.webhook_body(url, "line", {})
+    assert ("chat_id" in body) is telegram

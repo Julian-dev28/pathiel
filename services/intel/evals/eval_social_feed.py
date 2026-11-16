@@ -69,7 +69,7 @@ def main() -> int:
                       f"{', '.join(f'{g}:{v}' for g, v in labels.items() if v)}: {p['text'][:110]}")
         rate = hits / len(posts) if posts else 0.0
         print(f"  match rate {hits}/{len(posts)} = {rate:.0%}" + ("  NOISY" if rate > MAX_POST_HIT_RATE else ""))
-        print(f"  empty/link-only posts: {sum(1 for p in posts if HW._POST_EMPTY.match(p['text']))}")
+        print(f"  empty/link-only posts: {sum(1 for p in posts if HW.post_is_empty(p['text']))}")
 
     items, errs = social.fetch_official_feeds()
     for e in errs:
