@@ -84,6 +84,13 @@ def test_holdout_split_is_the_newest_quarter_of_theses_and_reads_only_timestamps
     assert E.holdout_split([]) is None
 
 
+def test_journal_asof_pins_the_split_on_a_growing_journal():
+    theses = [SimpleNamespace(created_at_ms=1000 + 7 * i) for i in range(79)]
+    pinned = E.journal_asof(theses, 1000 + 7 * 77)
+    assert len(pinned) == 78 and E.holdout_split(pinned) == 1000 + 7 * 58
+    assert E.holdout_split(theses) != E.holdout_split(pinned)       # one new thesis moves the split
+
+
 def test_select_reads_the_search_segment_only():
     def row(n, net, halves, hold):
         return {E.SEARCH: {"n": n, "net_usd": net, "halves": halves},
@@ -455,12 +462,12 @@ def test_hand_trades_are_labelled_by_where_they_entered_the_range():
     assert first["reach"] == pytest.approx(1.03, abs=0.01) and first["net_bps"] == pytest.approx(199.4)
     sl = got["slices"]
     assert sl["all|all"]["n"] == 3 and sl["long|all"]["net_usd"] == pytest.approx(11.44)
-    assert sl["short|at_target"]["label"] == "LEANING +" and sl["long|at_entry"]["label"] == "LEANING -"
+    assert sl["short|at_target"]["label"] == "NOISE" and sl["long|at_entry"]["label"] == "NOISE"   # n = 1
     assert sl["long|all"]["label"] == "NOISE"                         # one win of two, net up: not a lean
 
 
 def test_small_slices_never_read_as_an_edge():
-    assert E.slice_label(0, 0.0, 0) == "NONE"
+    assert E.slice_label(0, 0.0, 0) == "NONE" and E.slice_label(2, 9.0, 2) == "NOISE"
     assert E.slice_label(9, 50.0, 9) == "LEANING +" and E.slice_label(3, 5.0, 1) == "NOISE"
     assert E.slice_label(12, 50.0, 9) == "EDGE?" and E.slice_label(12, -50.0, 3) == "LEAK?"
     assert E.slice_label(12, 50.0, 5) == "NOISE"

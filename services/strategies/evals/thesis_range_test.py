@@ -136,6 +136,7 @@ import statistics
 import time
 from collections import Counter
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from services.strategies import next_trade as NT
@@ -230,6 +231,12 @@ def holdout_split(theses: Sequence[Any], frac: float = HOLDOUT_FRAC) -> Optional
         return None
     k = max(1, math.ceil(len(times) * frac))
     return times[len(times) - k]
+
+
+def journal_asof(theses: Sequence[Any], asof_ms: int) -> List[Any]:
+    """The journal as it stood at `asof_ms`: theses written after it are
+    dropped. Pins the split of a run on a journal that keeps growing."""
+    return [th for th in theses if int(th.created_at_ms) <= asof_ms]
 
 
 def range_theses(theses: Sequence[D.ThesisDirection], c1h: Sequence[Any], scale: Optional[Dict[int, float]] = None,
@@ -1206,10 +1213,12 @@ def label_entry(pos: Optional[float]) -> str:
 
 
 def slice_label(n: int, net: float, wins: int) -> str:
-    """Small-n honesty: under MIN_N trades a slice is LEANING (net and most
-    trades agree) or NOISE, never an edge."""
+    """Small-n honesty: under 3 trades a slice is NOISE; under MIN_N it is
+    LEANING (net and most trades agree) or NOISE, never an edge."""
     if n == 0:
         return "NONE"
+    if n < 3:
+        return "NOISE"
     agree = (net > 0 and wins * 2 > n) or (net < 0 and wins * 2 < n)
     if n < MIN_N:
         return ("LEANING " + ("+" if net > 0 else "-")) if agree else "NOISE"
@@ -1398,6 +1407,9 @@ def main(argv: Optional[List[str]] = None) -> int:
         help="READ ONLY: directories holding older <coin>__candles_5m_5000.json snapshots to merge in")
     ap.add_argument("--start-equity", type=float, default=START)
     ap.add_argument("--workers", type=int, default=max(1, (os.cpu_count() or 2) - 2))
+    ap.add_argument("--journal-asof", default="", metavar="ISO",
+                    help="ignore theses written after this UTC time (e.g. 2026-11-16T07:00Z). The journal is "
+                         "live: a new thesis moves the holdout split, so pin this to reproduce a run")
     ap.add_argument("--draws", type=int, default=BASELINE_DRAWS, help="random-level draws per baseline")
     ap.add_argument("--detail", nargs="*", default=[], metavar="NAME", help="more variants whose trades to keep")
     a = ap.parse_args(argv)
@@ -1412,6 +1424,10 @@ def main(argv: Optional[List[str]] = None) -> int:
             fh.write(line + "\n")
 
     theses = D.load_journaled_theses(a.oil_theses_dir) if a.oil_theses_dir else []
+    if a.journal_asof:
+        asof_ms = int(datetime.fromisoformat(a.journal_asof.replace("Z", "+00:00")).astimezone(
+            timezone.utc).timestamp() * 1000)
+        theses = journal_asof(theses, asof_ms)
     if not theses:
         log(f"no theses at {a.oil_theses_dir!r}: nothing to judge")
         return 2
@@ -1574,7 +1590,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                        + [r[s][k] for s in all_segs for k in ("n", "win_rate", "net_usd", "max_dd_pct", "avg_r")])
     rep = {"generated": _iso(int(time.time() * 1000)), "fees": fees, "meta": meta,
            "split": {"holdout_from": _iso(split), "holdout_theses": n_hold, "theses": len(theses),
-                     "search_halves_split": _iso(s_mid), "rule": f"newest {HOLDOUT_FRAC:.0%} of theses + all WTI"},
+                     "search_halves_split": _iso(s_mid), "journal_asof": a.journal_asof or None, "rule": f"newest {HOLDOUT_FRAC:.0%} of theses + all WTI"},
            "variants": {"total": len(vs), "ladder": len(ladder), "ladder_unfiltered": len(plain),
                         "range_stage1": len(base), "range_stage2": len(stage2), "range_stage3": len(stage3),
                         "range_carriers": len(carry), "range_filters_ranked": ranked, "top_filters": top_filters},
