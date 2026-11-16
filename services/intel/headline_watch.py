@@ -47,6 +47,7 @@ import os
 import re
 from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+from urllib.parse import urlparse
 
 ALERTS_PATH = os.environ.get("PATHIEL_HEADLINE_ALERTS") or "/tmp/trigger-watch/headline_alerts.json"
 STATE_PATH = os.environ.get("PATHIEL_HEADLINE_STATE") or "/tmp/trigger-watch/headline_state.json"
@@ -186,8 +187,12 @@ _POST_FILLER = re.compile(r"view (?:image|video)|rt @ \w+|rt:?|reposted donald j
 
 
 def _is_link_word(word: str) -> bool:
+    """A URL, or a bare truthsocial.com address (truthsocial.com/@x)."""
     w = word.lower()
-    return w.startswith(("http://", "https://")) or "truthsocial.com" in w
+    if w.startswith(("http://", "https://")):
+        return True
+    host = (urlparse("//" + w).hostname or "")
+    return host == "truthsocial.com" or host.endswith(".truthsocial.com")
 
 
 def post_is_empty(text: str) -> bool:

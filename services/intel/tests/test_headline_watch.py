@@ -456,25 +456,26 @@ def test_the_tick_agent_and_the_loops_skill_mention_the_headline_rules():
 
 # ── empty posts without exponential backtracking (2026-11-15, CodeQL py/redos) ──
 
-import re as _re
 import time as _time
 
-# The regex this replaced, kept to prove the new check gives the same answers.
-_OLD_POST_EMPTY = _re.compile(r"^(\s*(view (image|video)|rt:?|rt @ \w+|reposted donald j\. trump|"
-                              r"quoted donald j\. trump|https?://\S*|\S*truthsocial\.com\S*)\s*)*$", _re.I)
+# What the replaced regex answered for each post, run once on 2026-11-15 and
+# written out so the regex itself (CodeQL py/redos) is not kept in the tree.
+OLD_ANSWERS = [
+    ("View Image", True), ("VIEW VIDEO", True), ("RT @ realDonaldTrump", True), ("RT:", True),
+    ("rt", True), ("https://truthsocial.com/@realDonaldTrump/posts/1", True),
+    ("RT @ x https://t.co/abc", True), ("ReTruthed: https://www.truthsocial.com/x", False),
+    ("Reposted Donald J. Trump", True), ("Quoted Donald J. Trump https://truthsocial.com/a View Image", True),
+    ("  view image   view video  ", True), ("", True),
+    ("Oil prices will come down!", False), ("View Image of the GREAT tariff deal", False),
+    ("RT @ x Gold is going up", False), ("https://x.com tariffs on silver", False),
+    ("start", False), ("art https://x", False),
+    ("truthsocial.com/@realDonaldTrump", True), ("www.truthsocial.com/x View Video", True),
+]
 
 
-@pytest.mark.parametrize("text", [
-    "View Image", "VIEW VIDEO", "RT @ realDonaldTrump", "RT:", "rt",
-    "https://truthsocial.com/@realDonaldTrump/posts/1", "RT @ x https://t.co/abc",
-    "ReTruthed: https://www.truthsocial.com/x", "Reposted Donald J. Trump",
-    "Quoted Donald J. Trump https://truthsocial.com/a View Image",
-    "  view image   view video  ", "",
-    "Oil prices will come down!", "View Image of the GREAT tariff deal",
-    "RT @ x Gold is going up", "https://x.com tariffs on silver", "start", "art https://x",
-])
-def test_post_is_empty_matches_the_old_regex(text):
-    assert HW.post_is_empty(text) is bool(_OLD_POST_EMPTY.match(text))
+@pytest.mark.parametrize("text,empty", OLD_ANSWERS)
+def test_post_is_empty_matches_the_old_regex(text, empty):
+    assert HW.post_is_empty(text) is empty
 
 
 def test_post_is_empty_is_linear_on_hostile_input():
