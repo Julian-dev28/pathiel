@@ -15,15 +15,15 @@ from services.fib_sleeve.config import SleeveConfig, sleeve_dir
 from services.fib_sleeve.store import ReadOnlyStore, Store
 from services.fib_sleeve.tests import _scenario as S
 
-OFF = SleeveConfig()
+OFF = SleeveConfig()                                 # swing="range24", the live default
 ON = dataclasses.replace(OFF, enabled=True)
-LEVEL, STOP, TARGET = 1018.658, 1015.3223, 1049.658
+LEVEL, STOP, TARGET = 1018.658, 1015.3223, 1038.932   # range24 and zigzag name the same swing on this fixture
 SATURDAY = S.T0 + 5 * 24 * S.HOUR + 12 * S.HOUR
 
 
-def make(ex=None, live=False, fills=(), eq=None, extra15=None, role=None, master=S.MASTER):
+def make(ex=None, live=False, fills=(), eq=None, extra15=None, role=None, master=S.MASTER, hs=None):
     ex = ex or S.FakeEx()
-    hs = S.hours()
+    hs = hs if hs is not None else S.hours()
     b15 = S.quarters(hs) + (extra15 if extra15 is not None else [S.forming(1024.0)])
     deps = tick.Deps(
         ex=ex, bracket=bracket,
@@ -43,7 +43,8 @@ def files():
 
 def test_the_default_config_is_disabled_and_names_the_sub_account():
     assert OFF.enabled is False and OFF.account == S.SUB and OFF.coin == S.COIN
-    assert OFF.variant_name == "zz2_with_L382_limit_atr1_T618_be75" and OFF.risk_frac == 0.06
+    assert OFF.swing == "range24"
+    assert OFF.variant_name == "range24_with_L382_limit_atr1_T272_be50" and OFF.risk_frac == 0.06
 
 
 def test_live_tick_with_enabled_false_reads_nothing_and_places_nothing():
@@ -143,6 +144,49 @@ def test_a_resting_entry_from_an_older_swing_is_cancelled_not_replaced_in_the_sa
     assert ex.calls == [("cancel", 10, S.COIN), ("cancel_stranded", S.COIN)]
 
 
+# ── a resting entry from before a swing-mode change ─────────────────────────
+# `_divergent_hours()`: the zigzag's original up-leg (origin 999.5, extreme
+# 1030.5, as `_scenario.hours()`), then 13 more mildly-declining hours (no
+# 2xATR reversal, so the zigzag's confirmed pivot never changes). By hour 44
+# range24's last-24h window has slid onto a slightly different low (999.8),
+# naming a slightly different 38.2% level - the entry's own (zigzag) level
+# still rests, under the CURRENT default (range24).
+
+def _divergent_hours(extra_hours=13):
+    out = S.hours()[:31]
+    px = out[-1].c
+    for i in range(31, 31 + extra_hours):
+        o = px
+        px -= 0.25
+        out.append(Candle(t=S.T0 + i * S.HOUR, o=o, h=o + 0.05, l=px - 0.05, c=px, v=1))
+    return out
+
+
+ZZ_LEVEL = 1018.658          # the resting entry's price: the zigzag swing's 38.2% level, unchanged since hour 31
+
+
+def test_a_resting_entry_from_the_other_swing_mode_is_managed_not_cancelled():
+    hs = _divergent_hours(13)                              # 44 hours: range24's level has drifted to 1018.7726
+    now = S.T0 + 44 * S.HOUR + 60_000
+    Store(sleeve_dir()).save({"epoch_ms": S.T0, "starting_equity_usd": 20.06, "kill": None})
+    ex, deps = make(ex=S.FakeEx(orders=[S.entry_row(ZZ_LEVEL, 0.31)]), live=True, hs=hs, extra15=[])
+    d = tick.run_tick(ON, live=True, now_ms=now, deps=deps)
+    assert d["action"] == "resting" and d["resting_entry_swing_mode"] == "zigzag" and ex.calls == []
+
+
+def test_a_resting_entry_from_the_other_mode_is_cancelled_once_its_own_mode_says_so():
+    """Keep ticking: once the ORIGINAL (zigzag) swing's own level is spent
+    too, the entry is cancelled - the mode flip alone never cancels it, but
+    its own mode eventually does."""
+    hs = _divergent_hours(23)                              # 54 hours: the decline has now traded through 1018.658
+    now = S.T0 + 54 * S.HOUR + 60_000
+    Store(sleeve_dir()).save({"epoch_ms": S.T0, "starting_equity_usd": 20.06, "kill": None})
+    ex, deps = make(ex=S.FakeEx(orders=[S.entry_row(ZZ_LEVEL, 0.31)]), live=True, hs=hs, extra15=[])
+    d = tick.run_tick(ON, live=True, now_ms=now, deps=deps)
+    assert d["action"] == "cancel_entry"
+    assert ex.calls == [("cancel", 10, S.COIN), ("cancel_stranded", S.COIN)]
+
+
 def test_weekend_cancels_a_resting_entry_and_places_none():
     Store(sleeve_dir()).save({"epoch_ms": S.T0, "starting_equity_usd": 20.06, "kill": None})
     ex, deps = make(ex=S.FakeEx(orders=[S.entry_row(LEVEL, 0.31)]), live=True)
@@ -169,13 +213,14 @@ FILL_T = S.T0 + 31 * S.HOUR + 120_000       # filled two minutes into the 31:00 
 POSITION = [{"coin": S.COIN, "szi": 0.31, "entry_px": 1018.66, "unrealized_pnl": 0.0}]
 
 
-def in_position(extra15, now, orders=None, live=True):
+def in_position(extra15, now, orders=None, live=True, cfg=None):
     Store(sleeve_dir()).save({"epoch_ms": S.T0, "starting_equity_usd": 20.06, "kill": None})
     orders = orders if orders is not None else [S.stop_row(1015.32, 0.31), S.tp_row(1049.66, 0.31)]
     ex = S.FakeEx(position=0.31, orders=orders, price=extra15[-1].c if extra15 else 1024.0)
+    cfg = cfg if cfg is not None else (ON if live else OFF)
     ex, deps = make(ex=ex, live=live, eq=S.equity(positions=POSITION), extra15=extra15,
                     fills=[S.fill(FILL_T, "B", 0.31, 1018.66, 0.0)])
-    return ex, tick.run_tick(ON if live else OFF, live=live, now_ms=now, deps=deps)
+    return ex, tick.run_tick(cfg, live=live, now_ms=now, deps=deps)
 
 
 def bar(k, h, c, l=None):
@@ -183,15 +228,38 @@ def bar(k, h, c, l=None):
     return Candle(t=t, o=c, h=h, l=l if l is not None else min(c, 1018.0), c=c, v=1)
 
 
+# In a position, cfg.swing is never read (the stop/target it manages are
+# whatever already rests on the venue - the tp_row fixture's 1049.66, not
+# cfg.target), and the break-even ratchet never reads the swing either.
+# Only cfg.ratchet's threshold matters here. The resting tp_row stays
+# 1049.66 throughout: be75 pins the ORIGINAL zigzag row's 75% point
+# (1041.91); the untagged tests below exercise CFG's own default, be50
+# (its 50% point, 1034.16).
+BE75 = dataclasses.replace(ON, ratchet="be75")
+
+
 def test_position_below_75_percent_holds():
-    ex, d = in_position([bar(0, 1020, 1019), bar(1, 1041.8, 1040), bar(2, 1040, 1040)], S.T0 + 31 * S.HOUR + 2 * S.Q + 1)
+    ex, d = in_position([bar(0, 1020, 1019), bar(1, 1041.8, 1040), bar(2, 1040, 1040)],
+                        S.T0 + 31 * S.HOUR + 2 * S.Q + 1, cfg=BE75)
     assert d["action"] == "hold" and ex.calls == []
     assert d["position"]["stop_px"] == 1015.32 and d["position"]["stop_covers"] == 0.31
 
 
 def test_ratchet_moves_the_stop_to_the_entry_then_cancels_the_old_one():
-    # 75% of the way from 1018.66 to 1049.66 is 1041.91
+    # 75% of the way from 1018.66 to 1049.66 is 1041.91: past be50's (default) and be75's trigger alike
     ex, d = in_position([bar(0, 1020, 1019), bar(1, 1042.0, 1040), bar(2, 1040, 1040)], S.T0 + 31 * S.HOUR + 2 * S.Q + 1)
+    assert d["action"] == "ratchet" and d["stop_px"] == 1018.66
+    assert ex.calls == [("trigger", S.COIN, True, 0.31, 1018.66, "sl"), ("cancel", 11, S.COIN)]
+
+
+def test_position_below_50_percent_holds_under_the_default():
+    # 50% of the way from 1018.66 to 1049.66 is 1034.16 (CFG's default, be50)
+    ex, d = in_position([bar(0, 1020, 1019), bar(1, 1033.8, 1033), bar(2, 1033, 1033)], S.T0 + 31 * S.HOUR + 2 * S.Q + 1)
+    assert d["action"] == "hold" and ex.calls == []
+
+
+def test_default_ratchet_moves_the_stop_to_the_entry_at_50_percent():
+    ex, d = in_position([bar(0, 1020, 1019), bar(1, 1034.2, 1033), bar(2, 1033, 1033)], S.T0 + 31 * S.HOUR + 2 * S.Q + 1)
     assert d["action"] == "ratchet" and d["stop_px"] == 1018.66
     assert ex.calls == [("trigger", S.COIN, True, 0.31, 1018.66, "sl"), ("cancel", 11, S.COIN)]
 
@@ -206,6 +274,22 @@ def test_ratchet_dry_run_reports_and_signs_nothing():
     ex, d = in_position([bar(0, 1020, 1019), bar(1, 1042.0, 1040), bar(2, 1040, 1040)],
                         S.T0 + 31 * S.HOUR + 2 * S.Q + 1, live=False)
     assert d["action"] == "ratchet" and d["result"] == {"dry_run": True} and ex.calls == []
+
+
+def test_a_swing_mode_switch_never_touches_an_open_position():
+    """cfg.swing is never read while a position is open (its stop/target
+    are whatever already rests on the venue, and the break-even ratchet
+    never reads the swing either): flipping ONLY `swing`, everything else
+    equal, gives the exact same decision - for a bar that holds and one
+    that ratchets."""
+    now = S.T0 + 31 * S.HOUR + 2 * S.Q + 1
+    other_swing = dataclasses.replace(ON, swing="zigzag")
+    for bars in ([bar(0, 1020, 1019), bar(1, 1030.0, 1029), bar(2, 1029, 1029)],       # 36.6%: hold
+                 [bar(0, 1020, 1019), bar(1, 1042.0, 1040), bar(2, 1040, 1040)]):      # 75.3%: ratchet
+        _, d_default = in_position(bars, now)
+        _, d_other = in_position(bars, now, cfg=other_swing)
+        assert d_default["action"] == d_other["action"]
+        assert d_default.get("stop_px") == d_other.get("stop_px")
 
 
 def test_weekend_closes_the_position_reduce_only_and_clears_its_orders():

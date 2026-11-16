@@ -1,57 +1,93 @@
 # services/fib_sleeve: the Fibonacci sleeve on its own sub-account
 
-Operator, 2026-11-16: direct 10% of equity to the Fibonacci-retracement rule
-whose best backtest row was the 1h zigzag, on a sub-account so it never nets
-against the oil desk's Brent position.
+Operator, 2026-11-16: direct 10% of equity to a Fibonacci-retracement rule
+on a sub-account so it never nets against the oil desk's Brent position.
+The swing anchor the rule retraces from switched 2026-11-16 ~09:00Z from
+the 1h zigzag to the 24h range ("for the fib make it [the] low high
+range"), the same 24h range `services.strategies.levels` already reports.
+The zigzag stays in the code as an option (`swing: "zigzag"` in the
+override file); it is not the default.
 
-**Status: built, DISABLED.** `enabled` is false in code. Nothing is placed,
-cancelled or moved until the operator runs `--enable` and a cron runs
-`--live`.
+**Status: built, enabled.** Nothing is placed, cancelled or moved while
+`enabled` is false; the operator ran `--enable` and a cron runs `--live`.
 
-**The backtest verdict on this rule is NOISE** (3 trades). Read
-`docs/strategy/FIB_RETRACE_TEST_2026-11-16.md` before enabling. The operator
-knows and chose to run it small.
+**The backtest verdict on the live row is FAIL** (10+ trades beside live,
+none pass or lean - worse evidence than the old zigzag row's NOISE, which
+only meant "too few trades to judge"). Read
+`docs/strategy/FIB_RETRACE_TEST_2026-11-16.md` before trusting it further.
+The operator knows and asked for this anchor anyway, same footing as
+running a NOISE row small.
 
 **Outcome it moves:** net P&L of sub-account `0x3d3b...c272` against its
 starting equity, with a hard stop at 3 losses in a row or -20%.
 Trace: one JSON line per live tick in `$PATHIEL_STATE_DIR/fib_sleeve/ticks.jsonl`,
 the record rebuilt from the sub-account's public fills (`--status`).
 
-## The rule (variant `zz2_with_L382_limit_atr1_T618_be75`)
+## The rule (variant `range24_with_L382_limit_atr1_T272_be50`, the live default)
 
-| Part | Value | Source in `fib_retrace_test.py` |
+| Part | Value | Source in `fib_retrace_test.py` / `rule.py` |
 |---|---|---|
-| Swing | zigzag on closed 1h bars, a pivot confirmed after a reversal of 2 x ATR14; the last confirmed leg | `zigzag_pivots`, `swing_from_pivots`, `ZZ_K["zz2"]` |
+| Swing | the 24h range: the low and high of the last 24 CLOSED 1h bars - the same window `services.strategies.levels.price_range` reports (the Desk page's Levels card, `scripts/oil_levels.py`); direction is the window's LATER extreme (high after low = up, buy the retrace; low after high = down, sell it) | `swing_from_window(hours[-24:], atr, "r24")`, `rule.current_swing_range24` |
 | Direction | with the swing: buy a retrace of an up-swing, sell a retrace of a down-swing | `"with"` |
 | Entry | resting limit at the 38.2% retracement, one entry per swing, none once price traded through the level | `"limit"`, `fib_price` |
 | Stop | the level less 1 x ATR14 (1h), fixed when the order is placed | `stop_price("atr1")` |
-| Target | the -61.8% extension beyond the swing extreme, a limit, no 0.5% offset | `target_price(0.618)` |
-| Ratchet | stop to the entry once a closed 15m bar after the fill bar covered 75% of the way to target | `ratchet_stop`, `"be75"` |
+| Target | the -27.2% extension beyond the swing extreme, a limit, no 0.5% offset | `target_price(0.272)` |
+| Ratchet | stop to the entry once a closed 15m bar after the fill bar covered 50% of the way to target | `ratchet_stop`, `"be50"` |
 | Risk | 6% of the SUB-ACCOUNT's equity lost at the stop (price, taker fee both ways, 3 bps slippage) | `risk_capped_notional` |
 | Leverage | 20x cap, 15x when the stop is too wide for 20x, refused when too wide for 15x | `next_trade.fit_leverage` |
 | Floor | 2R, the stop inside half the distance to liquidation, one position | `bracket.place_bracket` |
 | Session | no order in the oil weekend or on the first 15m bar after it; an open position is closed at the weekend open | `weekend_closed`, `reopen_tick` |
 
-Backtest numbers for this row at 6% risk (from the test's `variants.csv`):
-beside live on the Brent journal 3 trades, 3 wins, +$240.50; alone on the
-journal 5 trades, 3 wins, +$186.65; alone on 50 days of 15m bars 10 trades,
-3 wins, +$88.65, max drawdown 26.6%; alone on 208 days of 1h bars 28
-trades, 9 wins, +$141.25, max drawdown 47.9%; WTI 208 days -$12.69. The
-be50, be75 and off twins are the same trades to the cent on Brent: the
-ratchet never changed an exit there. be75 is the operator's choice and the
-doc's finding (helps on 7 of 7 datasets, about +0.01R a trade).
+**Example (the operator's pasted levels, 2026-11-16 ~08:30Z):** 24h range
+91.800-94.108, the high last (an up-swing, buy the retrace): 38.2%
+93.226344, 50% 92.954000, 61.8% 92.681656.
+
+**Why this row.** The doc's own "best variant per family" table prints the
+24h-range-with-the-swing family's ceiling across EVERY entry type, and that
+ceiling uses `"confirm"` (a 15m close back beyond the level, market next
+open) - this sleeve only places a resting limit (`"limit"`), per the
+existing safety ("only the resting-limit entry is built", `config.
+validate`). `range24_with_L382_limit_atr1_T272_be50` is that same family's
+best row restricted to `entry="limit"` (123 variants; re-run off the doc's
+own cache with `swing/direction/entry` fixed to `range24`/`with`/`limit`,
+everything else the full grid). At 6% risk, Brent journal beside live: 10
+trades, 50% wins, +$117.11, max drawdown 22.6% (vs the live book's 27.9%),
+avg R +0.98. Replay: 20 trades, +$99.18. WTI: 13 trades, +$73.75. Alone it
+loses: -$14.86 on the journal (23 trades), -$127.14 on 208 days of Brent 1h
+bars, -$119.65 on WTI. **Verdict FAIL**, the family's own bar in the doc
+(10+ trades beside live, none pass or lean).
+
+The old zigzag row (`zz2_with_L382_limit_atr1_T618_be75`): zigzag k 2 on 1h
+bars, same direction/entry/stop, target the -61.8% extension, ratchet be75.
+3 trades, 3 wins, +$240.50 beside live on the journal; alone 208 days 28
+trades, 9 wins, +$141.25, max DD 47.9%; WTI -$12.69; verdict NOISE (3
+trades, not enough to judge). Still runs if `swing` is set back to
+`"zigzag"` in the override file - but that alone does NOT restore
+`target`/`ratchet` to 0.618/be75; override those too for this exact row
+(every value is independently valid, part of the grid the test crossed,
+just not the one above).
 
 The live rule is the backtest's functions called with live data, not a
 copy. `tests/test_parity.py` runs the backtest's walker on seeded candles
 and asserts `rule.plan_entry` names the same entry, stop, target and
-leverage at every fill.
+leverage at every fill, for BOTH swing modes.
+
+**A resting entry or an open position already working under the OTHER
+swing mode when `swing` changes is left alone**, managed to completion
+with its own levels; the active `swing` only governs a brand new entry
+(`tick.py`'s flat-with-a-resting-entry branch tries the entry's own mode
+before calling it stale; an open position never reads `cfg.swing` at all -
+its stop and target are whatever already rests on the venue, and the
+break-even ratchet never reads the swing either, so it is
+swing-change-safe by construction). Nothing was open or resting at this
+switch, so it took effect immediately.
 
 Live differs from the backtest in four places:
 
 1. The stop is fixed at the ATR of the hour the order was placed. The
    walker re-reads ATR every bar until the fill.
 2. The sub-account has no live long beside it, so this is the "alone"
-   column, not the +$240.50 "beside live" one.
+   column, not the "beside live" one above.
 3. A stale entry is cancelled on one tick and the new one placed on the next.
 4. The tick runs when the cron runs. Between ticks the venue holds the
    entry, the stop and the target; only the ratchet and the weekend close
@@ -138,7 +174,7 @@ Decisions a tick can print (`action`): `disabled`, `would_place` / `place`,
 ## Tests and eval
 
 ```
-.venv/bin/python -m pytest -q services/fib_sleeve tests/test_subaccount_target.py   # 91 tests, no network, about 2 s
+.venv/bin/python -m pytest -q services/fib_sleeve tests/test_subaccount_target.py   # 113 tests, no network, about 2 s
 .venv/bin/python -m services.fib_sleeve.evals.live_dry_run                          # read only, public reads, exit 0 = pass
 ```
 
@@ -162,10 +198,13 @@ Decisions a tick can print (`action`): `disabled`, `would_place` / `place`,
 - **A read that fails** (position, equity, candles) is an `error` tick:
   nothing is placed. A failed fills read undercounts the record for that
   tick; the latch, once set, does not depend on it.
-- **The level is usually spent at confirmation.** A k=2 pivot is confirmed
-  by a 2 ATR reversal, which is past the 38.2% level unless the leg was
-  longer than 5.2 ATR. Most ticks print `no_order: level_spent`. That is
-  the rule, and why the backtest has few trades.
+- **The level is usually already spent.** The zigzag's k=2 pivot is
+  confirmed by a 2 ATR reversal, already past the 38.2% level unless the
+  leg ran over 5.2 ATR. The 24h range has no such confirmation delay (the
+  extreme is known the moment its own bar closes), but the window itself
+  slides forward every hour, so the level it names can already be behind
+  where price has since moved. Most ticks print `no_order: level_spent`
+  either way. That is the rule, and why the backtest has few trades.
 - **A partial fill at the weekend open** is closed and every order on the
   coin cancelled. A manual order on the sub-account's Brent is treated as
   the sleeve's: keep the sub-account for the sleeve only.
