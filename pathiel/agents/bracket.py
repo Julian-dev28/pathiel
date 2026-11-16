@@ -454,6 +454,21 @@ def set_stop(coin: str, stop_px: float, ex: Any = None) -> Dict[str, Any]:
             "replaced": [o.get("triggerPx") for o in old], **({"cancel_failed": failed} if failed else {})}
 
 
+def order_cover(order: Dict[str, Any], position_size: float) -> float:
+    """How much of an open position one reduce-only order protects.
+
+    A Hyperliquid position-level TP/SL (the app's "TP/SL for the whole
+    position") rests with isPositionTpsl=true and sz "0.0": size zero means
+    "the whole position, whatever it becomes". 2026-11-16 06:10Z: a hand-placed
+    26.84 Brent long carried exactly that stop and the sweep reported
+    stop_covers 0.0 and "NOT FULLY COVERED", which the tick's hard rule answers
+    with a close. Such an order covers the full position."""
+    sz = float(order.get("sz") or 0)
+    if sz == 0 and order.get("isPositionTpsl"):
+        return abs(float(position_size))
+    return sz
+
+
 def sweep(coin: str, ex: Any = None) -> Dict[str, Any]:
     """One tick of housekeeping for `coin`: cancel reduce-only orders left on a
     flat coin (the sibling of a stop or target that fired), and report whether
@@ -481,17 +496,20 @@ def sweep(coin: str, ex: Any = None) -> Dict[str, Any]:
     orders = _position_protection(ex, orders)
     stops = [o for o in orders if o.get("reduceOnly") and "Stop" in str(o.get("orderType", ""))]
     tps = [o for o in orders if o.get("reduceOnly") and "Take Profit" in str(o.get("orderType", ""))]
-    covered = sum(float(o.get("sz") or 0) for o in stops)
+    covered = sum(order_cover(o, pos) for o in stops)
     consolidated = None
     market_tp = any("Market" in str(o.get("orderType", "")) for o in tps)
-    if covered + 1e-9 >= abs(pos) and (len(stops) > 1 or len(tps) > 1 or market_tp):
+    # Position-level TP/SL already are one pair for the whole position and
+    # resize with it; replacing them would rewrite the operator's own orders.
+    position_tpsl = any(o.get("isPositionTpsl") for o in stops + tps)
+    if covered + 1e-9 >= abs(pos) and not position_tpsl and (len(stops) > 1 or len(tps) > 1 or market_tp):
         # several stops/targets at one price (one per fill): fold into one pair
         consolidated = consolidate_protection(coin, ex=ex)
         if consolidated.get("merged"):
             orders = _position_protection(ex, ex._resting_orders_for_coin(user, coin))
             stops = [o for o in orders if o.get("reduceOnly") and "Stop" in str(o.get("orderType", ""))]
             tps = [o for o in orders if o.get("reduceOnly") and "Take Profit" in str(o.get("orderType", ""))]
-            covered = sum(float(o.get("sz") or 0) for o in stops)
+            covered = sum(order_cover(o, pos) for o in stops)
     return {"coin": coin, "ok": covered + 1e-9 >= abs(pos), "position": pos,
             **({"consolidated": consolidated} if consolidated else {}),
             "stop_px": [o.get("triggerPx") for o in stops], "tp_px": [o.get("triggerPx") for o in tps],
