@@ -55,6 +55,29 @@ revoking a builder fee approval given to pathiel 0.4.0 with
 `/pathiel:setup` never asks for a key in the chat, and Claude never runs the
 signing line for you.
 
+**A main key pasted as the trading key is refused.** On a public install the
+live-money tools check the signing key before every order: when its address
+is your `HYPERLIQUID_MASTER_ADDRESS`, or Hyperliquid reports it as a main
+account (`userRole` is `user`, where an approved API wallet is `agent`), they
+refuse and `state` says "Trading: BLOCKED". A failed role read never blocks;
+the offline check still applies.
+
+**No process holds a withdrawal key it does not need.** Every env-file
+loader skips `HYPERLIQUID_MASTER_PRIVATE_KEY` (the MCP server, the dashboard,
+the desk scripts, the intel and accounts services). Only the three scripts
+that sign with it ask for it, and each also takes it at a hidden prompt, so
+it can live in your password manager instead of the file.
+
+**Model subprocesses get no credentials.** The desk thesis reads news text,
+and a headline could carry a prompt injection. Every `claude` process
+pathiel starts runs with keys, tokens and passwords removed from its
+environment (`services/llm/cli.py`, `scrub_env`); only Claude Code's own
+`ANTHROPIC_*` and `CLAUDE_*` settings pass through.
+
+**Claude Code sessions in this repo cannot read the env file.**
+`.claude/settings.json` denies `Read`, `Edit` and the usual shell readers on
+`.env.local` and `~/.pathiel/.env.local`.
+
 **No LLM API key.** The one model step (the desk thesis) runs through your
 local Claude Code CLI. pathiel holds no Anthropic or other model key.
 
@@ -95,6 +118,7 @@ authorizes no trade. Details: [docs/PRIVACY.md](docs/PRIVACY.md).
 | Master key prompt-only on public installs; approval refusals send nothing | `tests/test_eval_builder_approval.py` |
 | The test gate makes no network calls | `conftest.py` refuses every non-loopback host |
 | No secret declared in listing files | `tests/test_listing_metadata.py` |
+| Withdrawal key skipped by every loader; scripts opt in; model subprocess env scrubbed; main key refused for trading; env file unreadable by Claude Code | `tests/test_key_hardening.py` |
 | Dependencies pinned with hashes; CI actions pinned to commit SHAs | `requirements.lock`, `scripts/supply_chain_check.py`, `tests/test_supply_chain.py` |
 
 The secrets inventory, with how to rotate each one, is

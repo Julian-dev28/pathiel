@@ -47,7 +47,7 @@ jobs:
           pip install -e . --no-deps
 
       # This repo was green locally and red on CI for weeks because 50 files
-      # hardcoded /Users/julian_dev/... Cheap check, runs before the suite so
+      # hardcoded home-directory paths. Cheap check, runs before the suite so
       # the failure names the actual cause instead of a FileNotFoundError.
       - name: No machine-bound absolute paths
         run: python scripts/check_no_absolute_paths.py

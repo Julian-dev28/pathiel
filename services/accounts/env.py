@@ -25,6 +25,9 @@ from __future__ import annotations
 import os
 
 _LOADED = False
+# Keys that can withdraw funds; same set as scripts/_state_env.WITHDRAW_KEYS
+# (tests/test_key_hardening.py holds them equal). Never loaded here.
+_WITHDRAW_KEYS = frozenset({"HYPERLIQUID_MASTER_PRIVATE_KEY"})
 
 
 def _load_dotenv() -> None:
@@ -42,6 +45,8 @@ def _load_dotenv() -> None:
                 line = line.strip()
                 if line and not line.startswith("#") and "=" in line:
                     k, _, v = line.partition("=")
+                    if k.strip() in _WITHDRAW_KEYS:
+                        continue
                     os.environ.setdefault(k.strip(), v.strip())
     except OSError:
         pass

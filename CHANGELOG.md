@@ -8,6 +8,18 @@ All notable changes to pathiel. The format follows
 
 ### Security
 
+- A main account key set as the trading key is refused. On a public install
+  the live-money tools refuse when the signing key's address is your
+  `HYPERLIQUID_MASTER_ADDRESS` or Hyperliquid reports it as a main account,
+  and `state` says "Trading: BLOCKED". Use an API wallet key, which can
+  trade and never withdraw.
+- No pathiel process loads `HYPERLIQUID_MASTER_PRIVATE_KEY` unless it signs
+  with it. The MCP server, the dashboard and the desk scripts skip it; the
+  scripts that need it ask for it at a hidden prompt when it is not in the
+  env file.
+- Every `claude` process pathiel starts runs without keys, tokens or
+  passwords in its environment, so a prompt injection in a news headline
+  finds nothing to steal.
 - Code scanning fixes: a post filter in the headline watch could backtrack
   exponentially on a crafted post (now linear); the desk page escapes the
   desk id it echoes; HTTP answers name a failure's exception class and keep

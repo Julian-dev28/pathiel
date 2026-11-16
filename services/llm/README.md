@@ -1,7 +1,7 @@
 # services/llm
 
 The project's one LLM gateway. Shells out to the local Claude Code CLI
-(`/Users/julian_dev/.local/bin/claude -p ...`). Hosted LLM APIs (Anthropic
+(`claude -p ...`, on PATH or ~/.local/bin). Hosted LLM APIs (Anthropic
 API, OpenAI, any hosted inference endpoint) are banned by project rule
 unless Julien explicitly instructs otherwise - this is meant to be the only
 sanctioned path from the rest of the codebase to an LLM.
@@ -125,7 +125,7 @@ token budget. `total_cost_usd` was never affected by this; only the token
 
 | var | default | notes |
 |---|---|---|
-| `CLAUDE_CLI_COMMAND` | `/Users/julian_dev/.local/bin/claude` | shared with `ai_brain.py`'s own override env var |
+| `CLAUDE_CLI_COMMAND` | `claude` (on PATH) | shared with `ai_brain.py`'s own override env var |
 | `PATHIEL_LLM_MODEL` | unset | pins the model and skips probing entirely |
 | `PATHIEL_LLM_CONCURRENCY` | `4` | max concurrent CLI subprocesses (a `threading.BoundedSemaphore`) |
 | `PATHIEL_STATE_DIR` | `.` | usage log and model-probe cache live under `<dir>/llm/` |

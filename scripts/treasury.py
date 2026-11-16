@@ -68,8 +68,11 @@ def _exchange():
     """
     _refuse_unless_operator_mainnet()
     pk = os.environ.get("HYPERLIQUID_MASTER_PRIVATE_KEY", "").strip()
+    if not pk and sys.stdin.isatty():
+        import getpass   # the safer home for the master key is not the env file at all
+        pk = getpass.getpass("Master wallet private key (hidden): ").strip()
     if not pk:
-        print("error: HYPERLIQUID_MASTER_PRIVATE_KEY missing from .env.local")
+        print("error: HYPERLIQUID_MASTER_PRIVATE_KEY missing from .env.local and no terminal to ask")
         print("       transfers require the master key — agent keys can't sign them.")
         sys.exit(2)
     if pk.startswith("0x"):

@@ -54,6 +54,8 @@ def main(argv=None) -> int:
             line = line.strip()
             if line and not line.startswith("#") and "=" in line:
                 k, _, v = line.partition("=")
+                if k.strip() == "HYPERLIQUID_MASTER_PRIVATE_KEY":
+                    continue   # reads addresses only; see _state_env.WITHDRAW_KEYS
                 os.environ.setdefault(k.strip(), v.strip())
 
     user = os.environ.get("HYPERLIQUID_MASTER_ADDRESS") or \

@@ -154,7 +154,12 @@ itself tolerates it at runtime.
 actually withdraw. It exists purely for `scripts/treasury.py` — moving USDC
 between spot/perp/HIP-3 dexes, a manual operation the operator runs by hand.
 It has no business in any deployed process's environment: the trading loop
-and the dashboard never read it. `scripts/preflight_secrets.py` warns if it's
+and the dashboard never read it, and since 2026-11-15 no shared loader puts
+it in their environment: `scripts/_state_env.WITHDRAW_KEYS` is skipped unless
+a script passes `allow_withdraw_keys=True` (`approve_api_wallet.py`,
+`approve_builder_fee.py`; `treasury.py` has its own loader). All three take it
+at a hidden prompt when it is not in the file, so the safest place for it is a
+password manager, not `.env.local`. `scripts/preflight_secrets.py` warns if it's
 present locally and **fails** if it detects a deploy context (`FLY_APP_NAME`
 or `KUBERNETES_SERVICE_HOST` set) and finds it anyway.
 

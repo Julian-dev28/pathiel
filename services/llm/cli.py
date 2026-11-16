@@ -105,6 +105,26 @@ def build_args(
     return args
 
 
+# Env names a model subprocess never needs. The desks feed news text into the
+# model, so a prompt injection in a headline must find no wallet key, token or
+# password in the process it runs in (hardening, 2026-11-15). The claude CLI's
+# own auth lives under ANTHROPIC_* / CLAUDE_*, which stay.
+_SECRET_MARKERS = ("PRIVATE_KEY", "SECRET", "PASSWORD", "PASSPHRASE", "MNEMONIC",
+                   "SEED_PHRASE", "_TOKEN", "_API_KEY")
+_KEEP_PREFIXES = ("ANTHROPIC_", "CLAUDE_")
+
+
+def scrub_env(environ: Mapping[str, str]) -> dict[str, str]:
+    """A copy of environ without the names that look like credentials."""
+    out = {}
+    for name, value in environ.items():
+        upper = name.upper()
+        if not upper.startswith(_KEEP_PREFIXES) and any(m in upper for m in _SECRET_MARKERS):
+            continue
+        out[name] = value
+    return out
+
+
 def run_cli(
     args: Sequence[str],
     user_text: str,
@@ -125,7 +145,7 @@ def run_cli(
             stderr=subprocess.PIPE,
             text=True,
             start_new_session=True,
-            env=dict(env) if env is not None else None,
+            env=scrub_env(env if env is not None else os.environ),
         )
     except FileNotFoundError as exc:
         raise LlmBinaryNotFoundError(f"CLI binary not found: {args[0]}") from exc
