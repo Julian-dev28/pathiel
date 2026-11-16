@@ -120,13 +120,14 @@ def test_evaluate_on_the_search_segments_never_touches_a_holdout_segment():
 def test_grid_sizes_and_names():
     base, ladder = E.base_variants(), E.ladder_variants()
     assert len(base) == 36 + 90 + 36 * 90
-    assert len(ladder) == 4 * 3 * 5 * 3 * 5 * 2 * 2 * 9 == 32400
+    assert len(ladder) == 4 * 3 * 5 * 3 * 5 * 2 * 4 * 9 == 64800
     names = [v.name for v in base + ladder]
     assert len(set(names)) == len(names)
     assert E.OPERATOR.name in names and E.BASELINE.name in names
-    assert E.OPERATOR == Ladder("mkt0.75", 0.20, "p0.25", 0.20, "be50", "tick", True, ())
-    assert E.OPERATOR.family == "O_tick_bounce"
-    assert dataclasses.replace(E.OPERATOR, filt=("sess_ny",)).family == "O_tick_bounce_filtered"
+    assert E.OPERATOR == Ladder("mkt0.75", 0.20, "p0.25", 0.20, "be50", "tick", "frozen", ())
+    assert E.OPERATOR_B == dataclasses.replace(E.OPERATOR, bounce="follow") and E.OPERATOR_B.name in names
+    assert E.OPERATOR.family == "O_tick_cycleA" and E.OPERATOR_B.family == "O_tick_cycleB"
+    assert dataclasses.replace(E.OPERATOR, filt=("sess_ny",)).family == "O_tick_cycleA_filtered"
     assert {n.entry for n in E.ladder_neighbours(Ladder(entry="lim0.5"))} == {"lim0.33", "lim0.5", "lim0.75"}
     assert all(n.mode == "S" for n in E.neighbours(SELL_TOP)) and len(E.neighbours(SELL_TOP)) == 2
 
@@ -263,7 +264,7 @@ def test_a_flip_with_no_room_to_the_thesis_target_is_refused():
 
 LADDER_ROWS = [(100.9, 101.0, 100.8, 100.9), (100.9, 101.5, 100.9, 101.4), (101.4, 102.1, 101.3, 102.0),
                (102.0, 102.1, 99.9, 100.1), (100.1, 100.4, 100.0, 100.3)]
-RESTING = Ladder(entry="mkt0.75", ssize=0.20, stop="p0.50", fsize=0.20, ratchet="none", fill="resting", bounce=True)
+RESTING = Ladder(entry="mkt0.75", ssize=0.20, stop="p0.50", fsize=0.20, ratchet="none", fill="resting", bounce="same")
 
 
 def test_ladder_short_flip_and_bounce_with_resting_orders():
@@ -299,8 +300,37 @@ def test_bounce_ends_when_the_thesis_is_rewritten_and_is_off_without_the_flag():
     moved = run(LADDER_ROWS, RESTING, tids=["A", "A", "B", "B", "B"])
     assert [t["leg"] for t in moved["trades"]] == ["short", "flip"]
     assert moved["refused"].get("bshort_thesis_moved") == 1
-    once = run(LADDER_ROWS, dataclasses.replace(RESTING, bounce=False))
+    once = run(LADDER_ROWS, dataclasses.replace(RESTING, bounce="off"))
     assert [t["leg"] for t in once["trades"]] == ["short", "flip"]
+
+
+def test_cycle_a_keeps_the_first_levels_and_cycle_b_follows_the_rewrite():
+    tids = ["A", "A", "B", "B", "B"]
+    new = [100.0, 100.0, 100.5, 100.5, 100.5]                        # thesis B: entry 100.5, target 103
+    def go(mode):
+        s = series(LADDER_ROWS, tids=tids)
+        s.entry, s.target = new, [102.0, 102.0, 103.0, 103.0, 103.0]
+        return E.walk_any(s, dataclasses.replace(RESTING, bounce=mode), P, EQ)["trades"]
+    a = go("frozen")
+    assert [(t["leg"], t["reason"]) for t in a] == [("short", "stop"), ("flip", "target"), ("bshort", "target"),
+                                                    ("blong", "open")]
+    assert (a[2]["entry_px"], a[2]["target_px"]) == (102.0, 100.0) and a[3]["target_px"] == 102.0
+    b = go("follow")
+    assert [(t["leg"], t["reason"]) for t in b] == [("short", "stop"), ("flip", "target"), ("bshort", "target"),
+                                                    ("blong", "open")]
+    assert (b[2]["entry_px"], b[2]["target_px"]) == (102.0, 100.5)   # sold at the old high, back to the NEW entry
+    assert (b[3]["entry_px"], b[3]["target_px"]) == (100.5, 103.0)   # then long from it to the new target
+    assert "bshort" not in [t["leg"] for t in go("same")]           # a new thesis: no cycle leg, a new first short
+
+
+def test_in_a_full_cycle_the_first_short_reaching_the_entry_starts_the_long():
+    rows = [(100.9, 101.0, 100.8, 100.9), (100.9, 101.0, 99.9, 100.1), (100.1, 100.4, 100.0, 100.3)]
+    for mode in ("frozen", "follow"):
+        got = run(rows, dataclasses.replace(RESTING, bounce=mode))["trades"]
+        assert [(t["leg"], t["reason"]) for t in got] == [("short", "target"), ("blong", "open")]
+        assert (got[1]["entry_px"], got[1]["target_px"], got[1]["i"]) == (100.0, 102.0, 1)
+    for mode in ("off", "same"):
+        assert [t["leg"] for t in run(rows, dataclasses.replace(RESTING, bounce=mode))["trades"]] == ["short"]
 
 
 def test_a_stopped_bounce_leg_ends_the_cycle():

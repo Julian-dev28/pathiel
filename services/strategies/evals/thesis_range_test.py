@@ -31,16 +31,21 @@ PRIMARY, the operator's ladder (`Ladder`, `walk_ladder`), their spec of
              stop or by a market order on the next desk tick. Ratchet: none,
              break-even once 50% / 75% of the way is covered, or a trail of
              1 / 2 x ATR14(1h), moved at the desk tick.
-  4 bounce   At the thesis high: short back to the thesis entry, then long
-             again from it, until the thesis is rewritten or a stop breaks
-             the range. On or off.
+  4 cycle    At the thesis high: short back to the thesis entry; at the
+             entry: long again to the target; and on, whether or not the
+             thesis changes, until a stop breaks the range. Off; only while
+             the thesis is the same one; variant A, the levels frozen at
+             the cycle's start; variant B, each new leg on the thesis in
+             force. In A and B the first short reaching the entry starts
+             the long as well.
   filters    On the first short: thesis age (3), range width in ATR (2),
              session (3), each alone, or none.
 
   4 entries x 3 short sizes x 5 stops x 3 long sizes x 5 ratchets x 2 fills
-  x 2 bounce x 9 filter settings = 32,400 ladder variants. `OPERATOR` is the
-  exact spec (market short, 20% / 0.25% / 20%, break-even at half way, by
-  hand on the next tick, bounce on) and is reported on its own row.
+  x 4 cycle settings x 9 filter settings = 64,800 ladder variants.
+  `OPERATOR` is the exact spec (market short, 20% / 0.25% / 20%, break-even
+  at half way, by hand on the next tick, cycle A) and `OPERATOR_B` the same
+  on cycle B; each is reported on its own row.
 
 SECOND, the range rule (`Variant`, `walk`): resting limits at the thesis
 levels with no short-first sequence.
@@ -726,13 +731,21 @@ def walk(s: Series, v: Variant, p: Params, start_equity: float, lo_i: int = 0, h
 
 # ── walker 2: the operator's ladder ────────────────────────────────────────
 
+O_BOUNCE = ("off", "same", "frozen", "follow")
+BOUNCE_NAMES = {"off": "once", "same": "bounce", "frozen": "cycleA", "follow": "cycleB"}
+
+
 @dataclass(frozen=True)
 class Ladder:
     """The operator's spec, 2026-11-16: (1) short toward the thesis entry;
     (2) stop "5%" of the position's margin; (3) stopped: long toward the
     thesis high, the stop ratcheted up; (4) at the thesis high: short back
-    to the thesis entry and keep bouncing until the thesis is rewritten or
-    a stop breaks the range."""
+    to the thesis entry; at the entry: long again to the target; and keep
+    cycling whether or not the thesis changes, until a stop breaks the
+    range. `bounce`: "off" (stop after the flip), "same" (cycle only while
+    the thesis is the same one), "frozen" (variant A: the levels of the
+    cycle's start, whatever the journal writes), "follow" (variant B: each
+    new leg takes the thesis in force)."""
     entry: str = "mkt0.75"         # O_ENTRIES: "mktX" a market order at a tick with the close X% over the thesis
     #                                entry; "limA" a resting sell limit at range position A
     ssize: float = 0.20            # every short's margin, share of equity at 20x
@@ -740,17 +753,17 @@ class Ladder:
     fsize: float = 0.20            # every long's margin
     ratchet: str = "be50"          # O_RATCHETS: the long's stop, moved at the desk tick
     fill: str = "tick"             # O_FILLS: how a flip or a bounce leg is entered
-    bounce: bool = True            # step 4 on or off
+    bounce: str = "frozen"         # O_BOUNCE: what happens after the flip's target
     filt: Tuple[str, ...] = ()     # O_FILTERS on the first short
 
     @property
     def name(self) -> str:
         return (f"O_{self.entry}_s{self.ssize * 100:g}_{self.stop}_f{self.fsize * 100:g}_{self.ratchet}_"
-                f"{self.fill}_{'bounce' if self.bounce else 'once'}" + "".join("+" + f for f in self.filt))
+                f"{self.fill}_{BOUNCE_NAMES[self.bounce]}" + "".join("+" + f for f in self.filt))
 
     @property
     def family(self) -> str:
-        return f"O_{self.fill}" + ("_bounce" if self.bounce else "") + ("_filtered" if self.filt else "")
+        return f"O_{self.fill}_{BOUNCE_NAMES[self.bounce]}" + ("_filtered" if self.filt else "")
 
 
 O_ENTRIES = ("mkt0.75", "lim0.33", "lim0.5", "lim0.75")
@@ -762,13 +775,15 @@ O_FILLS = ("resting", "tick")
 O_FILTERS = ("age_lt2h", "age_2to8h", "age_ge8h", "wid_lt4atr", "wid_ge4atr", "sess_asia", "sess_london",
              "sess_ny")
 SWING_PAD = 0.0005
-OPERATOR = Ladder()                # the exact spec: 0.25% stop, 20% long, break-even at half way, by hand, bounce
+OPERATOR = Ladder()                # the exact spec: 0.25% stop, 20% long, break-even at half way, by hand, and
+#                                    the full cycle on the levels frozen at its start (variant A)
+OPERATOR_B = Ladder(bounce="follow")   # the same with the levels following each rewrite (variant B)
 
 
 def ladder_variants() -> List[Ladder]:
     return [Ladder(e, ss, st, fs, r, f, b, flt) for flt in [()] + [(x,) for x in O_FILTERS] for e in O_ENTRIES
             for ss in O_SIZES for st in O_STOPS for fs in O_FSIZES for r in O_RATCHETS for f in O_FILLS
-            for b in (False, True)]
+            for b in O_BOUNCE]
 
 
 def ladder_neighbours(v: Ladder) -> List[Ladder]:
@@ -822,13 +837,15 @@ def walk_ladder(s: Series, v: Ladder, p: Params, start_equity: float, lo_i: int 
               "tick": a market order on the next desk tick. Its stop is
               the mirror of the short's; `v.ratchet` moves it at each
               later tick from the best price of the bars before.
-    bounce    The long's target fills and the thesis is the same one:
-              short at the thesis target back to the thesis entry
-              ("resting": the sell limit at the target, maker; "tick":
-              market on the next tick); that short's target fills: long
-              from the entry to the target; and so on. A stop on any
-              bounce leg, a new thesis, the weekend or the live long ends
-              the cycle.
+    cycle     The long's target fills: short at the thesis target back to
+              the thesis entry ("resting": the sell limit at the target,
+              maker; "tick": market on the next tick); that short's target
+              fills: long from the entry to the target; and so on. "same"
+              stops at a new thesis; "frozen" (A) keeps the first levels;
+              "follow" (B) gives each new leg the thesis in force. In A
+              and B the first short reaching the entry starts the long
+              too. A stop on any cycle leg, the weekend or the live long
+              ends the cycle.
 
     Shorts are `v.ssize` of equity as margin, longs `v.fsize`. `rand_seed`
     displaces every range (`range_at`). Returns {"trades", "refused",
@@ -880,13 +897,17 @@ def walk_ladder(s: Series, v: Ladder, p: Params, start_equity: float, lo_i: int 
         open; else a resting order filled at `ref` inside the bar."""
         midbar = ref is not None
         rng = range_at(s, x, rand_seed)
-        if rng is None or (leg != "flip" and rng[3] != q["tid"]):
+        keep = leg != "flip" and v.bounce != "follow"       # a cycle leg on the levels it started with
+        if keep and v.bounce == "same" and (rng is None or rng[3] != q["tid"]):
             bk.refused[leg + "_thesis_moved"] += 1
             return False
-        if leg == "flip":
-            floor, top, tid = rng[0], rng[1], rng[3]
-        else:
+        if not keep and rng is None:
+            bk.refused[leg + "_no_thesis"] += 1
+            return False
+        if keep:
             floor, top, tid = q["floor"], q["top"], q["tid"]
+        else:
+            floor, top, tid = rng[0], rng[1], rng[3]                                     # type: ignore[index]
         share = v.fsize if side > 0 else v.ssize
         if midbar:
             fill = ref if maker else ref * (1.0 + side * _market_exit_slip(p, q["notional"]))
@@ -918,10 +939,12 @@ def walk_ladder(s: Series, v: Ladder, p: Params, start_equity: float, lo_i: int 
             reason, q, ref = ev
             if reason == "stop" and q["leg"] == "short":
                 nxt = ("flip", 1, False)
-            elif reason == "target" and v.bounce and q["side"] > 0:
+            elif reason == "target" and v.bounce != "off" and q["side"] > 0:
                 nxt = ("bshort", -1, True)
-            elif reason == "target" and v.bounce and q["leg"] == "bshort":
+            elif reason == "target" and v.bounce != "off" and q["leg"] == "bshort":
                 nxt = ("blong", 1, True)
+            elif reason == "target" and v.bounce in ("frozen", "follow") and q["leg"] == "short":
+                nxt = ("blong", 1, True)                    # the first short reached the entry: the cycle's long
             else:
                 break
             if s.weekend[x]:
@@ -1538,7 +1561,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     # the named rows: the spec, its resting twin, the picks, the baseline long, sell-the-target
     spec_twin = dataclasses.replace(OPERATOR, fill="resting")
     sell_target = Variant(mode="S", a=1.0, stf=1.0, sstop="p0.36", flip_up="off")
-    named = list(dict.fromkeys([OPERATOR.name, spec_twin.name, chosen, best_ladder, best_range, BASELINE.name,
+    named = list(dict.fromkeys([OPERATOR.name, OPERATOR_B.name, spec_twin.name, chosen, best_ladder, best_range, BASELINE.name,
                                 sell_target.name] + [n for n in a.detail if n in by_name]))
     baselines = {}
     for n in named:
@@ -1551,7 +1574,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     worst = {n: {s: run_segment(by_name[n], segs[s], midbar_worst=True)["net_usd"] for s in all_segs} for n in named}
     detail = {n: {s: run_segment(by_name[n], segs[s], keep=True) for s in all_segs} for n in named}
     spec_grid = {v.name: rows[v.name] for v in (dataclasses.replace(OPERATOR, ratchet=r, fill=f, bounce=b)
-                                                for r in O_RATCHETS for f in O_FILLS for b in (True, False))}
+                                                for r in O_RATCHETS for f in O_FILLS for b in O_BOUNCE)}
     spec_stops = {v.name: rows[v.name] for v in (dataclasses.replace(OPERATOR, stop=st, fill=f)
                                                  for st in O_STOPS for f in O_FILLS)}
 
