@@ -6,6 +6,8 @@ All notable changes to pathiel. The format follows
 
 ## [Unreleased]
 
+## [0.7.2] - 2026-11-17
+
 ### Security
 
 - A main account key set as the trading key is refused. On a public install
@@ -27,6 +29,11 @@ All notable changes to pathiel. The format follows
 
 ### Added
 
+- `scripts/master_key_to_keychain.py` (macOS, maintainers): moves
+  `HYPERLIQUID_MASTER_PRIVATE_KEY` from the env file into the login Keychain.
+  It stores the key through `security -i` on stdin, reads it back and
+  compares before it removes the line, and never prints the key. The README
+  and `docs/SECRETS.md` show how to pass it to one `treasury.py` command.
 - `close_position` takes an optional `fraction` (0.5 closes half). A partial
   close keeps the stop and target, which are reduce-only and still cover
   what is left; the full close cancels them as before.
@@ -39,6 +46,19 @@ All notable changes to pathiel. The format follows
   then `place_bracket`). The server instructions say the same in four lines.
 - The public instructions cap is 3000 characters (was 2500), so a long
   trading or fee line can never cut the LIVE MONEY rule off the end.
+
+### Fixed
+
+- A take-profit or stop placed for the whole position (Hyperliquid's app
+  sends it with size 0) now counts as covering the position. `sweep_brackets`
+  and the positions view read such a stop as covering nothing, and the desk
+  tick answers an uncovered position with a close.
+- Polymarket markets past their end date no longer reach the thesis or the
+  odds watcher. One listed as open eight days after it ended woke the oil
+  desk and fed a thesis rewrite.
+- A new thesis must pay at least 2R, the floor `place_bracket` enforces. The
+  prompt and validator asked for 1.5R, so a thesis between 1.5R and 2R passed
+  and was then refused when placed.
 
 ## [0.7.1] - 2026-11-14
 
@@ -368,7 +388,8 @@ builder fee, and listing metadata for the MCP directories. Release notes:
 - First Claude Code plugin release: the MCP server, the desk-tick skill and
   `/pathiel:setup`, installed from this repo. Mainnet only.
 
-[Unreleased]: https://github.com/Julian-dev28/pathiel/compare/v0.7.1...HEAD
+[Unreleased]: https://github.com/Julian-dev28/pathiel/compare/v0.7.2...HEAD
+[0.7.2]: https://github.com/Julian-dev28/pathiel/releases/tag/v0.7.2
 [0.7.1]: https://github.com/Julian-dev28/pathiel/releases/tag/v0.7.1
 [0.7.0]: https://github.com/Julian-dev28/pathiel/releases/tag/v0.7.0
 [0.6.0]: https://github.com/Julian-dev28/pathiel/releases/tag/v0.6.0

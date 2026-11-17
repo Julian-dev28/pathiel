@@ -6,7 +6,7 @@
 [![pathiel MCP server – quality and maintenance score on Glama](https://glama.ai/mcp/servers/Julian-dev28/pathiel/badges/score.svg)](https://glama.ai/mcp/servers/Julian-dev28/pathiel)
 [![Listed on mcpservers.org](https://mcpservers.org/badge.svg)](https://mcpservers.org/servers/julian-dev28/pathiel)
 [![pathiel MCP on mcprush](https://mcprush.com/badge/pathiel-mcp/score.svg)](https://mcprush.com/to/pathiel-mcp?ref=badge)
-[![Version 0.7.1](https://img.shields.io/badge/version-0.7.1-informational.svg)](CHANGELOG.md)
+[![Version 0.7.2](https://img.shields.io/badge/version-0.7.2-informational.svg)](CHANGELOG.md)
 [![MCP server](https://img.shields.io/badge/MCP-30_tools-6f42c1.svg)](docs/overhaul/MCP.md)
 [![CI](https://github.com/Julian-dev28/pathiel/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Julian-dev28/pathiel/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -65,7 +65,7 @@ registry as `io.github.Julian-dev28/pathiel`.
 
 ```bash
 docker run -i --rm --user "$(id -u):$(id -g)" -v "$HOME/.pathiel:/data" \
-  ghcr.io/julian-dev28/pathiel-mcp:0.7.1
+  ghcr.io/julian-dev28/pathiel-mcp:0.7.2
 ```
 
 To build it yourself: `docker build -f Dockerfile.mcp -t pathiel-mcp .`
