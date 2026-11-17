@@ -136,12 +136,130 @@ def test_a_resting_entry_at_the_rules_level_is_left_alone():
     assert d["action"] == "resting" and ex.calls == []
 
 
-def test_a_resting_entry_from_an_older_swing_is_cancelled_not_replaced_in_the_same_tick():
+def test_a_dry_run_cancel_signs_and_calls_nothing_and_shows_the_fresh_plan():
     Store(sleeve_dir()).save({"epoch_ms": S.T0, "starting_equity_usd": 20.06, "kill": None})
-    ex, deps = make(ex=S.FakeEx(orders=[S.entry_row(1005.0, 0.31)]), live=True)
-    d = tick.run_tick(ON, live=True, now_ms=S.NOW, deps=deps)
+    ex, deps = make(ex=S.FakeEx(orders=[S.entry_row(1005.0, 0.31)]), live=False)
+    d = tick.run_tick(ON, live=False, now_ms=S.NOW, deps=deps)
     assert d["action"] == "cancel_entry" and d["why"] == "swing_changed"
-    assert ex.calls == [("cancel", 10, S.COIN), ("cancel_stranded", S.COIN)]
+    assert d["result"] == {"dry_run": True} and ex.calls == []
+    assert d["plan"]["entry"] == LEVEL and round(d["plan"]["stop"], 4) == STOP and d["plan"]["target"] == TARGET
+
+
+# ── a stale entry is cancelled AND replaced in the same tick ────────────────
+# The bug (2026-11-17 07:51Z-08:59Z): a tick cancelled a stale entry and
+# returned; the new one was only placed on the NEXT tick, 15+ minutes later
+# (longer when ticks stalled), leaving a gap with nothing resting. The fix:
+# cancel, confirm it took, place the new one - one tick, one log line.
+#
+# `S.FakeEx` never mutates its own `self.orders`/`self.position`, so a plain
+# fake would make `place_bracket`'s OWN "an entry already rests, cancel
+# first" guard refuse every replacement (it re-reads resting orders itself).
+# `Mutating` makes `cancel_orders` and `place_hl_bracket_order` behave like
+# the venue actually does: a cancel that succeeds really removes the order,
+# a placed bracket really adds one - so the fresh read a REAL replacement
+# depends on is real in the test too.
+
+class Mutating(S.FakeEx):
+    def cancel_orders(self, oid, coin=None, asset_idx=None):
+        self.calls.append(("cancel", oid, coin))
+        self.orders = [o for o in self.orders if int(o["oid"]) != int(oid)]
+        return {"ok": True}
+
+    def place_hl_bracket_order(self, coin, is_buy, size, entry_px, stop_px, tp_px):
+        self.calls.append(("bracket", coin, is_buy, size, entry_px, stop_px, tp_px))
+        self.orders.append(S.entry_row(entry_px, size, side="B" if is_buy else "A", oid=20))
+        return {"ok": True, "entry": {"ok": True, "order_id": 20}, "sl": {"ok": True}, "tp": {"ok": True}}
+
+
+def test_a_stale_resting_entry_is_cancelled_and_replaced_in_the_same_tick():
+    Store(sleeve_dir()).save({"epoch_ms": S.T0, "starting_equity_usd": 20.06, "kill": None})
+    ex, deps = make(ex=Mutating(orders=[S.entry_row(1005.0, 0.31)]), live=True)
+    d = tick.run_tick(ON, live=True, now_ms=S.NOW, deps=deps)
+    assert d["action"] == "replace_entry" and d["why"].startswith("swing_changed")
+    assert d["old"] == {"px": 1005.0, "side": "long"}
+    assert d["new"] == {"px": LEVEL, "side": "long"}
+    assert ("cancel", 10, S.COIN) in ex.calls and ("cancel_stranded", S.COIN) in ex.calls
+    placed = [c for c in ex.calls if c[0] == "bracket"]
+    assert placed == [("bracket", S.COIN, True, 0.31, LEVEL, STOP, TARGET)]   # the SAME tick places this
+    # one log line for both actions, not two
+    rows = [json.loads(x) for x in open(Store(sleeve_dir()).log_path)]
+    assert len(rows) == 1 and rows[0]["action"] == "replace_entry"
+
+
+class FillRace(S.FakeEx):
+    """The old entry fills between the position read at the top of the
+    tick and the cancel: the venue refuses the cancel (nothing left to
+    cancel), and a second position read (the tick's own re-check) finds
+    the fill."""
+
+    def __init__(self, *a, filled_size: float = 0.31, **k):
+        super().__init__(*a, **k)
+        self._pos_reads = 0
+        self._filled_size = filled_size
+
+    def _position_size_on_coin(self, user, coin):
+        self.reads.append(("position", user, coin))
+        self._pos_reads += 1
+        return self.position if self._pos_reads == 1 else self._filled_size
+
+    def cancel_orders(self, oid, coin=None, asset_idx=None):
+        self.calls.append(("cancel", oid, coin))
+        return {"ok": False, "error": "Order was never placed, already canceled, or filled"}
+
+
+def test_the_old_entry_filling_before_the_cancel_took_places_nothing_new():
+    Store(sleeve_dir()).save({"epoch_ms": S.T0, "starting_equity_usd": 20.06, "kill": None})
+    ex, deps = make(ex=FillRace(orders=[S.entry_row(1005.0, 0.31)]), live=True)
+    d = tick.run_tick(ON, live=True, now_ms=S.NOW, deps=deps)
+    assert d["action"] == "entry_filled" and "nothing new placed" in d["why"]
+    assert ("cancel", 10, S.COIN) in ex.calls
+    assert not [c for c in ex.calls if c[0] == "bracket"]                    # never a second entry
+
+
+class CancelRefused(S.FakeEx):
+    """The venue refuses the cancel outright (not a fill): the order still
+    rests, position stays flat."""
+
+    def cancel_orders(self, oid, coin=None, asset_idx=None):
+        self.calls.append(("cancel", oid, coin))
+        return {"ok": False, "error": "HLRequestError: 503 Service Unavailable"}
+
+
+def test_a_cancel_the_venue_refuses_places_nothing_and_reports_the_error_verbatim():
+    Store(sleeve_dir()).save({"epoch_ms": S.T0, "starting_equity_usd": 20.06, "kill": None})
+    ex, deps = make(ex=CancelRefused(orders=[S.entry_row(1005.0, 0.31)]), live=True)
+    d = tick.run_tick(ON, live=True, now_ms=S.NOW, deps=deps)
+    assert d["action"] == "cancel_failed"
+    assert d["why"] == "cancel refused, the old entry still rests: HLRequestError: 503 Service Unavailable"
+    assert not [c for c in ex.calls if c[0] == "bracket"]
+
+
+# ── idempotency: a rerun never double-places ─────────────────────────────
+
+def test_a_rerun_after_a_successful_replace_is_a_no_op():
+    """Not a replay of the SAME call (nothing here remembers having run) -
+    a rerun is idempotent because every tick reads the venue fresh: once
+    the new entry rests, the next tick (a retry, or just the next cron
+    minute) sees it resting at the rule's own level and does nothing."""
+    Store(sleeve_dir()).save({"epoch_ms": S.T0, "starting_equity_usd": 20.06, "kill": None})
+    ex, deps = make(ex=Mutating(orders=[S.entry_row(1005.0, 0.31)]), live=True)
+    d1 = tick.run_tick(ON, live=True, now_ms=S.NOW, deps=deps)
+    assert d1["action"] == "replace_entry"
+    ex2, deps2 = make(ex=Mutating(orders=list(ex.orders)), live=True)   # the venue's real post-tick state
+    d2 = tick.run_tick(ON, live=True, now_ms=S.NOW, deps=deps2)
+    assert d2["action"] == "resting" and ex2.calls == []
+
+
+def test_place_bracket_itself_refuses_a_double_entry_if_the_cancel_has_not_cleared_yet():
+    """Defense in depth: even if cancel_orders reports ok, place_bracket
+    re-reads resting orders itself before placing - if the stale entry is
+    somehow still there (a slow cancel, eventual consistency on the venue
+    side), it refuses rather than resting two entries side by side."""
+    Store(sleeve_dir()).save({"epoch_ms": S.T0, "starting_equity_usd": 20.06, "kill": None})
+    ex, deps = make(ex=S.FakeEx(orders=[S.entry_row(1005.0, 0.31)]), live=True)   # never actually clears
+    d = tick.run_tick(ON, live=True, now_ms=S.NOW, deps=deps)
+    assert d["action"] == "cancel_entry" and "no replacement" in d["why"] and "already resting" in d["why"]
+    assert not [c for c in ex.calls if c[0] == "bracket"]
 
 
 # ── a resting entry from before a swing-mode change ─────────────────────────

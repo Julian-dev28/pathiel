@@ -88,7 +88,14 @@ Live differs from the backtest in four places:
    walker re-reads ATR every bar until the fill.
 2. The sub-account has no live long beside it, so this is the "alone"
    column, not the "beside live" one above.
-3. A stale entry is cancelled on one tick and the new one placed on the next.
+3. A stale entry is cancelled and its replacement placed in the SAME tick
+   (`"replace_entry"`), confirmed by a fresh read, not assumed: a cancel
+   the venue refuses places nothing (`"cancel_failed"`, the error verbatim)
+   and an entry that filled before its cancel took places nothing new
+   either (`"entry_filled"`; the position's own stop and target already
+   rest, the next tick manages it). Nothing rests, then nothing rests,
+   never happens for a whole tick interval the way a cancel-then-place on
+   two separate ticks once did.
 4. The tick runs when the cron runs. Between ticks the venue holds the
    entry, the stop and the target; only the ratchet and the weekend close
    wait for a tick.
@@ -156,8 +163,12 @@ To stop: `--disable` (a resting entry stays until cancelled by hand or by a
 kill; an open position keeps its bracket).
 
 Decisions a tick can print (`action`): `disabled`, `would_place` / `place`,
-`resting`, `cancel_entry`, `hold`, `ratchet`, `close`, `no_order`, `killed`,
-`blocked`, `refused`, `place_incomplete`, `error`. `why` says which rule.
+`resting`, `cancel_entry`, `replace_entry` (a stale entry cancelled and its
+replacement placed in the same tick), `entry_filled` (the old entry filled
+before its cancel took: nothing new placed), `cancel_failed` (the venue
+refused the cancel: nothing new placed), `hold`, `ratchet`, `close`,
+`no_order`, `killed`, `blocked`, `refused`, `place_incomplete`, `error`.
+`why` says which rule.
 
 ## Pieces
 
@@ -169,13 +180,15 @@ Decisions a tick can print (`action`): `disabled`, `would_place` / `place`,
 | `store.py` | `state.json` and `ticks.jsonl`; read-only in a dry run |
 | `tick.py` | One tick; everything it touches is injected (`Deps`) |
 | `evals/live_dry_run.py` | The dry-run tick on live public reads; fails on any signing attempt |
+| `evals/gap_replay.py` | Replays the sleeve's real `ticks.jsonl`/progress-log history against public Brent candles: minutes/day with nothing resting, before vs after the replace-in-one-tick fix, and whether a gap was ever tagged |
 | `scripts/fib_sleeve_tick.py` | The cron entry point |
 
 ## Tests and eval
 
 ```
-.venv/bin/python -m pytest -q services/fib_sleeve tests/test_subaccount_target.py   # 113 tests, no network, about 2 s
+.venv/bin/python -m pytest -q services/fib_sleeve tests/test_subaccount_target.py   # 118 tests, no network, about 2 s
 .venv/bin/python -m services.fib_sleeve.evals.live_dry_run                          # read only, public reads, exit 0 = pass
+.venv/bin/python -m services.fib_sleeve.evals.gap_replay                            # read only, public candle reads
 ```
 
 ## Where it breaks
