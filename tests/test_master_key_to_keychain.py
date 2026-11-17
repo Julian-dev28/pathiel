@@ -101,3 +101,15 @@ def test_the_secret_goes_to_security_on_stdin_never_in_argv(monkeypatch):
     assert seen["args"] == ["security", "-i"]
     assert FAKE not in " ".join(seen["args"]) and FAKE in seen["input"]
     assert seen["input"].startswith('add-generic-password -U -a "me" -s "svc" -w "')
+
+
+def test_the_printed_example_is_a_command_treasury_accepts(env_file):
+    """The 2026-11-16 report printed `scripts/treasury.py` with no command, which
+    exits with a usage error. Every example must name a real subcommand."""
+    import re
+    subs = set(re.findall(r'add_parser\("([a-z-]+)"', (ROOT / "scripts" / "treasury.py").read_text()))
+    _, report = _move(env_file, FakeKeychain())
+    docs = [report, K.__doc__, (ROOT / "README.md").read_text(), (ROOT / "docs" / "SECRETS.md").read_text()]
+    for text in docs:
+        calls = re.findall(r"scripts/treasury\.py(?: ([a-z-]+))?", text.split("Keychain", 1)[-1])
+        assert calls and all(c in subs for c in calls), calls
