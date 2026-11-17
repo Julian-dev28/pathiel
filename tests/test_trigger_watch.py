@@ -53,6 +53,60 @@ def test_cooldown():
     assert W.cooled_down({"oil": 900.0}, "metals", 1000.0, 1800)
 
 
+# ── confirm_fire: the stale-fire fix (operator bug, 2026-11-17) ─────────────
+# 2026-11-16 12:59Z the watcher fired oil off cached hour-12 levels (24h low
+# 91.80) claiming 2.42R; the desk-tick's own fresh read, moments later at
+# 13:00Z, saw the 12:00-13:00 1h bar had just closed, rolling the 24h low to
+# 91.582, while the mid had climbed to 91.9565, past the thesis entry
+# 91.91 ("never chase"): 1.49R, under the 2R gate, so the tick declined.
+# These are the real numbers from /tmp/trigger-watch/watch.log and
+# /tmp/oil-loop/progress.log for that incident, replayed with no network.
+STALE_OIL_LV = {"range_24h": {"low": 91.8, "high": 94.108}}      # the watcher's cached hour-12 read
+FRESH_OIL_LV = {"range_24h": {"low": 91.582, "high": 94.108}}    # a fresh read one minute later (13:00Z)
+
+
+def test_confirm_fire_replays_the_2026_11_16_1259z_stale_fire():
+    """The cached-levels pass's own evaluate() still says yes (this is the
+    exact fire the watcher printed: stop 91.05, 2.42R, "buys now"); a fresh
+    read a moment later is the exact decline the tick logged ("pays 1.49R at
+    91.9565, needs 2R; buy at 91.77 or lower"). confirm_fire asks the SAME
+    evaluate() off that fresh read and must agree with the tick, not the
+    cache."""
+    cached = W.evaluate("long", 91.91, 91.8055, STALE_OIL_LV, "xyz:BRENTOIL", 20.0, 20.0)
+    assert cached == {**cached, "ok": True, "stop_px": 91.05, "tp_px": 93.63746, "r_now": 2.42,
+                      "verdict": "buys now"}
+    confirm = W.confirm_fire("long", 91.91, "xyz:BRENTOIL", 20.0, 20.0, 1_763_297_940_000,
+                             fetch_levels=lambda coin, now_ms: dict(FRESH_OIL_LV, mid=91.9565))
+    assert confirm["ok"] is False and confirm["r_now"] == 1.49 and confirm["stop_px"] == 90.832
+    assert confirm["verdict"] == "waits: buy at 91.77 or lower"
+    assert "mid above the thesis entry 91.91: never chase" in confirm["blockers"]
+
+
+def test_confirm_fire_agrees_when_the_fresh_read_matches_the_cache():
+    """The common case: nothing moved between the cached pass and the
+    confirm. confirm_fire's answer is byte-identical to evaluate()'s,
+    because it is the same function on the same numbers."""
+    direct = W.evaluate("long", 91.91, 91.8055, STALE_OIL_LV, "xyz:BRENTOIL", 20.0, 20.0)
+    confirm = W.confirm_fire("long", 91.91, "xyz:BRENTOIL", 20.0, 20.0, 1_763_297_940_000,
+                             fetch_levels=lambda coin, now_ms: dict(STALE_OIL_LV, mid=91.8055))
+    assert confirm == direct
+
+
+def test_confirm_fire_passes_now_ms_through_to_bypass_both_caches(monkeypatch):
+    """Default fetch_levels: services.strategies.levels.summarize_coin(coin,
+    now_ms=now_ms). An explicit now_ms bypasses that function's own 75s
+    cache (services/strategies/levels.py:122), not just lv_cache here."""
+    from services.strategies import levels
+    seen = {}
+
+    def fake_summarize_coin(coin, now_ms=None):
+        seen["coin"], seen["now_ms"] = coin, now_ms
+        return dict(STALE_OIL_LV, mid=91.8055)
+    monkeypatch.setattr(levels, "summarize_coin", fake_summarize_coin)
+    W.confirm_fire("long", 91.91, "xyz:BRENTOIL", 20.0, 20.0, 1_763_297_940_000)
+    assert seen == {"coin": "xyz:BRENTOIL", "now_ms": 1_763_297_940_000}
+
+
 def _stub(monkeypatch, tmp_path, mids, held="", news=None):
     import _state_env
     import pathiel.agents.config_store as cs
@@ -73,9 +127,20 @@ def _stub(monkeypatch, tmp_path, mids, held="", news=None):
         "active_desks": ["oil"], "desk_equity_share": {"oil": 1.0}, "risk_profile": {"max_leverage": 20}})
     call = SimpleNamespace(side="long", entry_px=112.20, instrument="xyz:BRENTOIL")
     monkeypatch.setattr(journal, "latest_thesis", lambda desk: SimpleNamespace(call=call))
-    monkeypatch.setattr(levels, "summarize_coin", lambda coin: BRENT_LV)
     it = iter(mids)
-    monkeypatch.setattr(levels, "fetch_mid", lambda coin: next(it))
+    last_mid = {"v": None}
+
+    def _fetch_mid(coin):
+        last_mid["v"] = next(it)
+        return last_mid["v"]
+    monkeypatch.setattr(levels, "fetch_mid", _fetch_mid)
+    # real summarize_coin(coin, now_ms=None) takes an optional now_ms (an
+    # explicit value bypasses its own cache, services/strategies/levels.py:122);
+    # confirm_fire always passes one. The stub's fresh read agrees with the
+    # pass's own mid by default, so confirm_fire never flips an existing
+    # test's fire; test_confirm_fire_* below overrides this directly to
+    # replay a fresh read that disagrees.
+    monkeypatch.setattr(levels, "summarize_coin", lambda coin, now_ms=None: dict(BRENT_LV, mid=last_mid["v"]))
     monkeypatch.setattr(ex, "get_max_leverage", lambda coin: 20)
     monkeypatch.setattr(W, "_slot", lambda mod, desk: held)
 
@@ -85,7 +150,9 @@ def test_watch_waits_then_fires_once_and_exits(monkeypatch, tmp_path, capsys):
     sleeps = []
     assert W.watch(once=False, cooldown_min=30, sleep=sleeps.append, clock=lambda: 1000.0) == 0
     out = json.loads(capsys.readouterr().out.strip())
-    assert out["fire"] == "oil" and out["mid"] == 112.04 and len(sleeps) == 2
+    # 2 inter-pass waits (passes 1 and 2 decline) + 1 confirm_fire wait
+    # (CONFIRM_DELAY_S, pass 3's candidate fire) before it actually prints.
+    assert out["fire"] == "oil" and out["mid"] == 112.04 and sleeps == [60, 60, W.CONFIRM_DELAY_S]
     assert json.loads((tmp_path / "fired.json").read_text())["oil"] == 1000.0
     assert "FIRE" in (tmp_path / "watch.log").read_text()
 
@@ -98,6 +165,89 @@ def test_a_desk_that_holds_something_or_just_fired_is_skipped(monkeypatch, tmp_p
     (tmp_path / "fired.json").write_text(json.dumps({"oil": 900.0}))
     W.watch(once=True, cooldown_min=30, clock=lambda: 1000.0)
     assert "cooling down" in capsys.readouterr().out
+
+
+# ── the full pipeline: the watcher must not fire when the fresh gate would
+# refuse (operator bug, 2026-11-17; see confirm_fire above) ─────────────────
+
+def test_watch_does_not_fire_when_the_fresh_gate_declines(monkeypatch, tmp_path, capsys):
+    """The cached-levels pass likes the entry at mid 112.04 (2.05R, the same
+    numbers test_evaluate_matches_the_tick_rule checks); a fresh read taken
+    the instant before firing finds the mid already past the thesis entry
+    (112.20): never chase. No FIRE line, no fired.json write, no cooldown
+    spent on a trade the real gate would have refused."""
+    _stub(monkeypatch, tmp_path, [112.04])
+    from services.strategies import levels
+    monkeypatch.setattr(levels, "summarize_coin",
+                        lambda coin, now_ms=None: dict(BRENT_LV, mid=112.04 if now_ms is None else 112.25))
+    W.watch(once=True, cooldown_min=30, sleep=lambda s: None, clock=lambda: 1000.0)
+    out = capsys.readouterr().out
+    assert '"fire"' not in out
+    assert "2.05R on cached levels, but the fresh gate declined" in out
+    assert "never chase" in out
+    assert not (tmp_path / "fired.json").exists()
+
+
+def test_the_fire_line_reports_the_fresh_confirmed_numbers_not_the_cached_ones(monkeypatch, tmp_path, capsys):
+    """Both the cached pass and the fresh confirm say yes, at slightly
+    different mids (the market moved between the two reads, same as the
+    real incident, just not enough to flip the verdict here). The printed
+    fire must carry the FRESH numbers, the ones the tick's own gate will
+    also see a moment later, not the cached pass's."""
+    _stub(monkeypatch, tmp_path, [112.00])
+    from services.strategies import levels
+    monkeypatch.setattr(levels, "summarize_coin",
+                        lambda coin, now_ms=None: dict(BRENT_LV, mid=112.00 if now_ms is None else 112.04))
+    assert W.watch(once=False, cooldown_min=30, sleep=lambda s: None, clock=lambda: 1000.0) == 0
+    line = json.loads(capsys.readouterr().out.strip())
+    assert line["fire"] == "oil" and line["mid"] == 112.04 and line["r_now"] == 2.05
+
+
+def test_the_wait_is_load_bearing_a_zero_delay_recheck_would_have_missed_it(monkeypatch, tmp_path, capsys):
+    """2026-11-16 12:59Z: an uncached read taken AT fire time agreed with the
+    cached pass (the module docstring, "Since 2026-11-17") - only a read
+    taken a moment LATER, after the 24h range rolled, disagreed. This test
+    makes that the shape of the fixture (fresh data flips only once the
+    clock has advanced CONFIRM_DELAY_S past the fire) and checks both
+    halves: the real watch(), which waits before its second read, catches
+    it; a watcher that didn't wait (clock frozen through the confirm) would
+    not have."""
+    _stub(monkeypatch, tmp_path, [112.04])
+    from services.strategies import levels
+    t0 = 1000.0
+
+    def _fresh_after_wait(waited):
+        """The market only LOOKS different (mid past the thesis entry) once
+        a wait has actually happened - exactly what a real clock would show
+        after a real CONFIRM_DELAY_S sleep, without needing a fake clock."""
+        def summarize_coin(coin, now_ms=None):
+            if now_ms is not None and waited["v"]:
+                return dict(BRENT_LV, mid=112.25)
+            return dict(BRENT_LV, mid=112.04)
+        return summarize_coin
+
+    # Half 1: the real fix. sleep() marks that the wait happened before the
+    # second, uncached read, which then sees the disagreement.
+    waited = {"v": False}
+    monkeypatch.setattr(levels, "summarize_coin", _fresh_after_wait(waited))
+
+    def sleep_marks_waited(seconds):
+        waited["v"] = True
+    W.watch(once=True, cooldown_min=30, sleep=sleep_marks_waited, clock=lambda: t0)
+    out = capsys.readouterr().out
+    assert '"fire"' not in out and "never chase" in out
+
+    # Half 2: a watcher that asks again WITHOUT waiting (sleep a no-op) -
+    # the same cached-levels pass fires, because the second read still
+    # lands before the disagreement would show up. Proves the wait, not
+    # merely the second read, is what the fix depends on.
+    waited2 = {"v": False}
+    _stub(monkeypatch, tmp_path, [112.04])
+    monkeypatch.setattr(levels, "summarize_coin", _fresh_after_wait(waited2))
+    assert W.watch(once=True, cooldown_min=30, sleep=lambda s: None, clock=lambda: t0) == 0
+    line = json.loads(capsys.readouterr().out.strip())
+    assert line["fire"] == "oil" and line["mid"] == 112.04
+    assert json.loads((tmp_path / "fired.json").read_text())["oil"] == 1000.0
 
 
 # ── the headline step (operator, 2026-11-05: "FIX THEM") ────────────────────
@@ -223,7 +373,9 @@ def _record(tmp_path, direction, title):
 def test_a_headline_that_supports_the_long_thesis_does_not_stop_the_watcher_firing(monkeypatch, tmp_path, capsys):
     _record(tmp_path, 1, "US strikes Iran's Qeshm Island")
     _stub(monkeypatch, tmp_path, [112.04])                   # the entry rule passes
-    assert W.watch(once=False, cooldown_min=30, clock=lambda: 1000.0) == 0
+    # the entry rule reaches confirm_fire's CONFIRM_DELAY_S wait; a no-op
+    # sleep keeps this test deterministic and fast.
+    assert W.watch(once=False, cooldown_min=30, sleep=lambda s: None, clock=lambda: 1000.0) == 0
     line = json.loads(capsys.readouterr().out.strip())
     assert line["fire"] == "oil" and line["mid"] == 112.04 and "reason" not in line
 
