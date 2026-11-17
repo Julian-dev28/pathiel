@@ -68,6 +68,16 @@ fire path, with the Stage 2 score (event_score) and the book guard
 (book_guard) riding along on the alert and in
 $PATHIEL_STATE_DIR/intel/finlight_events.jsonl. No key, an import error or
 a dead stream: the watcher runs on RSS exactly as before.
+
+Since 2026-11-17 (operator: a months-old reprint and a retitled duplicate
+each burned a slot of the day's MAX_ALERTS_PER_DAY on nothing): an undated
+headline no longer counts as fresh, and a near-duplicate of a title already
+alerted on (same wire story, a second outlet's headline) does not fire
+twice -- both in services/intel/headline_watch.news_alerts, read its
+docstring and MAX_AGE_MIN / NEWS_DEDUP_MIN_OVERLAP for the data behind
+each. The dedup pool lives in hl_state (`recent_news`), saved to
+headline_state.json on every pass like `seen`, so it survives the restart
+every fire causes.
 """
 from __future__ import annotations
 
@@ -230,6 +240,11 @@ def headline_pass(targets: List[Tuple[str, str, str]], now_s: float, state: Dict
     if now_s - float(state.get("last_news_s") or 0) >= HW.NEWS_POLL_S:
         state["last_news_s"] = now_s
         seen = set(state.get("seen") or [])
+        # the near-duplicate pool (HW.NEWS_DEDUP_MIN_OVERLAP): persisted in
+        # hl_state next to `seen`, so a title already alerted on survives
+        # the restart every fire causes, and Finlight (finlight_watch.
+        # finlight_pass, same `state`) shares the same pool as the RSS feed.
+        recent = state.setdefault("recent_news", [])
         prev_odds = state.setdefault("odds", {})
         try:
             official_items = fetch_official_fn()      # one fetch, every group reads it
@@ -238,11 +253,11 @@ def headline_pass(targets: List[Tuple[str, str, str]], now_s: float, state: Dict
         official_learn_only = prime or "official" not in primed
         for desk, _coin, group in targets:
             try:
-                news = HW.news_alerts(group, fetch_news(group), seen, now_ms)
+                news = HW.news_alerts(group, fetch_news(group), seen, now_ms, recent=recent)
             except Exception:  # noqa: BLE001 - news is best effort; price shocks still work
                 news = []
             try:
-                official = HW.news_alerts(group, official_items, seen, now_ms, shared=True)
+                official = HW.news_alerts(group, official_items, seen, now_ms, shared=True, recent=recent)
             except Exception:  # noqa: BLE001
                 official = []
             try:

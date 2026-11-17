@@ -37,6 +37,32 @@ rewrite and the tick agent judge it. This module notices, and reads the
 headline's sign off fixed word lists; a title the lists cannot read is 0 and
 holds, the safe default.
 
+Since 2026-11-17 (operator: recycled headlines burned the day's alert budget
+on nothing): two more guards sit in `news_alerts`, both ahead of
+`match_headline`.
+  1. Age: a headline with no readable published time is DROPPED, not taken
+     as fresh (see MAX_AGE_MIN below for the data this threshold and this
+     rule are read from). 2026-11-17, "Rubio condemns Iran strikes on
+     Bahrain, Manama demands halt at UN" root-caused here: Google News can
+     re-serve a months-old reprint through a feed entry with no <pubDate> at
+     all, and the old code took a missing date as "fresh" instead of
+     dropping it.
+  2. Dedup: `seen` only ever caught a byte-identical title, so the same wire
+     story retitled by a second outlet slipped through as "new" -- see
+     NEWS_DEDUP_MIN_OVERLAP below. `news_alerts(..., recent=state_list)`
+     drops a title that is a near-duplicate (textnorm.is_near_duplicate) of
+     one it already alerted on for the same group inside
+     NEWS_DEDUP_WINDOW_MIN; `recent` is the caller's own persisted list
+     (scripts/trigger_watch.py keeps it in the same headline_state.json
+     `seen` already lives in, so it survives the restart every fire causes).
+     This does NOT catch a genuinely different follow-up angle on the same
+     underlying event (2026-11-17's CNN "dirty bomb" plot story and its
+     3-hours-later "triggers emergency meetings" write-up share only 18% of
+     their tokens -- the same ratio as two real, unrelated same-day
+     headlines in the same log, so text overlap cannot tell them apart
+     without risking a real escalation). That case is left to
+     MAX_ALERTS_PER_DAY and the operator, not silently merged.
+
 Pure functions plus a small JSON file; the fetching lives in trigger_watch.
 """
 from __future__ import annotations
@@ -49,12 +75,44 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 from urllib.parse import urlparse
 
+from services.intel.textnorm import is_near_duplicate
+
 ALERTS_PATH = os.environ.get("PATHIEL_HEADLINE_ALERTS") or "/tmp/trigger-watch/headline_alerts.json"
 STATE_PATH = os.environ.get("PATHIEL_HEADLINE_STATE") or "/tmp/trigger-watch/headline_state.json"
 
 NEWS_POLL_S = 120
 POSTS_POLL_S = 60                  # Trump's posts (the trumpstruth.org archive): every pass
+# 45 min, from the real fires that mattered: /tmp/trigger-watch/watch.log's
+# 19 kind="news" headline fires of 2026-11-05..17 ranged 2.1 to 39.7 minutes
+# old by their own published_at (the slowest: "WTI trades weakly below $85
+# on US-Iran deal hopes", 39.7 min). 45 leaves ~5 minutes of margin above the
+# slowest real fire without being loose enough to admit a stale one. A
+# headline with NO readable published_at is dropped outright, never taken as
+# fresh (news_alerts, below) -- Google News and oilprice.com sometimes
+# re-serve a months-old reprint through an entry with no <pubDate> at all
+# (2026-11-17: "Rubio condemns Iran strikes on Bahrain, Manama demands halt
+# at UN" read as a months-old June story once traced; the real fires above
+# all carry a published_at, so an undated item is categorically different,
+# not just "old"). A streaming provider (`triggers=True`, Finlight) that
+# omits its own publishDate still carries `received_at` -- OUR clock, set
+# the instant the socket delivered it -- so a real-time push is judged on
+# that instead of being dropped for the wire's missing metadata.
 MAX_AGE_MIN = 45
+# One story told by several outlets (or re-synced by Finlight and Google
+# News within minutes of each other) must fire once, not once per retitling.
+# `seen` (news_alerts) already drops a byte-identical title; it misses a
+# paraphrase. 2026-11-13's real duplicate -- "Trump directs Vance to shift
+# focus from Iran war to U.S. 'corruption and crime'" (NBC 7 San Diego) and
+# "President Donald Trump Directs Vice President JD Vance to Shift Focus
+# From Iran War to Crime" (CNBC TV18), 76 minutes apart -- share 71% of the
+# smaller title's tokens (textnorm.is_near_duplicate's own ratio). The
+# highest-overlap pair of genuinely DIFFERENT same-day Hormuz headlines in
+# the same log (two distinct tanker incidents a day apart) sits at 57%.
+# 0.65 sits between the two: loose enough to catch a same-story retitling,
+# tight enough that two real, different escalations never collide (the
+# 76-minute real gap sits well inside the 180-minute window below).
+NEWS_DEDUP_MIN_OVERLAP = 0.65
+NEWS_DEDUP_WINDOW_MIN = 180
 ODDS_JUMP = 0.08
 PRICE_WINDOW_MIN = 15
 # Gold 0.7% (2026-11-05, the metals desk's primary): on xyz:GOLD's 15m bars
@@ -546,8 +604,28 @@ def trusted_source(source: Optional[str]) -> bool:
     return True if not source else bool(_TRUSTED_RX.search(source))
 
 
+def _is_recent_duplicate(group: str, title: str, recent: List[Dict[str, Any]], now_ms: int) -> bool:
+    """True when `title` is a near-duplicate (textnorm.is_near_duplicate,
+    NEWS_DEDUP_MIN_OVERLAP) of a title `news_alerts` already alerted on for
+    `group` inside NEWS_DEDUP_WINDOW_MIN. Pure; does not mutate `recent`."""
+    cutoff = now_ms - NEWS_DEDUP_WINDOW_MIN * MIN_MS
+    return any(r.get("group") == group and int(r.get("at_ms") or 0) >= cutoff
+               and is_near_duplicate(title, r.get("title") or "", min_overlap=NEWS_DEDUP_MIN_OVERLAP)
+               for r in recent)
+
+
+def _remember_recent(group: str, title: str, recent: List[Dict[str, Any]], now_ms: int) -> None:
+    """Record `title` for `_is_recent_duplicate`, dropping anything already
+    past NEWS_DEDUP_WINDOW_MIN. Mutates `recent` in place (same list object
+    the caller persists, e.g. in headline_state.json)."""
+    cutoff = now_ms - NEWS_DEDUP_WINDOW_MIN * MIN_MS
+    recent[:] = [r for r in recent if int(r.get("at_ms") or 0) >= cutoff]
+    recent.append({"group": group, "title": title, "at_ms": now_ms})
+
+
 def news_alerts(group: str, items: Iterable[Dict[str, Any]], seen: set, now_ms: int, *,
-                shared: bool = False, triggers: bool = False) -> List[Dict[str, Any]]:
+                shared: bool = False, triggers: bool = False,
+                recent: Optional[List[Dict[str, Any]]] = None) -> List[Dict[str, Any]]:
     """New matching headlines from trusted sources, feed order. Adds every
     item's key to `seen` (matching or not) so a headline alerts once. Items:
     parse_rss_items rows ({title, url, source, published_at}). `shared`: the
@@ -557,7 +635,19 @@ def news_alerts(group: str, items: Iterable[Dict[str, Any]], seen: set, now_ms: 
     (sources/providers.NewsItem) also match data/oil_triggers.json; the row
     then carries `provider`, `sentiment` and `received_ms` for the event log.
     The dedup key stays the title, so a headline Finlight pushes and Google
-    News lists two minutes later alerts once."""
+    News lists two minutes later alerts once.
+
+    A headline with no readable published_at (and, for a provider item, no
+    received_at either) is dropped: age unknown is treated as stale, not
+    fresh (MAX_AGE_MIN's docstring has the real-world case this covers).
+
+    `recent`: the caller's persisted near-duplicate pool (a list of
+    {group, title, at_ms}, mutated in place -- scripts/trigger_watch.py
+    keeps it in headline_state.json next to `seen`). None (the default, and
+    every call site that does not pass it) skips the near-duplicate check
+    entirely, matching the old behavior; only a title that MATCHES a pattern
+    is added to the pool, so a non-matching title never blocks a real one
+    later. See NEWS_DEDUP_MIN_OVERLAP's docstring for the threshold."""
     out = []
     for it in items:
         title = (it.get("title") or "").strip()
@@ -569,21 +659,28 @@ def news_alerts(group: str, items: Iterable[Dict[str, Any]], seen: set, now_ms: 
         seen.add(k)
         pub = it.get("published_at")
         pub_ms = int(pub.timestamp() * 1000) if isinstance(pub, datetime) else None
-        if pub_ms is not None and now_ms - pub_ms > MAX_AGE_MIN * MIN_MS:
+        rec_at = it.get("received_at")
+        rec_ms = int(rec_at.timestamp() * 1000) if isinstance(rec_at, datetime) else None
+        age_ms = pub_ms if pub_ms is not None else rec_ms
+        if age_ms is None or now_ms - age_ms > MAX_AGE_MIN * MIN_MS:
             continue
         if not trusted_source(it.get("source")):
             continue
         label = match_headline(group, title, triggers=triggers)
-        if label:
-            row = {"group": group, "kind": "news", "label": label, "title": title[:200],
-                   "source": it.get("source"), "url": it.get("url"), "at_ms": now_ms,
-                   "published_ms": pub_ms, "direction": text_direction(group, title)}
-            if it.get("provider"):
-                rec = it.get("received_at")
-                row["provider"] = it["provider"]
-                row["sentiment"] = it.get("sentiment")
-                row["received_ms"] = int(rec.timestamp() * 1000) if isinstance(rec, datetime) else None
-            out.append(row)
+        if not label:
+            continue
+        if recent is not None and _is_recent_duplicate(group, title, recent, now_ms):
+            continue
+        row = {"group": group, "kind": "news", "label": label, "title": title[:200],
+               "source": it.get("source"), "url": it.get("url"), "at_ms": now_ms,
+               "published_ms": pub_ms, "direction": text_direction(group, title)}
+        if it.get("provider"):
+            row["provider"] = it["provider"]
+            row["sentiment"] = it.get("sentiment")
+            row["received_ms"] = rec_ms
+        out.append(row)
+        if recent is not None:
+            _remember_recent(group, title, recent, now_ms)
     return out
 
 
