@@ -29,6 +29,34 @@ from contracts.risk.models import RiskProfile, TargetPayoff, TradeSize
 from services.risk.derive import BookSpec, VenueRules, _price_risk_scaled_book, derive_limits
 
 
+def equity_excluding_position_pnl(total_equity_usd: float, position_unrealized_pnl_usd: float = 0.0) -> float:
+    """`total_equity_usd` with one open position's floating GAIN backed out.
+
+    The sizing basis for "full size" (what place_bracket sizes for a fresh
+    entry on a desk) must not grow just because the position it is measured
+    against is up right now. Account equity (clearinghouseState's
+    accountValue) includes every open position's unrealized P&L, so sizing
+    straight off it made a same-side top-up target chase the position's own
+    paper gain. Live, 2026-11-16/17: one 14.79 xyz:BRENTOIL long open, the
+    brief's full size read 13.59 then 19.62 as its uPnL moved.
+
+    Asymmetric on purpose (operator review 2026-11-17): only a GAIN is
+    backed out. A LOSS stays in: an account that is down really has less
+    capital, and adding the loss back would size a top-up bigger than the
+    money behind it. So a winner's full size is stable, a loser's shrinks,
+    and the result is never above the account's real equity. Floored at 0.
+    """
+    return max(0.0, float(total_equity_usd or 0.0) - max(0.0, float(position_unrealized_pnl_usd or 0.0)))
+
+
+def topup_room(full_size: float, held_size: float) -> float:
+    """How much more a desk may add to reach `full_size`, given it already
+    holds `held_size` (sign ignored, a short's size is negative). Never
+    negative: a position already at or above full size has zero room, not
+    a negative one a careless caller might send to the venue as a reduce."""
+    return max(0.0, float(full_size or 0.0) - abs(float(held_size or 0.0)))
+
+
 def _round_size(size: float, sz_decimals: Optional[int], entry_px: float, min_notional: float) -> float:
     """Round down to the venue's size step, then up one step if that fell
     under the minimum order. No step known: unrounded."""
