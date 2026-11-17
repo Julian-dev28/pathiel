@@ -107,10 +107,15 @@ def test_equity_excluding_position_pnl_backs_out_a_gain():
     assert equity_excluding_position_pnl(94.0, 24.0) == pytest.approx(70.0)
 
 
-def test_equity_excluding_position_pnl_backs_out_a_loss():
-    # a position down $10 ADDS $10 back: the account would be $10 richer
-    # without that loss.
-    assert equity_excluding_position_pnl(60.0, -10.0) == pytest.approx(70.0)
+def test_equity_excluding_position_pnl_keeps_a_loss():
+    # a position down $10 is NOT added back: the account really has $60, and
+    # sizing off $70 would put a top-up on money the account does not have.
+    assert equity_excluding_position_pnl(60.0, -10.0) == pytest.approx(60.0)
+
+
+def test_equity_excluding_position_pnl_never_exceeds_real_equity():
+    for total, upnl in [(60.0, -10.0), (94.0, 24.0), (70.0, 0.0), (5.0, -50.0)]:
+        assert equity_excluding_position_pnl(total, upnl) <= total
 
 
 def test_equity_excluding_position_pnl_is_a_noop_when_flat():
@@ -171,7 +176,7 @@ def test_full_size_does_not_change_when_a_position_opens():
 
 
 @pytest.mark.parametrize("held_upnl,label", [(24.0, "a gain like the live +$24"),
-                                             (-15.0, "a loss"), (0.0, "flat/no pnl yet")])
+                                             (0.0, "flat/no pnl yet")])
 def test_full_size_is_stable_across_a_range_of_the_positions_own_pnl(held_upnl, label):
     """Same claim as above, swept over gain/loss/flat: full size is a
     function of the desk's underlying capital alone, never of how the held
@@ -186,3 +191,15 @@ def test_full_size_is_stable_across_a_range_of_the_positions_own_pnl(held_upnl, 
     stable_equity = equity_excluding_position_pnl(observed_total_equity, held_upnl)
     got = size_trade(stable_equity, profile, [], **kwargs).size
     assert got == pytest.approx(expected), label
+
+
+def test_full_size_shrinks_with_the_positions_own_loss():
+    """A loss is real: full size while the held position is down $15 must be
+    no bigger than flat full size (it sizes off the $55 the account has)."""
+    profile = RiskProfile(preset="custom", risk_per_trade_pct=100.0, daily_loss_limit_pct=100.0,
+                          max_leverage=20.0, allow_min_order_bump=True, max_bumped_risk_pct=100.0)
+    kwargs = dict(entry_px=89.4062, stop_px=88.64, leverage=20.0, coin_max_leverage=20.0,
+                 venue=VENUE, sz_decimals=2)
+    flat = size_trade(70.0, profile, [], **kwargs).size
+    losing = size_trade(equity_excluding_position_pnl(55.0, -15.0), profile, [], **kwargs).size
+    assert losing <= flat

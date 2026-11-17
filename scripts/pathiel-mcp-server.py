@@ -4134,8 +4134,8 @@ def _thesis_sizing(brief: Any) -> "Dict[str, Any] | None":
         # "full size" (what a same-side top-up is measured against) swung
         # with the position's own mark-to-market instead of staying a
         # stable function of the desk's capital (observed: 13.59, 19.62,
-        # 7.71 on xyz:BRENTOIL across ticks with one unchanged thesis). Back
-        # the position's own uPnL out first: full size now reads the same
+        # the 7.71 at 16:20Z was the new thesis's wider stop, not this). Back
+        # the position's own GAIN out first (a loss stays in, see size.py): full size reads the same
         # whether the desk is flat or already holds it.
         equity = equity_excluding_position_pnl(equity, pos["upnl"])
         dslice = _desk_slice(call.instrument, equity)   # the desk's share of it, as place_bracket sizes
@@ -4289,7 +4289,7 @@ def _stable_equity_for_sizing(coin: str, total_equity_usd: float, user: "str | N
     being measured against. FIXED 2026-11-17: without this, full size
     tracked the SAME position's own mark-to-market uPnL (observed on
     xyz:BRENTOIL, one unchanged thesis, full size swinging 13.59 / 19.62 /
-    7.71 across ticks). `user`: the caller's already-resolved address, when
+    across ticks; 7.71 was a wider stop). `user`: the caller's already-resolved address, when
     it has one (so sizing and placement never disagree on which account);
     resolved here otherwise. A resolve failure degrades to the raw,
     unstabilized equity rather than raising."""

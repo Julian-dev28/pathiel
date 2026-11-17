@@ -30,31 +30,23 @@ from services.risk.derive import BookSpec, VenueRules, _price_risk_scaled_book, 
 
 
 def equity_excluding_position_pnl(total_equity_usd: float, position_unrealized_pnl_usd: float = 0.0) -> float:
-    """`total_equity_usd` with one open position's own floating P&L backed
-    out: the equity the account would show if that position had never made
-    or lost this unrealized amount.
+    """`total_equity_usd` with one open position's floating GAIN backed out.
 
-    The sizing basis for "full size" -- what place_bracket would size for a
-    FRESH entry on a desk -- must not move just because the position it is
-    being measured against (a same-side top-up target) happens to be up or
-    down right now. Account equity (clearinghouseState's accountValue)
-    includes every open position's unrealized P&L, so sizing straight off
-    total equity makes a book's own full-size target chase its own
-    position's mark-to-market swings. Live, 2026-11-16/17: one 14.79
-    xyz:BRENTOIL long open the whole time, the thesis's entry/stop never
-    rewritten, and the brief's "full size" still read 13.59, then 19.62,
-    then 7.71 at different ticks -- explained entirely by this position's
-    own uPnL moving equity (and so its own sizing target) up and down.
-    Backing the position's own P&L out first makes full size a function of
-    the desk's underlying capital alone, stable whether the desk is flat or
-    already holds the position.
+    The sizing basis for "full size" (what place_bracket sizes for a fresh
+    entry on a desk) must not grow just because the position it is measured
+    against is up right now. Account equity (clearinghouseState's
+    accountValue) includes every open position's unrealized P&L, so sizing
+    straight off it made a same-side top-up target chase the position's own
+    paper gain. Live, 2026-11-16/17: one 14.79 xyz:BRENTOIL long open, the
+    brief's full size read 13.59 then 19.62 as its uPnL moved.
 
-    Floored at 0.0: a position deep enough in the red that backing out its
-    loss (a negative P&L, so this ADDS to equity) still can't push the
-    result negative, but a pathological caller passing a profit larger than
-    total equity must not either.
+    Asymmetric on purpose (operator review 2026-11-17): only a GAIN is
+    backed out. A LOSS stays in: an account that is down really has less
+    capital, and adding the loss back would size a top-up bigger than the
+    money behind it. So a winner's full size is stable, a loser's shrinks,
+    and the result is never above the account's real equity. Floored at 0.
     """
-    return max(0.0, float(total_equity_usd or 0.0) - float(position_unrealized_pnl_usd or 0.0))
+    return max(0.0, float(total_equity_usd or 0.0) - max(0.0, float(position_unrealized_pnl_usd or 0.0)))
 
 
 def topup_room(full_size: float, held_size: float) -> float:
