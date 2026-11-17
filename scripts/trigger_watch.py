@@ -68,6 +68,40 @@ fire path, with the Stage 2 score (event_score) and the book guard
 (book_guard) riding along on the alert and in
 $PATHIEL_STATE_DIR/intel/finlight_events.jsonl. No key, an import error or
 a dead stream: the watcher runs on RSS exactly as before.
+
+Since 2026-11-17 (operator bug: a stale fire). 2026-11-16 12:59Z the watcher
+fired oil at 2.42R (stop 91.05, off the cached hour-12 24h low 91.80); the
+desk-tick's OWN fresh read, started a moment later, landed at 13:00Z, just
+after the 12:00-13:00 1h bar closed and rolled the 24h low to 91.582 while
+the mid climbed past the thesis's own entry (91.91: "never chase"). 1.49R,
+under the 2R gate, so the tick declined.
+
+Replayed with the real candles (tests/test_trigger_watch.py's regression,
+and services/strategies/evals/confirm_fire_replay.py against every real
+fire in this log), the lv_cache below was NOT wrong for the instant it was
+read: a from-scratch read at 12:59Z gives the identical 91.80/2.42R the
+fire printed, so asking the SAME question again at that same instant (no
+wait) would have agreed and fired anyway - a zero-delay recheck is not the
+fix. The fire and the tick read the market about a minute apart (the
+agent-dispatch time to actually run a tick; the eval's 29 real fires show
+0-960s, 60s the typical case), and oil's 24h range rolls exactly on the
+hour, so that one minute was enough to move the ground under the fire.
+`confirm_fire` cannot see the tick's own future moment, but it can stop
+waiting as long as lv_cache does: when the cached-levels pass says a desk
+would fire, the watcher now waits CONFIRM_DELAY_S (one more of its own
+60s polls - trivial next to the up-to-4-hour gap this module exists to
+close) and asks again with a brand-new, uncached levels+mid read
+(`levels.summarize_coin(coin, now_ms=...)`, which bypasses both this
+module's lv_cache and that function's own 75s cache,
+services/strategies/levels.py:122) through the SAME `evaluate()`. For
+12:59Z that wait alone lands the recheck at/past 13:00Z, on the other side
+of the same hour roll the tick saw: confirmed against the venue's own
+1-minute candles for this and the log's other recent fires. The watcher
+fires on that second answer, never the first; a desk the fresh read no
+longer likes is logged as declined on recheck, not fired. A dispatch
+slower than one wait (the log's 960s outlier) still has residual drift
+this cannot close - no fixed short wait can see further into the future
+than it waits.
 """
 from __future__ import annotations
 
@@ -88,6 +122,12 @@ LEVELS_REFRESH_S = 600      # the 24h range and ATR barely move inside 10 minute
 SLOT_REFRESH_S = 300        # positions/resting entries: the tick owns those anyway
 SIGNER_REFRESH_S = 3600     # is the signing API wallet still approved? (2026-11-09)
 SIGNER_REPEAT_S = 6 * 3600  # say it again this often while it stays broken
+# One more of this module's own 60s polls before trusting a candidate fire
+# (2026-11-17, "Since 2026-11-17" above): a zero-delay recheck agrees with
+# the cached pass every time, since lv_cache was already fresh for the
+# instant it was read. Waiting this long before the SECOND, uncached read
+# is what actually lands on the other side of an hour roll.
+CONFIRM_DELAY_S = 60.0
 
 
 def evaluate(side: Optional[str], thesis_entry: Optional[float], mid: Optional[float],
@@ -114,6 +154,29 @@ def evaluate(side: Optional[str], thesis_entry: Optional[float], mid: Optional[f
                      breakout=levels.get("breakout_24h") if breakout_for(coin) else None,
                      thesis_age_min=thesis_age_min, entry_delay_min=entry_delay_min)
     return out
+
+
+def confirm_fire(side: Optional[str], thesis_entry: Optional[float], coin: str,
+                 coin_max_leverage: Optional[float], leverage: float, now_ms: int, *,
+                 thesis_age_min: Optional[float] = None, entry_delay_min: Optional[float] = None,
+                 fetch_levels: Optional[Callable[[str, int], Dict[str, Any]]] = None) -> Dict[str, Any]:
+    """The last word before a fire: `evaluate()` again, off a brand-new
+    levels+mid read taken AT `now_ms` instead of `lv_cache`'s snapshot.
+    Pure (no sleeping here) - `watch()` is the one that waits CONFIRM_DELAY_S
+    before calling this with a freshly-read `now_ms`; calling it immediately
+    after the first check only reproduces that check (see the module
+    docstring, "Since 2026-11-17": a zero-delay reread is not the fix).
+
+    `fetch_levels` defaults to `services.strategies.levels.summarize_coin(coin,
+    now_ms=now_ms)`, an explicit `now_ms` bypassing both `lv_cache` here and
+    that function's own 75s cache (services/strategies/levels.py:122). Same
+    `evaluate()`, no duplicated math; a test or an eval passes its own
+    `fetch_levels` to replay a real incident without the live network."""
+    from services.strategies import levels as _levels
+    fetch_levels = fetch_levels or (lambda c, ms: _levels.summarize_coin(c, now_ms=ms))
+    fresh = fetch_levels(coin, now_ms)
+    return evaluate(side, thesis_entry, fresh.get("mid"), fresh, coin, coin_max_leverage, leverage,
+                    thesis_age_min=thesis_age_min, entry_delay_min=entry_delay_min)
 
 
 def fetch_headlines(group: str) -> List[Dict[str, Any]]:
@@ -470,11 +533,28 @@ def watch(*, once: bool, cooldown_min: float, sleep: Callable[[float], None] = t
                 parts.append(f"{desk}: read failed ({str(e)[:80]})")
                 continue
             from services.strategies.next_trade import entry_delay_for, thesis_age_minutes
-            res = evaluate(t.call.side if t else None, t.call.entry_px if t else None, mid,
-                           lv[1], coin, coin_max[coin], lev,
-                           thesis_age_min=thesis_age_minutes(getattr(t, "created_at", None)) if t else None,
-                           entry_delay_min=entry_delay_for(coin))
+            side = t.call.side if t else None
+            thesis_entry = t.call.entry_px if t else None
+            age_min = thesis_age_minutes(getattr(t, "created_at", None)) if t else None
+            delay_min = entry_delay_for(coin)
+            res = evaluate(side, thesis_entry, mid, lv[1], coin, coin_max[coin], lev,
+                           thesis_age_min=age_min, entry_delay_min=delay_min)
             if res.get("ok"):
+                # the cached-levels pass likes it; wait one more poll and ask
+                # the SAME gate again off a brand-new read before committing
+                # (2026-11-17, stale-fire fix: module docstring "Since
+                # 2026-11-17" - asking again with no wait only reproduces
+                # this same answer, since lv_cache was already fresh for now)
+                sleep(CONFIRM_DELAY_S)
+                confirm = confirm_fire(side, thesis_entry, coin, coin_max[coin], lev, int(clock() * 1000),
+                                       thesis_age_min=age_min, entry_delay_min=delay_min)
+                if not confirm.get("ok"):
+                    why = "; ".join(confirm.get("blockers") or []) or confirm.get("verdict") \
+                        or confirm.get("reason") or "declined"
+                    parts.append(f"{desk}: mid {mid} {res.get('r_now')}R on cached levels, "
+                                 f"but the fresh gate declined: {why}")
+                    continue
+                res, mid = confirm, confirm.get("mid", mid)
                 fired[desk] = now
                 _write_json(fired_path, fired)
                 line = {"fire": desk, "coin": coin, "utc": _utc(), "mid": mid,
