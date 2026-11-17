@@ -15,7 +15,14 @@ Brent candles, then does at most ONE thing:
                           over from a `cfg.swing` change, is managed under
                           that mode, not cancelled on the flip alone);
                           cancel it when the swing changed, the level is
-                          spent, the weekend opened or the kill switch fired
+                          spent, the weekend opened or the kill switch
+                          fired, confirm the cancel took, and - in this SAME
+                          tick - place the entry the rule names now
+                          (`"replace_entry"`), so nothing is ever left
+                          cancelled with no order resting for a whole tick
+                          interval; a cancel that fails or a fill that beat
+                          it places nothing new (`"cancel_failed"` /
+                          `"entry_filled"`)
   in a position           move the stop to the entry once price covered 75%
                           of the way to target (`bracket.set_stop`, tighter
                           only); close it at the weekend open, or if no stop
@@ -222,11 +229,74 @@ def run_tick(cfg: SleeveConfig, *, live: bool, now_ms: int, deps: Deps) -> Dict[
                               "oid": entries[0].get("oid")}
         if not stale:
             return done("resting", "the entry rests at the level the rule names")
-        res: Dict[str, Any] = {"dry_run": True}
-        if live:
-            res = {"cancelled": [ex.cancel_orders(int(o["oid"]), coin) for o in entries],
-                   "stranded_cancelled": ex.cancel_stranded_reduce_only_orders(coin)}
-        return done("cancel_entry", stale, result=res)
+
+        # Stale: cancel it, confirm the cancel actually took (or that the
+        # order is already gone - filled between the read above and this
+        # cancel), then place the entry the rule names NOW - in this same
+        # tick, so a cancel is never left unreplaced for a whole tick
+        # interval. A dry run signs and writes nothing, so it never calls
+        # cancel_orders; it only shows what a live tick would replace with.
+        old_entry = {"px": resting_px, "side": "long" if resting_long else "short"}
+        if not live:
+            d["plan"] = rule.plan_entry(cfg, hours, bars, price, now_ms, max_lev, resting=False)
+            return done("cancel_entry", stale, result={"dry_run": True})
+
+        cancelled = [{"oid": int(o["oid"]), **ex.cancel_orders(int(o["oid"]), coin)} for o in entries]
+        stranded = ex.cancel_stranded_reduce_only_orders(coin)
+        cancel_result = {"cancelled": cancelled, "stranded_cancelled": stranded}
+        failed = [c for c in cancelled if not c.get("ok")]
+        if failed:
+            # ok=False means either the cancel was genuinely refused (the
+            # order still rests) or the order filled first (nothing left to
+            # cancel) - only a fresh read tells the two apart.
+            pos_now = ex._position_size_on_coin(user, coin)
+            if pos_now is None:
+                return done("error", "position read failed confirming a failed cancel; not trading blind",
+                            result=cancel_result)
+            if pos_now != 0:
+                return done("entry_filled",
+                            "the entry filled before its cancel took: now in a position, nothing new placed "
+                            "this tick; its own stop and target already rest, the next tick ratchets or "
+                            "closes it", result=cancel_result)
+            return done("cancel_failed",
+                        f"cancel refused, the old entry still rests: {failed[0].get('error') or failed[0]}",
+                        result=cancel_result)
+
+        new_plan = rule.plan_entry(cfg, hours, bars, price, now_ms, max_lev, resting=False)
+        d["plan"] = new_plan
+        if kill:
+            return done("cancel_entry", stale, result=cancel_result)
+        foreign = [p["coin"] for p in eq.get("positions") or [] if p.get("coin") not in ledger.coin_names(coin)]
+        if foreign:
+            return done("cancel_entry",
+                        f"{stale}; blocked for a new entry: the sub-account holds another position "
+                        f"({', '.join(foreign)})", result=cancel_result)
+        if not new_plan["ok"]:
+            return done("cancel_entry", stale, result=cancel_result)
+        sz_dec = int(ex.get_coin_index(coin)[1])
+        size = rule.size_for(cfg, eq["equity"], new_plan["leverage"], new_plan["entry"], new_plan["stop"], sz_dec)
+        d["size"] = size
+        placed = deps.bracket.place_bracket(
+            coin, entry_px=round(new_plan["entry"], 4), stop_px=round(new_plan["stop"], 4),
+            tp_px=round(new_plan["target"], 4), size=size["size"], leverage=int(new_plan["leverage"]),
+            min_r=cfg.min_r, coin_max_leverage=max_lev, target_offset_frac=0.0, dry_run=False, ex=ex)
+        if placed.get("placed") and not placed.get("ok"):
+            # the replacement entry went in but a leg was refused: never leave an entry without its stop
+            cleanup = ex.cancel_open_orders_for_coin(coin)
+            return done("cancel_entry",
+                        f"{stale}; the replacement's own leg was refused, it was cancelled too: "
+                        f"{placed.get('result')}", result=cancel_result, bracket=placed, cancelled=cleanup)
+        if not placed.get("ok") or not (placed.get("placed") or placed.get("dry_run")):
+            return done("cancel_entry",
+                        f"{stale}; no replacement: {placed.get('reason') or placed.get('result')}",
+                        result=cancel_result, bracket=placed)
+        new_entry = {"px": placed["entry_px"], "side": new_plan["side"]}
+        return done("replace_entry",
+                    f"{stale}: cancelled {old_entry['side']} {old_entry['px']:g}, replaced with "
+                    f"{new_plan['side']} limit {placed['entry_px']:g}, stop {placed['stop_px']:g}, "
+                    f"target {placed['tp_px']:g}, {placed.get('r_multiple')}R, size {size['size']:g} at "
+                    f"{new_plan['leverage']}x",
+                    old=old_entry, new=new_entry, result=cancel_result, bracket=placed, size=size)
     if kill:
         return done("killed", f"kill switch: {kill['reason']}; no new entry until rearmed")
     foreign = [p["coin"] for p in eq.get("positions") or [] if p.get("coin") not in ledger.coin_names(coin)]
