@@ -29,6 +29,42 @@ from contracts.risk.models import RiskProfile, TargetPayoff, TradeSize
 from services.risk.derive import BookSpec, VenueRules, _price_risk_scaled_book, derive_limits
 
 
+def equity_excluding_position_pnl(total_equity_usd: float, position_unrealized_pnl_usd: float = 0.0) -> float:
+    """`total_equity_usd` with one open position's own floating P&L backed
+    out: the equity the account would show if that position had never made
+    or lost this unrealized amount.
+
+    The sizing basis for "full size" -- what place_bracket would size for a
+    FRESH entry on a desk -- must not move just because the position it is
+    being measured against (a same-side top-up target) happens to be up or
+    down right now. Account equity (clearinghouseState's accountValue)
+    includes every open position's unrealized P&L, so sizing straight off
+    total equity makes a book's own full-size target chase its own
+    position's mark-to-market swings. Live, 2026-11-16/17: one 14.79
+    xyz:BRENTOIL long open the whole time, the thesis's entry/stop never
+    rewritten, and the brief's "full size" still read 13.59, then 19.62,
+    then 7.71 at different ticks -- explained entirely by this position's
+    own uPnL moving equity (and so its own sizing target) up and down.
+    Backing the position's own P&L out first makes full size a function of
+    the desk's underlying capital alone, stable whether the desk is flat or
+    already holds the position.
+
+    Floored at 0.0: a position deep enough in the red that backing out its
+    loss (a negative P&L, so this ADDS to equity) still can't push the
+    result negative, but a pathological caller passing a profit larger than
+    total equity must not either.
+    """
+    return max(0.0, float(total_equity_usd or 0.0) - float(position_unrealized_pnl_usd or 0.0))
+
+
+def topup_room(full_size: float, held_size: float) -> float:
+    """How much more a desk may add to reach `full_size`, given it already
+    holds `held_size` (sign ignored, a short's size is negative). Never
+    negative: a position already at or above full size has zero room, not
+    a negative one a careless caller might send to the venue as a reduce."""
+    return max(0.0, float(full_size or 0.0) - abs(float(held_size or 0.0)))
+
+
 def _round_size(size: float, sz_decimals: Optional[int], entry_px: float, min_notional: float) -> float:
     """Round down to the venue's size step, then up one step if that fell
     under the minimum order. No step known: unrounded."""

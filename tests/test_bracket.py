@@ -346,6 +346,84 @@ def test_handler_add_says_free_margin_not_full_size_when_margin_is_the_limit(mon
     assert "full-port" not in out["reason"] and not seen
 
 
+# ── full size is stable against the held position's own uPnL (2026-11-17) ──
+#
+# Live, 2026-11-16/17: the oil desk brief's "full size" for xyz:BRENTOIL (the
+# number a same-side top-up is measured against) read 13.59, then 19.62, then
+# 7.71 across ticks with the thesis's entry/stop unchanged. Root cause:
+# sizing used `services.accounts`/`_live_equity()`'s TOTAL account equity,
+# which includes the open position's own unrealized P&L, so the position's
+# own mark-to-market swings fed straight back into its own sizing target.
+# Fix: `services.risk.size.equity_excluding_position_pnl` backs that P&L out
+# first (`_stable_equity_for_sizing` in scripts/pathiel-mcp-server.py reads
+# it off the position the shared account snapshot already reports), so full
+# size reads the same whether the desk is flat or already holds the position.
+
+def test_handler_add_sizes_off_equity_with_the_held_positions_own_upnl_backed_out(monkeypatch):
+    mcp = _mcp()
+    from pathiel.agents import bracket as br
+    import pathiel.client.account_snapshot as snap
+    import pathiel.client.exchange as ex
+    from contracts.risk.models import RiskProfile
+    from services.risk.derive import VenueRules
+    from services.risk.size import size_trade as real_size_trade
+    monkeypatch.setattr(ex, "resolve_user_address", lambda: "0xu")
+    monkeypatch.setattr(ex, "_position_size_on_coin", lambda user, coin: 1.62)
+    monkeypatch.setattr(br, "slot_taken_by", lambda user, coin, n: None)
+    profile = RiskProfile(preset="custom", risk_per_trade_pct=100.0, daily_loss_limit_pct=100.0,
+                          max_leverage=20.0, max_open_positions=1, allow_min_order_bump=True,
+                          max_bumped_risk_pct=100.0)
+    venue = VenueRules(min_order_notional_usd=10.5)
+    monkeypatch.setattr(mcp, "_risk_inputs", lambda: (profile, [], venue))
+    monkeypatch.setattr(mcp, "_coin_specs", lambda c: (20.0, 2))
+    # _live_equity() is the account's TOTAL equity: $70 of underlying
+    # capital plus this SAME 1.62 position's own +$30 unrealized P&L.
+    monkeypatch.setattr(mcp, "_live_equity", lambda: 100.0)
+    monkeypatch.setattr(snap, "account_state", lambda user, include_hip3=True, **kw: {
+        "equity": 100.0, "dex_available": {"": 0.0, "xyz": 500.0},
+        "asset_positions": [{"position": {"coin": COIN, "szi": "1.62", "unrealizedPnl": "30.0"}}]})
+    seen = {}
+    monkeypatch.setattr(br, "place_bracket", lambda coin, **k: seen.update(coin=coin, **k) or {"ok": True, "placed": True})
+    out = json.loads(mcp.handle_place_bracket(
+        {"coin": COIN, "entry_px": 111.4, "stop_px": 110.9, "tp_px": 114.0, "add": True}))
+    # Full size must size off 100 - 30 = 70 (the underlying capital alone),
+    # never the inflated 100 the pre-fix code would have passed straight to
+    # size_trade.
+    expected = real_size_trade(70.0, profile, [], entry_px=111.4, stop_px=110.9, leverage=20.0,
+                               coin_max_leverage=20.0, targets=[114.0], venue=venue, sz_decimals=2)
+    assert out["topup"]["full_size"] == expected.size
+    assert expected.size != real_size_trade(100.0, profile, [], entry_px=111.4, stop_px=110.9, leverage=20.0,
+                                            coin_max_leverage=20.0, targets=[114.0], venue=venue,
+                                            sz_decimals=2).size, "the test is meaningless if 70 and 100 size the same"
+
+
+def test_a_fresh_non_add_entry_never_reads_the_position_for_equity_stability(monkeypatch):
+    """A non-add entry is refused below if a position is already open, so
+    backing out a position's own P&L would be a no-op there -- the handler
+    must not pay for that read (or risk it) on the common, flat-desk path."""
+    mcp = _mcp()
+    from pathiel.agents import bracket as br
+    import pathiel.client.exchange as ex
+    monkeypatch.setattr(ex, "resolve_user_address", lambda: "0xu")
+    monkeypatch.setattr(br, "slot_taken_by", lambda user, coin, n: None)
+    monkeypatch.setattr(mcp, "_risk_inputs", lambda: (SimpleNamespace(max_leverage=10.0), [], None))
+    monkeypatch.setattr(mcp, "_coin_specs", lambda c: (20.0, 2))
+    monkeypatch.setattr(mcp, "_live_equity", lambda: 15.21)
+
+    def _boom(user, coin):
+        raise AssertionError("non-add sizing must not read the account's open positions")
+
+    monkeypatch.setattr(mcp, "_coin_position", _boom)
+    import services.risk.size as size_mod
+    monkeypatch.setattr(size_mod, "size_trade", lambda *a, **k: SimpleNamespace(
+        can_trade=True, size=1.27, leverage=10.0, reason="", notional_usd=136.1,
+        margin_usd=13.6, risk_usd=0.64, risk_pct=4.2))
+    monkeypatch.setattr(br, "place_bracket", lambda coin, **k: {"ok": True})
+    out = json.loads(mcp.handle_place_bracket(
+        {"coin": "xyz:BRENTOIL", "entry_px": 107.2, "stop_px": 106.7, "tp_px": 108.45}))
+    assert out["ok"]
+
+
 def test_sizing_holds_back_only_the_opening_fee():
     """Operator, 2026-10-27: "the fees are taken out at time of trade against
     the position, ive literally used 100% of equity on hyperliquid". No

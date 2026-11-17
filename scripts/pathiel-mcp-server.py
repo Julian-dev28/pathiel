@@ -4120,10 +4120,24 @@ def _thesis_sizing(brief: Any) -> "Dict[str, Any] | None":
     if call is None or call.side not in ("long", "short") or not call.entry_px or not call.stop_px:
         return None
     try:
-        from services.risk.size import size_trade
+        from services.risk.size import equity_excluding_position_pnl, size_trade, topup_room
         profile, books, venue = _risk_inputs()
         acct = getattr(brief.analytics, "account", None) if brief.analytics else None
         equity = acct.equity_usd if acct is not None and acct.source == "venue" else _live_equity()
+        try:
+            user = resolve_user_address()
+        except Exception:
+            user = None
+        pos = _coin_position(user, call.instrument)
+        # FIXED 2026-11-17: `equity` above is the account's total equity,
+        # which includes THIS coin's own open position's unrealized P&L, so
+        # "full size" (what a same-side top-up is measured against) swung
+        # with the position's own mark-to-market instead of staying a
+        # stable function of the desk's capital (observed: 13.59, 19.62,
+        # 7.71 on xyz:BRENTOIL across ticks with one unchanged thesis). Back
+        # the position's own uPnL out first: full size now reads the same
+        # whether the desk is flat or already holds it.
+        equity = equity_excluding_position_pnl(equity, pos["upnl"])
         dslice = _desk_slice(call.instrument, equity)   # the desk's share of it, as place_bracket sizes
         equity = dslice["slice_usd"]
         coin_max, sz_dec = _coin_specs(call.instrument)
@@ -4143,6 +4157,13 @@ def _thesis_sizing(brief: Any) -> "Dict[str, Any] | None":
                            targets=call.targets or [], venue=venue, sz_decimals=sz_dec)
         out = {"coin": call.instrument, "equity_usd": equity, "desk": dslice["desk"],
                "equity_share": dslice["equity_share"], **sized.model_dump(mode="json")}
+        if pos["size"]:
+            # how much of full size is already on, and the room left to
+            # add -- the exact numbers a same-side top-up decision needs,
+            # from the same stable full size above (never negative).
+            out["held_size"] = round(abs(pos["size"]), 8)
+            if sized.size is not None:
+                out["topup_room"] = round(topup_room(sized.size, pos["size"]), 8)
         if dslice["equity_share"] < 1:
             out["reason"] = f"{dslice['equity_share']:.0%} of equity: " + out["reason"]
         if sized.warnings:
@@ -4237,6 +4258,48 @@ def _desk_slice(coin: str, equity: float) -> Dict[str, Any]:
             "slice_usd": round(equity * share, 6), "shares_on": bool(desk_share.desk_shares(cfg)),
             "desk_coins": desk_share.desk_coins(desk) if desk else [],
             "slots": desk_share.slots(cfg, 1)}
+
+
+def _coin_position(user: "str | None", coin: str) -> Dict[str, float]:
+    """This coin's own open position right now, from the shared account
+    snapshot: {"size": signed szi, "upnl": unrealizedPnl}. Zeros when flat,
+    when `user` is falsy, or on a read failure -- a sizing helper degrades
+    to "no position", it never raises and blocks a read-only brief."""
+    if not user:
+        return {"size": 0.0, "upnl": 0.0}
+    try:
+        from pathiel.client.account_snapshot import account_state
+        state = account_state(user, include_hip3=True) or {}
+        for row in state.get("asset_positions") or []:
+            pos = (row or {}).get("position") or {}
+            if pos.get("coin") == coin:
+                return {"size": float(pos.get("szi") or 0.0),
+                        "upnl": float(pos.get("unrealizedPnl") or 0.0)}
+    except Exception:
+        pass
+    return {"size": 0.0, "upnl": 0.0}
+
+
+def _stable_equity_for_sizing(coin: str, total_equity_usd: float, user: "str | None" = None) -> float:
+    """`total_equity_usd` with THIS coin's own open position's unrealized
+    P&L backed out (services.risk.size.equity_excluding_position_pnl), so
+    "full size" -- place_bracket's fresh-entry size, shown on the brief as
+    "Your size" and read by a top-up decision -- sizes from a basis that is
+    stable whether the desk is flat or already holds the position it is
+    being measured against. FIXED 2026-11-17: without this, full size
+    tracked the SAME position's own mark-to-market uPnL (observed on
+    xyz:BRENTOIL, one unchanged thesis, full size swinging 13.59 / 19.62 /
+    7.71 across ticks). `user`: the caller's already-resolved address, when
+    it has one (so sizing and placement never disagree on which account);
+    resolved here otherwise. A resolve failure degrades to the raw,
+    unstabilized equity rather than raising."""
+    from services.risk.size import equity_excluding_position_pnl
+    if user is None:
+        try:
+            user = resolve_user_address()
+        except Exception:
+            user = None
+    return equity_excluding_position_pnl(total_equity_usd, _coin_position(user, coin)["upnl"])
 
 
 def _coin_specs(coin: str) -> "Tuple[float | None, int | None]":
@@ -4385,7 +4448,7 @@ def handle_place_bracket(params: Dict[str, Any]) -> str:
     lev_raw = params.get("leverage")
     try:
         from pathiel.client.exchange import get_hl_price
-        from services.risk.size import size_trade
+        from services.risk.size import size_trade, topup_room
         profile, books, venue = _risk_inputs()
         coin_max, sz_dec = _coin_specs(coin)
         if not coin_max:
@@ -4405,12 +4468,25 @@ def handle_place_bracket(params: Dict[str, Any]) -> str:
         # profile's slots, the whole equity).
         from pathiel.client.exchange import resolve_user_address
         from services.strategies.desk_share import DeskShareError
+        user = resolve_user_address()
+        add = _as_bool(params.get("add"))
         try:
-            dslice = _desk_slice(coin, _live_equity())
+            equity_for_slice = _live_equity()
+            if add:
+                # FIXED 2026-11-17: sizing off the account's raw equity let a
+                # desk's own open position's floating P&L feed back into its
+                # own full-size target (services.risk.size.
+                # equity_excluding_position_pnl; _stable_equity_for_sizing
+                # backs THIS coin's uPnL out first), so "full size" reads the
+                # same whether this desk is flat or already holds the
+                # position it is about to top up. A non-add entry is refused
+                # below if a position is already open, so this basis is a
+                # no-op there -- skip the extra read.
+                equity_for_slice = _stable_equity_for_sizing(coin, equity_for_slice, user)
+            dslice = _desk_slice(coin, equity_for_slice)
         except DeskShareError as e:
             return json.dumps({"ok": False, "coin": coin, "placed": False, "error": f"desk share: {e}"})
         slots = dslice["slots"] if dslice["shares_on"] else int(getattr(profile, "max_open_positions", None) or 1)
-        user = resolve_user_address()
         if dslice["shares_on"]:
             # one position per desk: another coin of THIS desk holding a
             # position or an entry blocks it (oil cannot hold Brent and WTI)
@@ -4423,7 +4499,6 @@ def handle_place_bracket(params: Dict[str, Any]) -> str:
             return json.dumps({"ok": False, "coin": coin, "placed": False,
                                "error": f"slot taken by {taken}: the account allows {slots} open position(s)"})
         ref = entry if entry is not None else float(get_hl_price(coin))
-        add = _as_bool(params.get("add"))
         leverage = _bracket_leverage(profile, lev_raw)
         if lev_raw in (None, "") and not add and leverage:
             # Leverage fit (operator 2026-11-04 "TURN ON LEVERAGE FIT"): a
@@ -4463,7 +4538,7 @@ def handle_place_bracket(params: Dict[str, Any]) -> str:
             # top-up rounded up past the free margin and the venue refused it
             # ("Insufficient margin to place order") after the dry run passed.
             cap = _floor_size(budget * lev_used / ref, sz_dec)
-            wanted = _round_size(size - abs(held), sz_dec)
+            wanted = _round_size(topup_room(size, held), sz_dec)   # full size minus held, never negative
             size = _round_size(min(wanted, cap), sz_dec)
             topup = {"held": held, "full_size": sized.size, "free_margin_usd": round(free, 2),
                      "topup_cap_size": cap, "topup_size": size}
@@ -4623,7 +4698,10 @@ def handle_risk_size_trade(params: Dict[str, Any]) -> str:
         if eq_raw is not None:
             equity = _fnum(eq_raw)          # a what-if equity is taken as given
         else:
-            dslice = _desk_slice(coin, _live_equity())
+            # the same stable basis place_bracket sizes a fresh entry from
+            # (_stable_equity_for_sizing backs this coin's own open
+            # position's uPnL out first; see its docstring)
+            dslice = _desk_slice(coin, _stable_equity_for_sizing(coin, _live_equity()))
             equity = dslice["slice_usd"]    # live: the desk's share, as place_bracket sizes
             share_note = {"desk": dslice["desk"], "equity_share": dslice["equity_share"],
                           "account_equity_usd": round(dslice["equity_usd"], 2)}
