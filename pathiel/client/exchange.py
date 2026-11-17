@@ -502,16 +502,68 @@ READ_ONLY_NO_KEY = ("read-only mode: no key configured (HYPERLIQUID_PRIVATE_KEY 
                     "wallet key to ~/.pathiel/.env.local.")
 
 
+MAIN_KEY_REFUSED = ("refused: HYPERLIQUID_PRIVATE_KEY is a main account's key, and a main key can "
+                    "withdraw funds. pathiel trades only with an API wallet key, which can trade and "
+                    "never withdraw. Run /pathiel:setup and connect your wallet (or create an API "
+                    "wallet in the Hyperliquid app under More, API), put that key in "
+                    "~/.pathiel/.env.local, delete the main key from the file, and reconnect pathiel.")
+
+# signer address -> venue role ("user", "agent", "vault", "subAccount", "missing").
+# Only definite answers are cached; a failed read is asked again next call.
+_SIGNER_ROLE: Dict[str, str] = {}
+
+
+def _read_user_role(address: str) -> Any:
+    """The venue's raw userRole reply (one /info read, weight 2)."""
+    return _http_post("/info", {"type": "userRole", "user": address})
+
+
+def _signer_role(address: str) -> Optional[str]:
+    """Hyperliquid's userRole for address, or None when the read failed."""
+    key = address.lower()
+    if key in _SIGNER_ROLE:
+        return _SIGNER_ROLE[key]
+    try:
+        reply = _read_user_role(address)
+    except Exception:   # noqa: BLE001 - an unanswered read decides nothing
+        return None
+    role = reply.get("role") if isinstance(reply, dict) else None
+    if isinstance(role, str) and role:
+        _SIGNER_ROLE[key] = role
+        return role
+    return None
+
+
+def main_key_reason() -> Optional[str]:
+    """MAIN_KEY_REFUSED when the key that would sign is a main account's own
+    key, else None (hardening, 2026-11-15). Two checks:
+      1. offline: the key's address equals HYPERLIQUID_MASTER_ADDRESS;
+      2. online: the venue's userRole for the key's address is "user" (an
+         approved API wallet is "agent"). A failed read falls back to 1 alone,
+         so a venue hiccup never blocks a correctly set up install."""
+    try:
+        key, _main, _agent, _is_agent = _resolve_identity()
+        signer = Account.from_key(key).address
+    except Exception:   # noqa: BLE001 - no key or a malformed one: other gates answer
+        return None
+    if HL_MASTER and signer.lower() == HL_MASTER.lower():
+        return MAIN_KEY_REFUSED
+    return MAIN_KEY_REFUSED if _signer_role(signer) == "user" else None
+
+
 def trading_block_reason() -> Optional[str]:
-    """Why a write tool must not run, or None. Only a public install with no
-    usable credential is blocked (read-only tier); the operator's install
-    keeps its existing per-function errors."""
+    """Why a write tool must not run, or None. A public install is blocked
+    with no usable credential (read-only tier) and with a main account's key
+    (main_key_reason); the operator's install keeps its existing
+    per-function errors."""
     try:
         if not _runtime.is_public():
             return None
-        return None if _has_usable_credential() else READ_ONLY_NO_KEY
+        if not _has_usable_credential():
+            return READ_ONLY_NO_KEY
     except Exception:   # noqa: BLE001 - a broken registry read is "no key"
         return READ_ONLY_NO_KEY
+    return main_key_reason()
 
 
 def coin_listing(coin: str) -> str:

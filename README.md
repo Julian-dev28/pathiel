@@ -6,7 +6,7 @@
 [![pathiel MCP server – quality and maintenance score on Glama](https://glama.ai/mcp/servers/Julian-dev28/pathiel/badges/score.svg)](https://glama.ai/mcp/servers/Julian-dev28/pathiel)
 [![Listed on mcpservers.org](https://mcpservers.org/badge.svg)](https://mcpservers.org/servers/julian-dev28/pathiel)
 [![pathiel MCP on mcprush](https://mcprush.com/badge/pathiel-mcp/score.svg)](https://mcprush.com/to/pathiel-mcp?ref=badge)
-[![Version 0.7.1](https://img.shields.io/badge/version-0.7.1-informational.svg)](https://github.com/Julian-dev28/pathiel/blob/main/CHANGELOG.md)
+[![Version 0.7.2](https://img.shields.io/badge/version-0.7.2-informational.svg)](https://github.com/Julian-dev28/pathiel/blob/main/CHANGELOG.md)
 [![MCP server](https://img.shields.io/badge/MCP-30_tools-6f42c1.svg)](https://github.com/Julian-dev28/pathiel/blob/main/docs/overhaul/MCP.md)
 [![CI](https://github.com/Julian-dev28/pathiel/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Julian-dev28/pathiel/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -144,6 +144,10 @@ reconnect pathiel in `/mcp`.
   `~/.pathiel/.agent-config.json`; nothing raises it for you.
 - **Read-only without a key.** No key, no orders. The API wallet key can
   trade and can never withdraw.
+- **Your main wallet's key never goes in pathiel.** It is the one key that
+  can withdraw. A public install refuses to trade with it, and no pathiel
+  process loads it from the env file. On a Mac, keep it in the Keychain
+  ([how](https://github.com/Julian-dev28/pathiel/blob/main/docs/SECRETS.md#keep-the-master-key-in-the-macos-keychain)).
 - **Testnet when you want it.** `PATHIEL_NETWORK=testnet` in
   `~/.pathiel/.env.local` switches to test funds.
 - **Claude Code asks before each live-money call.** The seven order tools,

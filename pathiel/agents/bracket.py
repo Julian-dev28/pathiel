@@ -454,6 +454,21 @@ def set_stop(coin: str, stop_px: float, ex: Any = None) -> Dict[str, Any]:
             "replaced": [o.get("triggerPx") for o in old], **({"cancel_failed": failed} if failed else {})}
 
 
+def order_cover(order: Dict[str, Any], position_size: float) -> float:
+    """How much of an open position one reduce-only order protects.
+
+    A Hyperliquid position-level TP/SL (the app's "TP/SL for the whole
+    position") rests with isPositionTpsl=true and sz "0.0": size zero means
+    "the whole position, whatever it becomes". 2026-11-16 06:10Z: a hand-placed
+    26.84 Brent long carried exactly that stop and the sweep reported
+    stop_covers 0.0 and "NOT FULLY COVERED", which the tick's hard rule answers
+    with a close. Such an order covers the full position."""
+    sz = float(order.get("sz") or 0)
+    if sz == 0 and order.get("isPositionTpsl"):
+        return abs(float(position_size))
+    return sz
+
+
 def sweep(coin: str, ex: Any = None) -> Dict[str, Any]:
     """One tick of housekeeping for `coin`: cancel reduce-only orders left on a
     flat coin (the sibling of a stop or target that fired), and report whether
@@ -481,17 +496,20 @@ def sweep(coin: str, ex: Any = None) -> Dict[str, Any]:
     orders = _position_protection(ex, orders)
     stops = [o for o in orders if o.get("reduceOnly") and "Stop" in str(o.get("orderType", ""))]
     tps = [o for o in orders if o.get("reduceOnly") and "Take Profit" in str(o.get("orderType", ""))]
-    covered = sum(float(o.get("sz") or 0) for o in stops)
+    covered = sum(order_cover(o, pos) for o in stops)
     consolidated = None
     market_tp = any("Market" in str(o.get("orderType", "")) for o in tps)
-    if covered + 1e-9 >= abs(pos) and (len(stops) > 1 or len(tps) > 1 or market_tp):
+    # Position-level TP/SL already are one pair for the whole position and
+    # resize with it; replacing them would rewrite the operator's own orders.
+    position_tpsl = any(o.get("isPositionTpsl") for o in stops + tps)
+    if covered + 1e-9 >= abs(pos) and not position_tpsl and (len(stops) > 1 or len(tps) > 1 or market_tp):
         # several stops/targets at one price (one per fill): fold into one pair
         consolidated = consolidate_protection(coin, ex=ex)
         if consolidated.get("merged"):
             orders = _position_protection(ex, ex._resting_orders_for_coin(user, coin))
             stops = [o for o in orders if o.get("reduceOnly") and "Stop" in str(o.get("orderType", ""))]
             tps = [o for o in orders if o.get("reduceOnly") and "Take Profit" in str(o.get("orderType", ""))]
-            covered = sum(float(o.get("sz") or 0) for o in stops)
+            covered = sum(order_cover(o, pos) for o in stops)
     return {"coin": coin, "ok": covered + 1e-9 >= abs(pos), "position": pos,
             **({"consolidated": consolidated} if consolidated else {}),
             "stop_px": [o.get("triggerPx") for o in stops], "tp_px": [o.get("triggerPx") for o in tps],
@@ -499,8 +517,14 @@ def sweep(coin: str, ex: Any = None) -> Dict[str, Any]:
             **({} if covered + 1e-9 >= abs(pos) else {"reason": "POSITION NOT FULLY COVERED BY A STOP"})}
 
 
-def close_position(coin: str) -> Dict[str, Any]:
+def close_position(coin: str, fraction: Optional[float] = None) -> Dict[str, Any]:
     """Market-close any open perp position for `coin`.
+
+    fraction (2026-11-15, partial closes): 0 < fraction < 1 closes that share
+    of the position and LEAVES the stop and target in place: they are
+    reduce-only, so on the smaller position they still fire and fill only
+    what is left. None or 1 is the full close, which cancels them. Outside
+    (0, 1] is refused with nothing sent.
 
     Moved out of `pathiel/agents/executor.py` 2026-10-23 (wave 2), trimmed to
     its live-money essentials: the retired executor's DSL tracker lookup
@@ -526,6 +550,15 @@ def close_position(coin: str) -> Dict[str, Any]:
         place_hl_order,
     )
     from pathiel.client.hl_client import fetch_account_state, resolve_user_address
+
+    if fraction is not None:
+        try:
+            fraction = float(fraction)
+        except (TypeError, ValueError):
+            return {"ok": False, "coin": coin, "error": "fraction must be a number in (0, 1]"}
+        if not 0 < fraction <= 1:
+            return {"ok": False, "coin": coin, "error": "fraction must be in (0, 1]: 0.5 closes half"}
+    partial = fraction is not None and fraction < 1
 
     user = resolve_user_address()
     if not user:
@@ -575,15 +608,22 @@ def close_position(coin: str) -> Dict[str, Any]:
     # reduce_only: a close must only FLATTEN. Without it, the $10-min size floor in
     # place_hl_order overshoots a sub-$10 position and flips it to the opposite side
     # (the BIRD short<->long churn loop). reduce_only makes HL ignore the excess.
-    res = place_hl_order(is_buy=not is_long, size=abs(szi), mid_price=mid_price, coin=coin,
+    close_sz = abs(szi) * fraction if partial else abs(szi)
+    res = place_hl_order(is_buy=not is_long, size=close_sz, mid_price=mid_price, coin=coin,
                          reduce_only=True)
     out: Dict[str, Any] = {**res, "coin": coin, "side": side,
                             "entry_px": entry_px, "leverage": leverage}
+    if partial:
+        out["partial"] = True
+        out["fraction"] = fraction
+        out["position_before"] = szi
 
-    if res.get("ok"):
+    if res.get("ok") and not partial:
         # Cancel the now-stranded reduce-only SL/TP trigger bracket so stale
         # orders don't pile up and reject a future reduce-only order on this coin.
+        # Never on a partial close: those orders protect what is left.
         cancel_open_orders_for_coin(coin)
+    if res.get("ok"):
         fill_px = res.get("avg_px")
         if fill_px and entry_px > 0:
             # Spot move from the perspective of the position: long earns when

@@ -46,9 +46,44 @@ def env_file_candidates(root: str = ROOT) -> List[str]:
     return out
 
 
-def load_env_local(root: str = ROOT) -> Optional[str]:
+# Keys that can move money out of the account (Hyperliquid lets the master
+# wallet withdraw; an API wallet can only trade). The shared loader never puts
+# them in a process's environment, so the MCP server, the dashboard, every
+# desk script and every model subprocess run without them: a prompt-injected
+# agent or a leaked environment can reach trading keys at most, never a
+# withdrawal key. The scripts that need one (treasury.py, approve_api_wallet.py,
+# approve_builder_fee.py) ask for it with allow_withdraw_keys=True, or at a
+# hidden prompt. Added 2026-11-15.
+WITHDRAW_KEYS = frozenset({"HYPERLIQUID_MASTER_PRIVATE_KEY"})
+
+
+def withdraw_keys_in_file(root: str = ROOT) -> List[str]:
+    """Names of WITHDRAW_KEYS set (non-empty) in the env file load_env_local
+    would read. Names only; a value is never returned. The status check uses
+    this because the loader no longer puts those keys in os.environ."""
+    for path in env_file_candidates(root):
+        if not os.path.isfile(path):
+            continue
+        found = []
+        try:
+            with open(path) as fh:
+                for line in fh:
+                    line = line.strip()
+                    if line and not line.startswith("#") and "=" in line:
+                        key, _, value = line.partition("=")
+                        if key.strip() in WITHDRAW_KEYS and value.strip():
+                            found.append(key.strip())
+        except OSError:
+            return []
+        return found
+    return []
+
+
+def load_env_local(root: str = ROOT, allow_withdraw_keys: bool = False) -> Optional[str]:
     """Populate os.environ from the first env file that exists, without
     overriding a real env var. Returns the path loaded, or None.
+
+    WITHDRAW_KEYS are skipped unless allow_withdraw_keys is True.
 
     Must run BEFORE anything resolves a state path, or a script reads an empty
     directory and reports it as an empty system.
@@ -63,6 +98,8 @@ def load_env_local(root: str = ROOT) -> Optional[str]:
                     if not line or line.startswith("#") or "=" not in line:
                         continue
                     key, _, value = line.partition("=")
+                    if key.strip() in WITHDRAW_KEYS and not allow_withdraw_keys:
+                        continue
                     os.environ.setdefault(key.strip(), value.strip())
         except OSError:
             return None
