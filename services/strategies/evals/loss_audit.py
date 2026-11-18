@@ -137,13 +137,18 @@ def reconstruct_trades(fills: Iterable[Dict[str, Any]], coins: Sequence[str] = C
                   "entry_time": int(f["time"]), "first_oid": f.get("oid"), "open_sz": 0.0, "open_ntl": 0.0,
                   "first_sz": 0.0, "first_ntl": 0.0, "close_sz": 0.0, "close_ntl": 0.0, "closed_pnl": 0.0,
                   "fees": 0.0, "max_size": 0.0, "adds": 0, "close_oids": [], "exit_time": None,
-                  "last_open_time": int(f["time"])}
+                  "last_open_time": int(f["time"]), "fills_open": []}
             open_by_coin[coin] = tr
         opening = abs(after) > abs(start) + 1e-12
         if opening:
             tr["last_open_time"] = int(f["time"])
             tr["open_sz"] += sz
             tr["open_ntl"] += sz * px
+            # every opening fill of this trade (entry + top-ups), for
+            # services/review's ownership tag (pathiel.agents.ownership.
+            # is_desk_owned) -- additive, nothing downstream reads the
+            # trade dict's other keys any differently for carrying it.
+            tr["fills_open"].append(f)
             if f.get("oid") == tr["first_oid"]:
                 tr["first_sz"] += sz
                 tr["first_ntl"] += sz * px
