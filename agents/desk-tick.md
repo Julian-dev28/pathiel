@@ -121,23 +121,43 @@ ToolSearch call: `select:mcp__pathiel__get_desk_brief,mcp__pathiel__sweep_bracke
      entry: that is chasing. A resting top-up is re-judged each tick like
      any resting entry (within one ATR of the mid or on a structural edge,
      else cancel).
-   - **Flat with a resting entry on COIN:** keep it if `--check` still
-     passes AND the entry is within one ATR14 of the mid or still on a
-     current structural edge (within 0.25 ATR of the 8h or 24h range low
-     for a long, high for a short). Otherwise `cancel_order {order_id, coin}`
-     and fall through.
+   - **Flat with a resting entry on COIN:** first the blackout check
+     (operator, 2026-11-18, below): `"${CLAUDE_PLUGIN_ROOT}/scripts/pathiel-py" scripts/resting_blackout.py
+     --coin COIN --side SIDE`. `blocked: true`: `cancel_order {order_id,
+     coin}`, `sweep_brackets`, log `action=CANCELLED <reason>`, and STOP --
+     do not re-rest in the same tick even if a `rest` is on offer; the rule
+     re-applies next tick, once the window has passed (place_bracket would
+     refuse a re-rest into the window anyway). An order the desk did not
+     place is the operator's hand trade: this whole bullet, blackout check
+     included, acts on the ONE resting entry a flat coin can carry
+     (`place_bracket` refuses a second), and only ever cancels it when the
+     checks below say to -- never on a guess about whose it is.
+     `blocked: false`: run `"${CLAUDE_PLUGIN_ROOT}/scripts/pathiel-py" scripts/oil_levels.py --coin COIN --next
+     SIDE --thesis-entry ENTRY` (same call as the flat/nothing-resting
+     bullet) and decide with `next_trade.resting_entry_action({"px":
+     <the resting entry's limitPx from sweep_brackets>, "side": SIDE},
+     SIDE, next["rest"])`:
+       - `action: "keep"` (the resting price still equals `rest["entry_px"]`
+         within its tolerance and the thesis side has not flipped): do
+         nothing, log `action=HOLD resting <side> limit <px>`.
+       - `action: "cancel"` (`rest` is `None`: price reached the trigger
+         already, a break, a chase, or the thesis went flat): `cancel_order`,
+         `sweep_brackets`, then fall through to the next bullet (a market
+         entry may now apply).
+       - `action: "cancel_and_rest"` (the level moved or the thesis side
+         flipped): `cancel_order`, `sweep_brackets`, then place the new
+         `rest` in THIS tick exactly like the bullet below (dry-run first),
+         log `action=PLACED resting <side> limit <px>` with the old price in
+         the reason.
    - **Flat, slot free, nothing resting:** one MARKET entry in the thesis
-     direction. The levels script answers it, rules below included:
+     direction when the mid already qualifies, else (2026-11-18) a resting
+     limit at the trigger.
      `"${CLAUDE_PLUGIN_ROOT}/scripts/pathiel-py" scripts/oil_levels.py --coin COIN --next SIDE --thesis-entry ENTRY --risk-lev L`
      (gold: add `--max-lev 25`; L is the `max_leverage` that `get_risk_limits`
-     reports; SIDE and ENTRY are the brief's call). When
-     it says `ok: true`, dry-run `place_bracket` with its `place_bracket`
-     object exactly (`coin`, `stop_px`, `tp_px`; no `entry_px`, no
-     `leverage`): `tp_px` there is the structural target, `place_bracket`
-     offsets it itself. `ok: false`: no trade, its `verdict` or first
-     `blockers` entry is the reason. The rules it applies, the main one
-     sized off the 24h range (operator, 2026-10-30: "switch it",
-     the strategy sweep's winner; it replaced resting a limit at the 8h
+     reports; SIDE and ENTRY are the brief's call). The
+     rules it applies, the main one sized off the 24h range (operator,
+     2026-10-30: "switch it", the strategy sweep's winner; it replaced
+     resting a limit at the 8h
      edge):
        - **Stop:** 0.75 beyond the 24h low for a long (24h high for a
          short), or 0.75 beyond the mid if price already trades through
@@ -163,13 +183,28 @@ ToolSearch call: `select:mcp__pathiel__get_desk_brief,mcp__pathiel__sweep_bracke
          the reason. When price trades back inside the range the rule
          above applies again. The silver breakout entry that sold such
          breaks is off (`next_trade.BREAKOUT_COINS` is empty).
-     Judge it first: `place_bracket {coin, stop_px, tp_px, dry_run: true}`
-     (no `entry_px` = market at the live mid). Only when the dry run says
-     ok (2R or more on the offset target, the liquidation line passes at
-     the leverage it fitted), send the
-     same call without `dry_run`. Let the tool size it. Most ticks the mid
-     sits too high in the range to pay 2R: no trade, one clause why
-     ("pays 1.4R at 111.40", "mid above thesis entry").
+     When it says `ok: true`, judge it first: `place_bracket {coin, stop_px,
+     tp_px, dry_run: true}` (no `entry_px` = market at the live mid; `tp_px`
+     there is the structural target, `place_bracket` offsets it itself, no
+     `leverage`: let the tool fit it). Only when the dry run says ok (2R or
+     more on the offset target, the liquidation line passes at
+     the leverage it fitted), send the same call without `dry_run`; let the tool size it.
+     `ok: false` with a `rest` object present (operator, 2026-11-18: "yeah"
+     -- the mid has not reached the trigger yet, everything else about the
+     call already passes): first the blackout check,
+     `"${CLAUDE_PLUGIN_ROOT}/scripts/pathiel-py" scripts/resting_blackout.py --coin COIN --side SIDE`;
+     `blocked: true` means do not rest this tick, log `action=NONE <reason>`
+     and stop.
+     `blocked: false`: dry-run `place_bracket` with `rest`'s object exactly
+     (`coin`, `entry_px`, `stop_px`, `tp_px`; `tp_px` is again the
+     structural target, place_bracket offsets it itself). When the dry run
+     says ok, send the same call without `dry_run` -- it rests as a limit
+     order at `entry_px` instead of filling at market, so a touch between
+     ticks fills it. Log `action=PLACED resting <side> limit <px>`.
+     `ok: false` with no `rest` (a break, a chase, the entry delay, or
+     price already past the target): no trade, its `verdict` or first
+     `blockers` entry is the reason ("pays 1.4R at 111.40", "mid above
+     thesis entry").
 6. **Log.** Append one line to `/tmp/oil-loop/progress.log` (create the
    directory if needed) and print it:
    `DESK-TICK DESK <utc> coin=<COIN> mid=<mid> pos=<size@entry or flat> action=<HOLD|PLACED|CANCELLED|CLOSED|NONE> <reason, under 15 words>`
@@ -177,7 +212,19 @@ ToolSearch call: `select:mcp__pathiel__get_desk_brief,mcp__pathiel__sweep_bracke
 ## Hard rules
 
 - A market entry only when `--check` with the live mid as ENTRY passes
-  (`--next` runs that same check; its `ok: true` is the pass).
+  (`--next` runs that same check; its `ok: true` is the pass). A RESTING
+  entry (operator, 2026-11-18: "yeah") only at the exact price `--next`'s
+  `rest.entry_px` names, never hand-picked, and never while
+  `scripts/resting_blackout.py` says `blocked: true`.
+- **A resting entry the desk did not itself place is the operator's hand
+  trade; never cancel it.** The desk only ever cancels the ONE resting
+  entry a flat coin can carry (`place_bracket` refuses a second) when one
+  of the checks above says to (the blackout check, or
+  `resting_entry_action` returning `"cancel"`/`"cancel_and_rest"`) -- it
+  never cancels on a guess about whose order is resting, and the price/side
+  match those checks require is itself the guard: an order that still
+  matches the live rule's own level and side is read exactly the same way
+  whether the desk rested it last tick or the operator placed it by hand.
 - Never widen a stop. One position per desk (per account when no desk
   shares are saved).
 - If `place_bracket` or `sweep_brackets` is missing from the tool list, do

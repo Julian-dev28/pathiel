@@ -25,6 +25,32 @@ Since 2026-11-05 the desk is flat over the oil futures weekend (Fri 16:00 to
 Sun 18:00 New York): no new entry inside it, an open position closed at the
 window open (`services/strategies/weekend.py`).
 
+## 2026-11-18: resting at the market rule's own trigger
+
+Operator ("yeah"): when the desk is flat and the live rule would enter
+except that the mid has not reached its trigger yet (the brief's "waits for
+a sell at X" line), REST that exact bracket as a limit order now instead of
+waiting for the next 15-minute tick to catch the mid at the level. Same
+entry, stop, target, sizing and 2R gate as the market entry below would
+place once the mid got there -- only the mechanism changes, so a touch
+between ticks fills it instead of being missed between two sampled ticks.
+
+**This is not the pre-2026-10-30 resting limit coming back.** The old rule
+(table below) rested at the 8-hour range's own edge -- a fixed structural
+level, unrelated to R. This one rests at the price `next_trade`'s 24h-range
+rule itself computes as the furthest entry that still pays the minimum
+2R (`trigger_px`): the same number the market-entry branch already judges
+every tick, just placed early instead of waited for. `next_trade.next_trade`
+emits it as a `rest` object only when distance is the one thing blocking a
+trade right now (no break, no chase, the trigger's own leverage line
+passes); `services/strategies/next_trade.resting_entry_action` decides
+whether to keep, cancel or re-rest it each tick as the level moves, and
+`services/strategies/event_blackout.resting_entry_blackout` cancels it
+ahead of a blackout window so a touch cannot fill it inside one. See
+`.claude/agents/desk-tick.md` step 5 for the exact procedure and
+`services/strategies/evals/rest_at_trigger_eval.py` for the real-candle
+comparison against market-only entries.
+
 ## The two rule sets
 
 | Rule | Old (until 2026-10-30) | New (from 2026-10-30) | Where it lives |
@@ -52,6 +78,7 @@ Every change was backtested before it went live (operator rule since
 
 | Date | Change | Why |
 |---|---|---|
+| 2026-11-18 | **Live: rest the trigger.** Flat with nothing resting and the live rule blocked on distance alone (no break, no chase, the trigger's own leverage line passes): REST that exact bracket as a limit order at `next_trade`'s trigger instead of waiting for a 15-minute tick to catch a touch there. Same entry, stop, target, sizing and 2R gate; only the mechanism changes. Not the pre-2026-10-30 8h-edge limit: this rests at the MARKET RULE's own trigger level (the 24h-range/2R price), not a fixed structural edge. A resting entry is cancelled ahead of a blackout window (EIA, the oil weekend, a scheduled event, a headline hold) and re-rested once it ends; kept while it still equals the live rule's own level and the thesis side has not flipped, else cancelled and re-rested at the new level in the same tick (`next_trade.resting_entry_action`, replacing the old "within one ATR or on a structural edge" test) | Operator: "yeah". **The 30-day replay says this is worse, plainly**: `services/strategies/evals/rest_at_trigger_eval.py` against the journaled oil theses and real xyz:BRENTOIL 15m candles (2026-10-19 to 2026-11-18) scores market-only 11 trades / 6 wins / net +8.73R vs resting-at-trigger 12 trades / 5 wins / net +3.89R -- about 55% less R over the same month, same thesis calls. Two causes, both visible in the trade log: resting fills AT the trigger, so every win is capped near exactly 2.0R where the market-tick path sometimes caught a lower (more favorable) sampled price after the move kept going (~0.7R given up across the four shared winners); and resting is exposed to a touch that reverses inside one 15m bar, which the coarser tick sampling filters out for free (two extra noise stop-outs, -1R each, one of which pre-empted the position state so the desk missed the real +2.18R move that followed 2 hours later). No blackout-window fill occurred in this real window either way (too rare at 30 days to observe live); the cancel rule's effect is proven on synthetic candles instead (`services/strategies/tests/test_rest_at_trigger_eval.py`). Shipped anyway on the operator's explicit call; this result is the thing to watch in the next trade review |
 | 2026-11-05 | **Live: weekend flat.** No new Brent/WTI entry or top-up inside the oil futures weekend (Fri 16:00 to Sun 18:00 New York: Fri 21:00Z to Sun 23:00Z in US winter, an hour earlier in summer), and an open oil position is closed at the window open (the desk-tick agent, within one 15-minute tick; `trigger_watch.py` wakes the tick at the open when it holds one). Stop and target otherwise untouched; silver and gold unchanged | Operator: "weekend flat". `BRENT_STOP_BUFFER_TEST` study B rerun 2026-11-05 at 6% risk (`/tmp/brent-buffer-6pct/report.json`): `wk_flat` beat live on 5 of 8 Brent datasets, lost 1 (always_short replay), geo 1.033, plateau, verdict adopt. On the two thesis datasets (live journal, 30 replayed theses) it ties live exactly: no journaled trade was open at a window start, so this is insurance against the Monday gap on weekend headlines (Hyperliquid trades 24/7, CME is shut), not a measured thesis edge. It helps on the controls (+12 to +18 points: always_long replay 153.6% vs 138.0%, daily_sign replay 80.5% vs 62.2%, always_long 30d 50.7% vs 38.6%, daily_sign 30d 30.6% vs 20.0%) and loses on always_short replay (-52.6% vs -48.4%). Silver was worse with it (0 of 3, geo 0.80; not adopted), gold untested. `services/strategies/weekend.py` (one window for the live gate and the sim, pinned minute by minute by `test_weekend.py`), `event_blackout` order EIA > weekend > scheduled > headline, `place_bracket` refuses "Weekend flat: ...", `scripts/weekend.py` tells the agent when to close, `desk_tick_sim.live_params()` carries `weekend_off="flatten"`; replays of earlier trades use `live_params_before_weekend_flat()` |
 | 2026-11-04 | **Live: Brent leverage fit.** A new Brent entry whose stop is too far for 20x trades at 15x instead of being skipped; never lower than 15x. Trades that fit 20x stay 20x; the stop, target and the 15% risk cap are unchanged; top-ups never refit; silver unchanged | Operator: "TURN ON LEVERAGE FIT" after `FINAL_STRATEGY_TEST_2026-11-04.md`: `lev_fit_eia` beat live on 4 of 4 thesis datasets (journal $154 vs $118, Oct $70 vs $58, Sept -$5 vs -$34, chain +$60 vs -$8) with drawdown no worse. The test's candidates were 20/15/10/8/5 but it never used anything under 15x, so the live 20/15 set trades identically on that data; the operator wants nothing lower. `next_trade.fit_leverage` / `LEVERAGE_FIT`, used by place_bracket, the desk brief (live rule and Your size) and trigger_watch |
 | 2026-11-03 | **Live: EIA blackout.** No new Brent/WTI entry or top-up from 2h before to 2h after the weekly EIA report (Wed 10:30 ET; Thu 12:00 ET in a federal-holiday week). Open positions, stops, targets and closes untouched | Operator: "DO THIS THEN" to `eia_2_2` (`OIL_EVENT_TIMING_TEST_2026-11-03.md`): beat live on 5 of 9 datasets, tied 4, never lost. `services/strategies/event_blackout.py` (same calendar and window as the backtest, pinned by `test_live_window_is_exactly_the_backtested_eia_2_2`); `place_bracket` refuses inside the window, the desk brief's live-rule line shows it, `trigger_watch.py` does not wake a tick for it. Resting limit entries placed before a window are not cancelled by it |

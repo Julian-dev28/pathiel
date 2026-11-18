@@ -113,6 +113,7 @@ ENTRY_SCRIPTS = (
     "scripts/oil_levels.py",         # desk-tick
     "scripts/signer_check.py",       # desk-tick
     "scripts/weekend.py",            # desk-tick
+    "scripts/resting_blackout.py",   # desk-tick (rest at the trigger, 2026-11-18)
 )
 
 # Scripts the skills mention that are the maintainer's tools, not the plugin's:

@@ -87,9 +87,12 @@ AGENT_RULES = (
     ("the 20x line passes at the\n     leverage it fitted",
      "the liquidation line passes at\n     the leverage it fitted", 1),
     ("`python3 scripts/desk_slot.py", f"`{PY} scripts/desk_slot.py", 1),
-    ("`python3 scripts/oil_levels.py", f"`{PY} scripts/oil_levels.py", 3),
+    # 2026-11-18 (rest at the trigger): a 4th call, re-judging a resting entry.
+    ("`python3 scripts/oil_levels.py", f"`{PY} scripts/oil_levels.py", 4),
     ("`python3 scripts/thesis_due.py", f"`{PY} scripts/thesis_due.py", 1),
     ("`python3 scripts/weekend.py", f"`{PY} scripts/weekend.py", 1),
+    # 2026-11-18 (rest at the trigger): the resting-entry blackout check.
+    ("`python3 scripts/resting_blackout.py", f"`{PY} scripts/resting_blackout.py", 2),
     ("`python3 scripts/signer_check.py", f"`{PY} scripts/signer_check.py", 1),
     ("Work from the repo root: the working\ndirectory you are given is the pathiel checkout.",
      "The scripts below run through the plugin's own Python from the plugin\nroot; no checkout is needed.", 1),
