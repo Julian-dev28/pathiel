@@ -77,7 +77,14 @@ ToolSearch call: `select:mcp__pathiel__get_desk_brief,mcp__pathiel__sweep_bracke
    rewrite, read the brief again.
 2. **Housekeeping.** `sweep_brackets {coin: COIN}`. Cancels the sibling left
    after a stop or target fired; reports a resting entry with its attached
-   stop and target; says whether an open position is covered. "NOT FULLY
+   stop and target; says whether an open position is covered. A reply
+   carrying `operator_position: true` is the operator's own hand-placed
+   trade, placed outside this loop (2026-11-17 23:25Z: a tick closed one
+   because it read uncovered -- never again): HOLD regardless of cover,
+   log `action=HOLD UNCOVERED operator trade` (covered: `COVERED operator
+   trade`) with its `position`, `entry_px` and `liq_px` from the reply, and
+   do nothing else this tick on it -- no `close_position`, `set_stop`,
+   `set_target` or top-up. Otherwise (the desk's own position), "NOT FULLY
    COVERED" means a leveraged position is naked: `close_position` it in the
    same tick, sweep again, and say so in your report.
 3. **Levels.** `"${CLAUDE_PLUGIN_ROOT}/scripts/pathiel-py" scripts/oil_levels.py --coin COIN`: mid, last closed
