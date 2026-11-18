@@ -191,7 +191,10 @@ def test_check_position_ownership_flat_coin_is_flat_and_desk_owned():
     assert info["flat"] is True and info["desk_owned"] is True
 
 
-def test_check_position_ownership_no_user_is_flat_and_desk_owned():
+def test_check_position_ownership_no_user_is_flat_and_desk_owned(monkeypatch):
+    # Hermetic: a checkout with a configured wallet would otherwise resolve
+    # the real address and reach the venue.
+    monkeypatch.setattr("pathiel.client.hl_client.resolve_user_address", lambda: "")
     info = O.check_position_ownership(COIN, user="")
     assert info["flat"] is True and info["desk_owned"] is True and info["read_failed"] is True
 
@@ -240,3 +243,14 @@ def test_check_position_ownership_fills_read_failure_refuses(tmp_path, monkeypat
     info = O.check_position_ownership(COIN, user="0xabc", fetch_state=lambda user, include_hip3: state,
                                       fetch_fills=boom)
     assert info["flat"] is False and info["desk_owned"] is False
+
+
+def test_journal_fallback_matches_project_state_dir(monkeypatch):
+    """With PATHIEL_STATE_DIR unset the journal lands in the project root,
+    the directory pathiel/state.py uses for every other state file."""
+    import os as _os
+    import pathiel.state as st
+    from pathiel.agents import ownership as own
+    monkeypatch.delenv("PATHIEL_STATE_DIR", raising=False)
+    root = _os.path.dirname(_os.path.dirname(_os.path.abspath(st.__file__)))
+    assert own.journal_path() == _os.path.join(root, own.JOURNAL_FILE)

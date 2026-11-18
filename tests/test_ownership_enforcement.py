@@ -210,6 +210,10 @@ def test_place_bracket_without_add_is_unaffected_by_an_operator_position(operato
         raise AssertionError(f"test tried to make a real {method} request to {url}")
 
     monkeypatch.setattr(requests.sessions.Session, "request", _boom)
+    # Hermetic: a checkout with a configured wallet would otherwise resolve
+    # the real address and read the venue during sizing.
+    monkeypatch.setattr("pathiel.client.hl_client.resolve_user_address", lambda: "")
+    monkeypatch.setattr("pathiel.client.exchange.resolve_user_address", lambda: "")
     _, body = _call("place_bracket", {"coin": COIN, "stop_px": 89.0, "tp_px": 95.0, "dry_run": True})
     assert "operator_position" not in body
 

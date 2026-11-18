@@ -58,8 +58,11 @@ JOURNAL_FILE = "ownership_journal.jsonl"
 # `pathiel.state.state_file()` is frozen to one path for the whole pytest
 # session (tests/conftest.py sets it before collection) and is the wrong
 # tool for a file tests write to repeatedly.
-_FALLBACK_STATE_DIR = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".state")
+# The fallback is the project root, the same directory pathiel/state.py
+# uses for every other state file, so the journal sits beside them when
+# PATHIEL_STATE_DIR is unset (a "pathiel/.state" fallback would split it off).
+_FALLBACK_STATE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(
+    os.path.abspath(__file__))))
 
 # How far back fills are read to explain a CURRENTLY open position. A
 # position older than this with no flat in between reports as not

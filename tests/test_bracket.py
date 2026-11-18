@@ -20,6 +20,19 @@ COIN = "xyz:BRENTOIL"
 
 
 @pytest.fixture(autouse=True)
+def _held_position_is_the_desks(monkeypatch):
+    """place_bracket(add=True) first checks the held position is the desk's
+    own (pathiel/agents/ownership.py, 2026-11-18), which reads the venue.
+    These tests are about bracket sizing and placement, so every held
+    position here is the desk's; refusal of an operator position is tested
+    in tests/test_ownership_enforcement.py."""
+    from pathiel.agents import ownership
+    monkeypatch.setattr(ownership, "check_position_ownership",
+                        lambda coin, **kw: {"coin": coin, "flat": False, "desk_owned": True,
+                                            "size": None, "entry_px": None, "leverage": None})
+
+
+@pytest.fixture(autouse=True)
 def _no_target_offset(monkeypatch):
     """Most tests here pin stacking, leverage, sizing and wiring on tight
     hand-made setups; the 0.5% target offset has its own tests below."""
