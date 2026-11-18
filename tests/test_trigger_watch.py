@@ -100,6 +100,35 @@ def test_a_desk_that_holds_something_or_just_fired_is_skipped(monkeypatch, tmp_p
     assert "cooling down" in capsys.readouterr().out
 
 
+def test_a_desk_resting_entry_at_the_trigger_skips_the_entry_wake(monkeypatch, tmp_path, capsys):
+    """2026-11-18: once the tick rests a bracket AT the trigger, the account
+    carries a resting entry on the desk's own coin -- `slot_view` (scripts/
+    desk_slot.py) already counts any resting entry as holding the slot, so
+    the per-minute entry-rule check (`evaluate`) is skipped exactly like a
+    held position: the tick (not the watcher) manages a resting order from
+    here. The mid used (112.04) is the one that fires in
+    `test_watch_waits_then_fires_once_and_exits` when nothing is resting,
+    proving this is the slot check, not a coincidence of the price."""
+    _stub(monkeypatch, tmp_path, [112.04], held="holds resting_entry on xyz:BRENTOIL")
+    W.watch(once=True, cooldown_min=30, clock=lambda: 1000.0)
+    out = capsys.readouterr().out
+    assert "holds resting_entry on xyz:BRENTOIL (tick handles it)" in out and '"fire"' not in out
+
+
+def test_a_headline_still_wakes_the_desk_despite_its_own_resting_entry(monkeypatch, tmp_path, capsys):
+    """The entry-rule wake is skipped while a resting entry sits at the
+    trigger (above), but a surprise headline must still wake the tick: the
+    headline step runs before the per-desk slot check and never reads
+    `held` at all."""
+    from services.intel import headline_watch as HW
+    HW.save_state({"seen": [], "last_news_s": 0.0, "odds": {}}, str(tmp_path / "headline_state.json"))
+    _stub(monkeypatch, tmp_path, [112.04], held="holds resting_entry on xyz:BRENTOIL",
+          news=[_news("US strikes Iran's Qeshm Island", 1000.0)])
+    assert W.watch(once=False, cooldown_min=30, clock=lambda: 1000.0) == 0
+    line = json.loads(capsys.readouterr().out.strip())
+    assert line["fire"] == "oil" and line["reason"] == "headline"
+
+
 # ── the headline step (operator, 2026-11-05: "FIX THEM") ────────────────────
 
 def _news(title, now_s):

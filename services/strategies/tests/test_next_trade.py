@@ -262,3 +262,155 @@ def test_the_placeholder_page_escapes_what_it_echoes():
     page = strategies_api._render_or_placeholder("no-such-template.html", "Desk: <script>x</script>",
                                                   "body <b>&</b>").body.decode()
     assert "<script>" not in page and "&lt;script&gt;" in page and "&amp;" in page
+
+
+# ── rest at the trigger (operator, 2026-11-18: "yeah") ──────────────────────
+# "Flat, slot free: a short waits 91.22" instead of waiting for a 15-minute
+# tick to catch a touch at the level, REST that exact bracket as a limit
+# order now. Same entry, stop, target, sizing and 2R gate; only the
+# mechanism changes.
+
+def test_distance_only_block_emits_a_rest_at_the_trigger():
+    """The 10:08Z tick (test above): blocked on R alone at the current mid,
+    everything else (side, no-break, never-chase) clear, and the trigger's
+    own leverage line passes once Brent's leverage fit is on. `rest` is the
+    exact bracket place_bracket takes to rest there."""
+    from services.strategies.next_trade import LEVERAGE_FIT
+    fitted = next_trade("long", 113.135, 109.01, 114.07, thesis_entry=113.87, leverage=20,
+                        coin_max_leverage=20, stop_buffer=0.75, leverage_fit=LEVERAGE_FIT)
+    assert not fitted["ok"] and fitted["trigger_leverage_ok"] is True
+    assert fitted["rest"] == {"entry_px": pytest.approx(110.0066, abs=1e-3), "stop_px": 108.26,
+                              "tp_px": 114.07}
+    # tp_px is the STRUCTURAL target (114.07), not the offset 113.4997: place_bracket
+    # applies TARGET_OFFSET_FRAC itself, exactly like the market-entry place_bracket object.
+    assert fitted["rest"]["tp_px"] == fitted["structure_tp_px"]
+    assert fitted["rest"]["entry_px"] == fitted["trigger_px"]
+    assert fitted["rest"]["stop_px"] == fitted["stop_px"]
+
+
+def test_no_rest_without_the_trigger_leverage_fit():
+    """Without leverage_fit, 20x fails at the trigger (max 17x): the current
+    mid's own 'stop too wide' blocker is irrelevant (it never checks the
+    mid), but the trigger's OWN leverage line failing withholds the rest."""
+    n = _nt(113.135)
+    assert not n["ok"] and n["trigger_leverage_ok"] is False
+    assert n["rest"] is None
+
+
+def test_never_chase_never_rests():
+    n = _nt(111.30, low=111.03, entry=111.20)
+    assert not n["ok"] and n["rest"] is None
+
+
+def test_no_entry_after_a_break_never_rests():
+    n = next_trade("long", 108.0, 109.01, 114.07, thesis_entry=None, leverage=20,
+                   coin_max_leverage=20, stop_buffer=0.75)
+    assert not n["ok"] and any("no entry after a break" in b for b in n["blockers"]) and n["rest"] is None
+
+
+def test_past_the_target_never_rests():
+    """Nothing left to buy into: no trigger_px at all, so no rest either."""
+    n = next_trade("long", 115.0, 109.01, 114.07, thesis_entry=None, leverage=20,
+                   coin_max_leverage=20, stop_buffer=0.75)
+    assert not n["ok"] and "nothing to buy into" in n["reason"] and n.get("rest") is None
+
+
+def test_a_flat_or_missing_leverage_thesis_never_rests():
+    assert next_trade("flat", 112.0, 109.0, 114.0, thesis_entry=None, leverage=20,
+                      coin_max_leverage=20, stop_buffer=0.75).get("rest") is None
+    assert next_trade("long", 112.0, 109.0, 114.0, thesis_entry=None, leverage=20,
+                      coin_max_leverage=None, stop_buffer=0.75).get("rest") is None
+
+
+def test_rest_mirrors_on_a_short():
+    """Mid 110.0 sits low in the range: far from the target (109.01), so a
+    short pays little R there and waits for a higher mid (the mirror of the
+    long case, which waits for a lower one)."""
+    from services.strategies.next_trade import LEVERAGE_FIT
+    n = next_trade("short", 110.0, 109.01, 114.07, thesis_entry=109.5, leverage=20,
+                   coin_max_leverage=20, stop_buffer=0.75, leverage_fit=LEVERAGE_FIT)
+    assert not n["ok"] and n["rest"] is not None and n["r_now"] < 2.0
+    assert n["rest"]["entry_px"] == n["trigger_px"] == pytest.approx(113.065017, abs=1e-5)
+    assert n["rest"]["entry_px"] >= 109.5                          # never sells below the thesis entry
+    assert n["rest"]["stop_px"] > n["rest"]["entry_px"]            # a short's stop sits above entry
+    assert n["rest"]["tp_px"] == 109.01                            # structural, not the offset target
+
+
+def test_already_tradeable_now_never_rests():
+    """Once the live rule would already fire at market, there is nothing to
+    rest: `ok` is True and `rest` stays None (place_bracket gets the market
+    call, not a limit)."""
+    n = _nt(111.30, low=111.03)
+    assert n["ok"] is True and n["rest"] is None
+
+
+def test_the_entry_delay_suppresses_a_rest_too():
+    """2026-11-13's entry delay (off by default): while a thesis is too
+    young to trade, it must not sit resting at the trigger either -- reaching
+    the trigger price would still not make it tradable."""
+    from services.strategies.next_trade import LEVERAGE_FIT
+    kw = dict(thesis_entry=113.87, leverage=20, coin_max_leverage=20, stop_buffer=0.75,
+              leverage_fit=LEVERAGE_FIT)
+    without_delay = next_trade("long", 113.135, 109.01, 114.07, **kw)
+    assert without_delay["rest"] is not None
+    with_delay = next_trade("long", 113.135, 109.01, 114.07, thesis_age_min=5.0, entry_delay_min=120.0, **kw)
+    assert with_delay["ok"] is False and with_delay["rest"] is None
+    assert with_delay["entry_delay"]["blocked"] is True
+
+
+def test_rest_price_is_stable_across_repeated_calls():
+    """The same inputs must reproduce the exact same rest level every time
+    (the keep/cancel rule below trusts this): no hidden clock or RNG."""
+    from services.strategies.next_trade import LEVERAGE_FIT
+    kw = dict(thesis_entry=113.87, leverage=20, coin_max_leverage=20, stop_buffer=0.75,
+              leverage_fit=LEVERAGE_FIT)
+    a = next_trade("long", 113.135, 109.01, 114.07, **kw)["rest"]
+    b = next_trade("long", 113.135, 109.01, 114.07, **kw)["rest"]
+    assert a == b
+
+
+# ── keep / cancel / re-rest a desk's own resting entry (2026-11-18) ─────────
+
+def test_keep_the_resting_entry_at_the_same_level_and_side():
+    from services.strategies.next_trade import resting_entry_action
+    rest = {"entry_px": 110.00655, "stop_px": 108.26, "tp_px": 114.07}
+    out = resting_entry_action({"px": 110.00655, "side": "long"}, "long", rest)
+    assert out == {"action": "keep", "reason": "still the live rule's trigger"}
+    # within the float-rounding tolerance, not just an exact match
+    close = resting_entry_action({"px": 110.00660, "side": "long"}, "long", rest)
+    assert close["action"] == "keep"
+
+
+def test_cancel_and_rerest_when_the_trigger_moved():
+    from services.strategies.next_trade import resting_entry_action
+    old = {"px": 110.00655, "side": "long"}
+    new_rest = {"entry_px": 109.50, "stop_px": 108.26, "tp_px": 114.07}        # the 24h range shifted
+    out = resting_entry_action(old, "long", new_rest)
+    assert out["action"] == "cancel_and_rest" and out["rest"] == new_rest
+    assert "trigger moved" in out["reason"]
+
+
+def test_cancel_and_rerest_when_the_thesis_side_flips():
+    from services.strategies.next_trade import resting_entry_action
+    old = {"px": 110.00655, "side": "long"}
+    short_rest = {"entry_px": 113.00, "stop_px": 114.82, "tp_px": 109.01}
+    out = resting_entry_action(old, "short", short_rest)
+    assert out["action"] == "cancel_and_rest" and out["rest"] == short_rest
+    assert "re-rest" in out["reason"]
+
+
+def test_cancel_with_no_rerest_when_the_rule_offers_nothing():
+    from services.strategies.next_trade import resting_entry_action
+    out = resting_entry_action({"px": 110.00655, "side": "long"}, "long", None)
+    assert out == {"action": "cancel", "reason": "the live rule no longer offers a resting entry here"}
+
+
+def test_the_tolerance_is_tight_enough_to_catch_a_real_range_move():
+    """A one-cent move on Brent must still trigger cancel_and_rest: the
+    tolerance is float-rounding only, never wide enough to paper over a
+    genuine (if small) change in the 24h range or ATR."""
+    from services.strategies.next_trade import RESTING_LEVEL_TOLERANCE, resting_entry_action
+    assert RESTING_LEVEL_TOLERANCE < 0.01
+    rest = {"entry_px": 110.01, "stop_px": 108.26, "tp_px": 114.07}
+    out = resting_entry_action({"px": 110.00, "side": "long"}, "long", rest)
+    assert out["action"] == "cancel_and_rest"

@@ -12,7 +12,13 @@ the model never eyeballs ranges or does R arithmetic in its head:
 (services/strategies/next_trade.next_trade: the 24h-range rule, leverage
 fit, and the breakout entry where a coin has one) plus, when it trades now, the exact
 `place_bracket` arguments: `tp_px` is the STRUCTURAL target, because
-place_bracket applies the 0.5% offset itself.
+place_bracket applies the 0.5% offset itself. When it does not trade now
+ONLY because the mid has not reached the trigger (operator, 2026-11-18:
+rest the exact bracket as a limit order instead of waiting for a touch to
+land on a tick), the output carries a `rest` object instead:
+`{coin, entry_px, stop_px, tp_px}`, `entry_px` the trigger and `tp_px`
+again structural -- the same `place_bracket` call, with `entry_px` added so
+it rests instead of filling at market.
 
 Output is one JSON object: mid, the last CLOSED 1h candle, 8h/24h/48h
 range, ATR14 on 1h, where the mid sits in the 24h range, and the last four
@@ -98,7 +104,9 @@ def next_order(coin: str, side: str, levels: Dict[str, Any], thesis_entry: Optio
                leverage: float, max_leverage: float, thesis_age_min: Optional[float] = None,
                entry_delay_min: Optional[float] = None) -> Dict[str, Any]:
     """next_trade() for `coin` off a summarize() answer, plus `place_bracket`
-    args when it trades now (market: no entry_px; tp_px structural). Pure."""
+    args when it trades now (market: no entry_px; tp_px structural), or a
+    `rest` object (coin, entry_px, stop_px, tp_px) when it only waits on
+    distance: the same call, resting at the trigger instead. Pure."""
     r24 = levels.get("range_24h") or {}
     mid = levels.get("mid")
     if mid is None or r24.get("low") is None or r24.get("high") is None:
@@ -114,6 +122,8 @@ def next_order(coin: str, side: str, levels: Dict[str, Any], thesis_entry: Optio
     out["coin"] = coin
     if out.get("ok"):
         out["place_bracket"] = {"coin": coin, "stop_px": out["stop_px"], "tp_px": out["structure_tp_px"]}
+    elif out.get("rest"):
+        out["rest"] = {"coin": coin, **out["rest"]}
     return out
 
 

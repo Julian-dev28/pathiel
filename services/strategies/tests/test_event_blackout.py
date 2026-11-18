@@ -59,6 +59,41 @@ def test_clock_default_reads_now_ms(monkeypatch):
     assert EB.eia_blackout("xyz:BRENTOIL") is None
 
 
+# ── a desk's resting entry must respect a blackout starting soon (2026-11-18) ──
+# "The tick cancels a desk resting entry if a blackout starts before the
+# next tick (15 min) or is active, and re-rests after it ends."
+
+# EIA window on 2026-10-28 (summer, no overlapping scheduled event): report
+# 14:30Z, window [12:30Z, 16:30Z).
+EIA_START = _ms(2026, 10, 28, 12, 30)
+
+
+def test_resting_entry_blackout_catches_a_window_starting_within_the_tick_cadence():
+    before_cadence = EB.resting_entry_blackout("xyz:BRENTOIL", "long", EIA_START - 16 * 60_000)
+    assert before_cadence is None                                 # 16 min out: the NEXT tick still clears it
+    within_cadence = EB.resting_entry_blackout("xyz:BRENTOIL", "long", EIA_START - 14 * 60_000)
+    assert within_cadence is not None and within_cadence["start_ms"] == EIA_START
+    far = EB.resting_entry_blackout("xyz:BRENTOIL", "long", EIA_START - 3 * 60 * 60_000)
+    assert far is None
+
+
+def test_resting_entry_blackout_catches_an_already_active_window():
+    assert EB.resting_entry_blackout("xyz:BRENTOIL", "long", EIA_START + 30 * 60_000) is not None
+    # inside the window's last minute: active now, not merely "starting soon"
+    assert EB.resting_entry_blackout("xyz:BRENTOIL", "long", EIA_START + 4 * 60 * 60_000 - 60_000) is not None
+
+
+def test_resting_entry_blackout_default_horizon_is_the_tick_cadence():
+    assert EB.RESTING_ENTRY_HORIZON_MS == 15 * 60_000
+    # a custom horizon (a test double for a different cadence) is honored
+    assert EB.resting_entry_blackout("xyz:BRENTOIL", "long", EIA_START - 20 * 60_000,
+                                     horizon_ms=25 * 60_000) is not None
+
+
+def test_resting_entry_blackout_never_fires_on_a_non_oil_coin_with_no_event():
+    assert EB.resting_entry_blackout("xyz:GOLD", "long", EIA_START - 5 * 60_000) is None
+
+
 def test_live_window_is_exactly_the_backtested_eia_2_2():
     """Every minute of 2026 Sept-Nov: live blocks iff the backtest's
     eia_2_2 windows contain it. Drift here would make the live rule a

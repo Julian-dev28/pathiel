@@ -109,6 +109,26 @@ def event_blackout(coin: str, at_ms: Optional[int] = None, side: Optional[str] =
     return headline_watch.headline_blackout(coin, t, side=side)
 
 
+RESTING_ENTRY_HORIZON_MS = 15 * 60_000     # the tick cadence: .claude/agents/desk-tick.md
+
+
+def resting_entry_blackout(coin: str, side: Optional[str] = None, at_ms: Optional[int] = None,
+                           horizon_ms: int = RESTING_ENTRY_HORIZON_MS) -> Optional[Dict[str, Any]]:
+    """The blackout a desk's resting entry must respect (operator,
+    2026-11-18: rest the exact bracket at the trigger instead of waiting for
+    a tick): active right now, OR starting before the next tick
+    (`horizon_ms`, the 15-minute cadence) -- a resting limit must never sit
+    there waiting for a touch that would fill it inside a blackout window it
+    is about to enter. None when neither holds, so the order stays resting
+    and the tick does nothing. `event_blackout` itself decides the window
+    (EIA, the oil weekend, a scheduled event, then a headline hold); this
+    only adds the forward look so the cancel happens one tick early. Never
+    reaches a position, its stop or its target: callers act on the result
+    only when the coin is flat with a resting entry."""
+    t = now_ms() if at_ms is None else int(at_ms)
+    return event_blackout(coin, t, side=side) or event_blackout(coin, t + int(horizon_ms), side=side)
+
+
 def upcoming_events(coin: str, hours: float = 72.0, at_ms: Optional[int] = None) -> list:
     """Scheduled events for `coin` in the next `hours` (EIA weekly not
     included: its window shows on the live-rule line)."""
@@ -128,5 +148,6 @@ def next_weekend(coin: str, at_ms: Optional[int] = None) -> Optional[Dict[str, A
     return next_oil_weekend(coin, now_ms() if at_ms is None else int(at_ms))
 
 
-__all__ = ["AFTER_H", "BEFORE_H", "OIL_COINS", "eia_blackout", "event_blackout", "next_eia_blackout",
-           "next_weekend", "now_ms", "upcoming_events", "weekend_blackout"]
+__all__ = ["AFTER_H", "BEFORE_H", "OIL_COINS", "RESTING_ENTRY_HORIZON_MS", "eia_blackout", "event_blackout",
+           "next_eia_blackout", "next_weekend", "now_ms", "resting_entry_blackout", "upcoming_events",
+           "weekend_blackout"]

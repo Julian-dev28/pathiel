@@ -342,7 +342,12 @@ def next_trade(side: str, mid: float, low_24h: float, high_24h: float, *,
                entry_delay_min: Optional[float] = ENTRY_DELAY_MIN) -> Dict[str, Any]:
     """The tick's next trade for a `side` thesis. `ok` is True when the tick
     would send the market order at `mid` right now. Every other answer says
-    why not (`blockers`) and where it would trade (`trigger_px`).
+    why not (`blockers`) and where it would trade (`trigger_px`). `rest`
+    (operator, 2026-11-18): when `ok` is False for distance alone (no chase,
+    no break, the trigger's own leverage and R line pass) the exact bracket
+    to REST as a limit order at the trigger instead of waiting for a tick to
+    catch a touch there -- None whenever another blocker applies, or once
+    price is already past the target (nothing left to buy or sell into).
     `breakout`: `breakout_levels()` for a coin with the breakout entry
     (`breakout_for`), None elsewhere. When the main rule refuses for chase or
     R (the backtest's PB_TRIGGERS, in its gate order: chase, then the
@@ -352,7 +357,10 @@ def next_trade(side: str, mid: float, low_24h: float, high_24h: float, *,
     off; `entry_delay_for(coin)` reads the config): no entry while the
     thesis is younger than that, read off `thesis_age_min`; the delay is
     judged last, on top of the main rule or the breakout, so the answer
-    still shows where the tick would trade once the delay has passed."""
+    still shows where the tick would trade once the delay has passed -- and
+    suppresses `rest` too: an order must not sit at the trigger while the
+    delay itself is the open blocker, since reaching the trigger would not
+    make it tradable yet."""
     # Read the live offset at CALL time: a default bound at import froze
     # whatever bracket.TARGET_OFFSET_FRAC was when this module first loaded
     # (a test fixture's 0.0 leaked into test_trigger_watch that way).
@@ -368,6 +376,7 @@ def next_trade(side: str, mid: float, low_24h: float, high_24h: float, *,
         out["blockers"] = [delay["reason"]] + list(out.get("blockers") or [])
         out["verdict"] = f"waits: {delay['reason']}" + (
             "" if not out.get("verdict") or out["verdict"].endswith("now") else f"; then {out['verdict']}")
+        out["rest"] = None
     elif entry_delay_min:
         out["entry_delay"] = delay
     return out
@@ -467,6 +476,22 @@ def _main_rule(side: str, mid: float, low_24h: float, high_24h: float, *,
                         f"{edge:g}: no entry after a break")
     ok = not blockers
 
+    # A REST object for place_bracket (operator, 2026-11-18: "yeah" -- when
+    # flat and the rule would enter except that the mid has not reached the
+    # trigger yet, rest that exact bracket as a limit order now instead of
+    # waiting for a tick to catch a touch at the level: same entry, stop,
+    # target and 2R gate, only the mechanism changes). Only when distance is
+    # the one thing standing between here and a trade: the side is real, no
+    # break, no chase, and the trigger's own leverage line passes (trig_lev,
+    # above: the trigger's R is >= min_r by construction, or more once a
+    # thesis entry caps it tighter, so 2R never needs checking again here).
+    # A current-mid leverage failure (now_lev) is NOT a reason to withhold
+    # the rest: that check prices the stop against today's mid, which the
+    # resting order will never trade at -- only against the trigger, where
+    # trig_lev already speaks for it.
+    rest = ({"entry_px": round(trigger, 6), "stop_px": round(edge_stop, 6), "tp_px": round(structure_tp, 6)}
+            if (not ok) and not chase and not broke and not now_r.get("ok") and trig_lev.get("ok") else None)
+
     # The leverage box prices the order the tick would send: at the mid when it
     # trades now, else at the trigger price.
     at_px, at_stop, at_lev, at_x = (mid, stop, now_lev, now_x) if ok else (trigger, edge_stop, trig_lev, trig_x)
@@ -487,7 +512,7 @@ def _main_rule(side: str, mid: float, low_24h: float, high_24h: float, *,
         "liq_px": at_lev.get("liq_px"), "stop_frac_of_liq": at_lev.get("stop_frac_of_liq"),
         "max_leverage_ok": at_lev.get("max_leverage_ok"),
         "r_to_targets": [{"px": tp, "r_multiple": round(r_at, 2)}] if r_at is not None else [],
-        "thesis_entry": thesis_entry,
+        "thesis_entry": thesis_entry, "rest": rest,
         "_pb_trigger": (not ok) and pb_trigger, "_trigger_lev": trigger_lev,
     }
 
@@ -513,8 +538,59 @@ def live_rule_line(nt: Dict[str, Any]) -> str:
     return head + "."
 
 
+# ── a desk's own resting entry: keep, cancel, or re-rest (2026-11-18) ───────
+# The trigger is a pure function of the closed-candle structure (24h range,
+# ATR) and the thesis's own entry: both are unchanged between ticks inside
+# the same closed hour, so the SAME call reproduces the SAME price to within
+# float rounding (next_trade rounds every price to 6 dp; repeated arithmetic
+# on real prices never drifts by more than a few parts in 1e-6). A tolerance
+# of 1e-4 (absolute, in price units) is a thousand times looser than that
+# rounding noise on Brent (~100) and still tighter than the smallest real
+# move that changes the level (a new closed 1h bar shifting the 24h range,
+# or a thesis rewrite moving the entry), which is cents on Brent and more on
+# a higher-priced coin -- so it can never mask a genuine change in the level.
+RESTING_LEVEL_TOLERANCE = 1e-4
+
+
+def resting_entry_action(existing: Dict[str, Any], thesis_side: Optional[str],
+                         rest: Optional[Dict[str, Any]],
+                         tolerance: float = RESTING_LEVEL_TOLERANCE) -> Dict[str, Any]:
+    """What a flat tick does with the resting entry it is already carrying on
+    COIN, replacing the old "within one ATR or on a structural edge" rule
+    (2026-10-30's `--check`-based test, obsolete now that the tick can rest
+    AT the rule's own trigger instead of only judging a price already
+    picked). `existing`: {"px", "side"} off `sweep_brackets`' resting-entry
+    report. `rest`: this tick's `next_trade()` rest object, or None when the
+    live rule no longer offers one (price reached the trigger already --
+    a market entry replaces it -- chase, a break, or the thesis went flat).
+
+    Keep it ONLY while both hold: the thesis side has not flipped, and the
+    resting price still equals `rest["entry_px"]` within `tolerance` (the
+    same level the live rule would place today). Otherwise cancel; when a
+    new `rest` is on offer, re-rest there in the same tick ("cancel_and_rest"),
+    matching the operator's "touch between ticks fills" decision -- a stale
+    order never sits waiting for a price the rule no longer prices. Pure: no
+    I/O, no clock. This governs only the ONE resting entry a flat desk can
+    hold (place_bracket refuses a second); an order the desk never placed by
+    a rest call and that the rule's own level no longer explains is read the
+    same way a stale desk order would be -- cancelled here only when `rest`
+    truly offers nothing or a different level, never invented as "normal
+    turnover" of someone else's order."""
+    if rest is None:
+        return {"action": "cancel", "reason": "the live rule no longer offers a resting entry here"}
+    if thesis_side != existing.get("side"):
+        return {"action": "cancel_and_rest", "rest": rest,
+                "reason": f"thesis is now {thesis_side}, the resting entry is {existing.get('side')}: re-rest"}
+    tol = max(tolerance, 0.0)
+    if abs(float(existing.get("px", 0.0)) - float(rest["entry_px"])) <= tol:
+        return {"action": "keep", "reason": "still the live rule's trigger"}
+    return {"action": "cancel_and_rest", "rest": rest,
+            "reason": f"the trigger moved from {existing.get('px')!r} to {rest['entry_px']!r}: re-rest"}
+
+
 __all__ = ["next_trade", "stop_buffer_for", "stop_buffer_floor_frac_for", "live_rule_line", "fit_leverage",
            "leverage_fit_for", "breakout_for", "breakout_levels", "breakout_trade", "trend_gate",
+           "resting_entry_action", "RESTING_LEVEL_TOLERANCE",
            "BRENT_STOP_BUFFER", "GOLD", "GOLD_STOP_BUFFER_FLOOR_FRAC", "LEVERAGE_FIT", "BREAKOUT_COINS",
            "BREAKOUT_LOOKBACK_H", "BREAKOUT_STOP_H", "NO_BREAK_ENTRY", "ENTRY_DELAY_MIN", "ENTRY_DELAY_CONFIG_KEY",
            "entry_delay", "entry_delay_for", "thesis_age_minutes"]
