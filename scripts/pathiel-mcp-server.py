@@ -2628,12 +2628,117 @@ def handle_get_candles(params: Dict[str, Any]) -> str:
     candles = fetch_hl_candles(coin, interval, count)
     return json.dumps([c.model_dump() for c in candles], default=str)
 
+# ── ownership enforcement: the desk never acts on a position or order it
+# did not place (2026-11-17 23:25Z: sweep_brackets reported the operator's
+# own hand-placed Brent long "NOT FULLY COVERED" and a tick closed it; this
+# is the structural fix, in code rather than a prompt note). Every live-
+# money tool below that can touch an EXISTING position or order checks
+# ownership first; `operator_override: true` is the one escape hatch, and it
+# must be asked for explicitly in the same call, every time.
+
+def _operator_override(params: Dict[str, Any]) -> bool:
+    return _as_bool(params.get("operator_override"))
+
+
+def _ownership_refusal(coin: str, params: Dict[str, Any], action: str) -> "Dict[str, Any] | None":
+    """None when `action` may proceed on `coin`'s open position: flat (no
+    position to misjudge), desk-owned, or an explicit operator_override.
+    Otherwise the refusal payload to return verbatim, isError-worthy (it
+    carries "error"). A read failure refuses too (pathiel.agents.ownership:
+    refuse, don't guess) rather than blocking the tick on a transient venue
+    error -- never silently proceeds as if nothing were there."""
+    if _operator_override(params):
+        return None
+    from pathiel.agents import ownership
+    own = ownership.check_position_ownership(coin)
+    if own.get("flat") or own.get("desk_owned"):
+        return None
+    where = f"{abs(own['size']):g} @ {own['entry_px']:g}" if own.get("entry_px") else f"{own.get('size')!r}"
+    reason = (f"{action} refused: the open {coin} position ({where}) was not placed by the desk "
+              "(no pathiel cloid traced to its opening fills, no journal entry). This is the "
+              "operator's own trade -- pass operator_override=true in this same call to act on it "
+              "anyway.")
+    return {"ok": False, "coin": coin, "error": reason, "operator_position": True,
+            "position": own.get("size"), "entry_px": own.get("entry_px")}
+
+
+def _order_ownership_refusal(coin: str, order_id: Any, params: Dict[str, Any]) -> "Dict[str, Any] | None":
+    """None when cancel_order may proceed on this specific order: not found
+    among the coin's resting orders (nothing here to misjudge -- the venue
+    itself will answer), tagged with a pathiel cloid, journalled by oid, or
+    an explicit operator_override. Otherwise the refusal payload."""
+    if _operator_override(params):
+        return None
+    try:
+        oid_int = int(order_id)
+    except (TypeError, ValueError):
+        return None
+    try:
+        from pathiel.client.exchange import _resting_orders_for_coin, resolve_user_address
+        user = resolve_user_address()
+        orders = _resting_orders_for_coin(user, coin) if user else []
+    except Exception:
+        return None   # a read failure here must not block a cancel the venue can still refuse on its own
+    order = next((o for o in orders if int(o.get("oid") or 0) == oid_int), None)
+    if order is None:
+        return None
+    from pathiel.agents import ownership
+    if ownership.is_pathiel_cloid(order.get("cloid")) or oid_int in ownership.journal_oids():
+        return None
+    return {"cancelled": False, "coin": coin, "order_id": oid_int, "operator_order": True,
+            "error": f"cancel_order refused: order {oid_int} on {coin} was not placed by the desk "
+                     "(no pathiel cloid, no journal entry). This is the operator's own order -- pass "
+                     "operator_override=true in this same call to cancel it anyway."}
+
+
+def _operator_sweep_report(coin: str, own: Dict[str, Any]) -> Dict[str, Any]:
+    """The read-only report `bracket_sweep` returns for a position the desk
+    did not place: no cancel, no fold, no touch (bracket.sweep's own
+    consolidate-protection path is never reached). Covers both an uncovered
+    operator position (the exact case the 2026-11-17 bug mishandled) and a
+    covered one, so a non-desk position never silently goes through
+    bracket.sweep()'s mutating path either way."""
+    from pathiel.agents import bracket
+    from pathiel.client.exchange import _resting_orders_for_coin, resolve_user_address
+    size = own.get("size") or 0.0
+    entry_px, leverage = own.get("entry_px"), own.get("leverage")
+    liq_px = None
+    if entry_px and leverage:
+        try:
+            coin_max, _ = _coin_specs(coin)
+            if coin_max:
+                liq_px = round(bracket.liq_estimate(float(entry_px), float(leverage), coin_max, size > 0), 6)
+        except Exception:
+            liq_px = None
+    covered = None
+    try:
+        user = resolve_user_address()
+        orders = _resting_orders_for_coin(user, coin) if user else []
+        stops = [o for o in orders if o.get("reduceOnly") and "Stop" in str(o.get("orderType", ""))]
+        covered = round(sum(bracket.order_cover(o, size) for o in stops), 6)
+    except Exception:
+        covered = None
+    ok = covered is not None and covered + 1e-9 >= abs(size)
+    status = "uncovered" if not ok else "covered"
+    bits = [f"{abs(size):g}"]
+    if entry_px:
+        bits.append(f"@ {entry_px:g}")
+    if liq_px:
+        bits.append(f"liq {liq_px:g}")
+    return {"ok": ok, "coin": coin, "operator_position": True, "position": size, "entry_px": entry_px,
+           "leverage": leverage, "liq_px": liq_px, "stop_covers": covered, "changed": False,
+           "reason": f"operator trade, {status}: " + " ".join(bits)}
+
+
 def handle_close_position(params: Dict[str, Any]) -> str:
     """Handle close_position tool call."""
     from pathiel.agents.bracket import close_position as close_position_market
 
     coin = _norm_coin(params.get('coin', 'BTC'))
     fraction = params.get('fraction')
+    refusal = _ownership_refusal(coin, params, "close_position")
+    if refusal is not None:
+        return json.dumps(refusal, default=str)
 
     try:
         result = close_position_market(coin) if fraction is None else close_position_market(coin, fraction=fraction)
@@ -2737,6 +2842,10 @@ def handle_cancel_order(params: Dict[str, Any]) -> str:
         return json.dumps({'cancelled': False, 'error': 'order_id plus coin (or asset index) required'})
     if not _has_usable_credential():
         return json.dumps({'cancelled': False, 'error': 'HYPERLIQUID_PRIVATE_KEY not set'})
+    if coin is not None:
+        refusal = _order_ownership_refusal(coin, order_id, params)
+        if refusal is not None:
+            return json.dumps(refusal, default=str)
     try:
         res = cancel_orders(int(order_id), coin=coin, asset_idx=int(asset) if asset is not None and coin is None else None)
         return json.dumps({'cancelled': bool(res.get('ok')), 'order_id': int(order_id), 'coin': coin,
@@ -4357,6 +4466,14 @@ def handle_place_bracket(params: Dict[str, Any]) -> str:
     coin = _norm_coin(str(params.get("coin") or ""))
     if not coin:
         return json.dumps({"ok": False, "error": "coin is required"})
+    if _as_bool(params.get("add")):
+        # A top-up is the one place place_bracket adds to an EXISTING
+        # position; everywhere else a second position on the coin is
+        # already refused regardless of ownership. Refuse a desk top-up
+        # onto a position the desk did not open.
+        refusal = _ownership_refusal(coin, params, "place_bracket(add=true)")
+        if refusal is not None:
+            return json.dumps(refusal, default=str)
     try:
         stop = float(params["stop_px"])
         tp = float(params["tp_px"])
@@ -4555,6 +4672,9 @@ def handle_set_target(params: Dict[str, Any]) -> str:
         return json.dumps({"ok": False, "coin": coin, "error": "tp_px is required"})
     if not coin:
         return json.dumps({"ok": False, "error": "coin is required"})
+    refusal = _ownership_refusal(coin, params, "set_target")
+    if refusal is not None:
+        return json.dumps(refusal, default=str)
     try:
         return json.dumps(bracket.set_target(coin, tp), default=str)
     except Exception as e:
@@ -4570,6 +4690,9 @@ def handle_set_stop(params: Dict[str, Any]) -> str:
         return json.dumps({"ok": False, "coin": coin, "error": "stop_px is required"})
     if not coin:
         return json.dumps({"ok": False, "error": "coin is required"})
+    refusal = _ownership_refusal(coin, params, "set_stop")
+    if refusal is not None:
+        return json.dumps(refusal, default=str)
     try:
         out = bracket.set_stop(coin, stop)
     except Exception as e:
@@ -4584,6 +4707,19 @@ def handle_bracket_sweep(params: Dict[str, Any]) -> str:
     coin = _norm_coin(str(params.get("coin") or ""))
     if not coin:
         return json.dumps({"ok": False, "error": "coin is required"})
+    if not _operator_override(params):
+        # An operator position never reaches bracket.sweep()'s mutating path
+        # (consolidate/cancel): report it read-only and stop (2026-11-17
+        # 23:25Z: sweep reported one "NOT FULLY COVERED" and a tick closed
+        # it). A read failure here falls through to the normal sweep rather
+        # than silently skipping housekeeping.
+        try:
+            from pathiel.agents import ownership
+            own = ownership.check_position_ownership(coin)
+        except Exception:
+            own = {"flat": True, "desk_owned": True}
+        if not own.get("flat") and not own.get("desk_owned") and not own.get("read_failed"):
+            return json.dumps(_operator_sweep_report(coin, own), default=str)
     # Bounded the same way as handle_desk_brief (see HANDLER_DEADLINE_S /
     # _bounded above): sweep()'s reads (position, resting orders, price) go
     # through the same venue HTTP path that stacked to 900+s in the
