@@ -737,19 +737,25 @@ def test_a_standalone_target_is_a_limit_and_a_stop_is_market(monkeypatch):
     sent = []
 
     class FakeSdk:
-        def order(self, coin, is_buy, sz, limit_px, order_type, reduce_only=False):
-            sent.append((is_buy, sz, limit_px, order_type, reduce_only))
+        def order(self, coin, is_buy, sz, limit_px, order_type, reduce_only=False, cloid=None):
+            sent.append((is_buy, sz, limit_px, order_type, reduce_only, cloid))
             return {"status": "ok", "response": {"data": {"statuses": [{"resting": {"oid": 7}}]}}}
 
     monkeypatch.setattr(exchange, "_has_usable_credential", lambda: True)
     monkeypatch.setattr(exchange, "get_coin_index", lambda c: (0, 2, 0))
     monkeypatch.setattr(exchange, "_make_exchange", lambda: FakeSdk())
-    assert exchange.place_hl_trigger_order(True, 13.08, 113.75, "tp", COIN)["ok"]
-    assert exchange.place_hl_trigger_order(True, 13.08, 108.95, "sl", COIN)["ok"]
-    (tp_buy, _, tp_px, tp_type, tp_ro), (sl_buy, _, sl_px, sl_type, sl_ro) = sent
+    tp_out = exchange.place_hl_trigger_order(True, 13.08, 113.75, "tp", COIN)
+    sl_out = exchange.place_hl_trigger_order(True, 13.08, 108.95, "sl", COIN)
+    assert tp_out["ok"] and sl_out["ok"]
+    # every order this module places carries a pathiel-tagged cloid
+    from pathiel.agents import ownership
+    assert ownership.is_pathiel_cloid(tp_out["cloid"]) and ownership.is_pathiel_cloid(sl_out["cloid"])
+    (tp_buy, _, tp_px, tp_type, tp_ro, tp_cloid), (sl_buy, _, sl_px, sl_type, sl_ro, sl_cloid) = sent
     assert tp_type["trigger"] == {"triggerPx": 113.75, "isMarket": False, "tpsl": "tp"} and tp_px == 113.75
     assert sl_type["trigger"] == {"triggerPx": 108.95, "isMarket": True, "tpsl": "sl"}
     assert tp_buy is False and sl_buy is False and tp_ro and sl_ro       # closing a long, reduce-only
+    # the SDK receives the real Cloid object the venue expects, not a bare string
+    assert str(tp_cloid) == tp_out["cloid"] and str(sl_cloid) == sl_out["cloid"]
 
 
 def test_a_lone_market_target_becomes_a_limit_and_a_limit_is_left_alone():

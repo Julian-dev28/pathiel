@@ -33,8 +33,10 @@ from hyperliquid.utils.signing import (
     OrderType,
     TriggerOrderType,
 )
+from hyperliquid.utils.types import Cloid as _HlCloid
 
 import contracts.runtime as _runtime
+from pathiel.agents import ownership as _ownership
 from pathiel.client import hl_client as _hl_client
 from pathiel.client.hl_client import (
     _http_post,
@@ -1068,6 +1070,7 @@ def place_hl_order(
     mid_price: float,
     coin: str = "BTC",
     reduce_only: bool = False,
+    cloid: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Place an IOC (immediate-or-cancel) limit order on Hyperliquid.
 
@@ -1075,11 +1078,17 @@ def place_hl_order(
     $10 minimum, so closing a sub-$10 position (e.g. an illiquid residual) would
     OVERSHOOT and flip the position to the opposite side without this flag. With
     reduce_only, HL fills only up to the live position size and rejects the rest
-    → clean flatten, never a flip."""
+    → clean flatten, never a flip.
+
+    `cloid`: the Hyperliquid client order id this order carries, a fixed
+    pathiel prefix (pathiel.agents.ownership) so a fill this order produces
+    reads as desk-placed straight off the venue, with no local state to
+    lose. Auto-generated when not given; the one every caller uses."""
     if not _has_usable_credential():
         return {"ok": False, "error": "HYPERLIQUID_PRIVATE_KEY not set"}
     if mid_price <= 0:
         return {"ok": False, "error": f"invalid price for {coin}"}
+    cloid = cloid or _ownership.make_cloid()
 
     try:
         # Always get sz_dec from get_coin_index() (px_dec is ignored — we compute it correctly)
@@ -1113,6 +1122,7 @@ def place_hl_order(
             float(price_str),
             order_type,
             reduce_only=reduce_only,
+            cloid=_HlCloid.from_str(cloid),
             **_bkw(b),
         ))
 
@@ -1124,6 +1134,7 @@ def place_hl_order(
                 f"[place_hl_order] {coin} {'BUY' if is_buy else 'SELL'} "
                 f"size={size_str} px={price_str} REJECTED: {parsed.get('error')}"
             )
+        parsed["cloid"] = cloid
         if note is not None:
             parsed["builder"] = note
         return parsed
@@ -1138,6 +1149,7 @@ def place_hl_trigger_order(
     trigger_px: float,
     kind: str,  # 'sl' or 'tp'
     coin: str = "BTC",
+    cloid: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Place a reduce-only trigger order (stop-loss or take-profit).
 
@@ -1148,11 +1160,13 @@ def place_hl_trigger_order(
     exits every bar that reached the target traded through it, so the limit
     never missed, and it beat the market target at every account size
     (docs/overhaul/BACKTEST_RESULTS_2026-10-25.md, "limit vs market target").
-    """
+
+    `cloid`: see place_hl_order. Auto-generated when not given."""
     if not _has_usable_credential():
         return {"ok": False, "error": "HYPERLIQUID_PRIVATE_KEY not set"}
     if size <= 0 or trigger_px <= 0:
         return {"ok": False, "error": "invalid size/price"}
+    cloid = cloid or _ownership.make_cloid()
 
     try:
         _, sz_dec, _ = get_coin_index(coin)
@@ -1190,10 +1204,12 @@ def place_hl_trigger_order(
             trigger_f,
             order_type,
             reduce_only=True,
+            cloid=_HlCloid.from_str(cloid),
             **_bkw(b),
         ))
 
         parsed = _parse_order_result(result, accept_resting=True)
+        parsed["cloid"] = cloid
         if note is not None:
             parsed["builder"] = note
         return parsed
@@ -1208,6 +1224,7 @@ def place_hl_limit_order(
     size: float,
     limit_px: float,
     reduce_only: bool = False,
+    cloid: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Place a resting GTC limit order: a ladder rung or a take-profit.
 
@@ -1218,11 +1235,14 @@ def place_hl_limit_order(
 
     Returns {ok, order_id} when it rests, {ok, order_id, avg_px, total_sz} when
     it fills on arrival, {ok: False, error} otherwise.
+
+    `cloid`: see place_hl_order. Auto-generated when not given.
     """
     if not _has_usable_credential():
         return {"ok": False, "error": "HYPERLIQUID_PRIVATE_KEY not set"}
     if size <= 0 or limit_px <= 0:
         return {"ok": False, "error": f"invalid size/price for {coin}"}
+    cloid = cloid or _ownership.make_cloid()
     try:
         _, sz_dec, _ = get_coin_index(coin)
         price_str = _round_price_for_hl(limit_px, sz_dec, is_perp=True, is_buy=not is_buy)
@@ -1230,11 +1250,13 @@ def place_hl_limit_order(
         exchange = _make_exchange()
         result, note = _send_order(lambda b: exchange.order(
             coin, is_buy, float(size_str), float(price_str),
-            OrderType(limit={"tif": "Gtc"}), reduce_only=reduce_only, **_bkw(b)))
+            OrderType(limit={"tif": "Gtc"}), reduce_only=reduce_only,
+            cloid=_HlCloid.from_str(cloid), **_bkw(b)))
         parsed = _parse_order_result(result, accept_resting=True)
         if not parsed.get("ok"):
             logger.warning(f"[place_hl_limit_order] {coin} {'BUY' if is_buy else 'SELL'} "
                            f"size={size_str} px={price_str} REJECTED: {parsed.get('error')}")
+        parsed["cloid"] = cloid
         if note is not None:
             parsed["builder"] = note
         return parsed
@@ -1249,6 +1271,9 @@ def place_hl_bracket_order(coin: str, is_buy: bool, size: float, entry_px: float
     signed action (Hyperliquid grouping "normalTpsl"). The two reduce-only
     children arm only as the entry fills, sized to what filled, so a resting
     entry can never sit naked after a fill, and nothing has to watch it.
+
+    Each of the three legs carries its own freshly-generated pathiel cloid
+    (pathiel.agents.ownership.make_cloid), returned as `leg["cloid"]`.
 
     Returns {ok, entry: {...}, sl: {...}, tp: {...}} with each leg parsed by
     _parse_order_result; ok is False if the action or ANY leg was rejected.
@@ -1265,16 +1290,19 @@ def place_hl_bracket_order(coin: str, is_buy: bool, size: float, entry_px: float
         stop_f = float(_round_price_for_hl(stop_px, sz_dec, is_perp=True))
         tp_f = float(_round_price_for_hl(tp_px, sz_dec, is_perp=True))
         close_is_buy = not is_buy
+        cloids = {"entry": _ownership.make_cloid(), "sl": _ownership.make_cloid(),
+                  "tp": _ownership.make_cloid()}
 
         def _trigger(px: float, kind: str) -> Dict[str, Any]:
             return {"coin": coin, "is_buy": close_is_buy, "sz": size_f, "limit_px": px,
                     "order_type": OrderType(trigger=TriggerOrderType(
                         triggerPx=px, isMarket=(kind == "sl"), tpsl=kind)),
-                    "reduce_only": True}
+                    "reduce_only": True, "cloid": _HlCloid.from_str(cloids[kind])}
 
         reqs = [
             {"coin": coin, "is_buy": is_buy, "sz": size_f, "limit_px": entry_f,
-             "order_type": OrderType(limit={"tif": "Gtc"}), "reduce_only": False},
+             "order_type": OrderType(limit={"tif": "Gtc"}), "reduce_only": False,
+             "cloid": _HlCloid.from_str(cloids["entry"])},
             _trigger(stop_f, "sl"),
             _trigger(tp_f, "tp"),
         ]
@@ -1297,6 +1325,8 @@ def place_hl_bracket_order(coin: str, is_buy: bool, size: float, entry_px: float
                         else {"ok": True, "status": st})   # e.g. "waitingForFill"
         while len(legs) < 3:
             legs.append({"ok": False, "error": "no status returned"})
+        for leg, kind in zip(legs, ("entry", "sl", "tp")):
+            leg["cloid"] = cloids[kind]
         out = {"ok": all(leg.get("ok") for leg in legs), "entry": legs[0], "sl": legs[1],
                "tp": legs[2], "px": {"entry": entry_f, "stop": stop_f, "tp": tp_f}, "size": size_f}
         if not out["ok"]:
