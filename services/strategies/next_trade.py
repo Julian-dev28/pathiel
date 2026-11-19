@@ -59,6 +59,44 @@ GOLD_STOP_BUFFER_FLOOR_FRAC = 0.008
 STOP_BUFFER_FLOOR_FRAC_BY_COIN = {GOLD: GOLD_STOP_BUFFER_FLOOR_FRAC}
 
 
+# S&P 500 (xyz:SP500, the sp500 desk, built 2026-11-19; operator: "ADD A
+# S&P500 MARKET STRATEGY 50X 5% LONG OR SHORT"). The same 24h-range rule with
+# the S&P's own numbers (docs/strategy/SP500_STRATEGY.md,
+# SP500_BACKTEST_2026-11-19.md; services/strategies/evals/sp500_strategy_test.py):
+#   k_atr 1.0, floor 0.4% of the mid: the stop buffer beyond the 24h edge.
+#     The S&P's 1h ATR14 is 0.166% of price at the median, so the floor
+#     binds on most ticks. Oil's 0.8% floor cannot trade at 50x at all
+#     (0 entries in 208 days): at 50x liquidation is 1.01% away and the stop
+#     may use half of it, 0.505%.
+#   target_offset_frac 0: the target is the far 24h edge itself. The S&P's
+#     median 24h range is 0.9% of price; oil's 0.5% offset eats more than
+#     half of it.
+#   50x only (SP500_LEVERAGE_FIT): an entry whose stop does not fit 50x is
+#     refused, never refitted lower. With the 0.4% floor that means the mid
+#     must sit within about 0.1% of the 24h edge: the leverage line is the
+#     pullback filter. The same rule at a fixed 40x or 30x took entries
+#     further from the edge and scored worse (the backtest doc has the rows).
+# VERDICT: NOISE. The cell is the least bad of the grid, not an edge: it
+# loses under the cost stress, without its two best trades, and its grid
+# neighbours disagree in sign. `backtest_sides` is what the eval trades in
+# place of a thesis (long near the 24h low, short near the 24h high).
+SP500 = "xyz:SP500"
+SP500_RULE: Dict[str, Any] = {"k_atr": 1.0, "floor_frac": 0.004, "target_offset_frac": 0.0,
+                              "backtest_sides": "both"}
+SP500_LEVERAGE = 50.0
+SP500_LEVERAGE_FIT: Tuple[float, ...] = (SP500_LEVERAGE,)
+# The take-profit offset per coin (bracket.TARGET_OFFSET_FRAC, 0.5%, for
+# every coin not listed).
+TARGET_OFFSET_FRAC_BY_COIN: Dict[str, float] = {SP500: SP500_RULE["target_offset_frac"]}
+
+
+def target_offset_frac_for(coin: str) -> float:
+    """How far inside the structure target `coin`'s take-profit sits, as a
+    fraction of price: the coin's own, else bracket.TARGET_OFFSET_FRAC read
+    at call time (0.5%; Brent, WTI, gold and silver are unchanged)."""
+    return TARGET_OFFSET_FRAC_BY_COIN.get(coin, _bracket.TARGET_OFFSET_FRAC)
+
+
 def stop_buffer_floor_frac_for(coin: str) -> float:
     """The stop buffer floor, as a fraction of the mid, for a non-Brent coin:
     the coin's own (STOP_BUFFER_FLOOR_FRAC_BY_COIN) or the 0.8% default."""
@@ -68,11 +106,17 @@ def stop_buffer_floor_frac_for(coin: str) -> float:
 def stop_buffer_for(coin: str, atr14: Optional[float],
                     mid: Optional[float] = None) -> Optional[float]:
     """0.75 on Brent; on any other desk's coin the larger of 1.3 x the 1h
-    ATR14 and the coin's floor (0.8% of `mid`, when a mid is given)."""
+    ATR14 and the coin's floor (0.8% of `mid`, when a mid is given). The
+    S&P: the larger of 1.0 x ATR14 and 0.4% of `mid` (SP500_RULE)."""
     if coin == BRENT:
         return BRENT_STOP_BUFFER
     if not atr14:
         return None
+    if coin == SP500:
+        buf = SP500_RULE["k_atr"] * atr14
+        if mid:
+            buf = max(buf, SP500_RULE["floor_frac"] * float(mid))
+        return round(buf, 6)
     buf = ATR_BUFFER_MULT * atr14
     if mid:
         buf = max(buf, stop_buffer_floor_frac_for(coin) * float(mid))
@@ -245,7 +289,10 @@ def trend_gate(side: str, closes_1h: Sequence[float], span_h: int = 120) -> Dict
 
 def leverage_fit_for(coin: str) -> Tuple[float, ...]:
     """The candidates a coin's new entries fit their leverage from; () = the
-    fixed configured leverage (silver and every other coin, untested there)."""
+    fixed configured leverage (every other coin, untested there). The S&P
+    has one candidate, 50x: a stop that does not fit it is refused."""
+    if coin == SP500:
+        return SP500_LEVERAGE_FIT
     return LEVERAGE_FIT if coin in LEVERAGE_FIT_COINS else ()
 
 
@@ -513,7 +560,8 @@ def live_rule_line(nt: Dict[str, Any]) -> str:
     return head + "."
 
 
-__all__ = ["next_trade", "stop_buffer_for", "stop_buffer_floor_frac_for", "live_rule_line", "fit_leverage",
+__all__ = ["SP500", "SP500_RULE", "SP500_LEVERAGE", "SP500_LEVERAGE_FIT", "TARGET_OFFSET_FRAC_BY_COIN",
+           "target_offset_frac_for", "next_trade", "stop_buffer_for", "stop_buffer_floor_frac_for", "live_rule_line", "fit_leverage",
            "leverage_fit_for", "breakout_for", "breakout_levels", "breakout_trade", "trend_gate",
            "BRENT_STOP_BUFFER", "GOLD", "GOLD_STOP_BUFFER_FLOOR_FRAC", "LEVERAGE_FIT", "BREAKOUT_COINS",
            "BREAKOUT_LOOKBACK_H", "BREAKOUT_STOP_H", "NO_BREAK_ENTRY", "ENTRY_DELAY_MIN", "ENTRY_DELAY_CONFIG_KEY",
