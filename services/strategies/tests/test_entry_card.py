@@ -108,7 +108,7 @@ def test_chase_status_on_the_never_chase_blocker():
     out = EC.build(mid=mid, atr14=0.83, side="long", thesis_entry_px=111.20,
                    next_trade_result=nt, blackout=None)
     live = out["live"]
-    assert live["status"] == "chase" and live["status_text"] == "chase" and live["ok"] is False
+    assert live["status"] == "chase" and live["status_text"] == "waiting, price past thesis entry" and live["ok"] is False
     assert live["entry_px"] == nt["trigger_px"] == pytest.approx(111.20)
 
 
@@ -123,7 +123,7 @@ def test_break_status_when_the_mid_is_past_the_24h_edge():
     out = EC.build(mid=mid, atr14=1.2, side="long", thesis_entry_px=None,
                    next_trade_result=nt, blackout=None)
     live = out["live"]
-    assert live["status"] == "break" and live["status_text"] == "break" and live["ok"] is False
+    assert live["status"] == "break" and live["status_text"] == "no entry, level broke" and live["ok"] is False
     assert live["entry_px"] == nt["trigger_px"] and live["stop_px"] == nt["stop_px"]
 
 

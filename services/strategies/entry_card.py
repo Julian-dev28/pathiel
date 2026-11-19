@@ -97,9 +97,11 @@ def build(*, mid: Optional[float], atr14: Optional[float], side: Optional[str],
     elif rule_ok:
         status, status_text = STATUS_READY, "ready"
     elif chase:
-        status, status_text = STATUS_CHASE, "chase"
+        # Plain words: the desk is not chasing, it is waiting for price to
+        # come back to its level (operator read "chase" as the opposite).
+        status, status_text = STATUS_CHASE, "waiting, price past thesis entry"
     elif broke:
-        status, status_text = STATUS_BREAK, "break"
+        status, status_text = STATUS_BREAK, "no entry, level broke"
     else:
         status, status_text = STATUS_WAITING, "waiting"
 
