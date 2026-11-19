@@ -148,7 +148,9 @@ def evaluate(side: Optional[str], thesis_entry: Optional[float], mid: Optional[f
     GET /api/desks/{id}/next, with the mid refreshed between level reads.
     `thesis_age_min` / `entry_delay_min`: the entry delay (next_trade.
     entry_delay; off while the config has no oil_entry_delay_min)."""
-    from services.strategies.next_trade import breakout_for, leverage_fit_for, next_trade, stop_buffer_for
+    from services.strategies.desk_leverage import entry_leverage
+    from services.strategies.next_trade import (breakout_for, leverage_fit_for, next_trade, stop_buffer_for,
+                                                target_offset_frac_for)
     r24 = levels.get("range_24h") or {}
     if side not in ("long", "short"):
         return {"ok": False, "reason": f"thesis is {side or 'missing'}"}
@@ -158,9 +160,9 @@ def evaluate(side: Optional[str], thesis_entry: Optional[float], mid: Optional[f
     if buf is None:
         return {"ok": False, "reason": "no ATR for the stop buffer"}
     out = next_trade(side, float(mid), float(r24["low"]), float(r24["high"]),
-                     thesis_entry=thesis_entry, leverage=leverage,
+                     thesis_entry=thesis_entry, leverage=entry_leverage(coin, leverage),
                      coin_max_leverage=coin_max_leverage, stop_buffer=buf,
-                     leverage_fit=leverage_fit_for(coin),
+                     leverage_fit=leverage_fit_for(coin), offset_frac=target_offset_frac_for(coin),
                      breakout=levels.get("breakout_24h") if breakout_for(coin) else None,
                      thesis_age_min=thesis_age_min, entry_delay_min=entry_delay_min)
     return out

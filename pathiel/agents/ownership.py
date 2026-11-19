@@ -325,3 +325,93 @@ def check_position_ownership(coin: str, *, user: Optional[str] = None,
                           journal if journal is not None else load_journal())
     return {"coin": coin, "flat": False, "desk_owned": owned, "size": pos["szi"],
             "entry_px": pos["entry_px"], "leverage": pos["leverage"]}
+
+
+# ── the operator's own position or orders on a guarded coin ────────────────
+#
+# 2026-11-19: the operator holds a hand-placed xyz:SP500 long (0.18 @ 7171.2,
+# 50x cross, no stop) on the same account the new sp500 desk trades.
+# Hyperliquid nets one position per coin per account, so a desk entry there
+# would merge into his trade, and a desk order placed while he only has
+# orders resting would cancel his reduce-only orders first
+# (bracket.place_bracket clears a coin's stranded triggers before an entry).
+# On a guarded coin the desk therefore does nothing at all while ANYTHING on
+# the coin is not its own: no entry, no top-up, no sweep, no leverage change.
+# The check is the same evidence as above (cloid, then the journal by oid),
+# extended to resting orders.
+#
+# Guarded coins are listed, not "every coin": the oil desk's path is
+# unchanged by this block (its position guards above already cover a close,
+# a cancel, a sweep, set_stop and set_target).
+OPERATOR_GUARD_COINS = frozenset({"xyz:SP500"})
+OPERATOR_POSITION_REASON = "operator position open on {coin}"
+OPERATOR_ORDER_REASON = "operator order resting on {coin}"
+OPERATOR_UNKNOWN_REASON = "could not confirm {coin} is free of the operator's position or orders (read failed)"
+
+
+def is_guarded(coin: str) -> bool:
+    return coin in OPERATOR_GUARD_COINS
+
+
+def order_is_desk_owned(order: Dict[str, Any], oids: Optional[set] = None) -> bool:
+    """True when a resting order row (frontendOpenOrders shape) carries a
+    pathiel cloid, or its oid is in the journal (`oids`: journal_oids())."""
+    if is_pathiel_cloid(order.get("cloid")):
+        return True
+    try:
+        return int(order.get("oid")) in (oids if oids is not None else journal_oids())
+    except (TypeError, ValueError):
+        return False
+
+
+def operator_presence(coin: str, own: Dict[str, Any], orders: Optional[Sequence[Dict[str, Any]]],
+                      journal: Optional[Sequence[Dict[str, Any]]] = None) -> Dict[str, Any]:
+    """What on `coin` is not the desk's. Pure.
+
+    `own`: `check_position_ownership`'s answer. `orders`: the coin's resting
+    orders, or None when that read failed. `journal`: rows for the oid
+    fallback (the journal file when None).
+
+    {"coin", "operator": bool, "position": bool, "position_size",
+     "entry_px", "orders": [oid, ...], "read_failed": bool, "reason"}.
+    `operator` is True for a position the desk did not open (a mixed one
+    included), for any resting order the desk did not place, and for a
+    failed read: refuse, never guess. `reason` is the line the tick logs."""
+    oids = journal_oids(journal if journal is not None else load_journal())
+    foreign = [o.get("oid") for o in (orders or []) if o.get("coin") == coin and not order_is_desk_owned(o, oids)]
+    position = not own.get("flat") and not own.get("desk_owned") and not own.get("read_failed")
+    read_failed = bool(own.get("read_failed")) or orders is None
+    reason = None
+    if position:
+        reason = OPERATOR_POSITION_REASON.format(coin=coin)
+    elif foreign:
+        reason = OPERATOR_ORDER_REASON.format(coin=coin)
+    elif read_failed:
+        reason = OPERATOR_UNKNOWN_REASON.format(coin=coin)
+    return {"coin": coin, "operator": bool(position or foreign or read_failed), "position": position,
+            "position_size": own.get("size") if position else None,
+            "entry_px": own.get("entry_px") if position else None,
+            "leverage": own.get("leverage") if position else None,
+            "orders": foreign, "read_failed": read_failed, "reason": reason}
+
+
+def check_operator_presence(coin: str, *, user: Optional[str] = None,
+                            orders: Optional[Sequence[Dict[str, Any]]] = None,
+                            fetch_state: Any = None, fetch_fills: Any = None, fetch_orders: Any = None,
+                            journal: Optional[Sequence[Dict[str, Any]]] = None) -> Dict[str, Any]:
+    """Live `operator_presence` for `coin`: one position read, one fills
+    read (only when a position is open) and, unless `orders` is passed, one
+    resting-orders read. Public reads, no key. Never raises."""
+    own = check_position_ownership(coin, user=user, fetch_state=fetch_state, fetch_fills=fetch_fills,
+                                   journal=journal)
+    if orders is None:
+        try:
+            if fetch_orders is None:
+                from pathiel.client.exchange import _resting_orders_for_coin as fetch_orders
+            if user is None:
+                from pathiel.client.hl_client import resolve_user_address
+                user = resolve_user_address()
+            orders = list(fetch_orders(user, coin)) if user else None
+        except Exception:
+            orders = None
+    return operator_presence(coin, own, orders, journal)

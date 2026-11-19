@@ -10,11 +10,11 @@ import pytest
 from services.strategies import desks
 
 
-def test_registry_lists_all_seven_desks():
-    assert set(desks.list_desk_ids()) == {"oil", "gas", "btc", "top5", "ai", "metals", "indices"}
+def test_registry_lists_all_eight_desks():
+    assert set(desks.list_desk_ids()) == {"oil", "gas", "btc", "top5", "ai", "metals", "indices", "sp500"}
 
 
-@pytest.mark.parametrize("desk_id", ["oil", "gas", "btc", "top5", "ai", "metals", "indices"])
+@pytest.mark.parametrize("desk_id", ["oil", "gas", "btc", "top5", "ai", "metals", "indices", "sp500"])
 def test_every_desk_spec_validates(desk_id):
     spec = desks.get_spec(desk_id)
     assert spec is not None

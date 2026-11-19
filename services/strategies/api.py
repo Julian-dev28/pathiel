@@ -28,7 +28,7 @@ from pydantic import BaseModel
 import pathiel
 from contracts.strategies.models import DeskBrief, DeskCard, RefreshJob, Thesis, UserThesisIn
 
-from services.strategies import desk_log, desks, entry_card, facade, journal, levels
+from services.strategies import desk_leverage, desk_log, desks, entry_card, facade, journal, levels
 from services.strategies.call_line import call_line
 from services.strategies import next_trade as next_trade_mod
 
@@ -351,9 +351,12 @@ def desk_next_trade(desk_id: str, leverage: float, brief=None) -> Dict[str, obje
     if buf is None:
         return {"ok": False, "source": "desk_rules", "reason": f"no ATR for {coin} to size the stop buffer"}
     out = next_trade_mod.next_trade(call.side, float(lv["mid"]), float(r24["low"]), float(r24["high"]),
-                                    thesis_entry=call.entry_px, leverage=leverage,
+                                    thesis_entry=call.entry_px,
+                                    # the coin's desk cap when it has one (the S&P: 50x), else as asked
+                                    leverage=desk_leverage.entry_leverage(coin, leverage),
                                     coin_max_leverage=coin_max, stop_buffer=buf,
                                     leverage_fit=next_trade_mod.leverage_fit_for(coin),
+                                    offset_frac=next_trade_mod.target_offset_frac_for(coin),
                                     breakout=lv.get("breakout_24h") if next_trade_mod.breakout_for(coin) else None,
                                     thesis_age_min=next_trade_mod.thesis_age_minutes(brief.thesis.created_at),
                                     entry_delay_min=next_trade_mod.entry_delay_for(coin))
