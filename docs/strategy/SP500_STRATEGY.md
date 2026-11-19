@@ -48,6 +48,8 @@ Mechanically, yes. Liquidation is 1.01% from entry at 50x. The stop may use half
 
 It is tight. 1% of 15m bars range more than the whole stop budget, and a round trip costs 0.09R at today's fees. A fee back at 4.5 bps turns the rule negative.
 
+On a wild day the desk sits out. When the 1h ATR14 is itself above 0.505% of price (about 1 hour in 100), the stop buffer alone is wider than the budget and no entry fits 50x. Live read, 2026-11-19 23:45Z: mid 7,170.45, ATR14 43.7 points (0.61%), 24h range 7,152.7 to 7,426.6; `oil_levels.py --coin xyz:SP500 --next long` answered "stop too wide for 50x (max 37x)". That is the rule working, not a fault.
+
 Lower leverage does not fix anything: the same rule at 40x made +0.06R and at 20x to 30x +5.3R with a losing tail. No leverage has an edge here, so there is no better number to recommend than the one asked for.
 
 Risk in account terms: a stop costs `risk_per_trade_pct` of 5% of equity. At 6% that is 0.3% of the account a stop, and the test's worst run (14.4R) is 4.3% of the account. At 15% it is 0.75% and 10.8%. Check what `risk_per_trade_pct` is before turning the desk on.
@@ -63,6 +65,8 @@ The rule, in code: on xyz:SP500 any position or resting order the desk did not p
 - A read that fails counts as his. The desk holds rather than guess.
 
 The desk trades the S&P again on the first tick after his position and orders are gone. `operator_override: true` in a call is the one way through, and a tick never passes it. Gate test: `tests/test_sp500_operator_guard.py`.
+
+Checked against the live account, read only, 2026-11-19 23:45Z: `ownership.check_operator_presence("xyz:SP500")` answered `operator: true, position_size: 0.18, entry_px: 7171.2, leverage: 50, reason: "operator position open on xyz:SP500"`.
 
 His position has no stop. An isolated 50x long from 7171.2 liquidates near 7,099; his is cross, so the account's free margin moves that level. The desk will not put a stop on it.
 
