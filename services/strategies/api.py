@@ -28,7 +28,7 @@ from pydantic import BaseModel
 import pathiel
 from contracts.strategies.models import DeskBrief, DeskCard, RefreshJob, Thesis, UserThesisIn
 
-from services.strategies import desk_log, desks, facade, journal, levels
+from services.strategies import desk_log, desks, entry_card, facade, journal, levels
 from services.strategies.call_line import call_line
 from services.strategies import next_trade as next_trade_mod
 
@@ -37,6 +37,13 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 _TEMPLATES_DIR = Path(pathiel.__file__).parent / "templates"
+
+# The leverage the Levels card's live-entry row is priced at: the same
+# default GET /next and the Desk page's "Next trade" box start on
+# (oil_desk.js DEFAULT_LEVERAGE) -- the leverage-fit rule can change the
+# ACTUAL leverage used (next_trade's own "leverage" field), this is only
+# the ceiling a reader has not yet picked a different rung for.
+DEFAULT_ENTRY_LEVERAGE = 20.0
 
 # In-process background-job registry for POST /refresh. One FastAPI process
 # per SWARM_RULES (dev servers are single-port, single-process), so a plain
@@ -364,15 +371,60 @@ def _primary_coin(desk_id: str) -> str:
 def get_desk_levels(desk_id: str) -> Dict[str, object]:
     """Candle-derived levels for this desk's primary instrument: mid, last
     closed 1h candle, 8h/24h/48h range, ATR14, where the mid sits in the
-    24h range. See services/strategies/levels.py::summarize_coin."""
+    24h range, PLUS (2026-11-19) an `entry` field: the thesis's own entry,
+    the live entry next_trade() will actually act on (stop/target/R/
+    status), and the mid's distance to it. See services/strategies/
+    levels.py::summarize_coin and services/strategies/entry_card.py."""
     try:
         coin = _primary_coin(desk_id)
     except desks.UnknownDeskError:
         raise _unknown_desk(desk_id)
     try:
-        return levels.summarize_coin(coin)
+        out = levels.summarize_coin(coin)
     except Exception as e:  # noqa: BLE001 - report the failure, never a 500 with no detail
         raise HTTPException(status_code=502, detail=f"could not read live levels for {coin}: {e}")
+    out["entry"] = _levels_entry(desk_id, coin, out)
+    return out
+
+
+def _levels_entry(desk_id: str, coin: str, lv: Dict[str, object]) -> Dict[str, object]:
+    """entry_card.build() for the Levels card, off the SAME next_trade()
+    and event_blackout() calls GET /next and the tick use -- never a
+    second, re-derived stop/target/R calculation. A thesis, venue-leverage
+    or blackout read that fails degrades to entry_card's own "no thesis"/
+    "waiting" shape instead of 500ing the whole Levels card (every other
+    piece of it already follows that rule)."""
+    try:
+        brief = facade.get_brief(desk_id)
+    except Exception as e:  # noqa: BLE001 - desk_id is already validated by the caller
+        logger.warning(f"[strategies.api] brief read for {desk_id}'s entry card failed: {e!r}")
+        return entry_card.build(mid=lv.get("mid"), atr14=lv.get("atr14_1h"), side=None,
+                                thesis_entry_px=None, next_trade_result=None, blackout=None)
+
+    side: Optional[str] = None
+    thesis_entry_px: Optional[float] = None
+    nt: Optional[Dict[str, object]] = None
+    if brief.thesis is not None:
+        call = brief.thesis.call
+        side = call.side if call.side in ("long", "short") else None
+        thesis_entry_px = call.entry_px
+        if side:
+            try:
+                nt = desk_next_trade(desk_id, DEFAULT_ENTRY_LEVERAGE, brief=brief)
+            except Exception as e:  # noqa: BLE001 - a next_trade miss must not 500 the Levels card
+                logger.warning(f"[strategies.api] next_trade for {desk_id}'s entry card failed: {e!r}")
+                nt = {"ok": False, "reason": "could not compute the live entry"}
+
+    blackout: Optional[Dict[str, object]] = None
+    if side:
+        from services.strategies.event_blackout import event_blackout
+        try:
+            blackout = event_blackout(coin, side=side)
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"[strategies.api] event_blackout for {coin!r} failed: {e!r}")
+
+    return entry_card.build(mid=lv.get("mid"), atr14=lv.get("atr14_1h"), side=side,
+                            thesis_entry_px=thesis_entry_px, next_trade_result=nt, blackout=blackout)
 
 
 @router.get("/api/desks/{desk_id}/log")
