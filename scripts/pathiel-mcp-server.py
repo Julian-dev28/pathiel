@@ -1295,7 +1295,10 @@ def handle_config(params: Dict[str, Any]) -> str:
     # Nested blocks still deep-merge through the generic path below.
     # 2026-10-31: desk_equity_share ({desk: fraction}, e.g. oil 0.95, metals
     # 0.05) is validated by update_agent_config (services/strategies/desk_share.py).
-    _NESTED_KEYS: List[str] = ["desk_equity_share"]
+    # 2026-11-19: desk_max_leverage ({desk: cap}, e.g. sp500 25) lowers or sets
+    # one desk's leverage cap (services/strategies/desk_leverage.py). Checked
+    # here: a value outside [1, 50] is refused, never saved and then ignored.
+    _NESTED_KEYS: List[str] = ["desk_equity_share", "desk_max_leverage"]
 
     updates: Dict[str, Any] = {}
     for key in _DIRECT_KEYS:
@@ -1329,6 +1332,13 @@ def handle_config(params: Dict[str, Any]) -> str:
         obj = _as_object(key, params[key])
         if obj is None:
             return json.dumps({"status": "error", "error": f"{key} must be an object"})
+        if key == "desk_max_leverage":
+            from services.strategies import desk_leverage
+            bad = sorted(str(d) for d, v in obj.items() if desk_leverage._valid(v) is None)
+            if bad:
+                return json.dumps({"status": "error", "error": (
+                    f"desk_max_leverage for {', '.join(bad)} must be a number from "
+                    f"{desk_leverage.MIN_CAP:g} to {desk_leverage.MAX_CAP:g}")})
         updates[key] = obj
 
     # Any other key already in the live config (risk_profile, a hand-added

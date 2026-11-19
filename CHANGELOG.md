@@ -27,6 +27,16 @@ All notable changes to pathiel. The format follows
 
 ### Added
 
+- An S&P 500 desk, `sp500`, trading `xyz:SP500` long or short. Off by
+  default. It has its own stop and target numbers and its own leverage cap
+  (config `desk_max_leverage`); every other desk keeps the risk profile's
+  `max_leverage`. Its backtest found no edge in the rule alone.
+- On `xyz:SP500` the desk does nothing while a position or resting order it
+  did not place sits on the coin: `desk_slot.py` answers `slot: operator`,
+  and `place_bracket`, `sweep_brackets` and `set_leverage` refuse.
+- The event calendar and the headline watcher cover the S&P: FOMC, CPI and
+  the monthly jobs report hold new entries, and megacap earnings rows can
+  be added with coins `sp500`.
 - `close_position` takes an optional `fraction` (0.5 closes half). A partial
   close keeps the stop and target, which are reduce-only and still cover
   what is left; the full close cancels them as before.

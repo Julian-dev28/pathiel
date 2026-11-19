@@ -26,6 +26,7 @@ one degrades gracefully when they're missing (see "Pipeline" below).
 | `ai` | xyz:NVDA, MU, AMD, GOOGL, META, PLTR, TSM (primary); MSFT, AVGO, ORCL, ARM (secondary) | HIP-3 AI-chip/AI-infra equities, >$1M 24h volume. |
 | `metals` | xyz:GOLD (primary), xyz:SILVER (secondary) | No PairSpec — see `desks/metals.py` for why a gold/silver spread doesn't fit the contract's difference-based PairSnapshot. |
 | `indices` | xyz:XYZ100, xyz:SP500 (primary); xyz:JP225, xyz:KR200 (secondary) | IBOV/NIFTY exist on HL but read $0 volume — excluded. |
+| `sp500` | xyz:SP500 (primary, the only instrument) | Built 2026-11-19, off until it is in `active_desks`. Its own rule numbers (`next_trade.SP500_RULE`) and its own leverage cap, 50x (`desk_leverage.py`); every other desk keeps the risk profile's cap. The tick never touches an xyz:SP500 position or order the desk did not place. Rule and test: `docs/strategy/SP500_STRATEGY.md`. |
 
 Every instrument was checked against Hyperliquid's live `/info`
 (`metaAndAssetCtxs`, main dex + every HIP-3 dex) on 2026-10-17 — see each

@@ -146,3 +146,33 @@ def test_levels_cli_defaults_are_50x_for_sp500_and_20x_for_everything_else(monke
     assert json.loads(capsys.readouterr().out)["verdict"] == "50x OK"
     assert L.main(["--check", "90", "88.5", "93.5", "--lev", "20"]) == 0        # Brent: the 20x line, as before
     assert json.loads(capsys.readouterr().out) == L.check(90.0, 88.5, 93.5, leverage=20.0, max_leverage=20.0)
+
+
+# ── the config change the operator applies ───────────────────────────────
+
+def test_update_config_takes_the_documented_change_and_a_lower_cap():
+    """docs/strategy/SP500_STRATEGY.md, "Config to apply", against the test
+    config file (never the live one)."""
+    from pathiel.agents import config_store
+    from services.strategies import desk_leverage, desk_share
+    try:
+        config_store.write_agent_config({"mode": "OFF", "active_desks": ["oil"],
+                                         "desk_equity_share": {"oil": 0.90, "metals": 0.10}})
+        out = json.loads(M.handle_config({
+            "active_desks": ["oil", "sp500"],
+            "desk_equity_share": {"oil": 0.90, "metals": 0.05, "sp500": 0.05}}))
+        assert out["active_desks"] == ["oil", "sp500"]
+        assert out["desk_equity_share"] == {"oil": 0.90, "metals": 0.05, "sp500": 0.05}
+        assert sum(out["desk_equity_share"].values()) == pytest.approx(1.0)
+        assert desk_share.share_for_coin(SP500, out) == ("sp500", 0.05)
+        assert desk_share.share_for_coin(BRENT, out) == ("oil", 0.90)
+        assert desk_leverage.cap_for_coin(SP500, out) == 50.0 and desk_leverage.cap_for_coin(BRENT, out) is None
+
+        out = json.loads(M.handle_config({"desk_max_leverage": {"sp500": 25}}))
+        assert out["desk_max_leverage"] == {"sp500": 25}
+        assert desk_leverage.cap_for_coin(SP500, out) == 25.0 and desk_leverage.cap_for_coin(BRENT, out) is None
+        bad = json.loads(M.handle_config({"desk_max_leverage": {"sp500": 500}}))
+        assert bad["status"] == "error" and "sp500" in bad["error"]
+        assert config_store.read_agent_config()["desk_max_leverage"] == {"sp500": 25}
+    finally:
+        config_store.write_agent_config({"mode": "OFF"})

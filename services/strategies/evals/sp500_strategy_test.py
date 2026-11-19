@@ -44,8 +44,8 @@ Verdict (written before the first run), per family, on its picked variant:
   LEANING  net R above zero on the whole 1h sample and its held-out tail
            (5 or more tail trades), above zero without its two best trades,
            and half its neighbours above zero; a 15m or cost-stress leg
-           fails. (The tail-trades and robustness legs were added to
-           LEANING after the first run called a 2-trade tail LEANING.)
+           fails. (The tail-trades leg and the two fluke checks were added
+           to LEANING after the first run called a 2-trade tail LEANING.)
   NOISE    anything else.
 The opening-range family has no 1h dataset: its 15m rows are judged in the
 1h slots, so it can reach LEANING at most.

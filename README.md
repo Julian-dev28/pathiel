@@ -118,8 +118,9 @@ other account.
 
 The oil desk is the one active desk on a fresh install. It trades Brent
 (`xyz:BRENTOIL`) on mainnet, and WTI (`xyz:CL`) on testnet, where Brent is
-not listed. The metals desk (gold, silver) is registered and off by default;
-`get_desk_brief` still reads it. The rules each bracket must pass are in
+not listed. The metals desk (gold, silver) and the S&P 500 desk (`sp500`,
+`xyz:SP500`) are registered and off by default; `get_desk_brief` still reads
+them. The rules each bracket must pass are in
 [docs/strategy/OIL_RULES.md](docs/strategy/OIL_RULES.md).
 
 ## Before you trade
