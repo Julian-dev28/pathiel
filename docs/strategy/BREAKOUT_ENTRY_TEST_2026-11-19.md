@@ -291,3 +291,102 @@ for the a6 signal, <2s, synthetic candles); `desk_tick_sim.py`'s new
 every existing result byte-identical — confirmed by the full, unmodified
 `test_desk_tick_sim.py`/`test_pullback_sim.py`/`test_silver_breakout.py`
 suites passing unchanged).
+
+## Paper test 2026-11-19..21
+
+NOISE did not settle whether `a6_15m_k1.0_thesis_half` is worth a second
+look once there are more real fills to judge it on. Operator, 2026-11-19:
+yes to a 2-day PAPER test of that one variant — log only, no orders, no
+money, running next to the real desk so the two can be compared on the
+exact same window.
+
+**What runs.** `scripts/paper_breakout.py`, one invocation = one paper
+tick, scheduled every 15 minutes:
+
+```
+.venv/bin/python scripts/paper_breakout.py --start <ISO8601 UTC>
+```
+
+Reads the live oil thesis journal the same way the live desk does
+(`services.strategies.backtest.data.load_journaled_theses` +
+`desk_tick_backtest.journaled_direction`, READ ONLY) and live xyz:BRENTOIL
+15m/1h candles through the repo's existing public reader
+(`pathiel.client.hl_client.fetch_hl_candles`, no disk cache). Every tick
+replays `desk_tick_sim.simulate` — never reimplemented — from `--start`
+through the latest closed bar, with the EXACT `a6_15m_k1.0_thesis_half`
+Params (`scripts/paper_breakout.A6_OVERRIDES`, copied verbatim from this
+eval's own `variants()`) built on `live_params.live_brent_params()`, the
+same function every "live" baseline in this repo is built from. Because
+the sim's no-lookahead property holds and the replay window only grows
+forward, redoing the whole replay every tick and diffing it against the
+last tick's own state (`diff_tick`) is exactly equivalent to a live step
+function — `tests/test_paper_breakout.py` proves this wrapper and a direct
+`simulate()` call agree bit for bit on the same bars.
+
+Mechanics are the sim's own: taker entry fee + slippage, stop/target on 15m
+bars (target is a resting limit — a touch does not fill, only a
+trade-through), the Friday weekend flat, and the oil desk's SCHEDULED
+blackouts (the weekly EIA report ±2h and every impact-3 macro event for
+Brent, both precomputed from the same calendars the live overlay reads and
+fed into the sim's own static `Params.event_blackout_windows` — not
+reimplemented). Not modeled: the live desk's HEADLINE blackout
+(`services.strategies.event_blackout`'s surprise-news overlay) — it cannot
+be known ahead of the moment a headline fires, and replaying it would need
+the same LLM-backed news read the live desk uses, which this script is
+barred from calling. This is the same gap this file's own Caveats section
+already carries for the eval baseline, not a new one.
+
+**Where the log is.** `$PATHIEL_STATE_DIR/paper/breakout_a6.jsonl` (one
+JSON object per OPEN/CLOSE event) and `breakout_a6_state.json` (the
+persisted state a later tick resumes from). One line is also printed and
+appended to `$PATHIEL_OIL_PROGRESS_LOG` (default `/tmp/oil-loop/
+progress.log`, the same file the live desk-tick loop writes to):
+
+```
+PAPER-A6 <utc> mid=<mid> pos=<flat|side size@entry stop=.. tp=..> action=<NONE|OPEN|STOP|TARGET|FLAT> <reason>
+```
+
+`FLAT` covers every close that is not the position's own stop or target
+price (weekend, invalidation, a thesis direction flip) — the reason text
+says which.
+
+**How to read the report.** `--report` (safe at any time, never trades):
+
+```
+.venv/bin/python scripts/paper_breakout.py --report
+```
+
+Prints this variant's own trades/wins/net R/net $ since `--start` (at the
+eval's $64 scale, half size on every a6 fill — the real account balance
+lives under `~/.pathiel`, which this script never opens, so every $ figure
+here scales linearly with the real desk's actual equity, the same
+convention this whole file used throughout) split into live-rule fills
+(the unchanged main structural rule, still active underneath the a6
+overlay) vs a6-only fills, next to the real desk's own closed trades in the
+same window, read from `$PATHIEL_STATE_DIR/review/ledger.jsonl` (READ
+ONLY). After `--end` (default `--start` + 48h), every invocation prints
+this same report and takes no further action — the replay window never
+extends past `--end`, so no new entry can ever be considered past it.
+
+**First real-data check, 2026-11-19 (dry run, no state written).** Replaying
+2026-11-17 23:30Z → 2026-11-19 23:30Z against the real journal and real
+candles reproduces the exact case-2 fill this file's own table already
+described: a6 long **89.414 at 01:30Z** (15m confirm), stopped **88.638 at
+11:30Z for -1.14R**, matching the "-1.14R (-$18.08)" row in the two-named-
+cases section above R-for-R (the $ figure differs only because that number
+compounds off the full month-long dataset's own equity curve at that point,
+not a fresh $64 at this test's own `--start` — R is equity-size invariant
+and is the number that matched). One independent, real-data confirmation
+that the mechanics replay here is byte-correct against the already-published
+finding, not a new one.
+
+**No live-money path exists to find.** No pathiel MCP tool, no hosted LLM
+call, no write under `~/.pathiel` or `.env.local`; a static-import gate test
+(`tests/test_paper_breakout_no_orders.py`) checks the script never imports
+or calls an order-placing symbol directly.
+
+Files: `scripts/paper_breakout.py`; `tests/test_paper_breakout.py` (signal
+parity, stop/target/weekend mechanics, the event-blackout calendar, the
+state machine, state persistence across three separate calls, the report
+math, and the CLI); `tests/test_paper_breakout_no_orders.py` (the
+no-order-import gate).
