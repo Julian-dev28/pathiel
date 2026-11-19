@@ -119,7 +119,12 @@ PRICE_WINDOW_MIN = 15
 # of 2026-10-06..11-05 a 0.7% close-to-open move printed 4 times (1.0%: once),
 # about the rate silver's 1.2% (6) and Brent's 1.0% (12) alert at; p99.5 of
 # gold's 15m moves is 0.47%, so 0.7% is a real outlier, not noise.
-PRICE_SHOCK = {"xyz:BRENTOIL": 0.010, "xyz:CL": 0.010, "xyz:SILVER": 0.012, "xyz:GOLD": 0.007}
+# S&P 0.7% (2026-11-19, the sp500 desk): on xyz:SP500's 15m bars of
+# 2026-09-28..11-19 a 0.7% close-to-open move printed 5 times in 52 days
+# (2.9 a month; 0.6%: 9, 0.8%: 2), the rate gold's 0.7% alerts at; p99.5 of
+# its 15m moves is 0.41%.
+PRICE_SHOCK = {"xyz:BRENTOIL": 0.010, "xyz:CL": 0.010, "xyz:SILVER": 0.012, "xyz:GOLD": 0.007,
+               "xyz:SP500": 0.007}
 HEADLINE_BLACKOUT_MIN = 30
 HEADLINE_MIN_GAP_MIN = 30          # a headline rewrite still waits this long after the last thesis
 MAX_ALERTS_PER_DAY = 6             # per group; caps rewrite cost (~$1 each)
@@ -133,7 +138,10 @@ PRICE_REARM_MIN = PRICE_WINDOW_MIN  # one price-shock alert per coin per window,
 # (xyz:BRENTOIL p90 1.56% p95 1.93%; xyz:GOLD p90 0.66% p95 0.90%); Brent's
 # 1.75% catches that evening's +1.83%. One alert per coin per window.
 DRIFT_WINDOW_MIN = 240
-PRICE_DRIFT = {"xyz:BRENTOIL": 0.0175, "xyz:CL": 0.0175, "xyz:SILVER": 0.025, "xyz:GOLD": 0.009}
+# The S&P's 4h moves: p95 0.60% over 208 days of 1h bars, 0.76% over the last
+# 52 days of 15m bars (p99 1.10% / 1.37%); 0.75% sits at the recent p95.
+PRICE_DRIFT = {"xyz:BRENTOIL": 0.0175, "xyz:CL": 0.0175, "xyz:SILVER": 0.025, "xyz:GOLD": 0.009,
+               "xyz:SP500": 0.0075}
 DRIFT_REARM_MIN = DRIFT_WINDOW_MIN
 HISTORY_KEEP_MIN = DRIFT_WINDOW_MIN + 2   # minutes of mids the watcher keeps per coin
 KEEP_ALERTS = 100
@@ -151,7 +159,18 @@ NEWS_QUERIES = {
     "metals": ["Powell OR \"Federal Reserve\" OR \"rate cut\" when:1h",
                "gold price OR bullion OR \"central bank\" gold when:1h",
                "silver price OR precious metals OR tariff metals when:1h"],
+    # the sp500 desk (2026-11-19): the Fed, tariffs and Washington, the megacaps
+    "sp500": ["Powell OR \"Federal Reserve\" OR \"rate cut\" when:1h",
+              "tariffs OR \"trade deal\" OR \"government shutdown\" OR \"debt ceiling\" when:1h",
+              "Nvidia OR Apple OR Microsoft OR Amazon OR Alphabet OR Meta OR Tesla guidance when:1h"],
 }
+
+# The names that carry about a third of the index's weight.
+_MEGACAP = r"(nvidia|apple|microsoft|amazon|alphabet|google|meta|tesla|broadcom)"
+_GUIDE = r"(guidance|forecast|outlook|earnings|results|revenue|profit)"
+_GUIDE_ACT = r"(miss|beat|cut|rais|slash|warn|lower|lift|top|disappoint|withdraw)"
+_TARIFF_ACT = (r"(impos|announc|rais|hik|doubl|paus|delay|suspend|lift|roll|exempt|retaliat|threaten|"
+               r"new|sweeping|reciprocal|struck down|strikes? down|rul)")
 
 _IRAN = r"(iran|iranian|tehran|hormuz|persian gulf|khamenei|araghchi|pezeshkian)"
 # Event words only. "war" and "sanction" are out on purpose: with a war on,
@@ -188,9 +207,31 @@ PATTERNS: Dict[str, List[Tuple[str, re.Pattern]]] = {
         ("yields/dollar shock", re.compile(r"\b(treasury yields?|real yields?|dollar|dxy|greenback)\b.*"
                                            r"\b(spike|surge|soar|plunge|tumble|crash|jump)\w*", re.I)),
     ],
+    # The S&P (2026-11-19). Event words only, like the groups above: a market
+    # wrap ("Stocks fall as ...") is dropped by PRICE_WRAP and the price shock
+    # catches the move itself.
+    "sp500": [
+        ("fed", re.compile(r"\b(powell|federal reserve|fomc|the fed|fed)\b.*\b(emergency|cut|hike|surprise|resign|fire)\w*",
+                            re.I)),
+        ("trump/fed", re.compile(r"\btrump\b.*\b(fed|powell|rates?)\b", re.I)),
+        ("tariffs", re.compile(rf"\btariffs?\b.*\b{_TARIFF_ACT}\w*|\b{_TARIFF_ACT}\w*\b.*\btariffs?\b", re.I)),
+        ("megacap", re.compile(rf"\b{_MEGACAP}\b.*\b{_GUIDE}\b.*\b{_GUIDE_ACT}\w*|"
+                               rf"\b{_MEGACAP}\b.*\b{_GUIDE_ACT}\w*\b.*\b{_GUIDE}\b", re.I)),
+        ("washington", re.compile(r"\b(government shutdown|debt ceiling|debt limit|u\.?s\.? default|"
+                                  r"credit rating|downgrad\w*)\b.*\b(begin|start|avert|end|deal|vote|fail|loom|"
+                                  r"u\.?s\.?|united states|treasur)\w*|"
+                                  r"\b(avert|end|deal|vote|fail)\w*\b.*\b(government shutdown|debt ceiling|debt limit)\b",
+                                  re.I)),
+        ("market stress", re.compile(r"\b(circuit breaker|trading halt\w*|flash crash|limit[- ]down|"
+                                     r"bank (failure|run|collapse)|fdic (seiz|tak)\w*)\b", re.I)),
+        ("yields shock", re.compile(r"\b(treasury yields?|10-year yields?|bond yields?)\b.*"
+                                    r"\b(spike|surge|soar|plunge|tumble|crash|jump)\w*", re.I)),
+    ],
 }
 ODDS_TERMS = {"oil": re.compile(r"(iran|hormuz|ceasefire|opec|oil)", re.I),
-              "metals": re.compile(r"(fed|rate cut|powell|recession|gold|iran|ceasefire)", re.I)}
+              "metals": re.compile(r"(fed|rate cut|powell|recession|gold|iran|ceasefire)", re.I),
+              "sp500": re.compile(r"(fed|rate cut|powell|recession|shutdown|tariff|trade deal|s&p|debt ceiling)",
+                                  re.I)}
 
 # Trump's own posts (operator, 2026-11-05: "A Truth Social / X feed for the
 # headline watcher"). A post is short and not headline-shaped: "Oil Prices
@@ -215,6 +256,8 @@ _POST_FED = (r"(the fed|federal reserve|fomc|interest rates?|rate cuts?|rate hik
              r"(jerome|chairman|\"?too late\"?) powell)")
 _POST_FED_NAME = r"(powell|hassett|warsh)"
 _POST_FED_CTX = r"(fed|federal reserve|rates?|interest|too late|jerome|chairman|inflation)"
+_POST_SP_TARIFF_WHO = (r"(china|chinese|india\w*|canad\w*|mexic\w*|europe\w*|eu|japan\w*|korea\w*|taiwan\w*|"
+                       r"vietnam\w*|chips?|semiconductors?|pharma\w*|autos?|cars|steel|aluminum|imports?)")
 POST_PATTERNS: Dict[str, List[Tuple[str, re.Pattern]]] = {
     "oil": [
         ("trump:iran", re.compile(rf"\b{_IRAN}\w*\b", re.I)),
@@ -234,6 +277,17 @@ POST_PATTERNS: Dict[str, List[Tuple[str, re.Pattern]]] = {
         # gold since 2026-11-05: a post on Iran is the safe-haven headline
         # (the 11-02 "there will not be a War with Iran" post moved gold too).
         ("trump:iran", re.compile(rf"\b{_IRAN}\w*\b", re.I)),
+    ],
+    # The S&P (2026-11-19): the Fed (the metals patterns: a Fed name needs Fed
+    # context), tariffs with a trade partner or a sector next to them, and the
+    # market itself by name.
+    "sp500": [
+        ("trump:fed", re.compile(rf"\b{_POST_FED}\b", re.I)),
+        ("trump:fed", re.compile(rf"\b{_POST_FED_NAME}\b.*\b{_POST_FED_CTX}\b|\b{_POST_FED_CTX}\b.*\b{_POST_FED_NAME}\b",
+                                 re.I | re.S)),
+        ("trump:tariff", re.compile(rf"\btariff\w*\b.*\b{_POST_SP_TARIFF_WHO}\b|\b{_POST_SP_TARIFF_WHO}\b.*\btariff\w*\b",
+                                    re.I | re.S)),
+        ("trump:markets", re.compile(r"\b(stock market|stocks|wall street|s&p|dow jones|nasdaq|401\(?k\)?s?)\b", re.I)),
     ],
 }
 # An archived image/video post with no words, or a bare link: nothing to read.
@@ -391,11 +445,46 @@ _METALS_BEAR = [
     r"\bpeace (deal|agreement|talks|accord)\b", r"\b(peace |nuclear )?deal\b", r"\bde-?escalat\w*", r"\brisk[- ]on\b",
     r"\b(central banks?|pboc|people's bank|reserve bank)\b.*\b(sell|sold|dump|cut|reduc)\w*",
 ]
+# The S&P (2026-11-19): risk-on is bullish. A Fed cut, a tariff pause or a
+# trade deal, a ceasefire, a shutdown averted, a megacap beating or raising;
+# bearish the mirror: a hike or hawkish hold, new or higher tariffs, a deal
+# that fails, an attack or an escalation, a shutdown, a downgrade, a miss or
+# a cut to guidance, yields spiking, a bank failing. "no rate cut" and "deal
+# fails" are rewritten first, as for the other groups.
+_SP500_NEGATIONS = [_METALS_NEGATIONS[0], _OIL_NEGATIONS[0], _OIL_NEGATIONS[1], _OIL_NEGATIONS[2]]
+_SP500_BULL = [
+    r"\bwaraverted\b", r"\bemergency\b.*\bcut", r"\b(rate|interest rate) cuts?\b", r"\bcuts? (interest )?rates?\b",
+    r"\bcut by \d+", r"\bdovish\b", r"\bsoft landing\b", r"\bstimulus\b",
+    r"\btariffs?\b.*\b(paus|delay|suspend|lift|roll(ed|s|ing)? back|exempt|cut|lower|struck down)\w*",
+    r"\b(struck|strikes?) down\b.*\btariffs?\b",
+    r"\b(paus|delay|suspend|lift|roll(ed|s|ing)? back|exempt|lower)\w*\b.*\btariffs?\b",
+    r"\btrade (deal|agreement|truce|pact)\b", r"\bceasefire\b", r"\bcease-fire\b", r"\btruce\b",
+    r"\bpeace (deal|agreement|talks|accord)\b", r"\bde-?escalat\w*", r"\brisk[- ]on\b",
+    r"\bshutdown\b.*\b(avert|end|ends|ended|over|deal)\w*", r"\b(avert|end|ends|ended)\w*\b.*\bshutdown\b",
+    r"\b(beat|beats|tops?|topped|crush\w*)\b.*\b(estimates?|expectations?|forecasts?)\b",
+    r"\b(rais|lift|boost|hik)\w*\b.*\b(guidance|forecast|outlook)\b",
+    r"\byields?\b.*\b(plunge|tumble|slide|fall|drop)\w*",
+]
+_SP500_BEAR = [
+    r"\bhawkishhold\b", r"\bdealfails\b", r"\b(rate|interest rate) hikes?\b", r"\bhikes? (interest )?rates?\b",
+    r"\bhawkish\b", r"\bhigher for longer\b", r"\brecession\b", r"\bstagflation\b",
+    r"\btariffs?\b.*\b(impos|rais|hik|doubl|new|sweeping|reciprocal|retaliat|threaten|escalat)\w*",
+    r"\b(impos|rais|hik|doubl|new|sweeping|reciprocal|retaliat|threaten)\w*\b.*\btariffs?\b",
+    r"\btrade war\b", r"\battack\w*", r"\bstrikes?\b(?! (down|a deal|the deal|deal|agreement|accord|truce))",
+    r"\bmissiles?\b", r"(?<!de-)(?<!de)\bescalat\w*", r"\bretaliat\w*", r"\binva(de|sion)\w*", r"\brisk[- ]off\b",
+    r"\bshutdown\b.*\b(begin|start|loom|drag|extend)\w*", r"\bdowngrad\w*", r"\bdefault\b",
+    r"\b(miss|misses|missed|disappoint\w*)\b.*\b(estimates?|expectations?|forecasts?)\b",
+    r"\b(cut|cuts|slash|lower|withdraw)\w*\b.*\b(guidance|forecast|outlook)\b", r"\bprofit warning\b",
+    r"\byields?\b.*\b(surge|spike|soar|jump|climb)\w*", r"\bbank (failure|run|collapse)\b",
+    r"\bcircuit breaker\b", r"\bflash crash\b",
+]
 DIRECTION_WORDS: Dict[str, Dict[str, Any]] = {
     "oil": {"negations": _OIL_NEGATIONS, "bull": [re.compile(p, re.I | re.S) for p in _OIL_BULL],
             "bear": [re.compile(p, re.I | re.S) for p in _OIL_BEAR]},
     "metals": {"negations": _METALS_NEGATIONS, "bull": [re.compile(p, re.I | re.S) for p in _METALS_BULL],
                "bear": [re.compile(p, re.I | re.S) for p in _METALS_BEAR]},
+    "sp500": {"negations": _SP500_NEGATIONS, "bull": [re.compile(p, re.I | re.S) for p in _SP500_BULL],
+              "bear": [re.compile(p, re.I | re.S) for p in _SP500_BEAR]},
 }
 # Polymarket questions: +1 when a rising YES is bullish for the group's coins.
 ODDS_POLARITY: Dict[str, List[Tuple[int, re.Pattern]]] = {
@@ -415,6 +504,13 @@ ODDS_POLARITY: Dict[str, List[Tuple[int, re.Pattern]]] = {
                         r"invade\w*|invasion|escalat\w*|(above|over|reach|hit) \$)\b", re.I)),
     ],
 }
+ODDS_POLARITY["sp500"] = [
+    (-1, re.compile(r"\b(rate hike|hikes? rates?|raise rates?|hold rates?|no (rate )?cut|recession|shutdown|default|"
+                    r"downgrade|tariffs?|trade war|war|strikes?|attack\w*|invade\w*|invasion|escalat\w*|"
+                    r"(below|under) \$?\d[\d,.]*)\b", re.I)),
+    (+1, re.compile(r"\b(rate cut|cuts? (interest )?rates?|lower rates?|ceasefire|cease-fire|truce|peace|"
+                    r"trade deal|(above|over|reach|hit) \$?\d[\d,.]*)\b", re.I)),
+]
 _ODDS_TITLE = re.compile(r"(\d+)%\s*->\s*(\d+)%\s*$")
 _PCT_IN_TITLE = re.compile(r"([+-]\d+(?:\.\d+)?)%")
 

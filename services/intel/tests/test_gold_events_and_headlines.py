@@ -106,7 +106,7 @@ def test_the_gold_thesis_gets_the_scheduled_events_as_catalysts():
 # ── the headline watcher's metals group ─────────────────────────────────────
 
 def test_gold_price_shock_is_0_7pct_and_the_others_are_unchanged():
-    assert HW.PRICE_SHOCK == {BRENT: 0.010, "xyz:CL": 0.010, SILVER: 0.012, GOLD: 0.007}
+    assert HW.PRICE_SHOCK == {BRENT: 0.010, "xyz:CL": 0.010, SILVER: 0.012, GOLD: 0.007, "xyz:SP500": 0.007}
     h = [(NOW_MS - (14 - i) * MIN, 4100.0) for i in range(14)]
     assert HW.price_shock(GOLD, h, NOW_MS, 4100.0 * (1 - 0.0065)) is None
     shock = HW.price_shock(GOLD, h, NOW_MS, 4100.0 * (1 - 0.0075))

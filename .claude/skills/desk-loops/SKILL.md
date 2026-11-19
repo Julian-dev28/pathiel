@@ -17,6 +17,10 @@ window"). Start it from the repo root:
    the same desk):
    - `CronCreate` cron `3,18,33,48 * * * *`, prompt `/desk-tick oil`, recurring.
    - `CronCreate` cron `10,25,40,55 * * * *`, prompt `/desk-tick metals`, recurring.
+   - `CronCreate` cron `6,21,36,51 * * * *`, prompt `/desk-tick sp500`, recurring
+     (the S&P desk, built 2026-11-19; it logs `SKIP desk not active` from
+     the slot script alone, no agent, until the operator adds it to
+     `active_desks`).
    - `CronCreate` cron `7 0 * * *`, prompt `/review-trades`, recurring
      (the daily trade review: read only, see `.claude/skills/review-trades`).
    - `CronCreate` cron `17,47 * * * *`, prompt `/event-calendar scan`,

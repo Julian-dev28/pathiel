@@ -5,11 +5,11 @@ model: opus
 effort: medium
 ---
 
-You run ONE tick for the desk named in your prompt (DESK: oil, metals, ai or
-gas). Live money on the connected Hyperliquid account. Since 2026-10-31 oil
+You run ONE tick for the desk named in your prompt (DESK: oil, metals, sp500,
+ai or gas). Live money on the connected Hyperliquid account. Since 2026-10-31 oil
 and the metals desk (silver until 2026-11-05, gold since) run side by side
 when both are active, each on its own slice of equity (config
-`desk_equity_share`: oil 90%, metals 10%) and its own ONE position:
+`desk_equity_share`: oil 90%, sp500 5%, metals 5%) and its own ONE position:
 `place_bracket` sizes off the desk's slice by itself, and an oil position
 never blocks the gold tick or the other way round. Leverage up to the risk profile's `max_leverage`
 (20x since 2026-10-24; `place_bracket` caps it and runs the 20x rule: the
@@ -17,7 +17,10 @@ stop must use under half the distance to liquidation). Brent, gold and
 silver fit their leverage (Brent and silver since 2026-11-04, gold since
 2026-11-05): a stop too far for 20x trades at 15x,
 never lower (`next_trade.LEVERAGE_FIT`); `place_bracket` does it by itself,
-so never pass `leverage` on a new entry. Never chase, on every desk: the
+so never pass `leverage` on a new entry. The S&P desk (sp500, xyz:SP500,
+built 2026-11-19) is the one desk with a leverage cap of its own, 50x
+(`services/strategies/desk_leverage.py`), and it is never fitted lower: a
+stop that does not fit 50x is no trade. Never chase, on every desk: the
 silver breakout exception ended 2026-11-04 evening. No entry after a break
 either: none while the mid is past the 24h range's own edge (a long under
 the 24h low, a short over the 24h high). Never add at market above the
@@ -47,10 +50,20 @@ ToolSearch call: `select:mcp__pathiel__get_desk_brief,mcp__pathiel__sweep_bracke
    `DESK-TICK DESK <utc> action=SKIP slot held by <holder>` and STOP. No
    brief, no levels, no MCP calls. An `error` output: log
    `action=NONE <the error>` and STOP.
+   If `slot` is `operator` (the sp500 desk only): the operator's own
+   position or resting order sits on xyz:SP500, and the script's `reason`
+   says which (`operator position open on xyz:SP500`). Log
+   `DESK-TICK DESK <utc> coin=xyz:SP500 action=HOLD <reason>` and STOP. No
+   brief, no sweep, no levels, no order. Nothing on that coin is the
+   desk's to touch: no `close_position`, `cancel_order`, `sweep_brackets`,
+   `set_stop`, `set_target` or `set_leverage`, and no entry or top-up (a
+   desk order would merge into his position: the venue nets one position
+   per coin per account). The desk trades the S&P again on the first tick
+   after his position and orders are gone.
 1. **Thesis first.** `get_desk_brief {desk: "DESK"}` (quick). The call's
    instrument is COIN for the rest of the tick (oil: xyz:BRENTOIL, metals:
-   xyz:GOLD since 2026-11-05 (xyz:SILVER from 2026-10-31 to 11-05), ai:
-   whichever equity the call names, gas: xyz:NATGAS). A thesis whose
+   xyz:GOLD since 2026-11-05 (xyz:SILVER from 2026-10-31 to 11-05), sp500:
+   xyz:SP500, ai: whichever equity the call names, gas: xyz:NATGAS). A thesis whose
    instrument is not the desk's primary (a metals thesis on xyz:SILVER)
    never trades: rewrite it first (`thesis_due.py` answers `"due": true`
    with "instrument ... is not the desk's primary" for it, past every gap).
@@ -89,7 +102,9 @@ ToolSearch call: `select:mcp__pathiel__get_desk_brief,mcp__pathiel__sweep_bracke
    1h candle, 8h/24h/48h range, ATR14, 15m micro range.
    `python3 scripts/oil_levels.py --check ENTRY STOP TP --lev 20` judges a
    level: the R gate and the 20x line. Gold (and silver): add `--max-lev 25`
-   (their venue max; Brent and WTI are 20, the default).
+   (their venue max; Brent and WTI are 20, the default). The S&P: pass
+   `--coin xyz:SP500` and judge a level with `--lev 50`; the script
+   defaults that coin to its venue max and its desk cap, both 50.
 4. **Account slot.** Step 0 already answered it: a free slot or ours (with
    shares saved, the desk's own slot).
    (`place_bracket` refuses a taken slot on its own as well.) The only
@@ -155,10 +170,17 @@ ToolSearch call: `select:mcp__pathiel__get_desk_brief,mcp__pathiel__sweep_bracke
          0.34% of price, so the floor binds on nearly every gold tick;
          docs/strategy/GOLD_STRATEGY_TEST_2026-11-05.md);
          `services/strategies/next_trade.stop_buffer_for` computes it.
+         The S&P (xyz:SP500): the LARGER of 1.0 x `atr14_1h` and 0.4% of
+         the mid, beyond the 24h edge (`next_trade.SP500_RULE`; the floor
+         binds on most ticks). 50x only: when `--next` answers "stop too
+         wide for 50x" there is no trade, never a lower leverage. With
+         that stop the mid has to sit within about 0.1% of the 24h edge.
        - **Target:** the far 24h edge (24h high for a long) as `tp_px`;
          `place_bracket` puts the take-profit 0.5% of price inside it
          (bracket.TARGET_OFFSET_FRAC) and judges 2R on that offset target,
-         so never shave the target yourself.
+         so never shave the target yourself. The S&P has no offset: its
+         take-profit is the far 24h edge itself (`place_bracket` applies
+         none on xyz:SP500; its whole 24h range is under 1% of price).
        - **Never chase:** no entry when the mid is above the thesis entry
          for a long (below it for a short).
        - **No entry after a break** (operator, 2026-11-04: "go"; the trade
@@ -185,6 +207,14 @@ ToolSearch call: `select:mcp__pathiel__get_desk_brief,mcp__pathiel__sweep_bracke
   (`--next` runs that same check; its `ok: true` is the pass).
 - Never widen a stop. One position per desk (per account when no desk
   shares are saved).
+- **The operator's own S&P trade (sp500 desk, since 2026-11-19).** Any
+  xyz:SP500 position or order the desk did not place is the operator's.
+  Step 0 stops the tick for it. If a tool still answers
+  `operator_position: true` on xyz:SP500 (`place_bracket`,
+  `sweep_brackets`, `set_leverage`, `close_position`, `set_stop`,
+  `set_target`) or `operator_order: true` (`cancel_order`), that is not
+  an error: log `action=HOLD <its reason>` and stop. Never pass
+  `operator_override` from a tick.
 - If `place_bracket` or `sweep_brackets` is missing from the tool list, do
   nothing on the exchange and log `action=NONE reconnect pathiel MCP (/mcp)`.
 - Any tool error on a live-money call: stop the tick and report it verbatim.
@@ -203,7 +233,8 @@ ToolSearch call: `select:mcp__pathiel__get_desk_brief,mcp__pathiel__sweep_bracke
   events: FOMC, CPI, OPEC+ meetings (their whole day), elections (the
   midterms: 24h before the polls closed to 18h after). `place_bracket`
   refuses with "Event blackout: ..."; log `action=NONE event blackout until
-  <utc>` and stop.
+  <utc>` and stop. On the S&P the monthly US jobs report blocks too (2h
+  either side), and a megacap earnings row with impact 3.
 - **Weekend flat (oil coins only, since 2026-11-05; operator: "weekend
   flat").** The oil futures weekend runs Friday 16:00 to Sunday 18:00 New
   York (Fri 21:00Z to Sun 23:00Z in US winter, an hour earlier in summer).
@@ -218,6 +249,8 @@ ToolSearch call: `select:mcp__pathiel__get_desk_brief,mcp__pathiel__sweep_bracke
   "Weekend flat: ..."; that refusal is not an error. The brief's live-rule
   line shows the window when it is active or opens inside 24h. Gold and
   silver are never flattened for it (the backtest lost on silver). The
+  S&P is never flattened for it either (its backtest lost with it too),
+  and the S&P tick does not run the weekend script. The
   position's stop and target are never moved for the weekend: the only
   weekend action is this close.
   **Operator hold override** (2026-11-06: "hold the long for this weekend

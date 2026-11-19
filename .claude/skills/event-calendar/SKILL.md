@@ -33,7 +33,15 @@ What uses the calendar:
      Iran/Hormuz talks, sanctions deadlines and IAEA board dates.
 
    Every row needs: date, at_utc (or null for all day or unknown), event,
-   kind, coins (oil and/or metals; "silver" is the old name of the metals group and still accepted), impact (1 to 3), verified, source.
+   kind, coins (oil, metals and/or sp500; "silver" is the old name of the metals group and still accepted), impact (1 to 3), verified, source.
+   The S&P desk (sp500) gets every US macro row by its kind (nfp, pce, ppi,
+   retail_sales, fomc_minutes, holidays, funding and trade deadlines:
+   `scheduled_events.SP500_MACRO_KINDS`), so those rows keep their oil and
+   metals coins. Megacap earnings are the rows to add for it by hand: kind
+   `earnings`, coins `["sp500"]`, the company's confirmed date and time
+   from its investor-relations page, impact 3 for Nvidia, Apple, Microsoft,
+   Amazon, Alphabet, Meta and Tesla (impact 3 blocks new S&P entries 2h
+   either side), `verified: false` until the company confirms the date.
    Unverified dates stay `verified: false`. Never guess a time.
 3. **Impact 3 is for events that can move price 2% or more within hours.**
    Those block entries. Keep it to:
