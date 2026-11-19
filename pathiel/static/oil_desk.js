@@ -149,6 +149,7 @@ function renderPositionMismatch() {
   el.hidden = !message;
   renderCallLeverage();
   renderLine();
+  renderLevels();
 }
 
 /** The call card's Leverage row: the position's own leverage once one is
@@ -516,28 +517,77 @@ async function loadWallets() {
 
 // ── 3. LEVELS ────────────────────────────────────────────────────────────────
 
+// position_line.js's own export, loaded just before this file (see the
+// PositionLine fallback above). entry_rows.js, loaded right after it: the
+// pure word/badge builder for the three rows below.
+const EntryRows = window.PathielEntryRows
+  || { entryRows: () => ({ thesis: null, live: null, distance: null, inPosition: false }) };
+
+// The last GET /api/desks/{id}/levels payload, so renderLevels() can
+// repaint (position/thesis changed) without a new fetch — same convention
+// as lastCallLine/renderLine().
+let lastLevels = null;
+
 async function loadLevels() {
   show('levels-loading', true); show('levels-error', false);
   try {
-    const l = await fetchJson(`/api/desks/${encodeURIComponent(activeDesk)}/levels`);
+    lastLevels = await fetchJson(`/api/desks/${encodeURIComponent(activeDesk)}/levels`);
     show('levels-loading', false);
-    const stats = document.getElementById('levels-stats');
-    const last = l.last_closed_1h;
-    stats.innerHTML = `
-      <div><div class="sec-label">Mid</div><div class="kv">${fmtPrice(l.mid)}</div></div>
-      <div><div class="sec-label">Last closed 1h</div><div class="kv">${last ? fmtPrice(last.close) : '—'}</div></div>
-      <div><div class="sec-label">8h range</div><div class="kv">${l.range_8h ? fmtPrice(l.range_8h.low) + ' – ' + fmtPrice(l.range_8h.high) : '—'}</div></div>
-      <div><div class="sec-label">24h range</div><div class="kv">${l.range_24h ? fmtPrice(l.range_24h.low) + ' – ' + fmtPrice(l.range_24h.high) : '—'}</div></div>
-      <div><div class="sec-label">48h range</div><div class="kv">${l.range_48h ? fmtPrice(l.range_48h.low) + ' – ' + fmtPrice(l.range_48h.high) : '—'}</div></div>
-      <div><div class="sec-label">ATR14 (1h)</div><div class="kv">${l.atr14_1h != null ? fmtPrice(l.atr14_1h) + ' (' + pctUnsigned(l.atr14_pct != null ? l.atr14_pct / 100 : null) + ')' : '—'}</div></div>
-      <div><div class="sec-label">Mid position in 24h range</div><div class="kv">${l.mid_pos_in_24h != null ? pctUnsigned(l.mid_pos_in_24h) : '—'}</div></div>`;
+    renderLevels();
     show('levels-stats', true);
   } catch (e) {
     show('levels-loading', false);
     show('levels-stats', false);
+    lastLevels = null;
     setErrorDetail('levels', e);
     reportRefreshFailure('oil levels', e, document.getElementById('levels-error'));
   }
+}
+
+/** Paints #levels-stats from `lastLevels` (the candle ranges, unchanged)
+ *  plus three entry rows built by entry_rows.js: the thesis's own entry,
+ *  the live entry next_trade()'s rule will act on (or the open position's
+ *  own entry/stop/target when one is open on this call's coin+side, so
+ *  this card never shows a pending entry the Wallets table already filled),
+ *  and the mid's distance to it. Re-run from renderPositionMismatch() too
+ *  (same as renderLine()) so a position or thesis update repaints this
+ *  without waiting for the next /levels poll. */
+function renderLevels() {
+  const l = lastLevels;
+  const stats = document.getElementById('levels-stats');
+  if (!l || !stats) return;
+  const last = l.last_closed_1h;
+  const position = PositionLine.positionLine(PositionLine.positionForCall(lastThesisCall, lastPositionsByCoin));
+  const rows = EntryRows.entryRows(l.entry, position);
+
+  const thesisTile = rows.thesis ? `${esc(rows.thesis.side)} ${fmtPrice(rows.thesis.price)}` : 'No thesis yet';
+
+  const live = rows.live || {};
+  const liveTile = live.sentence
+    ? `${esc(live.sentence)}`
+      + `${live.stop != null ? `. Stop ${fmtPrice(live.stop)}` : ''}`
+      + `${live.tp != null ? `, target ${fmtPrice(live.tp)}` : ''}`
+      + `${live.r != null ? ` (${Number(live.r).toFixed(1)}R)` : ''}`
+    : '—';
+  const liveBadge = live.statusText
+    ? ` <span class="badge ${esc(live.badgeClass || 'b-flat')}">${esc(live.statusText)}</span>` : '';
+
+  const distanceTile = rows.distance
+    ? `${fmtPrice(rows.distance.price)} (${pctUnsigned(rows.distance.pct)}`
+      + `${rows.distance.atr != null ? ', ' + rows.distance.atr.toFixed(2) + ' ATR' : ''})`
+    : '—';
+
+  stats.innerHTML = `
+    <div><div class="sec-label">Mid</div><div class="kv">${fmtPrice(l.mid)}</div></div>
+    <div><div class="sec-label">Last closed 1h</div><div class="kv">${last ? fmtPrice(last.close) : '—'}</div></div>
+    <div><div class="sec-label">8h range</div><div class="kv">${l.range_8h ? fmtPrice(l.range_8h.low) + ' – ' + fmtPrice(l.range_8h.high) : '—'}</div></div>
+    <div><div class="sec-label">24h range</div><div class="kv">${l.range_24h ? fmtPrice(l.range_24h.low) + ' – ' + fmtPrice(l.range_24h.high) : '—'}</div></div>
+    <div><div class="sec-label">48h range</div><div class="kv">${l.range_48h ? fmtPrice(l.range_48h.low) + ' – ' + fmtPrice(l.range_48h.high) : '—'}</div></div>
+    <div><div class="sec-label">ATR14 (1h)</div><div class="kv">${l.atr14_1h != null ? fmtPrice(l.atr14_1h) + ' (' + pctUnsigned(l.atr14_pct != null ? l.atr14_pct / 100 : null) + ')' : '—'}</div></div>
+    <div><div class="sec-label">Mid position in 24h range</div><div class="kv">${l.mid_pos_in_24h != null ? pctUnsigned(l.mid_pos_in_24h) : '—'}</div></div>
+    <div><div class="sec-label">Thesis entry</div><div class="kv kv-text">${thesisTile}</div></div>
+    <div><div class="sec-label">Live entry${liveBadge}</div><div class="kv kv-text">${liveTile}</div></div>
+    <div><div class="sec-label">Distance to live entry</div><div class="kv kv-text">${distanceTile}</div></div>`;
 }
 
 // ── 4. HEADLINES AND CATALYSTS ───────────────────────────────────────────────
