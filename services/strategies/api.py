@@ -438,16 +438,25 @@ def _levels_entry(desk_id: str, coin: str, lv: Dict[str, object]) -> Dict[str, o
 
 @router.get("/api/desks/{desk_id}/log")
 def get_desk_log(request: Request, desk_id: str,
-                 n: int = Query(30, ge=1, le=500)) -> Dict[str, object]:
+                 n: int = Query(30, ge=1, le=500),
+                 all_lines: bool = Query(False, alias="all")) -> Dict[str, object]:
     """The last `n` lines of this desk's loop progress log (env
     PATHIEL_<DESK>_LOG, e.g. PATHIEL_OIL_LOG, default /tmp/oil-loop/progress.log
     for desk_id "oil" and /tmp/<desk>-loop/progress.log otherwise). An empty
     `lines` list — including when the file does not exist yet, or this desk
-    has no loop at all — means "no ticks yet", not an error."""
+    has no loop at all — means "no ticks yet", not an error.
+
+    Default (`all` unset/false): only this desk's own lines (a `DESK-TICK
+    <desk>` tick line or a `WATCH <desk>` watcher-wake line; see
+    desk_log.filter_desk_lines) — every other desk's lines, and any line
+    the shared file picked up that names no desk at all (the oil-only
+    paper-breakout sim's `PAPER-A6 ...` lines, 2026-11-20 bug report), are
+    dropped. `?all=1`: the raw tail exactly as written, for the Desk
+    page's "show all lines" toggle."""
     _require_operator_or_local(request)
     if desks.get_spec(desk_id) is None:
         raise _unknown_desk(desk_id)
-    return {"lines": desk_log.read_desk_log(desk_id, n)}
+    return {"lines": desk_log.read_desk_log(desk_id, n, include_all=all_lines)}
 
 
 # ── HTML routes ────────────────────────────────────────────────────────────

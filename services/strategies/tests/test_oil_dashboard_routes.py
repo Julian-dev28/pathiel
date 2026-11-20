@@ -112,12 +112,12 @@ def test_oil_levels_route_502s_plainly_on_a_read_failure(client, monkeypatch):
 
 def test_oil_log_route_reads_the_env_configured_file(client, monkeypatch, tmp_path):
     p = tmp_path / "progress.log"
-    p.write_text("OIL-TICK 2026-10-23T00:00 mid=107.5 pos=flat action=NONE no setup\n")
+    p.write_text("DESK-TICK oil 2026-10-23T00:00 mid=107.5 pos=flat action=NONE no setup\n")
     monkeypatch.setenv("PATHIEL_OIL_LOG", str(p))
 
     r = client.get("/api/desks/oil/log")
     assert r.status_code == 200
-    assert r.json()["lines"] == ["OIL-TICK 2026-10-23T00:00 mid=107.5 pos=flat action=NONE no setup"]
+    assert r.json()["lines"] == ["DESK-TICK oil 2026-10-23T00:00 mid=107.5 pos=flat action=NONE no setup"]
 
 
 def test_oil_log_route_missing_file_is_an_empty_list(client, monkeypatch, tmp_path):
@@ -128,10 +128,60 @@ def test_oil_log_route_missing_file_is_an_empty_list(client, monkeypatch, tmp_pa
 
 def test_oil_log_route_respects_n(client, monkeypatch, tmp_path):
     p = tmp_path / "progress.log"
-    p.write_text("\n".join(f"OIL-TICK line {i}" for i in range(5)) + "\n")
+    p.write_text("\n".join(f"DESK-TICK oil line {i}" for i in range(5)) + "\n")
     monkeypatch.setenv("PATHIEL_OIL_LOG", str(p))
     r = client.get("/api/desks/oil/log", params={"n": 2})
-    assert r.json()["lines"] == ["OIL-TICK line 3", "OIL-TICK line 4"]
+    assert r.json()["lines"] == ["DESK-TICK oil line 3", "DESK-TICK oil line 4"]
+
+
+# ── 2026-11-20: "Last tick" bug (a PAPER-A6 line is not any desk's own) ─────
+
+def test_log_route_drops_lines_from_the_oil_only_paper_sim_for_every_desk(client, monkeypatch, tmp_path):
+    """The exact bug report: PAPER-A6 (scripts/paper_breakout.py) and oil's
+    real DESK-TICK lines share one file; sp500 and hype must never pick up
+    the PAPER-A6 line as their own, even though it is the last line written."""
+    p = tmp_path / "progress.log"
+    p.write_text(
+        "DESK-TICK oil 2026-11-20T00:00Z action=NONE no setup\n"
+        "PAPER-A6 2026-11-20T00:15Z mid=90.05 pos=long 0.42@88.50 stop=86.10 tp=91.66 action=HOLD\n"
+    )
+    monkeypatch.setenv("PATHIEL_OIL_LOG", str(p))
+    monkeypatch.setenv("PATHIEL_SP500_LOG", str(p))
+    monkeypatch.setenv("PATHIEL_HYPE_LOG", str(p))
+
+    assert client.get("/api/desks/sp500/log").json()["lines"] == []
+    assert client.get("/api/desks/hype/log").json()["lines"] == []
+    oil_lines = client.get("/api/desks/oil/log").json()["lines"]
+    assert oil_lines == ["DESK-TICK oil 2026-11-20T00:00Z action=NONE no setup"]
+
+
+def test_log_route_all_param_returns_the_raw_unfiltered_tail(client, monkeypatch, tmp_path):
+    p = tmp_path / "progress.log"
+    p.write_text(
+        "DESK-TICK oil 2026-11-20T00:00Z action=NONE no setup\n"
+        "PAPER-A6 2026-11-20T00:15Z mid=90.05 action=HOLD\n"
+    )
+    monkeypatch.setenv("PATHIEL_SP500_LOG", str(p))
+
+    default = client.get("/api/desks/sp500/log").json()["lines"]
+    assert default == []
+    everything = client.get("/api/desks/sp500/log", params={"all": 1}).json()["lines"]
+    assert everything == [
+        "DESK-TICK oil 2026-11-20T00:00Z action=NONE no setup",
+        "PAPER-A6 2026-11-20T00:15Z mid=90.05 action=HOLD",
+    ]
+
+
+def test_log_route_keeps_watch_lines_naming_this_desk(client, monkeypatch, tmp_path):
+    p = tmp_path / "progress.log"
+    p.write_text(
+        "WATCH hype 2026-11-20T00:00Z coin=HYPE mid=29.4 action=WAKE entry rule passed, 2.3R\n"
+        "DESK-TICK oil 2026-11-20T00:01Z action=NONE no setup\n"
+    )
+    monkeypatch.setenv("PATHIEL_HYPE_LOG", str(p))
+    r = client.get("/api/desks/hype/log")
+    assert r.json()["lines"] == [
+        "WATCH hype 2026-11-20T00:00Z coin=HYPE mid=29.4 action=WAKE entry rule passed, 2.3R"]
 
 
 # ── GET /api/desks/{desk_id} quick_markdown ──────────────────────────────────
@@ -173,10 +223,10 @@ def test_levels_route_404s_for_an_unknown_desk(client):
 
 def test_log_route_resolves_the_desk_specific_env_var(client, monkeypatch, tmp_path):
     p = tmp_path / "btc.log"
-    p.write_text("BTC-TICK one\n")
+    p.write_text("DESK-TICK btc one\n")
     monkeypatch.setenv("PATHIEL_BTC_LOG", str(p))
     r = client.get("/api/desks/btc/log")
-    assert r.status_code == 200 and r.json()["lines"] == ["BTC-TICK one"]
+    assert r.status_code == 200 and r.json()["lines"] == ["DESK-TICK btc one"]
 
 
 def test_log_route_404s_for_an_unknown_desk(client):
