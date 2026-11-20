@@ -633,11 +633,11 @@ async function loadLevels() {
  *  useless "0.00000 (0.0%, 0.0 ATR)" (2026-11-20 bug report); "—" with
  *  nothing to show (no thesis, or in position). Pure: no DOM, so a node
  *  test runs it directly, same convention as lastDeskTickLine below. */
-function distanceTile(d) {
+function distanceTile(d, ref) {
   if (!d || d.price == null) return '—';
   if (d.price === 0) return 'at the mid';
   const atrPart = d.atr != null ? `, ${Number(d.atr).toFixed(1)} ATR` : '';
-  return `${fmtPrice(d.price)} (${pctUnsigned(d.pct)}${atrPart})`;
+  return `${fmtDelta(d.price, ref)} (${pctUnsigned(d.pct)}${atrPart})`;
 }
 
 /** "62%" while the mid sits inside the 24h range (l.mid_pos_in_24h is
@@ -657,11 +657,11 @@ function midPositionTile(l) {
   const mid = l.mid;
   if (pos < 0 && r.low != null && mid != null) {
     const dist = r.low - mid;
-    return `below the 24h low by ${fmtPrice(dist)} (${pctUnsigned(mid ? dist / mid : null)})`;
+    return `below the 24h low by ${fmtDelta(dist, mid)} (${pctUnsigned(mid ? dist / mid : null)})`;
   }
   if (pos > 1 && r.high != null && mid != null) {
     const dist = mid - r.high;
-    return `above the 24h high by ${fmtPrice(dist)} (${pctUnsigned(mid ? dist / mid : null)})`;
+    return `above the 24h high by ${fmtDelta(dist, mid)} (${pctUnsigned(mid ? dist / mid : null)})`;
   }
   return pctUnsigned(pos);
 }
@@ -707,10 +707,10 @@ function renderLevels() {
     <div><div class="sec-label">8h range</div><div class="kv">${l.range_8h ? fmtPrice(l.range_8h.low) + ' – ' + fmtPrice(l.range_8h.high) : '—'}</div></div>
     <div><div class="sec-label">24h range</div><div class="kv">${l.range_24h ? fmtPrice(l.range_24h.low) + ' – ' + fmtPrice(l.range_24h.high) : '—'}</div></div>
     <div><div class="sec-label">48h range</div><div class="kv">${l.range_48h ? fmtPrice(l.range_48h.low) + ' – ' + fmtPrice(l.range_48h.high) : '—'}</div></div>
-    <div><div class="sec-label">ATR14 (1h)</div><div class="kv">${l.atr14_1h != null ? fmtPrice(l.atr14_1h) + ' (' + pctUnsigned(l.atr14_pct != null ? l.atr14_pct / 100 : null) + ')' : '—'}</div></div>
+    <div><div class="sec-label">ATR14 (1h)</div><div class="kv">${l.atr14_1h != null ? fmtDelta(l.atr14_1h, l.mid) + ' (' + pctUnsigned(l.atr14_pct != null ? l.atr14_pct / 100 : null) + ')' : '—'}</div></div>
     <div><div class="sec-label">Mid position in 24h range</div><div class="kv${midPositionIsOutsideRange(l) ? ' kv-text' : ''}">${midPositionTile(l)}</div></div>
     <div><div class="sec-label">Thesis entry</div><div class="kv kv-text">${thesisTile}</div></div>
-    <div><div class="sec-label">Distance to live entry</div><div class="kv kv-text">${distanceTile(rows.distance)}</div></div>
+    <div><div class="sec-label">Distance to live entry</div><div class="kv kv-text">${distanceTile(rows.distance, l.mid)}</div></div>
     <div class="lev-stat-full">
       <div class="sec-label">Live entry</div>
       <div class="kv kv-text lev-live-line">${liveBadge}<span>${liveTile}</span></div>

@@ -156,11 +156,11 @@ def test_paint_next_trade_renders_the_deduped_list_not_the_raw_one():
 # copy): this is the exact formatter the rest of the page already uses.
 
 FMT_HELPERS_SRC = DESKS_JS[DESKS_JS.index("const pctSigned ="):DESKS_JS.index("const fmtAgeMinutes =")]
-DISTANCE_TILE_SRC = _extract("function distanceTile(d)", "\nfunction renderLevels()")
+DISTANCE_TILE_SRC = _extract("function distanceTile(d, ref)", "\nfunction renderLevels()")
 
 
-def _distance_tile(d):
-    return _run_js(f"{FMT_HELPERS_SRC}\n{DISTANCE_TILE_SRC}", f"distanceTile({json.dumps(d)})")
+def _distance_tile(d, ref=None):
+    return _run_js(f"{FMT_HELPERS_SRC}\n{DISTANCE_TILE_SRC}", f"distanceTile({json.dumps(d)}, {json.dumps(ref)})")
 
 
 def test_the_worked_example_from_the_bug_report():
@@ -182,7 +182,27 @@ def test_no_distance_data_is_an_em_dash():
 
 def test_render_levels_uses_distance_tile_for_the_distance_cell():
     func = JS[JS.index("function renderLevels()"):JS.index("// ── 4. HEADLINES")]
-    assert "distanceTile(rows.distance)" in func
+    assert "distanceTile(rows.distance, l.mid)" in func
+
+
+# 2026-11-20 follow-up: a 0.4475 gap on a $62 coin read "0.44750" next to
+# prices printed to 3 decimals. A difference takes the coin's precision.
+
+def test_a_sub_one_distance_on_a_62_dollar_coin_prints_three_decimals():
+    assert _distance_tile({"price": 0.4475, "pct": 0.007, "atr": 0.4}, 62.352) == "0.448 (0.7%, 0.4 ATR)"
+
+
+def test_a_distance_on_a_sub_dollar_coin_keeps_five_decimals():
+    assert _distance_tile({"price": 0.01234, "pct": 0.02, "atr": 1.0}, 0.61) == "0.01234 (2.0%, 1.0 ATR)"
+
+
+def test_a_distance_on_an_index_prints_two_decimals():
+    assert _distance_tile({"price": 12.3456, "pct": 0.002, "atr": 0.5}, 6800.0) == "12.35 (0.2%, 0.5 ATR)"
+
+
+def test_render_levels_formats_the_atr_at_the_mids_precision():
+    func = JS[JS.index("function renderLevels()"):JS.index("// ── 4. HEADLINES")]
+    assert "fmtDelta(l.atr14_1h, l.mid)" in func
 
 
 # ── midPositionTile: the mid can trade outside the 24h range ────────────────
