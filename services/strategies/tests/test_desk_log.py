@@ -38,7 +38,12 @@ def test_log_path_generalizes_to_any_desk_id(monkeypatch):
     monkeypatch.delenv("PATHIEL_BTC_LOG", raising=False)
     monkeypatch.delenv("PATHIEL_METALS_LOG", raising=False)
     assert DL.log_path("btc") == DL.DEFAULT_LOG_PATH
-    assert DL.log_path("metals") == "/tmp/oil-loop/progress.log"
+    assert DL.log_path("metals") == DL.DEFAULT_LOG_PATH
+    # The production default is the one shared file. Tests read it off the
+    # source: conftest's _desk_log_isolation repoints the constant per test so
+    # no test can write the live log (2026-11-20).
+    import inspect
+    assert 'DEFAULT_LOG_PATH = "/tmp/oil-loop/progress.log"' in inspect.getsource(DL)
     monkeypatch.setenv("PATHIEL_BTC_LOG", "/tmp/custom-btc.log")
     assert DL.log_path("btc") == "/tmp/custom-btc.log"
 
