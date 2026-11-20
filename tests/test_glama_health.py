@@ -52,7 +52,11 @@ def test_a_page_without_the_data_is_none_not_a_crash():
     assert G.maintenance("<script>enqueue(\"not json\");</script>") is None
 
 
-def fake_github(*, admin=True, alerts=204, setup="configured", runs=None, glama=("me",), dependabot=True):
+GLAMA_APP = {"contents": "read", "metadata": "read", "repository_advisories": "read", "security_events": "read"}
+
+
+def fake_github(*, admin=True, alerts=204, setup="configured", runs=None, glama=("me",), dependabot=True,
+                app=GLAMA_APP):
     runs = [{"name": "Tests", "status": "completed", "conclusion": "success"}] if runs is None else runs
     glama_json = base64.b64encode(json.dumps({"maintainers": list(glama)}).encode()).decode()
     table = {
@@ -66,6 +70,7 @@ def fake_github(*, admin=True, alerts=204, setup="configured", runs=None, glama=
         f"{API}/commits/main": (200, json.dumps({"sha": "abc1234def"}).encode()),
         f"{API}/commits/abc1234def/check-runs?per_page=100": (200, json.dumps({"check_runs": runs}).encode()),
         f"{API}/contents/glama.json": (200, json.dumps({"content": glama_json}).encode()),
+        G.APP_URL: (200, json.dumps({"permissions": app}).encode()),
     }
     return lambda url: table.get(url, (404, None))
 
@@ -111,3 +116,17 @@ def test_only_real_failures_turn_ci_red():
 def test_the_token_only_goes_to_the_github_api():
     assert G.C.sends_token(f"{API}/vulnerability-alerts")
     assert not G.C.sends_token("https://glama.ai/mcp/servers/me/srv")
+
+
+def test_the_app_not_requesting_dependabot_is_named_as_glamas_gap():
+    """2026-11-20: after the install, code scanning and CI cleared on Glama and
+    both Dependabot lines stayed: the app never requests vulnerability_alerts."""
+    green, text = G.report(REPO, None, G.github_side(REPO, fake_github()))
+    assert green
+    assert "NO  Dependabot" in text and "vulnerability_alerts not requested" in text
+    assert "ok  code scanning" in text
+    assert 'still says code scanning, CI "unavailable"' in text   # Dependabot is not blamed on the install
+    _, text = G.report(REPO, None, G.github_side(REPO, fake_github(app={**GLAMA_APP, "vulnerability_alerts": "read"})))
+    assert "NO " not in text and 'still says Dependabot, code scanning, CI "unavailable"' in text
+    _, text = G.report(REPO, None, G.github_side(REPO, fake_github(app=None)))
+    assert "permissions not readable" in text

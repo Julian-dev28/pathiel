@@ -40,6 +40,11 @@ import seo_rank as S  # noqa: E402  (_token)
 
 PATHIEL = "Julian-dev28/pathiel"
 INSTALL_URL = "https://github.com/apps/glama-ai/installations/new"
+APP_URL = "https://api.github.com/apps/glama-ai"
+# GitHub App permission -> the Glama lines it feeds. An app reads only what
+# it requests; Glama AI did not request vulnerability_alerts on 2026-11-20,
+# so its two Dependabot lines read "unavailable" on every repo.
+APP_NEEDS = {"vulnerability_alerts": "Dependabot", "security_events": "code scanning"}
 API = "https://api.github.com"
 
 # Check-run conclusions that mean red; cancelled, skipped, neutral and stale do not.
@@ -134,6 +139,8 @@ def github_side(repo: str, get: Getter) -> dict:
         except ValueError:
             meta = {}
     out["glama_maintainers"] = meta.get("maintainers") or []
+    _, app = get(APP_URL)
+    out["glama_app_permissions"] = (_json(app) or {}).get("permissions")
     return out
 
 
@@ -180,10 +187,22 @@ def report(repo: str, glama: Optional[dict], gh: dict) -> Tuple[bool, str]:
                          + (" (stale)" if iss.get("stale") else ""))
         lines.append(f"  releases: {sum(int(r.get('releaseCount') or 0) for r in rel)} "
                      f"({', '.join(r.get('month', '?') for r in rel) or 'none'})")
+    perms = gh.get("glama_app_permissions")
+    missing = [] if perms is None else [p for p in APP_NEEDS if p not in perms]
+    lines.append("Glama AI app (what it may read on any repo):")
+    if perms is None:
+        lines.append("  permissions not readable")
+    for p, feeds in APP_NEEDS.items():
+        if perms is not None:
+            lines.append(f"  {'ok ' if p in perms else 'NO '} {feeds:<28} "
+                         + (f"{p}: {perms[p]}" if p in perms else
+                            f"{p} not requested: Glama's {feeds} lines read \"unavailable\" on every repo "
+                            "until Glama adds it to its app; nothing in this repo changes that"))
     if green:
-        lines.append("GitHub has every signal on. If Glama still says Dependabot, code scanning or CI "
-                     f"\"unavailable\", the Glama AI app is not installed on {repo}: install it at "
-                     f"{INSTALL_URL} (Only select repositories: {repo.split('/')[1]}), then Sync on Glama's admin page.")
+        clear = [v for p, v in APP_NEEDS.items() if p not in missing] + ["CI"]
+        lines.append(f"GitHub has every signal on. If Glama still says {', '.join(clear)} \"unavailable\", "
+                     f"the Glama AI app is not installed on {repo}: install it at {INSTALL_URL} "
+                     f"(Only select repositories: {repo.split('/')[1]}), then Sync on Glama's admin page.")
     else:
         lines.append("Fix the FIX rows on GitHub first; Glama cannot report a signal GitHub does not have.")
     return green, "\n".join(lines)
