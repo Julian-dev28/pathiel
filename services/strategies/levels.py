@@ -109,6 +109,31 @@ def fetch_mid(coin: str) -> Optional[float]:
         return None
 
 
+# Hours of 1h candles summarize_coin fetches. The usual 50, or (operator bug,
+# 2026-11-20: the HYPE trend gate never applied -- a fire at a -5.8% 120h
+# return still said "buys now") a coin's trend-gate span plus margin when
+# that needs more than 50: trend_gate (next_trade.py) needs span_h + 1
+# CLOSED bars to compute the span_h-hour return at all, else it reports
+# "veto not applied" instead of judging it, same as too little history ever
+# did. scripts/oil_levels.py's own `--next` fetch reads this function (not
+# its own copy) so the CLI and summarize_coin's callers (the watcher, the
+# dashboard's /next and /levels routes) can never drift onto different
+# windows again, the exact failure mode this fixes.
+DEFAULT_HOURS_1H = 50
+TREND_GATE_FETCH_MARGIN_H = 10
+
+
+def hours_1h_for(coin: str) -> int:
+    """1h candle-hours to fetch for `coin`: DEFAULT_HOURS_1H (every coin but
+    HYPE today), or trend_gate_span_for(coin) + TREND_GATE_FETCH_MARGIN_H
+    when that is larger -- enough closed bars for next_trade's trend gate to
+    actually compute the span-hour return instead of silently skipping it
+    for want of data. Pure."""
+    from services.strategies.next_trade import trend_gate_span_for
+    span = trend_gate_span_for(coin) or 0
+    return max(DEFAULT_HOURS_1H, span + TREND_GATE_FETCH_MARGIN_H)
+
+
 _LEVELS_CACHE: Dict[str, Any] = {}
 # oil_desk.js polls GET /api/desks/{id}/levels every REFRESH_MS (60s,
 # pathiel/static/oil_desk.js) — see tests/test_page_polling's sibling check
@@ -146,7 +171,7 @@ def _summarize_coin_uncached(coin: str, now_ms: Optional[int] = None) -> Dict[st
     mid = fetch_mid(coin)
     if mid is None:
         raise RuntimeError(f"could not read a live mid for {coin}")
-    c1h = fetch_candles(coin, "1h", 50, now_ms)
+    c1h = fetch_candles(coin, "1h", hours_1h_for(coin), now_ms)
     c15 = fetch_candles(coin, "15m", 3, now_ms)
     out = summarize(c1h, c15, mid, now_ms)
     out["coin"] = coin
@@ -170,4 +195,5 @@ def check(entry: float, stop: float, tp: float, leverage: Optional[float] = None
 
 
 __all__ = ["HOUR_MS", "closed_only", "true_range", "atr", "price_range", "summarize", "check",
-          "fetch_candles", "fetch_mid", "summarize_coin"]
+          "fetch_candles", "fetch_mid", "summarize_coin", "hours_1h_for", "DEFAULT_HOURS_1H",
+          "TREND_GATE_FETCH_MARGIN_H"]

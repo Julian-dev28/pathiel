@@ -44,7 +44,7 @@ from typing import Any, Dict, List, Optional
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from contracts import runtime  # noqa: E402
-from services.strategies.levels import HOUR_MS, check, summarize  # noqa: E402
+from services.strategies.levels import HOUR_MS, check, hours_1h_for, summarize  # noqa: E402
 from services.strategies.next_trade import (breakout_for, leverage_fit_for, next_trade,  # noqa: E402
                                             stop_buffer_for, target_offset_frac_for, trend_gate_span_for)
 
@@ -56,10 +56,6 @@ from services.strategies.next_trade import (breakout_for, leverage_fit_for, next
 # is the same number -- the venue's own ceiling, not a choice.
 DEFAULT_LEVERAGE = 20.0
 VENUE_MAX_LEVERAGE = {"xyz:SP500": 50.0, "HYPE": 10.0}
-# Hours of 1h history to fetch for the trend-gate veto (HYPE only): the span
-# plus ten hours of margin so a coin with no gate (every other coin;
-# trend_gate_span_for returns None) keeps fetching the same 50 it always has.
-TREND_GATE_FETCH_MARGIN_H = 10
 
 # The resolved network's /info URL (contracts/runtime). Unset: mainnet, as before.
 INFO_URL = runtime.info_url()
@@ -158,8 +154,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         print(json.dumps(check(*a.check, leverage=a.lev, max_leverage=a.max_lev)))
         return 0
     now_ms = int(time.time() * 1000)
-    hours_1h = max(50, (trend_gate_span_for(a.coin) or 0) + TREND_GATE_FETCH_MARGIN_H)
-    out = summarize(fetch_candles(a.coin, "1h", hours_1h, now_ms), fetch_candles(a.coin, "15m", 3, now_ms),
+    out = summarize(fetch_candles(a.coin, "1h", hours_1h_for(a.coin), now_ms), fetch_candles(a.coin, "15m", 3, now_ms),
                     fetch_mid(a.coin), now_ms)
     out["coin"] = a.coin
     if a.next:
