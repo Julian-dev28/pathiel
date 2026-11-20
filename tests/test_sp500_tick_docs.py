@@ -60,7 +60,7 @@ def test_the_agent_knows_the_coin_the_levels_command_and_the_rule():
     assert "1.0 x `atr14_1h` and 0.4% of the mid" in text
     assert "The S&P has no offset" in text
     assert "a stop that does not fit is no trade" in text
-    assert "oil 90%, sp500 5%, hype 5%, metals 0%" in text
+    assert "oil 32%, sp500 5%, hype 60%, metals 0%" in text
     assert "the monthly US jobs report blocks too" in text
     assert "the S&P tick does not run the weekend script" in text
 
