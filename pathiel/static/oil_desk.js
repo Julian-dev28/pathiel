@@ -25,16 +25,42 @@
  */
 
 const REFRESH_MS = 60_000;   // 30s starved the venue budget (2026-10-23)
-const LEVERAGE_CHOICES = [5, 10, 20];
+// Every rung the Next-trade leverage picker can ever offer, cut down to a
+// desk's own cap (leverageChoicesFor below) -- 2026-11-20 bug report: a
+// fixed [5, 10, 20] (oil's own ladder) showed a 20x button on HYPE, whose
+// venue cap is 10x, with 20x selected by default on every desk.
+const LEVERAGE_LADDER = [5, 10, 20, 50];
+// The fallback cap before GET /api/desks/active's `leverage_cap` has loaded
+// (or for an older cached server that doesn't send one yet) -- oil's own
+// number, the ladder's long-standing default.
 const DEFAULT_LEVERAGE = 20;
 const INTEL_CAP = 6;   // small tables, per the ADHD-first brief
 
 let activeDesk = 'oil';
 let activeDesks = ['oil'];
-// id -> {id, name, primary_coin, equity_share} from GET /api/desks/active's
-// `desks` list (2026-10-31, silver joins oil): the switcher's label and the
-// "sizes off X% of equity" note both read this, never a hardcoded share.
+// id -> {id, name, primary_coin, equity_share, leverage_cap} from GET
+// /api/desks/active's `desks` list (2026-10-31, silver joins oil): the
+// switcher's label, the "sizes off X% of equity" note, and the Next-trade
+// leverage picker's rungs + default all read this, never a hardcoded share
+// or cap.
 let activeDeskMeta = {};
+
+/** The rungs of LEVERAGE_LADDER at or under `cap` (hype 10x -> [5, 10],
+ *  sp500 50x -> [5, 10, 20, 50], oil 20x -> [5, 10, 20]). Never empty: a
+ *  cap under 5x still gets its own single button. Pure: no DOM. */
+function leverageChoicesFor(cap) {
+  const choices = LEVERAGE_LADDER.filter(l => l <= cap);
+  return choices.length ? choices : [cap];
+}
+
+/** This desk's own leverage cap (GET /api/desks/active's `leverage_cap`),
+ *  or DEFAULT_LEVERAGE before that has loaded / for an older cached
+ *  server. */
+function currentDeskCap() {
+  const meta = activeDeskMeta[activeDesk];
+  const cap = meta && Number(meta.leverage_cap);
+  return (cap != null && isFinite(cap) && cap > 0) ? cap : DEFAULT_LEVERAGE;
+}
 
 function show(id, on) {
   const el = document.getElementById(id);
@@ -215,9 +241,20 @@ function renderCallCard(brief, deskName) {
 
 let currentLeverage = DEFAULT_LEVERAGE;
 
+/** Resets currentLeverage to the now-active desk's own cap and repaints the
+ *  picker -- called whenever `activeDesk` changes (loadActiveDesks's first
+ *  resolution, and the switcher's own change handler), never on an
+ *  ordinary re-render, so a reader's manual pick on one desk survives a
+ *  plain data refresh of that SAME desk. */
+function resetLeverageForActiveDesk() {
+  currentLeverage = currentDeskCap();
+  renderLevSeg();
+}
+
 function renderLevSeg() {
   const seg = document.getElementById('line-seg');
-  seg.innerHTML = LEVERAGE_CHOICES.map(lev => `
+  const choices = leverageChoicesFor(currentDeskCap());
+  seg.innerHTML = choices.map(lev => `
     <span class="lev-radio-wrap">
       <input type="radio" name="line-leverage-choice" class="lev-radio" id="line-opt-${lev}"
              value="${lev}" ${lev === currentLeverage ? 'checked' : ''}>
@@ -276,6 +313,22 @@ function renderLine() {
   paintLine(line, false);
 }
 
+/** The blockers from a next_trade() answer that are NOT already said, in
+ *  full, by the verdict: next_trade.py's trend-gate and entry-delay blocks
+ *  both set `verdict` to "waits: <reason>" AND prepend that SAME `reason`
+ *  to `blockers` (other callers, e.g. the MCP brief's live_rule_line(),
+ *  read verdict alone and need the full reason there). 2026-11-20 bug
+ *  report: on HYPE, the Desk page's "Mid X: the tick waits: 120h return
+ *  ... downtrend." sentence was followed by "Now: 120h return ...
+ *  downtrend." — the exact same clause twice. The main rule's own blockers
+ *  (R too low, leverage too wide, chase, break) never hit this: their
+ *  verdict text is a short paraphrase, not the blocker's own words, so
+ *  nothing here is ever wrongly dropped. Pure: no DOM. */
+function extraBlockers(n) {
+  const verdict = (n && n.verdict) || '';
+  return ((n && n.blockers) || []).filter(b => !verdict.includes(b));
+}
+
 /** The next trade by the tick's own rules (GET /api/desks/{id}/next): the
  *  box shows the order the tick would send, at the mid when it trades now,
  *  else at the price where it would. */
@@ -295,11 +348,12 @@ function paintNextTrade(n) {
   // ATR (services/strategies/next_trade.py::stop_buffer_for) -- read the
   // server's own number, never hardcode "0.75" for every desk's coin.
   const bufText = n.stop_buffer != null ? fmtPrice(n.stop_buffer) : '—';
+  const extra = extraBlockers(n);
   const parts = [
     `Mid ${fmtPrice(n.mid)}: the tick ${n.verdict}.`,
     `Stop ${fmtPrice(n.stop_px)} (${bufText} ${long ? 'under the 24h low' : 'over the 24h high'} ${fmtPrice(long ? r24.low : r24.high)}),`
       + ` target ${fmtPrice(n.tp_px)} (0.5% inside the 24h ${long ? 'high' : 'low'} ${fmtPrice(n.structure_tp_px)}), ${Number(n.min_r)}R or better.`,
-    n.blockers && n.blockers.length ? `Now: ${n.blockers.join('; ')}.` : '',
+    extra.length ? `Now: ${extra.join('; ')}.` : '',
   ];
   document.getElementById('line-reason').textContent = parts.filter(Boolean).join(' ');
 }
@@ -573,6 +627,55 @@ async function loadLevels() {
  *  and the mid's distance to it. Re-run from renderPositionMismatch() too
  *  (same as renderLine()) so a position or thesis update repaints this
  *  without waiting for the next /levels poll. */
+/** "1.865 (2.1%, 2.3 ATR)" from the Levels card's distance-to-live-entry
+ *  fields (services/strategies/entry_card.py's `_distance`); "at the mid"
+ *  when the tick would buy/sell right here (distance 0) instead of the
+ *  useless "0.00000 (0.0%, 0.0 ATR)" (2026-11-20 bug report); "—" with
+ *  nothing to show (no thesis, or in position). Pure: no DOM, so a node
+ *  test runs it directly, same convention as lastDeskTickLine below. */
+function distanceTile(d) {
+  if (!d || d.price == null) return '—';
+  if (d.price === 0) return 'at the mid';
+  const atrPart = d.atr != null ? `, ${Number(d.atr).toFixed(1)} ATR` : '';
+  return `${fmtPrice(d.price)} (${pctUnsigned(d.pct)}${atrPart})`;
+}
+
+/** "62%" while the mid sits inside the 24h range (l.mid_pos_in_24h is
+ *  (mid - low) / (high - low), a fraction in [0, 1] there); "below the 24h
+ *  low by 1.19 (1.9%)" / "above the 24h high by ..." once the mid has
+ *  broken out of it -- the field is UNCLAMPED, so a value under 0 or over 1
+ *  means a break, not "a position in the range" at all, and printing it as
+ *  a raw signed percentage ("-14.8%") answered a question nobody asked
+ *  (2026-11-20 HYPE bug report: the mid traded under the 24h low). The
+ *  distance and its % are off `mid` and `range_24h`, the same two fields
+ *  every other cell on this card already reads, not a second computation.
+ *  Pure: no DOM. */
+function midPositionTile(l) {
+  const pos = l && l.mid_pos_in_24h;
+  if (pos == null) return '—';
+  const r = (l && l.range_24h) || {};
+  const mid = l.mid;
+  if (pos < 0 && r.low != null && mid != null) {
+    const dist = r.low - mid;
+    return `below the 24h low by ${fmtPrice(dist)} (${pctUnsigned(mid ? dist / mid : null)})`;
+  }
+  if (pos > 1 && r.high != null && mid != null) {
+    const dist = mid - r.high;
+    return `above the 24h high by ${fmtPrice(dist)} (${pctUnsigned(mid ? dist / mid : null)})`;
+  }
+  return pctUnsigned(pos);
+}
+
+/** Whether midPositionTile(l) returned a sentence (outside the range) and
+ *  not a short percentage -- the cell's class switches to kv-text for the
+ *  same reason the Thesis-entry/Distance cells already use it: a sentence
+ *  wrapping at the numeric kv's nowrap/20px styling is how the next overlap
+ *  bug gets filed. Pure: no DOM. */
+function midPositionIsOutsideRange(l) {
+  const pos = l && l.mid_pos_in_24h;
+  return pos != null && (pos < 0 || pos > 1);
+}
+
 function renderLevels() {
   const l = lastLevels;
   const stats = document.getElementById('levels-stats');
@@ -584,6 +687,11 @@ function renderLevels() {
   const thesisTile = rows.thesis ? `${esc(rows.thesis.side)} ${fmtPrice(rows.thesis.price)}` : 'No thesis yet';
 
   const live = rows.live || {};
+  // The sentence (entry_rows.js's liveEntrySentence, already at the coin's
+  // tick precision) comes first, the stop/target/R after — the badge sits
+  // BEFORE all of it, inline, in its own flex child (lev-live-line below),
+  // never merged into the sec-label text it used to overlap (2026-11-20 bug
+  // report: a long badge bled into the next grid cell's label).
   const liveTile = live.sentence
     ? `${esc(live.sentence)}`
       + `${live.stop != null ? `. Stop ${fmtPrice(live.stop)}` : ''}`
@@ -591,12 +699,7 @@ function renderLevels() {
       + `${live.r != null ? ` (${Number(live.r).toFixed(1)}R)` : ''}`
     : '—';
   const liveBadge = live.statusText
-    ? ` <span class="badge ${esc(live.badgeClass || 'b-flat')}">${esc(live.statusText)}</span>` : '';
-
-  const distanceTile = rows.distance
-    ? `${fmtPrice(rows.distance.price)} (${pctUnsigned(rows.distance.pct)}`
-      + `${rows.distance.atr != null ? ', ' + rows.distance.atr.toFixed(2) + ' ATR' : ''})`
-    : '—';
+    ? `<span class="badge ${esc(live.badgeClass || 'b-flat')}">${esc(live.statusText)}</span>` : '';
 
   stats.innerHTML = `
     <div><div class="sec-label">Mid</div><div class="kv">${fmtPrice(l.mid)}</div></div>
@@ -605,10 +708,13 @@ function renderLevels() {
     <div><div class="sec-label">24h range</div><div class="kv">${l.range_24h ? fmtPrice(l.range_24h.low) + ' – ' + fmtPrice(l.range_24h.high) : '—'}</div></div>
     <div><div class="sec-label">48h range</div><div class="kv">${l.range_48h ? fmtPrice(l.range_48h.low) + ' – ' + fmtPrice(l.range_48h.high) : '—'}</div></div>
     <div><div class="sec-label">ATR14 (1h)</div><div class="kv">${l.atr14_1h != null ? fmtPrice(l.atr14_1h) + ' (' + pctUnsigned(l.atr14_pct != null ? l.atr14_pct / 100 : null) + ')' : '—'}</div></div>
-    <div><div class="sec-label">Mid position in 24h range</div><div class="kv">${l.mid_pos_in_24h != null ? pctUnsigned(l.mid_pos_in_24h) : '—'}</div></div>
+    <div><div class="sec-label">Mid position in 24h range</div><div class="kv${midPositionIsOutsideRange(l) ? ' kv-text' : ''}">${midPositionTile(l)}</div></div>
     <div><div class="sec-label">Thesis entry</div><div class="kv kv-text">${thesisTile}</div></div>
-    <div><div class="sec-label">Live entry${liveBadge}</div><div class="kv kv-text">${liveTile}</div></div>
-    <div><div class="sec-label">Distance to live entry</div><div class="kv kv-text">${distanceTile}</div></div>`;
+    <div><div class="sec-label">Distance to live entry</div><div class="kv kv-text">${distanceTile(rows.distance)}</div></div>
+    <div class="lev-stat-full">
+      <div class="sec-label">Live entry</div>
+      <div class="kv kv-text lev-live-line">${liveBadge}<span>${liveTile}</span></div>
+    </div>`;
 }
 
 // ── 4. HEADLINES AND CATALYSTS ───────────────────────────────────────────────
@@ -863,6 +969,7 @@ async function loadActiveDesks() {
     : activeDesks[0];
   PathielDesk.set(activeDesk);
   setUrlDesk(activeDesk);
+  resetLeverageForActiveDesk();
   renderDeskSwitcher();
   repointDeskLinks();
 }
@@ -900,6 +1007,7 @@ function renderDeskSwitcher() {
       activeDesk = radio.value;
       PathielDesk.set(activeDesk);
       setUrlDesk(activeDesk);
+      resetLeverageForActiveDesk();
       repointDeskLinks();
       loadAll();
     });
@@ -911,9 +1019,40 @@ function renderDeskSwitcher() {
 // behind a slow account read, and pausing while the tab is hidden. Same
 // convention every page's own refresh loop uses; see
 // tests/test_page_polling.py.
+//
+// De-duped per desk (2026-11-20 bug report: the Wallets card showed its card
+// on the very first paint, then emptied once the page "settled"). This page
+// has TWO independent triggers that both call loadAll() on the same
+// tab-resume: pollEvery's own internal visibilitychange listener
+// (pathiel.js, fires when a scheduled tick was skipped while hidden) and
+// this file's own resumeIfVisible (visibilitychange/prerenderingchange,
+// below — added 2026-10-24 for a DIFFERENT gap, see its own comment).
+// Neither knows about the other, so a single resume event could start TWO
+// concurrent loadWallets() runs; whichever's fetches settled last won
+// #wallets-list with its own result, and a transient failure on the slower
+// one blanked a card the faster one had just painted correctly. A second
+// call for the SAME desk just awaits the one already in flight instead of
+// starting another; a desk switch (a different activeDesk) is never
+// de-duped, so clicking the tab row is never delayed by a load the click
+// itself just made obsolete.
+let loadAllPromise = null;
+let loadAllForDesk = null;
+
+/** Whether a loadAll() call for `desk` should reuse `promise` (already in
+ *  flight for `forDesk`) instead of starting a new round of fetches: only
+ *  when one is in flight AND it is for the SAME desk. Pure: no DOM, so a
+ *  node test runs it directly. */
+function shouldReuseInFlightLoad(promise, forDesk, desk) {
+  return !!promise && forDesk === desk;
+}
+
 async function loadAll() {
     if (document.hidden) return;   // a hidden tab must not spend the venue budget
-  await Promise.all([loadCall(), loadLine(), loadWallets(), loadLevels(), loadLog(), loadEquitySlice()]);
+  if (shouldReuseInFlightLoad(loadAllPromise, loadAllForDesk, activeDesk)) return loadAllPromise;
+  loadAllForDesk = activeDesk;
+  loadAllPromise = Promise.all([loadCall(), loadLine(), loadWallets(), loadLevels(), loadLog(), loadEquitySlice()])
+    .finally(() => { loadAllPromise = null; loadAllForDesk = null; });
+  return loadAllPromise;
 }
 
 async function startOilDesk() {
