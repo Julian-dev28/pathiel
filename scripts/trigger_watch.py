@@ -112,6 +112,29 @@ longer likes is logged as declined on recheck, not fired. A dispatch
 slower than one wait (the log's 960s outlier) still has residual drift
 this cannot close - no fixed short wait can see further into the future
 than it waits.
+
+Since 2026-11-20 (operator bug: HYPE fired "buys now" through its own 120h
+trend gate). 2026-11-20 12:02Z this module fired {"fire": "hype", "mid":
+63.802, ..., "verdict": "buys now"} while the HYPE desk's 120h return sat
+at about -5.8%, exactly the trend the gate (next_trade.trend_gate,
+services/strategies/next_trade.py's HYPE_RULE) exists to veto on a long.
+`evaluate()` never passed `next_trade()` its `closes_1h` / `trend_gate_span`
+arguments, and `next_trade` applies no veto when either is missing (the
+same "missing data blocks nothing" rule `trend_gate` itself follows) -
+`scripts/oil_levels.py --next` passed both all along, so the Desk page and
+the tick's own CLI already judged this correctly; only this watcher (and
+`confirm_fire`, which calls the same `evaluate()`) had the gap. Fixed by
+reading `levels["closes_1h"]` (already in every `summarize()` answer) and
+`trend_gate_span_for(coin)` inside `evaluate()`, the same two facts
+`oil_levels.next_order` reads, so every caller agrees. A second gap fed the
+first: `levels.summarize_coin` always fetched 50 hours of 1h candles, one
+short of the 121 the 120h gate needs to compute a return at all (`trend_gate`
+reports "veto not applied" under that, not a block) - fixed in
+`services/strategies/levels.hours_1h_for`, which both `summarize_coin` and
+`oil_levels.py --next` now call, so their fetch windows cannot drift apart
+either. Desks with no gate (`trend_gate_span_for` returns None: oil, sp500,
+silver, gold) read unchanged: `next_trade` never looks at `closes_1h`
+without a span, and `hours_1h_for` still returns 50 for them.
 """
 from __future__ import annotations
 
@@ -147,10 +170,16 @@ def evaluate(side: Optional[str], thesis_entry: Optional[float], mid: Optional[f
     """Pure: would the tick trade `coin` at `mid` right now? Same answer as
     GET /api/desks/{id}/next, with the mid refreshed between level reads.
     `thesis_age_min` / `entry_delay_min`: the entry delay (next_trade.
-    entry_delay; off while the config has no oil_entry_delay_min)."""
+    entry_delay; off while the config has no oil_entry_delay_min).
+    `levels["closes_1h"]` (CLOSED 1h closes, oldest first; levels.summarize)
+    plus `trend_gate_span_for(coin)` (None on every coin but HYPE) feed
+    next_trade's trend gate the same way scripts/oil_levels.py's --next does
+    (operator bug, 2026-11-20: this function never passed either, so the
+    watcher fired HYPE longs straight through a 120h downtrend the gate
+    exists to veto)."""
     from services.strategies.desk_leverage import entry_leverage
     from services.strategies.next_trade import (breakout_for, leverage_fit_for, next_trade, stop_buffer_for,
-                                                target_offset_frac_for)
+                                                target_offset_frac_for, trend_gate_span_for)
     r24 = levels.get("range_24h") or {}
     if side not in ("long", "short"):
         return {"ok": False, "reason": f"thesis is {side or 'missing'}"}
@@ -164,7 +193,8 @@ def evaluate(side: Optional[str], thesis_entry: Optional[float], mid: Optional[f
                      coin_max_leverage=coin_max_leverage, stop_buffer=buf,
                      leverage_fit=leverage_fit_for(coin), offset_frac=target_offset_frac_for(coin),
                      breakout=levels.get("breakout_24h") if breakout_for(coin) else None,
-                     thesis_age_min=thesis_age_min, entry_delay_min=entry_delay_min)
+                     thesis_age_min=thesis_age_min, entry_delay_min=entry_delay_min,
+                     closes_1h=levels.get("closes_1h"), trend_gate_span=trend_gate_span_for(coin))
     return out
 
 
