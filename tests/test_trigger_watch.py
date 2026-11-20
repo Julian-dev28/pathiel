@@ -107,6 +107,124 @@ def test_confirm_fire_passes_now_ms_through_to_bypass_both_caches(monkeypatch):
     assert seen == {"coin": "xyz:BRENTOIL", "now_ms": 1_763_297_940_000}
 
 
+# ── the trend gate (operator bug, 2026-11-20): evaluate() must feed
+# next_trade() the same closes_1h / trend_gate_span scripts/oil_levels.py's
+# --next already does, or a desk with a gate (today, only HYPE) fires
+# straight through it. ──────────────────────────────────────────────────────
+
+def _hourly_candles(now_ms, n, start, drift):
+    """n CLOSED 1h candles ending the hour before now_ms, oldest first,
+    each closing `drift` further from `start` than the one before (real HL
+    candle shape: t/T/o/h/l/c/v, with wick room so atr() sees real range)."""
+    from services.strategies.levels import HOUR_MS
+    rows = []
+    price = start
+    for i in range(n):
+        t = now_ms - (n - i) * HOUR_MS
+        o = price
+        price += drift
+        c = price
+        rows.append({"t": t, "T": t + HOUR_MS - 1, "o": o, "h": max(o, c) + 0.2,
+                     "l": min(o, c) - 0.2, "c": c, "v": 1})
+    return rows
+
+
+def _hype_lv(drift):
+    """A HYPE levels payload (services.strategies.levels.summarize) off
+    131 synthetic 1h closes drifting by `drift` an hour, with the mid
+    placed just inside the fresh 24h low so only the trend gate -- never
+    the 2R gate or the no-break guard -- can be the reason this refuses."""
+    from services.strategies import levels as L
+    now_ms = 200 * L.HOUR_MS
+    c1h = _hourly_candles(now_ms, n=131, start=100.0, drift=drift)
+    probe = L.summarize(c1h, [], 94.0, now_ms)       # a throwaway mid, just to read the fresh 24h low
+    mid = probe["range_24h"]["low"] + 0.1
+    return L.summarize(c1h, [], mid, now_ms)
+
+
+def test_evaluate_blocks_a_hype_long_against_the_120h_downtrend_2026_11_20_bug():
+    """2026-11-20 12:02Z this module fired {"fire": "hype", "mid": 63.802,
+    "r_now": 5.36, "verdict": "buys now", "source": "desk_rules"} while
+    HYPE's 120h return sat at about -5.8% -- the trend gate
+    (next_trade.HYPE_RULE) exists to veto exactly that. evaluate() never
+    passed next_trade() closes_1h / trend_gate_span, so the gate never ran.
+    Replayed on synthetic 1h closes with a clean, deterministic negative
+    120h return (the fix needs no live candles to prove)."""
+    from services.strategies.next_trade import (leverage_fit_for, next_trade, stop_buffer_for,
+                                                target_offset_frac_for)
+    lv = _hype_lv(drift=-0.05)
+    mid = lv["mid"]
+    assert lv["n_closed_1h"] >= 121, "fixture must cover the 120h gate's own minimum"
+
+    # Prove the bug: the main rule alone (what evaluate() called before this
+    # fix -- no closes_1h, no trend_gate_span) pays well over 2R and says
+    # yes, exactly the fire this replays.
+    buf = stop_buffer_for("HYPE", lv["atr14_1h"], mid)
+    pre_fix = next_trade("long", mid, lv["range_24h"]["low"], lv["range_24h"]["high"], thesis_entry=None,
+                         leverage=10.0, coin_max_leverage=10.0, stop_buffer=buf,
+                         leverage_fit=leverage_fit_for("HYPE"), offset_frac=target_offset_frac_for("HYPE"))
+    assert pre_fix["ok"] is True and pre_fix["verdict"] == "buys now" and pre_fix["r_now"] > 2.0
+
+    # The fix: evaluate() itself must refuse.
+    out = W.evaluate("long", None, mid, lv, "HYPE", 10.0, 10.0)
+    assert out["ok"] is False and out["verdict"] != "buys now"
+    assert out["trend_gate"]["blocked"] is True and out["trend_gate"]["ret"] < 0
+    assert any("120h downtrend" in b for b in out["blockers"])
+
+    # confirm_fire reuses the same evaluate(): the stale-fire recheck must
+    # also refuse, never just reproduce the unfixed answer off a fresh read.
+    confirmed = W.confirm_fire("long", None, "HYPE", 10.0, 10.0, 200 * 3_600_000,
+                               fetch_levels=lambda coin, now_ms: lv)
+    assert confirmed["ok"] is False and confirmed["trend_gate"]["blocked"] is True
+
+
+def test_evaluate_still_fires_a_hype_long_with_the_120h_trend_behind_it():
+    """The gate is a veto, not a permanent block on this fixture shape: the
+    same setup with an uptrend instead still says buys now, so the refusal
+    above is the gate, not some other property of the synthetic bars."""
+    lv = _hype_lv(drift=0.05)
+    out = W.evaluate("long", None, lv["mid"], lv, "HYPE", 10.0, 10.0)
+    assert out["ok"] is True and out["verdict"] == "buys now"
+    assert out["trend_gate"]["blocked"] is False
+
+
+def test_oil_and_sp500_watcher_verdicts_are_unchanged_by_closes_1h():
+    """Desks with no trend gate (trend_gate_span_for returns None) must
+    answer identically whether or not levels["closes_1h"] carries a severe
+    fake downtrend -- today every coin's summarize() includes that key, so
+    this is the guarantee that wiring the gate into evaluate() changed
+    nothing for a desk that has none."""
+    hostile = [100.0] + [50.0] * 120
+    oil_bare = W.evaluate("long", 112.20, 112.04, BRENT_LV, "xyz:BRENTOIL", 20, 20)
+    oil_with_hist = W.evaluate("long", 112.20, 112.04, dict(BRENT_LV, closes_1h=hostile),
+                               "xyz:BRENTOIL", 20, 20)
+    assert oil_bare == oil_with_hist and oil_bare["ok"] is True
+
+    sp500_lv = {"range_24h": {"low": 7100.0, "high": 7180.0}, "atr14_1h": 12.0}
+    sp_bare = W.evaluate("long", None, 7102.0, sp500_lv, "xyz:SP500", 50.0, 50.0)
+    sp_with_hist = W.evaluate("long", None, 7102.0, dict(sp500_lv, closes_1h=hostile), "xyz:SP500", 50.0, 50.0)
+    assert sp_bare == sp_with_hist and sp_bare["ok"] is True
+
+
+def test_the_watcher_and_oil_levels_next_agree_on_the_same_synthetic_bars():
+    """scripts/oil_levels.py's --next (next_order) and this watcher's
+    evaluate() must read the SAME closes_1h / trend_gate_span off the SAME
+    levels payload and land on the same verdict -- the entire point of the
+    fix. Checked both ways: the gate blocking, and the gate standing aside."""
+    import importlib.util
+    cli_spec = importlib.util.spec_from_file_location("oil_levels_parity", ROOT / "scripts" / "oil_levels.py")
+    cli = importlib.util.module_from_spec(cli_spec)
+    cli_spec.loader.exec_module(cli)
+
+    for drift, want_ok in ((-0.05, False), (0.05, True)):
+        lv = _hype_lv(drift)
+        via_cli = cli.next_order("HYPE", "long", lv, None, 10.0, 10.0)
+        via_watcher = W.evaluate("long", None, lv["mid"], lv, "HYPE", 10.0, 10.0)
+        common = {k: v for k, v in via_cli.items() if k not in ("coin", "place_bracket")}
+        assert common == via_watcher
+        assert via_watcher["ok"] is want_ok
+
+
 def _stub(monkeypatch, tmp_path, mids, held="", news=None):
     import _state_env
     import pathiel.agents.config_store as cs
