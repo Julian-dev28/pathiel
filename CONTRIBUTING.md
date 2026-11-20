@@ -133,6 +133,15 @@ it touches, and paste the gate's last line.
 5. If a push is refused: package settings, Manage Actions access, give
    `Julian-dev28/pathiel` the Write role, re-run the failed jobs.
 
+Glama's Maintenance grade reads Dependabot, code scanning and CI from
+GitHub through the Glama AI GitHub App. If its score page says any of them
+is "unavailable", run `python3 scripts/glama_health.py`: it shows what
+GitHub has next to what Glama's public page shows. When every GitHub row
+is ok, the app is not installed on the repo: install it from
+https://github.com/apps/glama-ai/installations/new (only `pathiel`), then
+Sync on Glama's admin page. Signing in to Glama with GitHub authorizes
+the app but does not install it.
+
 The website (GitHub Pages) is the `gh-pages` branch: the landing page in
 `site/` and the scoreboard in `docs/scoreboard/`, nothing else. After a
 change to either, including each pool build's `scoreboard.json`, publish it

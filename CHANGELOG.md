@@ -6,6 +6,13 @@ All notable changes to pathiel. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `scripts/glama_health.py` (maintainers): Glama's maintenance data for the
+  server next to GitHub's own Dependabot, code scanning and CI state, so an
+  "unavailable" line on Glama traces to a GitHub setting or to the Glama AI
+  app not being installed on the repo.
+
 ## [0.7.2] - 2026-11-17
 
 ### Security
