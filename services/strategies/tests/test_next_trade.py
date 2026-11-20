@@ -257,6 +257,70 @@ def test_fit_leverage_without_a_venue_max_keeps_the_leverage_and_never_raises():
         assert lev == 20.0 and gate["ok"] is False
 
 
+# ── the trend gate reaches the Desk page too (operator bug, 2026-11-20):
+# desk_next_trade (this route; the MCP desk_brief calls it too) must feed
+# next_trade() the same closes_1h / trend_gate_span scripts/trigger_watch.
+# py's evaluate() does (tests/test_trigger_watch.py has that fix's own
+# regression test; this is its twin on the HTTP route) ─────────────────────
+
+def _next_client(desk_id: str, coin: str, mid: float, stub_live_analytics):
+    analytics = minimal_analytics(desk_id, mid=mid, coin=coin)
+    stub_live_analytics(analytics)
+    pipeline.save_analytics(desk_id, analytics)
+    app = FastAPI()
+    app.include_router(strategies_api.router)
+    return TestClient(app, client=("127.0.0.1", 50000))
+
+
+def test_next_route_blocks_a_hype_long_against_the_120h_downtrend(stub_live_analytics, monkeypatch):
+    """Same shape as the 2026-11-20 12:02Z fire this route's twin bug in
+    scripts/trigger_watch.py replays: a HYPE long priced inside the 24h
+    range, well over 2R, with the last 120 closed 1h bars down about 6%.
+    Before this fix desk_next_trade never passed closes_1h/trend_gate_span,
+    so this route (and the MCP desk_brief) said "buys now" through it too."""
+    client = _next_client("hype", "HYPE", 93.35, stub_live_analytics)
+    journal.save_thesis(make_thesis(desk_id="hype", instrument="HYPE", side="long",
+                                    entry_px=None, stop_px=None, targets=[100.0], leverage=10))
+    monkeypatch.setattr("pathiel.client.exchange.get_max_leverage", lambda coin: 10)
+    down = [100.0] + [94.2] * 120     # the same clean -6%ish 120h return the watcher's own test uses
+    monkeypatch.setattr(strategies_api.levels, "summarize_coin", lambda coin: {
+        "mid": 93.35, "range_24h": {"low": 93.25, "high": 94.85}, "atr14_1h": 0.45, "closes_1h": down})
+    body = client.get("/api/desks/hype/next").json()
+    assert body["ok"] is False and body["verdict"] != "buys now"
+    assert body["trend_gate"]["blocked"] is True and body["trend_gate"]["ret"] < 0
+    assert any("120h downtrend" in b for b in body["blockers"])
+
+
+def test_next_route_oil_and_sp500_are_unchanged_by_closes_1h(stub_live_analytics, monkeypatch):
+    """Neither desk has a trend-gate span (trend_gate_span_for returns None
+    for both): a hostile fake closes_1h on the levels payload must not move
+    either route's answer at all."""
+    hostile = [100.0] + [50.0] * 120
+
+    oil_client = _next_client("oil", "xyz:BRENTOIL", 113.135, stub_live_analytics)
+    journal.save_thesis(make_thesis(desk_id="oil", entry_px=113.87, stop_px=111.29, targets=[118.87]))
+    monkeypatch.setattr("pathiel.client.exchange.get_max_leverage", lambda coin: 20)
+    monkeypatch.setattr(strategies_api.levels, "summarize_coin", lambda coin: {
+        "mid": 113.135, "range_24h": {"low": 109.01, "high": 114.07}, "atr14_1h": 0.83})
+    oil_bare = oil_client.get("/api/desks/oil/next").json()
+    monkeypatch.setattr(strategies_api.levels, "summarize_coin", lambda coin: {
+        "mid": 113.135, "range_24h": {"low": 109.01, "high": 114.07}, "atr14_1h": 0.83, "closes_1h": hostile})
+    oil_with_hist = oil_client.get("/api/desks/oil/next").json()
+    assert oil_bare == oil_with_hist
+
+    sp_client = _next_client("sp500", "xyz:SP500", 7102.0, stub_live_analytics)
+    journal.save_thesis(make_thesis(desk_id="sp500", instrument="xyz:SP500", side="long",
+                                    entry_px=None, stop_px=None, targets=[7300.0], leverage=50))
+    monkeypatch.setattr("pathiel.client.exchange.get_max_leverage", lambda coin: 50)
+    monkeypatch.setattr(strategies_api.levels, "summarize_coin", lambda coin: {
+        "mid": 7102.0, "range_24h": {"low": 7100.0, "high": 7180.0}, "atr14_1h": 12.0})
+    sp_bare = sp_client.get("/api/desks/sp500/next").json()
+    monkeypatch.setattr(strategies_api.levels, "summarize_coin", lambda coin: {
+        "mid": 7102.0, "range_24h": {"low": 7100.0, "high": 7180.0}, "atr14_1h": 12.0, "closes_1h": hostile})
+    sp_with_hist = sp_client.get("/api/desks/sp500/next").json()
+    assert sp_bare == sp_with_hist
+
+
 def test_the_placeholder_page_escapes_what_it_echoes():
     """CodeQL py/reflective-xss (2026-11-15): the desk id reaches the page."""
     page = strategies_api._render_or_placeholder("no-such-template.html", "Desk: <script>x</script>",

@@ -359,7 +359,13 @@ def desk_next_trade(desk_id: str, leverage: float, brief=None) -> Dict[str, obje
                                     offset_frac=next_trade_mod.target_offset_frac_for(coin),
                                     breakout=lv.get("breakout_24h") if next_trade_mod.breakout_for(coin) else None,
                                     thesis_age_min=next_trade_mod.thesis_age_minutes(brief.thesis.created_at),
-                                    entry_delay_min=next_trade_mod.entry_delay_for(coin))
+                                    entry_delay_min=next_trade_mod.entry_delay_for(coin),
+                                    # 2026-11-20: the same closes_1h / trend_gate_span gap as the watcher
+                                    # (scripts/trigger_watch.py's evaluate()) -- without these this route
+                                    # (the Desk page and the MCP desk_brief) never applied HYPE's 120h
+                                    # trend gate either.
+                                    closes_1h=lv.get("closes_1h"),
+                                    trend_gate_span=next_trade_mod.trend_gate_span_for(coin))
     out["coin"] = coin
     return out
 
