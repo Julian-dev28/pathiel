@@ -37,7 +37,7 @@ SKILL_RULES = (
     # pointers (the plugin links nothing that carries return figures).
     ("reverted the\nsame night, see docs/overhaul/BACKTEST_RESULTS_2026-10-25.md).",
      "reverted the\nsame night).", 1),
-    ("(since\n   2026-10-31; oil 90%, sp500 5%, metals 5%; metals = gold since 2026-11-05)",
+    ("(since\n   2026-10-31; oil 95%, sp500 5%, metals 0%; metals = gold since 2026-11-05)",
      "(config\n   `desk_equity_share`; metals = gold since 2026-11-05)", 1),
 )
 
@@ -50,7 +50,7 @@ AGENT_RULES = (
     ("tried hourly for one\nevening, the backtest showed it giving up about half the journaled return,\n"
      "back to 15m the same night)",
      "tried hourly for one\nevening, back to 15m the same night)", 1),
-    ("(config\n`desk_equity_share`: oil 90%, sp500 5%, metals 5%)",
+    ("(config\n`desk_equity_share`: oil 95%, sp500 5%, metals 0%)",
      "(config\n`desk_equity_share`)", 1),
     ("Leverage up to the risk profile's `max_leverage`\n"
      "(20x since 2026-10-24; `place_bracket` caps it and runs the 20x rule: the\n"
