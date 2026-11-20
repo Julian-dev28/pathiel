@@ -27,6 +27,23 @@ All notable changes to pathiel. The format follows
 
 ### Added
 
+- A HYPE desk, `hype`, trading HYPE (Hyperliquid's own token, main dex)
+  long or short. Off by default. Its stop is a pure ATR multiple with no
+  price floor and its own leverage cap is the venue's max, 10x (config
+  `desk_max_leverage`). New entries are vetoed against the sign of the
+  120-hour return (`next_trade.trend_gate`, built for oil 2026-11-13 and
+  found not to help there; it does here). Its backtest found the plain
+  rule every other desk uses loses on HYPE and the trend-gated version
+  has an edge.
+- On HYPE the desk does nothing while a position or resting order it did
+  not place sits on the coin, the same guard the S&P desk has:
+  `desk_slot.py` answers `slot: operator`, and `place_bracket`,
+  `sweep_brackets` and `set_leverage` refuse.
+- The event calendar and the headline watcher cover HYPE: FOMC and CPI
+  hold new entries, token unlocks reach the thesis as a catalyst
+  automatically (any crypto-ticker desk), and the headline watcher has its
+  own patterns (protocol actions, an exploit, a token unlock, exchange
+  competition, crypto regulation, a bitcoin ETF/liquidation shock).
 - An S&P 500 desk, `sp500`, trading `xyz:SP500` long or short. Off by
   default. It has its own stop and target numbers and its own leverage cap
   (config `desk_max_leverage`); every other desk keeps the risk profile's
