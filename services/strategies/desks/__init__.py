@@ -18,7 +18,7 @@ from typing import Callable, Dict, List, Optional
 from contracts import runtime
 from contracts.strategies.models import DeskSpec, Instrument
 
-from services.strategies.desks import ai, btc, gas, indices, metals, oil, sp500, top5
+from services.strategies.desks import ai, btc, gas, hype, indices, metals, oil, sp500, top5
 
 # id -> builder. Order here is the order `list_desks()` returns, which is the
 # order the /desks overview page renders — oil first, it's the flagship.
@@ -31,6 +31,7 @@ _BUILDERS: Dict[str, Callable[[], DeskSpec]] = {
     metals.DESK_ID: metals.build_spec,
     indices.DESK_ID: indices.build_spec,
     sp500.DESK_ID: sp500.build_spec,
+    hype.DESK_ID: hype.build_spec,
 }
 
 

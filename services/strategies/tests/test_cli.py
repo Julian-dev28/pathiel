@@ -21,7 +21,7 @@ def test_cmd_list_json(capsys):
     rc = cli.main(["--json", "list"])
     assert rc == 0
     rows = json.loads(capsys.readouterr().out)
-    assert {r["id"] for r in rows} == {"oil", "gas", "btc", "top5", "ai", "metals", "indices", "sp500"}
+    assert {r["id"] for r in rows} == {"oil", "gas", "btc", "top5", "ai", "metals", "indices", "sp500", "hype"}
 
 
 def test_cmd_brief_known_desk(capsys, stub_live_analytics):
@@ -60,8 +60,8 @@ def test_cmd_refresh_all_runs_every_desk(capsys, stub_live_analytics):
     rc = cli.main(["refresh", "--all"])
     assert rc == 0
     lines = capsys.readouterr().out.strip().splitlines()
-    assert len(lines) == 8
-    assert {line.split(":")[0] for line in lines} == {"oil", "gas", "btc", "top5", "ai", "metals", "indices", "sp500"}
+    assert len(lines) == 9
+    assert {line.split(":")[0] for line in lines} == {"oil", "gas", "btc", "top5", "ai", "metals", "indices", "sp500", "hype"}
 
 
 def test_cmd_refresh_all_json_is_a_list(capsys, stub_live_analytics):
@@ -69,7 +69,7 @@ def test_cmd_refresh_all_json_is_a_list(capsys, stub_live_analytics):
     rc = cli.main(["--json", "refresh", "--all"])
     assert rc == 0
     rows = json.loads(capsys.readouterr().out)
-    assert len(rows) == 8
+    assert len(rows) == 9
 
 
 def test_cmd_refresh_requires_desk_or_all():

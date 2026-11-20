@@ -67,6 +67,12 @@ def summarize(c1h: List[Dict[str, Any]], c15: List[Dict[str, Any]], mid: float, 
         "n_closed_1h": len(closed),
         # the silver breakout entry's inputs (next_trade.breakout_levels); None under 25 closed bars
         "breakout_24h": _breakout_levels(closed),
+        # CLOSED 1h closes, oldest first, for the HYPE trend-gate veto
+        # (next_trade.next_trade's closes_1h/trend_gate_span). Bounded to the
+        # caller's own fetch window; every other coin's `main()` fetches 50
+        # hours as before, so this list is just that window's closes for them
+        # too -- cheap, and `trend_gate` on a coin with no span never reads it.
+        "closes_1h": [float(c["c"]) for c in closed],
     }
     if r24 and r24["high"] > r24["low"]:
         out["mid_pos_in_24h"] = round((mid - r24["low"]) / (r24["high"] - r24["low"]), 3)

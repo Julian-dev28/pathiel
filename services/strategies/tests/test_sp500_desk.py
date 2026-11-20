@@ -73,7 +73,7 @@ PROFILE = RiskProfile(preset="custom", risk_per_trade_pct=6, max_leverage=20, ma
 
 
 def test_sp500_caps_at_50x():
-    assert desk_leverage.DESK_MAX_LEVERAGE == {"sp500": 50.0}
+    assert desk_leverage.DESK_MAX_LEVERAGE == {"sp500": 50.0, "hype": 10.0}
     assert desk_leverage.cap_for_coin(SP500, {}) == 50.0
     assert desk_leverage.entry_leverage(SP500, 20.0, {}) == 50.0
     sized = desk_leverage.profile_for_coin(PROFILE, SP500, {})

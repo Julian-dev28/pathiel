@@ -340,10 +340,18 @@ def check_position_ownership(coin: str, *, user: Optional[str] = None,
 # The check is the same evidence as above (cloid, then the journal by oid),
 # extended to resting orders.
 #
+# 2026-11-20: the same, for HYPE and the candidate hype desk. The operator
+# holds a hand-placed HYPE short (-16.61 @ 65.6222, 10x cross) with a
+# reduce-only take-profit resting for 7.53 @ 64.62 and no stop. The TP order
+# is exactly the kind of resting order this guard was built to leave alone:
+# `order_is_desk_owned` reads false for it (no pathiel cloid, no journal
+# entry), so `operator_presence` reports it as the operator's and nothing
+# in this module or its callers cancels, sweeps, or re-covers it.
+#
 # Guarded coins are listed, not "every coin": the oil desk's path is
 # unchanged by this block (its position guards above already cover a close,
 # a cancel, a sweep, set_stop and set_target).
-OPERATOR_GUARD_COINS = frozenset({"xyz:SP500"})
+OPERATOR_GUARD_COINS = frozenset({"xyz:SP500", "HYPE"})
 OPERATOR_POSITION_REASON = "operator position open on {coin}"
 OPERATOR_ORDER_REASON = "operator order resting on {coin}"
 OPERATOR_UNKNOWN_REASON = "could not confirm {coin} is free of the operator's position or orders (read failed)"

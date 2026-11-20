@@ -55,10 +55,19 @@ METALS_COINS = frozenset({"xyz:SILVER", "xyz:GOLD"})
 # file and the 12-hour scan already write for oil and metals reach it by
 # their KIND (SP500_MACRO_KINDS below), so no existing row had to change.
 SP500_COINS = frozenset({"xyz:SP500"})
+# "hype" is the candidate hype desk (HYPE, built 2026-11-20). A row may name
+# it directly (a protocol event: coins ["hype"]); FOMC/CPI reach it through
+# GENERATED_BLOCKING like every other desk. No macro-kind mapping like the
+# S&P's (SP500_MACRO_KINDS): HYPE's own calendar is idiosyncratic (protocol
+# votes, unlocks -- token_unlock already turns on automatically for any
+# crypto-ticker desk, desk_rules.is_crypto_desk) rather than the US jobs/
+# inflation print calendar oil/metals/sp500 share.
+HYPE_COINS = frozenset({"HYPE"})
 COIN_GROUPS: Dict[str, frozenset] = {
     "oil": frozenset({"xyz:BRENTOIL", "xyz:CL"}),
     "metals": METALS_COINS,
     "sp500": SP500_COINS,
+    "hype": HYPE_COINS,
 }
 GROUP_ALIASES: Dict[str, str] = {"silver": "metals"}
 # Kinds that move the S&P whatever coins the row was written for: the jobs,
@@ -99,8 +108,8 @@ AFTER_H = 2.0
 
 # Rule-generated events that block too (calendar_us.py): kind -> (title, coins).
 GENERATED_BLOCKING = {
-    "fomc": ("FOMC decision", ("oil", "metals", "sp500")),
-    "cpi": ("US CPI release", ("oil", "metals", "sp500")),
+    "fomc": ("FOMC decision", ("oil", "metals", "sp500", "hype")),
+    "cpi": ("US CPI release", ("oil", "metals", "sp500", "hype")),
     "opec_meeting": ("OPEC+ meeting", ("oil",)),
 }
 
@@ -393,6 +402,6 @@ def short_line(r: Dict[str, Any]) -> str:
 
 
 __all__ = ["BLACKOUT_IMPACT", "COIN_GROUPS", "CURATED_ORIGIN", "DATA_PATH", "FILE_ORIGINS", "GROUP_ALIASES",
-           "METALS_COINS", "SP500_BLOCKING_KINDS", "SP500_COINS", "SP500_MACRO_KINDS", "SCAN_ORIGIN", "blackout", "calendar_warning", "canonical_group", "coins_for",
+           "METALS_COINS", "SP500_BLOCKING_KINDS", "SP500_COINS", "SP500_MACRO_KINDS", "HYPE_COINS", "SCAN_ORIGIN", "blackout", "calendar_warning", "canonical_group", "coins_for",
            "event_key", "group_of", "load", "market_events", "merge", "normalize_title", "overlay_path",
            "read_overlay", "short_line", "validate_event"]

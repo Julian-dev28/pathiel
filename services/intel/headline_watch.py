@@ -123,8 +123,14 @@ PRICE_WINDOW_MIN = 15
 # 2026-09-28..11-19 a 0.7% close-to-open move printed 5 times in 52 days
 # (2.9 a month; 0.6%: 9, 0.8%: 2), the rate gold's 0.7% alerts at; p99.5 of
 # its 15m moves is 0.41%.
+# HYPE 2.8% (2026-11-20, the candidate hype desk): a much louder coin than
+# any of the above -- its own 15m bars of 2026-09-28..11-20 put p90 of the
+# absolute close-to-open move at 0.61%, p99 at 1.40%, p99.5 at 1.71%. A
+# threshold at gold/sp500's own 0.7% would fire on roughly 1 in 25 bars of
+# HYPE (noise, not a headline); 2.8% is the level that alerts at the SAME
+# rate they do, 5 times in 52 days, 2.9 a month.
 PRICE_SHOCK = {"xyz:BRENTOIL": 0.010, "xyz:CL": 0.010, "xyz:SILVER": 0.012, "xyz:GOLD": 0.007,
-               "xyz:SP500": 0.007}
+               "xyz:SP500": 0.007, "HYPE": 0.028}
 HEADLINE_BLACKOUT_MIN = 30
 HEADLINE_MIN_GAP_MIN = 30          # a headline rewrite still waits this long after the last thesis
 MAX_ALERTS_PER_DAY = 6             # per group; caps rewrite cost (~$1 each)
@@ -140,8 +146,10 @@ PRICE_REARM_MIN = PRICE_WINDOW_MIN  # one price-shock alert per coin per window,
 DRIFT_WINDOW_MIN = 240
 # The S&P's 4h moves: p95 0.60% over 208 days of 1h bars, 0.76% over the last
 # 52 days of 15m bars (p99 1.10% / 1.37%); 0.75% sits at the recent p95.
+# HYPE's 4h moves (1h bars, 2026-04-26..11-20): p90 2.69%, p95 3.57%, p99
+# 5.72%; 3.5% sits at its own p95, the same methodology as the S&P's.
 PRICE_DRIFT = {"xyz:BRENTOIL": 0.0175, "xyz:CL": 0.0175, "xyz:SILVER": 0.025, "xyz:GOLD": 0.009,
-               "xyz:SP500": 0.0075}
+               "xyz:SP500": 0.0075, "HYPE": 0.035}
 DRIFT_REARM_MIN = DRIFT_WINDOW_MIN
 HISTORY_KEEP_MIN = DRIFT_WINDOW_MIN + 2   # minutes of mids the watcher keeps per coin
 KEEP_ALERTS = 100
@@ -163,6 +171,11 @@ NEWS_QUERIES = {
     "sp500": ["Powell OR \"Federal Reserve\" OR \"rate cut\" when:1h",
               "tariffs OR \"trade deal\" OR \"government shutdown\" OR \"debt ceiling\" when:1h",
               "Nvidia OR Apple OR Microsoft OR Amazon OR Alphabet OR Meta OR Tesla guidance when:1h"],
+    # the candidate hype desk (2026-11-20): the protocol itself, a security
+    # incident (existential for a perp DEX token), and bitcoin/crypto risk
+    # appetite it is beta-exposed to.
+    "hype": ["Hyperliquid when:1h", "crypto exchange hack OR exploit when:1h",
+             "bitcoin OR crypto market when:1h"],
 }
 
 # The names that carry about a third of the index's weight.
@@ -227,11 +240,34 @@ PATTERNS: Dict[str, List[Tuple[str, re.Pattern]]] = {
         ("yields shock", re.compile(r"\b(treasury yields?|10-year yields?|bond yields?)\b.*"
                                     r"\b(spike|surge|soar|plunge|tumble|crash|jump)\w*", re.I)),
     ],
+    # The candidate hype desk (2026-11-20). Event words only, like the groups
+    # above: a price wrap is caught by the price shock, not a news alert.
+    "hype": [
+        ("protocol", re.compile(r"\b(hyperliquid|hlp vault|assistance fund)\b.*\b(launch\w*|upgrad\w*|propos\w*|"
+                                r"vot\w*|pass\w*|reject\w*|buyback\w*|burn\w*|halt\w*|pause\w*|resum\w*|migrat\w*|"
+                                r"outag\w*|down\w*)\b", re.I)),
+        ("exploit", re.compile(r"\b(hyperliquid|hlp vault|perp dex|perpetual exchange|defi protocol|bridge|"
+                               r"crypto exchange)\b.*\b(exploit\w*|hack\w*|drain\w*|breach\w*|compromis\w*|"
+                               r"stolen|rug pull)\w*|\b(exploit\w*|hack\w*|drain\w*|stolen|rug pull)\w*\b.*"
+                               r"\b(hyperliquid|hlp vault|perp dex|bridge)\b", re.I)),
+        ("unlock", re.compile(r"\bhype\b.*\b(unlock\w*|vesting|cliff)\b|\b(unlock\w*|vesting|cliff)\b.*\bhype\b",
+                              re.I)),
+        ("competition", re.compile(r"\b(binance|coinbase|okx|bybit|kraken)\b.*\b(perp\w*|perpetual exchange|"
+                                   r"derivatives?)\b.*\b(launch\w*|list\w*)\w*", re.I)),
+        ("regulation", re.compile(r"\b(sec|cftc)\b.*\b(crypto|digital assets?|stablecoins?)\b.*"
+                                  r"\b(sue\w*|charg\w*|enforc\w*|approv\w*|reject\w*|rule\w*|propos\w*)\w*|"
+                                  r"\b(crypto market structure|stablecoin)\b.*\b(bill|act|law|legislation)\b.*"
+                                  r"\b(pass\w*|sign\w*|vote\w*|fail\w*)\w*", re.I)),
+        ("btc shock", re.compile(r"\bbitcoin\b.*\b(etf)\b.*\b(approv\w*|reject\w*|launch\w*|outflows?|inflows?)\w*|"
+                                 r"\b(crypto|bitcoin)\b.*\b(liquidat\w*|flash crash)\b", re.I)),
+    ],
 }
 ODDS_TERMS = {"oil": re.compile(r"(iran|hormuz|ceasefire|opec|oil)", re.I),
               "metals": re.compile(r"(fed|rate cut|powell|recession|gold|iran|ceasefire)", re.I),
               "sp500": re.compile(r"(fed|rate cut|powell|recession|shutdown|tariff|trade deal|s&p|debt ceiling)",
-                                  re.I)}
+                                  re.I),
+              "hype": re.compile(r"(hyperliquid|hype token|bitcoin|crypto regulation|crypto market|"
+                                 r"stablecoin|sec crypto)", re.I)}
 
 # Trump's own posts (operator, 2026-11-05: "A Truth Social / X feed for the
 # headline watcher"). A post is short and not headline-shaped: "Oil Prices
@@ -478,6 +514,25 @@ _SP500_BEAR = [
     r"\byields?\b.*\b(surge|spike|soar|jump|climb)\w*", r"\bbank (failure|run|collapse)\b",
     r"\bcircuit breaker\b", r"\bflash crash\b",
 ]
+# The candidate hype desk (2026-11-20): buybacks/burns and revenue growth are
+# bullish for a token whose desk revenue funds them; a hack/exploit/bridge
+# drain is bearish and specific to it (an existential risk for a perp DEX, not
+# a generic risk-off word); crypto risk appetite (rate cuts, a bitcoin ETF
+# catalyst) carries over the same way it does for every risk asset.
+_HYPE_NEGATIONS = [_METALS_NEGATIONS[0]]
+_HYPE_BULL = [
+    r"\bbuyback\w*\b", r"\bburn\w*\b", r"\brevenue\b.*\b(record|surg\w*|grow\w*|ris\w*|jump\w*)\w*",
+    r"\b(rate|interest rate) cuts?\b", r"\bcuts? (interest )?rates?\b", r"\bdovish\b", r"\brisk[- ]on\b",
+    r"\betf\b.*\b(approv\w*|launch\w*|inflows?)\b|\b(approv\w*|launch\w*|inflows?)\b.*\betf\b",
+    r"\blist\w*\b.*\bhype\b|\bhype\b.*\blist\w*\b",
+]
+_HYPE_BEAR = [
+    r"\bexploit\w*\b", r"\bhack\w*\b", r"\bdrain\w*\b", r"\bbreach\w*\b", r"\bstolen\b", r"\brug pull\b",
+    r"\b(rate|interest rate) hikes?\b", r"\bhikes? (interest )?rates?\b", r"\bhawkish\b", r"\brisk[- ]off\b",
+    r"\betf\b.*\b(reject\w*|outflows?)\b|\b(reject\w*|outflows?)\b.*\betf\b",
+    r"\bunlock\w*\b.*\b(dump\w*|sell\w*)\w*", r"\bflash crash\b", r"\bliquidat\w*\b.*\bcascad\w*",
+    r"\bsec\b.*\b(sue\w*|charg\w*|enforc\w*)\w*", r"\bdelist\w*\b",
+]
 DIRECTION_WORDS: Dict[str, Dict[str, Any]] = {
     "oil": {"negations": _OIL_NEGATIONS, "bull": [re.compile(p, re.I | re.S) for p in _OIL_BULL],
             "bear": [re.compile(p, re.I | re.S) for p in _OIL_BEAR]},
@@ -485,6 +540,8 @@ DIRECTION_WORDS: Dict[str, Dict[str, Any]] = {
                "bear": [re.compile(p, re.I | re.S) for p in _METALS_BEAR]},
     "sp500": {"negations": _SP500_NEGATIONS, "bull": [re.compile(p, re.I | re.S) for p in _SP500_BULL],
               "bear": [re.compile(p, re.I | re.S) for p in _SP500_BEAR]},
+    "hype": {"negations": _HYPE_NEGATIONS, "bull": [re.compile(p, re.I | re.S) for p in _HYPE_BULL],
+            "bear": [re.compile(p, re.I | re.S) for p in _HYPE_BEAR]},
 }
 # Polymarket questions: +1 when a rising YES is bullish for the group's coins.
 ODDS_POLARITY: Dict[str, List[Tuple[int, re.Pattern]]] = {
@@ -510,6 +567,12 @@ ODDS_POLARITY["sp500"] = [
                     r"(below|under) \$?\d[\d,.]*)\b", re.I)),
     (+1, re.compile(r"\b(rate cut|cuts? (interest )?rates?|lower rates?|ceasefire|cease-fire|truce|peace|"
                     r"trade deal|(above|over|reach|hit) \$?\d[\d,.]*)\b", re.I)),
+]
+ODDS_POLARITY["hype"] = [
+    (-1, re.compile(r"\b(rate hike|hikes? rates?|raise rates?|hold rates?|no (rate )?cut|recession|hack\w*|"
+                    r"exploit\w*|sue\w*|charg\w*|(below|under) \$?\d[\d,.]*)\b", re.I)),
+    (+1, re.compile(r"\b(rate cut|cuts? (interest )?rates?|lower rates?|approv\w*|list\w*|"
+                    r"(above|over|reach|hit) \$?\d[\d,.]*)\b", re.I)),
 ]
 _ODDS_TITLE = re.compile(r"(\d+)%\s*->\s*(\d+)%\s*$")
 _PCT_IN_TITLE = re.compile(r"([+-]\d+(?:\.\d+)?)%")

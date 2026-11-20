@@ -3,9 +3,10 @@
 Until 2026-11-19 one number capped every new entry: the risk profile's
 `max_leverage` (20x on the live account). Operator, 2026-11-19: "ADD A
 S&P500 MARKET STRATEGY 50X". The S&P desk trades at 50x; oil and every
-other desk stay on the profile's cap, exactly as before.
+other desk stay on the profile's cap, exactly as before. HYPE joined
+2026-11-20 at 10x -- the venue's own max for that coin, not a choice.
 
-    DESK_MAX_LEVERAGE = {"sp500": 50.0}                    # the code default
+    DESK_MAX_LEVERAGE = {"sp500": 50.0, "hype": 10.0}      # the code default
     "desk_max_leverage": {"sp500": 25}                     # agent config, wins
 
 A desk with no entry in either place has NO cap of its own: `cap_for_coin`
@@ -30,7 +31,7 @@ from contracts import runtime
 from services.strategies.desks import registry_spec
 
 CONFIG_KEY = "desk_max_leverage"
-DESK_MAX_LEVERAGE: Dict[str, float] = {"sp500": 50.0}
+DESK_MAX_LEVERAGE: Dict[str, float] = {"sp500": 50.0, "hype": 10.0}
 MIN_CAP, MAX_CAP = 1.0, 50.0        # contracts.risk.models.RiskProfile.max_leverage's own bounds
 
 

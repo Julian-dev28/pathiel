@@ -98,9 +98,10 @@ def test_a_failed_read_holds_rather_than_guesses():
     assert got["operator"] is True and got["read_failed"] is True
 
 
-def test_only_the_sp500_coin_is_guarded():
-    assert ownership.OPERATOR_GUARD_COINS == frozenset({"xyz:SP500"})
-    assert ownership.is_guarded(COIN) and not ownership.is_guarded("xyz:BRENTOIL")
+def test_only_sp500_and_hype_are_guarded():
+    assert ownership.OPERATOR_GUARD_COINS == frozenset({"xyz:SP500", "HYPE"})
+    assert ownership.is_guarded(COIN) and ownership.is_guarded("HYPE")
+    assert not ownership.is_guarded("xyz:BRENTOIL")
 
 
 # ── 2. the tick's first step ─────────────────────────────────────────────
