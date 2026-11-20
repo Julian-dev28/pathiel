@@ -34,6 +34,24 @@
 
   const num = v => (v === null || v === undefined || !isFinite(Number(v))) ? null : Number(v);
 
+  /** The coin's tick precision, the same tiered rule desks.js's fmtPrice
+   *  uses for every other price on this page (5 decimals under $1, 3 under
+   *  $100, else 2) -- duplicated, not shared: this module stays a
+   *  zero-dependency pure file so tests/test_entry_rows_js.py can run it
+   *  through node without the rest of the page (position_line.js follows
+   *  the same convention). tests/test_entry_rows_js.py pins this against
+   *  the real desks.js source so the two can never silently drift apart.
+   *  null in, null out -- the caller decides what a missing price reads as.
+   *  2026-11-20 bug report: the Levels card's live-entry sentence printed
+   *  next_trade()'s raw float verbatim ("Sell at 90.363178 or higher"). */
+  function fmtTickPrice(v) {
+    const n = num(v);
+    if (n === null) return null;
+    const abs = Math.abs(n);
+    const s = abs < 1 ? abs.toFixed(5) : abs < 100 ? abs.toFixed(3) : abs.toFixed(2);
+    return (n < 0 ? '-' : '') + s;
+  }
+
   /** {side, price} off the thesis's own call; null with no thesis. */
   function thesisEntryText(entry) {
     if (!entry || !entry.has_thesis) return null;
@@ -42,12 +60,15 @@
 
   /** "Buy at 87.98 or lower" / "Buys now at 87.98" / "Sell at 91.40 or
    *  higher" — presentation only; `entryPx` is next_trade()'s own
-   *  entry_px (the mid when the rule trades now, else its trigger price). */
+   *  entry_px (the mid when the rule trades now, else its trigger price),
+   *  shown at the coin's tick precision (fmtTickPrice), never the raw
+   *  float next_trade() computed it at. */
   function liveEntrySentence(side, status, entryPx) {
     const long = side !== 'short';
     const verb = long ? 'Buy' : 'Sell';
-    if (entryPx === null || entryPx === undefined) return `${verb}: price unavailable`;
-    return status === 'ready' ? `${verb}s now at ${entryPx}` : `${verb} at ${entryPx} ${long ? 'or lower' : 'or higher'}`;
+    const px = fmtTickPrice(entryPx);
+    if (px === null) return `${verb}: price unavailable`;
+    return status === 'ready' ? `${verb}s now at ${px}` : `${verb} at ${px} ${long ? 'or lower' : 'or higher'}`;
   }
 
   /** The Levels card's three entry rows as plain data — no HTML, no DOM:
@@ -70,7 +91,7 @@
       return {
         thesis,
         live: {
-          sentence: `In position at ${num(position.entry_px)}`, stop: num(position.stop_px), tp, r,
+          sentence: `In position at ${fmtTickPrice(position.entry_px)}`, stop: num(position.stop_px), tp, r,
           status: 'in_position', statusText: 'in position', badgeClass: BADGE_CLASS.in_position,
         },
         distance: null, inPosition: true,
@@ -102,7 +123,7 @@
     };
   }
 
-  const api = { entryRows, liveEntrySentence, thesisEntryText, BADGE_CLASS };
+  const api = { entryRows, liveEntrySentence, thesisEntryText, fmtTickPrice, BADGE_CLASS };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   root.PathielEntryRows = api;
 })(typeof window !== 'undefined' ? window : globalThis);

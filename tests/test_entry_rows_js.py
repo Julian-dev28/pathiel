@@ -46,14 +46,16 @@ def test_ready_status_buys_now_sentence():
     rows = _run(f"m.entryRows({json.dumps(_entry('ready', 'ready'))}, null)")
     assert rows["live"]["status"] == "ready" and rows["live"]["statusText"] == "ready"
     assert rows["live"]["badgeClass"] == "b-hold"
-    assert rows["live"]["sentence"] == "Buys now at 87.98"
+    # at the coin's tick precision (fmtTickPrice: 3 decimals under $100), not
+    # bare JS number-to-string -- see test_fmt_tick_price_* below.
+    assert rows["live"]["sentence"] == "Buys now at 87.980"
     assert rows["thesis"] == {"side": "Long", "price": 88.6}
 
 
 def test_waiting_status_buy_at_or_lower_sentence():
     rows = _run(f"m.entryRows({json.dumps(_entry('waiting', 'waiting'))}, null)")
     assert rows["live"]["status"] == "waiting" and rows["live"]["badgeClass"] == "b-flat"
-    assert rows["live"]["sentence"] == "Buy at 87.98 or lower"
+    assert rows["live"]["sentence"] == "Buy at 87.980 or lower"
     assert rows["live"]["stop"] == 86.844 and rows["live"]["tp"] == 90.25 and rows["live"]["r"] == 2.0
     assert rows["distance"] == {"price": 0.916, "pct": 0.0103, "atr": 1.19}
 
@@ -62,7 +64,53 @@ def test_waiting_status_on_a_short_is_sell_at_or_higher():
     entry = _entry("waiting", "waiting")
     entry["side"] = "short"
     rows = _run(f"m.entryRows({json.dumps(entry)}, null)")
-    assert rows["live"]["sentence"] == "Sell at 87.98 or higher"
+    assert rows["live"]["sentence"] == "Sell at 87.980 or higher"
+
+
+# ── 2026-11-20 bug report: the live-entry sentence printed next_trade()'s
+#    raw float verbatim ("Sell at 90.363178 or higher") instead of the
+#    coin's tick precision ──────────────────────────────────────────────────
+
+def test_the_live_entry_sentence_is_never_a_raw_unrounded_float():
+    """The exact numbers from the bug report."""
+    entry = _entry("waiting", "waiting", entry_px=90.363178)
+    entry["side"] = "short"
+    rows = _run(f"m.entryRows({json.dumps(entry)}, null)")
+    assert rows["live"]["sentence"] == "Sell at 90.363 or higher"
+    assert "90.363178" not in rows["live"]["sentence"]
+
+
+def test_fmt_tick_price_matches_the_tiered_rule_at_every_magnitude():
+    assert _run("m.fmtTickPrice(90.363178)") == "90.363"
+    assert _run("m.fmtTickPrice(0.916)") == "0.91600"
+    assert _run("m.fmtTickPrice(1234.5)") == "1234.50"
+    assert _run("m.fmtTickPrice(-5.25)") == "-5.250"
+    assert _run("m.fmtTickPrice(null)") is None
+
+
+def test_fmt_tick_price_matches_desks_js_fmt_price_byte_for_byte():
+    """entry_rows.js duplicates desks.js's fmtPrice tiered rule (5 decimals
+    under $1, 3 under $100, else 2) rather than sharing it, so this module
+    stays a zero-dependency pure file node can run directly (same
+    convention as position_line.js). This cross-check pins the two in
+    lockstep so a future change to either formatter can never silently
+    drift the other out of sync -- the same role
+    test_status_keys_match_entry_card_pys_status_constants plays for the
+    status/badge keys below."""
+    desks_js = (ROOT / "pathiel" / "static" / "desks.js").read_text()
+    start = desks_js.index("const fmtPrice = v => {")
+    end = desks_js.index("\n};", start) + len("\n};")
+    fmt_price_src = desks_js[start:end]
+    samples = [0.0005, 0.0199, 0.5, 0.916, 1.0, 1.865, 50.0, 87.98, 90.363178,
+              99.999, 100.0, 100.5, 1234.5, -5.25, -0.42]
+    script = (f"const m = require({json.dumps(str(HELPER))});"
+              f"{fmt_price_src}\n"
+              f"const samples = {json.dumps(samples)};"
+              "process.stdout.write(JSON.stringify(samples.map(v => "
+              "[m.fmtTickPrice(v), fmtPrice(v)])));")
+    out = subprocess.run([NODE, "-e", script], capture_output=True, text=True, timeout=10, check=True)
+    pairs = json.loads(out.stdout)
+    assert all(a == b for a, b in pairs), pairs
 
 
 def test_blackout_status_shows_the_until_text_and_avoid_badge():
@@ -111,7 +159,9 @@ def test_in_position_overrides_the_pending_entry_with_the_positions_own_numbers(
     assert rows["inPosition"] is True
     assert rows["live"]["status"] == "in_position" and rows["live"]["statusText"] == "in position"
     assert rows["live"]["badgeClass"] == "b-hold"
-    assert rows["live"]["sentence"] == "In position at 109.4579"
+    # at tick precision too (>= $100: 2 decimals) -- the numeric fields below
+    # (stop/tp/r, consumed by the Desk page's own fmtPrice) stay raw.
+    assert rows["live"]["sentence"] == "In position at 109.46"
     assert rows["live"]["stop"] == 108.95 and rows["live"]["tp"] == 113.75 and rows["live"]["r"] == 8.45
     assert rows["distance"] is None
     # The thesis-entry row is unaffected by being in position (still shown).
