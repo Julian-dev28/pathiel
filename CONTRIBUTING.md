@@ -141,6 +141,10 @@ is ok, the app is not installed on the repo: install it from
 https://github.com/apps/glama-ai/installations/new (only `pathiel`), then
 Sync on Glama's admin page. Signing in to Glama with GitHub authorizes
 the app but does not install it.
+The two Dependabot lines stay "unavailable" even then: the Glama AI
+app does not request GitHub's Dependabot alerts permission
+(`vulnerability_alerts`), so it cannot read them on any repo. The script
+prints the app's permissions; only Glama can change that.
 
 The website (GitHub Pages) is the `gh-pages` branch: the landing page in
 `site/` and the scoreboard in `docs/scoreboard/`, nothing else. After a
