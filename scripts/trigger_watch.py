@@ -20,7 +20,14 @@ its stop/target orders handle it), and a desk that fired in the last
 --cooldown-min minutes (a tick that declined must not be re-woken every
 minute). State and a per-minute log live under /tmp/trigger-watch/.
 Read-only on the venue and the journal: it never places, cancels or writes
-anything but its own log, cooldown file and headline state.
+anything but its own log, cooldown file and headline state -- plus, since
+2026-11-20, one line on the desk's OWN shared progress log
+(services/strategies/desk_log.log_path(desk), same file the desk-tick agent
+appends `DESK-TICK <desk> ...` lines to) for a fire that names one specific
+desk: `WATCH <desk> <utc> ...` (`_append_watch_line`). That is the only
+place this module's activity reaches the Desk page's per-desk Loop Log card
+(`GET /api/desks/{id}/log`); this module's own watch.log is unaffected and
+unfiltered either way.
 
 Since 2026-11-05 (operator: "FIX THEM") every pass starts with the headline
 step (services/intel/headline_watch.py): new matching news, a Polymarket
@@ -449,6 +456,37 @@ def _log(line: str) -> None:
         fh.write(line + "\n")
 
 
+def _append_watch_line(desk: str, text: str) -> None:
+    """Also note a desk-specific wake-up on THAT DESK'S OWN shared progress
+    log (services/strategies/desk_log.log_path(desk) -- the same file the
+    desk-tick agent appends `DESK-TICK <desk> ...` lines to, read by
+    `GET /api/desks/{id}/log`), prefixed `WATCH <desk> <utc> <text>` so the
+    Desk page's Loop Log card can show when the watcher woke this desk
+    between its own ticks, not only this module's separate watch.log
+    (2026-11-20, Desk page multi-desk build). Called only for a fire that
+    names ONE specific desk (a new entry, a weekend-flat close, a headline
+    alert) -- never for the signer fire, which names a desk only as a
+    representative and is not that desk's own event.
+
+    Best-effort and desk_log-filter-shaped on purpose: desk_log.
+    filter_desk_lines keeps a line only when its prefix names the exact
+    desk asked for, so a malformed `desk` here would simply never show up
+    rather than corrupt another desk's card. A write failure (the loop
+    directory missing, a read-only filesystem) must never crash the
+    watcher or block the fire it is reporting on, so it is swallowed like
+    `_log` is not: the fire itself still prints and still exits 0."""
+    try:
+        from services.strategies import desk_log
+        path = desk_log.log_path(desk)
+        d = os.path.dirname(path)
+        if d:
+            os.makedirs(d, exist_ok=True)
+        with open(path, "a") as fh:
+            fh.write(f"WATCH {desk} {_utc()} {text}\n")
+    except OSError:
+        pass
+
+
 def watch(*, once: bool, cooldown_min: float, sleep: Callable[[float], None] = time.sleep,
           clock: Callable[[], float] = time.time) -> int:
     import _state_env
@@ -532,6 +570,8 @@ def watch(*, once: bool, cooldown_min: float, sleep: Callable[[float], None] = t
                 line = {"fire": wake[0], "also": wake[1:], "reason": "headline", "utc": _utc(),
                         "coin": first.get("coin") or next(c for d, c, _g in targets if d == wake[0]),
                         "label": first.get("label"), "headline": first.get("title")}
+                for d in wake:
+                    _append_watch_line(d, f"action=WAKE headline: {first.get('title') or first.get('label') or 'alert'}")
                 _log(f"{_utc()} FIRE {json.dumps(line)}")
                 print(json.dumps(line), flush=True)
                 return 0
@@ -552,6 +592,7 @@ def watch(*, once: bool, cooldown_min: float, sleep: Callable[[float], None] = t
                 line = weekend_fire(desk, coin, blackout, fired, now, lambda: _slot(desk_slot, desk))
                 if line:
                     _write_json(fired_path, fired)
+                    _append_watch_line(desk, f"coin={coin} action=WAKE weekend flat until {line.get('until_utc')}")
                     _log(f"{_utc()} FIRE {json.dumps(line)}")
                     print(json.dumps(line), flush=True)
                     return 0
@@ -608,6 +649,8 @@ def watch(*, once: bool, cooldown_min: float, sleep: Callable[[float], None] = t
                         "stop_px": res.get("stop_px"), "tp_px": res.get("tp_px"),
                         "r_now": res.get("r_now"), "verdict": res.get("verdict"),
                         "source": res.get("source")}
+                _append_watch_line(desk, f"coin={coin} mid={mid} action=WAKE entry rule passed, "
+                                         f"{res.get('r_now')}R, run /desk-tick {desk}")
                 _log(f"{_utc()} FIRE {json.dumps(line)}")
                 print(json.dumps(line), flush=True)
                 return 0

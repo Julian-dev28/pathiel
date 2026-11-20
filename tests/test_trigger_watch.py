@@ -261,6 +261,13 @@ def _stub(monkeypatch, tmp_path, mids, held="", news=None):
     monkeypatch.setattr(levels, "summarize_coin", lambda coin, now_ms=None: dict(BRENT_LV, mid=last_mid["v"]))
     monkeypatch.setattr(ex, "get_max_leverage", lambda coin: 20)
     monkeypatch.setattr(W, "_slot", lambda mod, desk: held)
+    # _append_watch_line's real implementation appends to
+    # services.strategies.desk_log.log_path(desk), which defaults to the
+    # REAL /tmp/oil-loop/progress.log -- the exact file the live desk-tick
+    # loop and Desk page read. Every test using this stub must not write
+    # into that file; the dedicated test below restores the real function
+    # against a tmp_path-redirected log_path instead.
+    monkeypatch.setattr(W, "_append_watch_line", lambda desk, text: None)
 
 
 def test_watch_waits_then_fires_once_and_exits(monkeypatch, tmp_path, capsys):
@@ -273,6 +280,47 @@ def test_watch_waits_then_fires_once_and_exits(monkeypatch, tmp_path, capsys):
     assert out["fire"] == "oil" and out["mid"] == 112.04 and sleeps == [60, 60, W.CONFIRM_DELAY_S]
     assert json.loads((tmp_path / "fired.json").read_text())["oil"] == 1000.0
     assert "FIRE" in (tmp_path / "watch.log").read_text()
+
+
+# ── 2026-11-20: the entry fire also notes a WATCH line on the desk's own
+# shared progress log, so the Desk page's Loop Log card for that desk sees
+# it too, not only this module's private watch.log. _stub() above no-ops
+# _append_watch_line for every other test (it would otherwise write into
+# the real /tmp/oil-loop/progress.log); this test restores the real
+# function against a log_path redirected into tmp_path. ─────────────────
+
+def test_the_entry_fire_appends_a_watch_line_to_the_desks_own_progress_log(monkeypatch, tmp_path, capsys):
+    real_append_watch_line = W._append_watch_line
+    _stub(monkeypatch, tmp_path, [112.30, 112.20, 112.04])
+    monkeypatch.setattr(W, "_append_watch_line", real_append_watch_line)
+    from services.strategies import desk_log
+    progress_log = tmp_path / "oil-progress.log"
+    monkeypatch.setattr(desk_log, "log_path", lambda desk: str(progress_log))
+
+    sleeps = []
+    assert W.watch(once=False, cooldown_min=30, sleep=sleeps.append, clock=lambda: 1000.0) == 0
+    out = json.loads(capsys.readouterr().out.strip())
+    assert out["fire"] == "oil"
+
+    text = progress_log.read_text().strip()
+    assert text.startswith("WATCH oil ")
+    assert "coin=xyz:BRENTOIL" in text and "mid=112.04" in text
+    assert "action=WAKE entry rule passed" in text and "run /desk-tick oil" in text
+    # desk_log.filter_desk_lines (the Desk page's own filter) must actually
+    # recognize this line as oil's -- the whole point of the WATCH prefix.
+    assert desk_log.filter_desk_lines([text], "oil") == [text]
+    assert desk_log.filter_desk_lines([text], "sp500") == []
+
+
+def test_append_watch_line_never_raises_when_the_log_directory_is_unwritable(monkeypatch, tmp_path):
+    from services.strategies import desk_log
+    # A path under a file (not a directory) makes os.makedirs/open fail with
+    # OSError every time -- the one failure mode _append_watch_line must
+    # swallow rather than crash the watcher mid-fire.
+    blocker = tmp_path / "not-a-directory"
+    blocker.write_text("x")
+    monkeypatch.setattr(desk_log, "log_path", lambda desk: str(blocker / "progress.log"))
+    W._append_watch_line("oil", "action=WAKE entry rule passed, 2.1R, run /desk-tick oil")  # must not raise
 
 
 def test_a_desk_that_holds_something_or_just_fired_is_skipped(monkeypatch, tmp_path, capsys):
