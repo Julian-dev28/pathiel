@@ -253,8 +253,11 @@ PATTERNS: Dict[str, List[Tuple[str, re.Pattern]]] = {
         ("unlock", re.compile(r"\bhype\b.*\b(unlock\w*|vesting|cliff)\b|\b(unlock\w*|vesting|cliff)\b.*\bhype\b",
                               re.I)),
         ("competition", re.compile(r"\b(binance|coinbase|okx|bybit|kraken)\b.*\b(perp\w*|perpetual exchange|"
-                                   r"derivatives?)\b.*\b(launch\w*|list\w*)\w*", re.I)),
-        ("regulation", re.compile(r"\b(sec|cftc)\b.*\b(crypto|digital assets?|stablecoins?)\b.*"
+                                   r"derivatives?|futures)\b|\b(perp\w*|perpetual exchange|derivatives?|futures)\b"
+                                   r".*\b(binance|coinbase|okx|bybit|kraken)\b", re.I)),
+        ("regulation", re.compile(r"\b(sec|cftc)\b.*\b(sue\w*|charg\w*|enforc\w*|approv\w*|reject\w*|rule\w*|"
+                                  r"propos\w*)\w*\b.*\b(crypto|digital assets?|stablecoins?|exchange)\b|"
+                                  r"\b(sec|cftc)\b.*\b(crypto|digital assets?|stablecoins?)\b.*"
                                   r"\b(sue\w*|charg\w*|enforc\w*|approv\w*|reject\w*|rule\w*|propos\w*)\w*|"
                                   r"\b(crypto market structure|stablecoin)\b.*\b(bill|act|law|legislation)\b.*"
                                   r"\b(pass\w*|sign\w*|vote\w*|fail\w*)\w*", re.I)),
