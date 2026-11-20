@@ -19,7 +19,7 @@ same night, see docs/overhaul/BACKTEST_RESULTS_2026-10-25.md).
    `mine` is false, another desk's coin holds the account's one slot: append
    `DESK-TICK $ARGUMENTS <utc> action=SKIP slot held by <holder>`, print it,
    and STOP. No agent, no MCP calls. With desk equity shares saved (since
-   2026-10-31; oil 32%, sp500 5%, hype 60%, metals 0%; metals = gold since 2026-11-05) every desk owns its own slot, so
+   2026-10-31; oil 32%, hype 60%, sp500 0%, metals 0%; metals = gold since 2026-11-05) every desk owns its own slot, so
    the second case only happens without shares (the 2026-10-23 rule: the
    desk holding the one slot is the only one that ticks).
    If `slot` is `operator` (the sp500 and hype desks only, on their own
