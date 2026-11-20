@@ -7,7 +7,7 @@ effort: medium
 
 <!-- GENERATED from .claude/agents/desk-tick.md by scripts/build_plugin_skill.py. Edit the source, then rerun it. -->
 You run ONE tick for the desk named in your prompt (DESK: oil, metals, sp500,
-ai or gas). Live money on the connected Hyperliquid account. Since 2026-10-31 oil
+hype, ai or gas). Live money on the connected Hyperliquid account. Since 2026-10-31 oil
 and the metals desk (silver until 2026-11-05, gold since) run side by side
 when both are active, each on its own slice of equity (config
 `desk_equity_share`) and its own ONE position:
@@ -20,10 +20,13 @@ liquidation). Brent, gold and silver fit their leverage to the stop
 so never pass `leverage` on a new entry. On testnet the oil desk trades
 WTI (xyz:CL) as the Brent stand-in and its brief says so first; a tool
 says plainly when a coin is not tradable there: log `action=NONE` with
-that message and stop. The S&P desk (sp500, xyz:SP500)
-sizes at the `desk_max_leverage` saved for it in the config, else at the
-same `max_leverage`, and is never fitted lower: a stop that does not fit
-is no trade. Never chase, on every desk: the
+that message and stop. The S&P desk (sp500, xyz:SP500) and the HYPE desk (hype, HYPE) size at
+the `desk_max_leverage` saved for each in the config, else the same
+`max_leverage`, and neither is ever fitted lower: a stop that does not
+fit is no trade. HYPE also gates new entries on the 120h trend
+(`next_trade.trend_gate`, `next_trade.TREND_GATE_SPAN_BY_COIN`): no new
+entry against the sign of the 120-hour return, on no other desk's coin.
+Never chase, on every desk: the
 silver breakout exception ended 2026-11-04 evening. No entry after a break
 either: none while the mid is past the 24h range's own edge (a long under
 the 24h low, a short over the 24h high). Never add at market above the
@@ -52,20 +55,22 @@ ToolSearch call: `select:mcp__pathiel__get_desk_brief,mcp__pathiel__sweep_bracke
    `DESK-TICK DESK <utc> action=SKIP slot held by <holder>` and STOP. No
    brief, no levels, no MCP calls. An `error` output: log
    `action=NONE <the error>` and STOP.
-   If `slot` is `operator` (the sp500 desk only): the operator's own
-   position or resting order sits on xyz:SP500, and the script's `reason`
-   says which (`operator position open on xyz:SP500`). Log
-   `DESK-TICK DESK <utc> coin=xyz:SP500 action=HOLD <reason>` and STOP. No
-   brief, no sweep, no levels, no order. Nothing on that coin is the
+   If `slot` is `operator` (the sp500 and hype desks only, on their own
+   guarded coin: `pathiel.agents.ownership.OPERATOR_GUARD_COINS`, xyz:SP500
+   and HYPE): the operator's own position or resting order sits on that
+   coin, and the script's `reason` says which (`operator position open on
+   xyz:SP500`, or the same for HYPE). Log
+   `DESK-TICK DESK <utc> coin=<the guarded coin> action=HOLD <reason>` and
+   STOP. No brief, no sweep, no levels, no order. Nothing on that coin is the
    desk's to touch: no `close_position`, `cancel_order`, `sweep_brackets`,
    `set_stop`, `set_target` or `set_leverage`, and no entry or top-up (a
    desk order would merge into his position: the venue nets one position
-   per coin per account). The desk trades the S&P again on the first tick
-   after his position and orders are gone.
+   per coin per account). The desk trades that coin again on the first
+   tick after his position and orders are gone.
 1. **Thesis first.** `get_desk_brief {desk: "DESK"}` (quick). The call's
    instrument is COIN for the rest of the tick (oil: xyz:BRENTOIL, metals:
    xyz:GOLD since 2026-11-05 (xyz:SILVER from 2026-10-31 to 11-05), sp500:
-   xyz:SP500, ai: whichever equity the call names, gas: xyz:NATGAS). A thesis whose
+   xyz:SP500, hype: HYPE, ai: whichever equity the call names, gas: xyz:NATGAS). A thesis whose
    instrument is not the desk's primary (a metals thesis on xyz:SILVER)
    never trades: rewrite it first (`thesis_due.py` answers `"due": true`
    with "instrument ... is not the desk's primary" for it, past every gap).
@@ -106,7 +111,10 @@ ToolSearch call: `select:mcp__pathiel__get_desk_brief,mcp__pathiel__sweep_bracke
    level: the R gate and the liquidation line, where L is the
    `max_leverage` that `get_risk_limits` reports. Gold (and silver): add `--max-lev 25`
    (their venue max; Brent and WTI are 20, the default). The S&P: pass
-   `--coin xyz:SP500 --max-lev 50` (its venue max).
+   `--coin xyz:SP500 --max-lev 50` (its venue max). HYPE:
+   pass `--coin HYPE` and judge a level with `--lev 10`; the script
+   defaults that coin to its venue max and its desk cap, both 10, and
+   fetches enough 1h history for the trend-gate veto by itself.
 4. **Account slot.** Step 0 already answered it: a free slot or ours (with
    shares saved, the desk's own slot).
    (`place_bracket` refuses a taken slot on its own as well.) The only
@@ -176,12 +184,23 @@ ToolSearch call: `select:mcp__pathiel__get_desk_brief,mcp__pathiel__sweep_bracke
          binds on most ticks). One leverage only: when `--next` answers "stop too
          wide" there is no trade, never a lower leverage. With
          that stop the mid has to sit within about 0.1% of the 24h edge.
+         HYPE: 1.0 x `atr14_1h` with NO floor (`next_trade.HYPE_RULE`; its
+         own ATR is wide enough -- about 1.1% of price at the median --
+         that a floor only ever widened the stop past what the backtest's
+         grid search picked). 10x only, the venue's own max; in the
+         backtest this almost never binds, unlike the S&P's 50x line.
+         HYPE also never enters against the sign of its own 120-hour
+         return: `--next` answering a trend-gate block is not a 2R or a
+         leverage refusal, it is the rule working as built.
        - **Target:** the far 24h edge (24h high for a long) as `tp_px`;
          `place_bracket` puts the take-profit 0.5% of price inside it
          (bracket.TARGET_OFFSET_FRAC) and judges 2R on that offset target,
          so never shave the target yourself. The S&P has no offset: its
          take-profit is the far 24h edge itself (`place_bracket` applies
          none on xyz:SP500; its whole 24h range is under 1% of price).
+         HYPE has no offset either (its 24h range is wide, about 5.6% of
+         price at the median, so the 0.5% offset other coins get would
+         barely move the target).
        - **Never chase:** no entry when the mid is above the thesis entry
          for a long (below it for a short).
        - **No entry after a break** (operator, 2026-11-04: "go"; the trade
@@ -216,6 +235,10 @@ ToolSearch call: `select:mcp__pathiel__get_desk_brief,mcp__pathiel__sweep_bracke
   `set_target`) or `operator_order: true` (`cancel_order`), that is not
   an error: log `action=HOLD <its reason>` and stop. Never pass
   `operator_override` from a tick.
+- **The operator's own HYPE trade (hype desk, since 2026-11-20).** The
+  same rule, on HYPE: any position or order the desk did not place is the
+  operator's, Step 0 stops the tick for it, and the same tool answers and
+  the same never-override rule apply.
 - If `place_bracket` or `sweep_brackets` is missing from the tool list, do
   nothing on the exchange and log `action=NONE reconnect pathiel MCP (/mcp)`.
 - Any tool error on a live-money call: stop the tick and report it verbatim.
@@ -235,7 +258,10 @@ ToolSearch call: `select:mcp__pathiel__get_desk_brief,mcp__pathiel__sweep_bracke
   midterms: 24h before the polls closed to 18h after). `place_bracket`
   refuses with "Event blackout: ..."; log `action=NONE event blackout until
   <utc>` and stop. On the S&P the monthly US jobs report blocks too (2h
-  either side), and a megacap earnings row with impact 3.
+  either side), and a megacap earnings row with impact 3. HYPE has no
+  macro-kind mapping of its own (its calendar is the protocol's, not the
+  US jobs/inflation print one); FOMC and CPI still block it like every
+  other desk.
 - **Weekend flat (oil coins only, since 2026-11-05; operator: "weekend
   flat").** The oil futures weekend runs Friday 16:00 to Sunday 18:00 New
   York (Fri 21:00Z to Sun 23:00Z in US winter, an hour earlier in summer).
@@ -251,7 +277,10 @@ ToolSearch call: `select:mcp__pathiel__get_desk_brief,mcp__pathiel__sweep_bracke
   line shows the window when it is active or opens inside 24h. Gold and
   silver are never flattened for it (the backtest lost on silver). The
   S&P is never flattened for it either (its backtest lost with it too),
-  and the S&P tick does not run the weekend script. The
+  and the S&P tick does not run the weekend script. HYPE trades 24/7 with
+  no weekly close at all (no gap in 208 days of 1h bars) and never ran
+  the weekend script to begin with; it is not an oil coin and never will
+  be flattened for this. The
   position's stop and target are never moved for the weekend: the only
   weekend action is this close.
   **Operator hold override** (2026-11-06: "hold the long for this weekend

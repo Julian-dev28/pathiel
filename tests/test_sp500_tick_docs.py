@@ -54,12 +54,12 @@ def test_the_skill_stops_before_it_launches_an_agent():
 
 def test_the_agent_knows_the_coin_the_levels_command_and_the_rule():
     text = flat(AGENT)
-    assert "(DESK: oil, metals, sp500, ai or gas)" in text
-    assert "sp500: xyz:SP500" in text
+    assert "(DESK: oil, metals, sp500, hype, ai or gas)" in text
+    assert "sp500: xyz:SP500" in text and "hype: HYPE" in text
     assert "`--coin xyz:SP500`" in text and "`--lev 50`" in text
     assert "1.0 x `atr14_1h` and 0.4% of the mid" in text
     assert "The S&P has no offset" in text
-    assert "a stop that does not fit 50x is no trade" in text
+    assert "a stop that does not fit is no trade" in text
     assert "oil 95%, sp500 5%, metals 0%" in text
     assert "the monthly US jobs report blocks too" in text
     assert "the S&P tick does not run the weekend script" in text
