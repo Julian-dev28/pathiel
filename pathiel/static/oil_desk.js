@@ -83,7 +83,7 @@ async function loadCall() {
   } catch (e) {
     show('call-loading', false);
     setErrorDetail('call', e);
-    reportRefreshFailure('oil desk call', e, document.getElementById('call-error'));
+    reportRefreshFailure(`${activeDesk} desk call`, e, document.getElementById('call-error'));
     renderIntel(null, e);
     lastThesisCall = null;
     renderPositionMismatch();
@@ -262,7 +262,7 @@ function renderLine() {
   if (line.error) {
     show('line-card', false); show('line-empty', true);
     document.getElementById('line-empty-detail').textContent = 'Could not load the leverage line: ' + line.error.message;
-    reportRefreshFailure('oil desk line', line.error, document.getElementById('line-empty'));
+    reportRefreshFailure(`${activeDesk} desk line`, line.error, document.getElementById('line-empty'));
     return;
   }
   if (!line.ok && !line.verdict) {
@@ -407,6 +407,11 @@ function renderWalletAccount(account, snapshot) {
   const marginLine = `<div class="note">Equity ${esc(fmtMoney(equity))} · Margin in use ${esc(fmtMoney(marginUsed))}`
     + (equity > 0 ? ` (${Math.round(marginUsed / equity * 100)}%)` : '')
     + ` · Free ${esc(fmtMoney(Math.max(0, equity - marginUsed)))}</div>`;
+  // Per-dex split (main vs. xyz, 2026-11-20: HYPE trades on main while oil
+  // and the S&P trade on xyz — the combined Equity line above hid that a
+  // HYPE position's margin sits on a different dex than oil's). Only once
+  // there is more than one dex to split across; `dexEquityLine` below.
+  const dexEquity = dexEquityLine(snapshot.accounts || []);
 
   const head = `
     <div class="dc-head">
@@ -429,7 +434,7 @@ function renderWalletAccount(account, snapshot) {
       ? `<div class="note">Equity ${esc(fmtMoney(equity))}. No open position; the resting ${resting.length === 1 ? 'entry' : 'entries'} below ${resting.length === 1 ? 'holds' : 'hold'} the account's one slot until it fills or is cancelled.</div>`
       : `<div class="note">Equity ${esc(fmtMoney(equity))}. No open positions.</div>`;
     const body = failed ? failed : flatNote;
-    return `<div class="card" style="margin-bottom:14px">${head}${body}${strandedNote}${restingBlock}${stale}</div>`;
+    return `<div class="card" style="margin-bottom:14px">${head}${body}${dexEquity}${strandedNote}${restingBlock}${stale}</div>`;
   }
 
   // uPnL in dollars and ROE % in its own column, the way Hyperliquid
@@ -463,13 +468,29 @@ function renderWalletAccount(account, snapshot) {
       <td>${p.naked ? '<span class="badge b-fail">NAKED</span>' : ''}</td>
     </tr>`).join('');
 
-  return `<div class="card" style="margin-bottom:14px">${head}${marginLine}${failed}${stale}
+  return `<div class="card" style="margin-bottom:14px">${head}${marginLine}${dexEquity}${failed}${stale}
     <div class="scroll-x"><table>
       <thead><tr><th>Dex</th><th>Coin</th><th>Side</th><th class="num">Size</th><th class="num">Entry</th><th class="num">Mark</th><th class="num">P&amp;L</th><th class="num">ROE %</th><th class="num">R now</th>
         <th class="num">Lev</th><th class="num">Margin</th><th class="num">Liq</th><th class="num">Dist</th>
         <th>Stop</th><th>Target</th><th></th></tr></thead>
       <tbody>${rows}</tbody>
     </table></div>${strandedNote}${restingBlock}</div>`;
+}
+
+/** "Equity by dex: main $116.00 · xyz $70.00" — one entry per dex this
+ *  account holds margin on (services/accounts/positions.py's
+ *  `_dexes_with_margin`: main whenever it has >= $1, every HIP-3 dex with a
+ *  position or >= $1 of equity). '' with fewer than two dexes: the combined
+ *  Equity line above already says the whole story then. main sorts first
+ *  since it is the account's home dex; HYPE (2026-11-20) trades there while
+ *  oil and the S&P trade on xyz, so a desk with an open HYPE position and
+ *  no xyz business still shows up correctly as "main $X" alone. */
+function dexEquityLine(accounts) {
+  if (!accounts || accounts.length < 2) return '';
+  const parts = [...accounts]
+    .sort((a, b) => (a.dex === 'main' ? -1 : b.dex === 'main' ? 1 : 0))
+    .map(a => `${esc(a.dex)} ${esc(fmtMoney(a.equity_usd || 0))}`);
+  return `<div class="note muted">Equity by dex: ${parts.join(' · ')}</div>`;
 }
 
 async function loadWallets() {
@@ -540,7 +561,7 @@ async function loadLevels() {
     show('levels-stats', false);
     lastLevels = null;
     setErrorDetail('levels', e);
-    reportRefreshFailure('oil levels', e, document.getElementById('levels-error'));
+    reportRefreshFailure(`${activeDesk} levels`, e, document.getElementById('levels-error'));
   }
 }
 
@@ -687,18 +708,61 @@ function renderIntel(brief, loadError) {
 
 // ── 5. LOOP LOG ──────────────────────────────────────────────────────────────
 
+// Default (false): GET .../log already filters server-side to this desk's
+// own `DESK-TICK <desk>` and `WATCH <desk>` lines (services/strategies/
+// desk_log.filter_desk_lines) -- true asks for the complete, unfiltered
+// tail instead (the "Show all lines" toggle), e.g. to see another desk
+// ticking in between, or the oil-only paper-breakout sim's PAPER-A6 lines
+// that share this same file.
+let showAllLogLines = false;
+// The last fetched lines, so toggling the checkbox repaints without a
+// second request only when a fresh one isn't already due (loadLog() always
+// re-fetches on toggle below — the point is to GET with the new `all` flag).
+let lastLogLines = [];
+
 async function loadLog() {
   const body = document.getElementById('log-body');
   try {
-    const r = await fetchJson(`/api/desks/${encodeURIComponent(activeDesk)}/log?n=30`);
-    body.textContent = (r.lines && r.lines.length) ? r.lines.join('\n') : 'no ticks yet';
-    const last = document.getElementById('call-last-tick');
-    if (last && r.lines && r.lines.length) {
-      last.textContent = 'Last tick: ' + r.lines[r.lines.length - 1].replace(/^DESK-TICK \S+ /, '');
-      last.hidden = false;
-    }
+    const all = showAllLogLines ? '&all=1' : '';
+    const r = await fetchJson(`/api/desks/${encodeURIComponent(activeDesk)}/log?n=30${all}`);
+    lastLogLines = r.lines || [];
+    renderLog();
   } catch (e) {
     body.textContent = 'could not read the loop log: ' + e.message;
+  }
+}
+
+/** The last line in `lines` that is `desk`'s OWN `DESK-TICK <desk>` tick
+ *  line (case-insensitive on the desk id), or null when there is none.
+ *  Never just `lines[lines.length - 1]`: with "Show all lines" on (or,
+ *  before the 2026-11-20 fix, even with it off) the array's actual last
+ *  entry can belong to another desk, or to nothing at all (the oil-only
+ *  paper-breakout sim's `PAPER-A6 ...` lines, which share this same file)
+ *  -- treating that as "this desk's last tick" is the exact bug report. A
+ *  `WATCH <desk>` line (the price-trigger watcher waking this desk) is
+ *  real log content but never "the last tick": only a DESK-TICK line is.
+ *  Pure: no DOM, so a node test can run it directly against sample lines. */
+function lastDeskTickLine(lines, desk) {
+  const tickRe = new RegExp(`^DESK-TICK\\s+${desk}\\b`, 'i');
+  const matches = (lines || []).filter(l => tickRe.test(l));
+  return matches.length ? matches[matches.length - 1] : null;
+}
+
+/** Paints #log-body from `lastLogLines` and sets "Last tick" on the call
+ *  card from `lastDeskTickLine`. */
+function renderLog() {
+  const body = document.getElementById('log-body');
+  const lines = lastLogLines;
+  body.textContent = lines.length ? lines.join('\n') : 'no ticks yet';
+  const last = document.getElementById('call-last-tick');
+  if (!last) return;
+  const tickLine = lastDeskTickLine(lines, activeDesk);
+  if (tickLine) {
+    last.textContent = 'Last tick: ' + tickLine.replace(/^DESK-TICK \S+ /, '');
+    last.hidden = false;
+  } else {
+    last.textContent = '';
+    last.hidden = true;
   }
 }
 
@@ -745,15 +809,43 @@ function renderTrackRecord(tr) {
 
 let pollStarted = false;
 
+/** The `?desk=` query param on the current URL, or null (none set, or
+ *  URLSearchParams unsupported — never throws). */
+function urlDesk() {
+  try {
+    return new URLSearchParams(window.location.search).get('desk');
+  } catch {
+    return null;
+  }
+}
+
+/** Writes `?desk=<id>` onto the current URL without a navigation or a
+ *  history entry per click (replaceState — "back" should leave the page,
+ *  not step through every desk switch). Best-effort: a browser that
+ *  refuses the History API (sandboxed iframe) leaves the page working,
+ *  just without the shareable link. */
+function setUrlDesk(id) {
+  try {
+    const url = new URL(window.location.href);
+    if (url.searchParams.get('desk') === id) return;
+    url.searchParams.set('desk', id);
+    history.replaceState(history.state, '', url);
+  } catch { /* URL/History unsupported; localStorage still remembers it */ }
+}
+
 /** Which desk(s) to render (GET /api/desks/active). One entry -> no
  *  switcher; several -> a small tab row, switching re-fetches every
  *  section for the clicked desk. Also repoints the Thesis nav link and
  *  "Full thesis" link at the active desk, and the page's H1 at its name.
  *
- *  Prefers the reader's last-selected desk (localStorage, via PathielDesk)
- *  over activeDesks[0] so a reload keeps the desk they were actually
- *  looking at, falling back to the first active desk only when nothing is
- *  stored yet or the stored id is no longer active. */
+ *  Picks the active desk in this order: the URL's own `?desk=` (a shared
+ *  link should open on the desk it names), else the reader's last-selected
+ *  desk (localStorage, via PathielDesk, so a plain reload keeps the desk
+ *  they were actually looking at), else the first active desk (oil, by
+ *  position in the live config's `active_desks`) when neither says
+ *  anything valid. Either way the resolved desk is written back to BOTH
+ *  the URL and localStorage, so the page one lands on is always the one
+ *  the address bar and a later reload agree on. */
 async function loadActiveDesks() {
   try {
     const d = await fetchJson('/api/desks/active');
@@ -764,9 +856,13 @@ async function loadActiveDesks() {
     activeDesks = ['oil'];
     activeDeskMeta = {};
   }
+  const fromUrl = urlDesk();
   const stored = PathielDesk.get();
-  activeDesk = (stored && activeDesks.includes(stored)) ? stored : activeDesks[0];
+  activeDesk = (fromUrl && activeDesks.includes(fromUrl)) ? fromUrl
+    : (stored && activeDesks.includes(stored)) ? stored
+    : activeDesks[0];
   PathielDesk.set(activeDesk);
+  setUrlDesk(activeDesk);
   renderDeskSwitcher();
   repointDeskLinks();
 }
@@ -803,6 +899,7 @@ function renderDeskSwitcher() {
       if (!radio.checked) return;
       activeDesk = radio.value;
       PathielDesk.set(activeDesk);
+      setUrlDesk(activeDesk);
       repointDeskLinks();
       loadAll();
     });
@@ -976,3 +1073,8 @@ async function startOilDesk() {
 })();
 
 renderLevSeg();
+
+document.getElementById('log-show-all')?.addEventListener('change', (e) => {
+  showAllLogLines = e.target.checked;
+  loadLog();
+});

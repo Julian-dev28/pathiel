@@ -37,3 +37,28 @@ def test_headline_rows_never_print_the_word_unknown():
     assert "h.stance !== 'unknown'" in intel
     assert "'unknown'" not in intel.replace("h.stance !== 'unknown'", "")
     assert "fmtAge(h.published_at)" in intel and "function fmtAge" in JS
+
+
+# ── 2026-11-20: equity by dex (main vs. xyz), for the multi-desk build ─────
+# HYPE trades on the main dex while oil and the S&P trade on xyz; the
+# combined "Equity $186.00" line hid which dex actually holds which desk's
+# margin, so a flat HYPE desk and a flat oil desk both looked the same.
+
+def test_dex_equity_line_exists_and_is_wired_into_both_the_flat_and_positioned_cards():
+    assert "function dexEquityLine(accounts)" in CARD
+    assert "const dexEquity = dexEquityLine(snapshot.accounts || []);" in CARD
+    # the flat-account return and the positioned-account return both splice it in
+    assert "${head}${body}${dexEquity}${strandedNote}" in CARD
+    assert "${head}${marginLine}${dexEquity}${failed}" in CARD
+
+
+def test_dex_equity_line_shows_nothing_for_a_single_dex_account():
+    func = JS[JS.index("function dexEquityLine"):]
+    assert "if (!accounts || accounts.length < 2) return '';" in func
+
+
+def test_dex_equity_line_sorts_main_first_and_labels_each_dex():
+    func = JS[JS.index("function dexEquityLine"):]
+    assert "a.dex === 'main' ? -1 : b.dex === 'main' ? 1 : 0" in func
+    assert "Equity by dex:" in func
+    assert "esc(a.dex)" in func and "fmtMoney(a.equity_usd || 0)" in func
