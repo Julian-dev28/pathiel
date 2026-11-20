@@ -243,7 +243,11 @@ def test_active_desks_defaults_to_oil_with_no_config(client, monkeypatch):
     assert r.status_code == 200
     body = r.json()
     assert body["active_desks"] == ["oil"] and body["default_desk"] == "oil"
-    assert body["desks"] == [{"id": "oil", "name": "Oil", "primary_coin": "xyz:BRENTOIL", "equity_share": None}]
+    # No saved risk_profile -> the "auto" preset resolved at equity 0, the starter
+    # tier's own 10x (services.strategies.desks.profile_leverage_cap); oil has no
+    # entry of its own in desk_leverage.DESK_MAX_LEVERAGE to override it.
+    assert body["desks"] == [{"id": "oil", "name": "Oil", "primary_coin": "xyz:BRENTOIL",
+                              "equity_share": None, "leverage_cap": 10.0}]
     assert "share_error" not in body
 
 
@@ -254,8 +258,8 @@ def test_active_desks_reads_the_configured_list(client, monkeypatch):
     body = r.json()
     assert body["active_desks"] == ["btc", "oil"] and body["default_desk"] == "btc"
     assert body["desks"] == [
-        {"id": "btc", "name": "BTC", "primary_coin": "BTC", "equity_share": None},
-        {"id": "oil", "name": "Oil", "primary_coin": "xyz:BRENTOIL", "equity_share": None},
+        {"id": "btc", "name": "BTC", "primary_coin": "BTC", "equity_share": None, "leverage_cap": 10.0},
+        {"id": "oil", "name": "Oil", "primary_coin": "xyz:BRENTOIL", "equity_share": None, "leverage_cap": 10.0},
     ]
 
 
@@ -289,8 +293,8 @@ def test_active_desks_carries_each_desks_equity_share(client, monkeypatch):
     r = client.get("/api/desks/active")
     body = r.json()
     assert body["desks"] == [
-        {"id": "oil", "name": "Oil", "primary_coin": "xyz:BRENTOIL", "equity_share": 0.95},
-        {"id": "metals", "name": "Gold", "primary_coin": "xyz:GOLD", "equity_share": 0.05},
+        {"id": "oil", "name": "Oil", "primary_coin": "xyz:BRENTOIL", "equity_share": 0.95, "leverage_cap": 10.0},
+        {"id": "metals", "name": "Gold", "primary_coin": "xyz:GOLD", "equity_share": 0.05, "leverage_cap": 10.0},
     ]
     assert "share_error" not in body
 
@@ -305,7 +309,7 @@ def test_active_desks_reports_a_bad_desk_equity_share_without_500ing(client, mon
     assert r.status_code == 200
     body = r.json()
     assert body["desks"] == [
-        {"id": "oil", "name": "Oil", "primary_coin": "xyz:BRENTOIL", "equity_share": None},
-        {"id": "metals", "name": "Gold", "primary_coin": "xyz:GOLD", "equity_share": None},
+        {"id": "oil", "name": "Oil", "primary_coin": "xyz:BRENTOIL", "equity_share": None, "leverage_cap": 10.0},
+        {"id": "metals", "name": "Gold", "primary_coin": "xyz:GOLD", "equity_share": None, "leverage_cap": 10.0},
     ]
     assert "metals" in body["share_error"] and "desk_equity_share" in body["share_error"]

@@ -129,7 +129,15 @@ def get_active_desks() -> Dict[str, object]:
     `desk_equity_share` is saved (the legacy whole-equity rule). A bad
     `desk_equity_share` config (DeskShareError) is reported as a top-level
     `share_error` string rather than 500ing the page; every desk's
-    `equity_share` is null in that case."""
+    `equity_share` is null in that case.
+
+    `leverage_cap` (2026-11-20) is this desk's own leverage ceiling, fully
+    resolved to a number (services/strategies/desk_leverage.effective_cap):
+    sp500 50x and hype 10x regardless of the account's own profile, oil (no
+    entry of its own there) the account's saved risk profile cap. The Desk
+    page's "Next trade" leverage picker and the call card's "the desk's
+    rule" line both read this -- before it existed every desk showed oil's
+    own 20x line."""
     from pathiel.agents.config_store import read_agent_config
     try:
         config = read_agent_config()
@@ -153,7 +161,12 @@ def get_active_desks() -> Dict[str, object]:
         spec = desks.require_spec(d)
         primary = next((i for i in spec.instruments if i.role == "primary"), spec.instruments[0])
         desk_entries.append({"id": d, "name": spec.name, "primary_coin": primary.coin,
-                             "equity_share": shares.get(d)})
+                             "equity_share": shares.get(d),
+                             # This desk's own leverage cap (desk_leverage.effective_cap: sp500 50x,
+                             # hype 10x, oil the account's saved profile cap) -- 2026-11-20 bug report:
+                             # the Desk page hardcoded 20x (oil's number) for every desk's leverage
+                             # picker and call-card line, including HYPE's 10x.
+                             "leverage_cap": desk_leverage.effective_cap(primary.coin, config)})
 
     out: Dict[str, object] = {"active_desks": active, "default_desk": active[0], "desks": desk_entries}
     if share_error:

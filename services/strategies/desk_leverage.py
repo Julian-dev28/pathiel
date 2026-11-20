@@ -97,4 +97,20 @@ def profile_for_coin(profile: Any, coin: str, config: Optional[Mapping[str, Any]
     return profile.model_copy(update={"max_leverage": cap})
 
 
-__all__ = ["CONFIG_KEY", "DESK_MAX_LEVERAGE", "cap_for_coin", "desk_caps", "entry_leverage", "profile_for_coin"]
+def effective_cap(coin: str, config: Optional[Mapping[str, Any]] = None) -> Optional[float]:
+    """The leverage cap a new entry on `coin` is actually held to right now,
+    fully resolved to a number: the coin's own desk cap (desk_caps) when it
+    has one (sp500 50x, hype 10x), else the account's own saved risk
+    profile cap (services.strategies.desks.profile_leverage_cap) -- oil has
+    no entry of its own in DESK_MAX_LEVERAGE, so without this fallback a
+    caller would have to already know to pass the right number in, and the
+    2026-11-20 bug report is exactly a caller that didn't: the Desk page
+    hardcoded 20x (oil's number) for every desk, including HYPE's 10x.
+    Backs GET /api/desks/active's `leverage_cap` -- the Desk page's per-desk
+    leverage picker and the call card's "the desk's rule" line."""
+    from services.strategies.desks import profile_leverage_cap
+    return entry_leverage(coin, profile_leverage_cap(), config)
+
+
+__all__ = ["CONFIG_KEY", "DESK_MAX_LEVERAGE", "cap_for_coin", "desk_caps", "entry_leverage", "profile_for_coin",
+          "effective_cap"]
