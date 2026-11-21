@@ -157,6 +157,11 @@ class FakeVenue:
         # perpDexs reply (scenario D: a network with no HIP-3 dex)
         self.dexes = ("", "xyz")
         self.perp_dexs: Optional[List[Any]] = None
+        # None = the recorded userFillsByTime.json fixture (one unrelated
+        # PURR/USDC row); seed_positions sets this to the opening fill(s)
+        # that explain the position(s) it seeds, so ownership enforcement
+        # (pathiel.agents.ownership, 2026-11-18) sees them as desk-owned.
+        self.fills: Optional[List[Dict[str, Any]]] = None
 
     def answer(self, payload: Dict[str, Any]) -> Any:
         typ = payload.get("type")
@@ -193,6 +198,8 @@ class FakeVenue:
             return state
         if typ in ("frontendOpenOrders", "openOrders"):
             return copy.deepcopy(self.open_orders.get(dex, []))
+        if typ == "userFillsByTime" and self.fills is not None:
+            return copy.deepcopy(self.fills)
         if typ == "maxBuilderFee":
             return self.max_builder_fee
         if (FIXTURES / f"{typ}.json").is_file():
@@ -528,7 +535,13 @@ def scenario_a(h: Harness) -> List[Dict[str, Any]]:
 
 
 def seed_positions(venue: FakeVenue) -> None:
-    """ETH long 0.5 with two stops at one price (bracket_sweep folds them)."""
+    """ETH long 0.5 with two stops at one price (bracket_sweep folds them).
+    The opening fill carries a pathiel-tagged cloid (the "70617468" prefix
+    is pathiel.agents.ownership.CLOID_PREFIX, "path" in hex) so the write
+    tools under test see a DESK-OWNED position -- ownership enforcement
+    (2026-11-18) refuses close_position/set_target/set_stop/bracket_sweep's
+    mutating path on a position it cannot trace to the desk, and this fixture
+    is "a desk position", not "the operator's own hand trade"."""
     venue.positions[""] = [{"type": "oneWay", "position": {
         "coin": "ETH", "szi": "0.5", "entryPx": "1900.0", "positionValue": "989.875",
         "unrealizedPnl": "39.875", "liquidationPx": "1500.0", "marginUsed": "200.0",
@@ -541,6 +554,10 @@ def seed_positions(venue: FakeVenue) -> None:
          "triggerPx": "1800.0", "isTrigger": True, "reduceOnly": True, "orderType": "Stop Market",
          "children": [], "timestamp": 2},
     ]
+    venue.fills = [{"coin": "ETH", "px": "1900.0", "sz": "0.5", "side": "B", "time": 1_700_000_000_000,
+                    "startPosition": "0.0", "dir": "Open Long", "closedPnl": "0.0", "hash": "0x0",
+                    "oid": 9001, "crossed": True, "fee": "0.5", "tid": 1, "feeToken": "USDC",
+                    "cloid": "0x70617468" + "0" * 24}]
 
 
 def scenario_b(h: Harness) -> List[Dict[str, Any]]:

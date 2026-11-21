@@ -438,6 +438,10 @@ def fake_desk(monkeypatch):
         RiskProfile(preset="starter"), [], VenueRules(min_order_notional_usd=10.5)))
     monkeypatch.setattr(M, "_coin_specs", lambda coin: (20.0, 3))
     monkeypatch.setattr(M, "_live_equity", lambda: 15.21)
+    # full size backs the held position's own gain out of equity (2026-11-17,
+    # services.risk.size.equity_excluding_position_pnl); that reads the
+    # account's positions, so the gate test holds none.
+    monkeypatch.setattr(M, "_coin_position", lambda user, coin: {"size": 0.0, "upnl": 0.0})
     # desk_brief also prints where the tick trades (2026-11-02); that reads
     # live candles, so the gate test gets a canned answer.
     monkeypatch.setattr(M, "_live_rule", lambda desk_id, brief: {

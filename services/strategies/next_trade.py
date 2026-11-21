@@ -59,6 +59,98 @@ GOLD_STOP_BUFFER_FLOOR_FRAC = 0.008
 STOP_BUFFER_FLOOR_FRAC_BY_COIN = {GOLD: GOLD_STOP_BUFFER_FLOOR_FRAC}
 
 
+# S&P 500 (xyz:SP500, the sp500 desk, built 2026-11-19; operator: "ADD A
+# S&P500 MARKET STRATEGY 50X 5% LONG OR SHORT"). The same 24h-range rule with
+# the S&P's own numbers (docs/strategy/SP500_STRATEGY.md,
+# SP500_BACKTEST_2026-11-19.md; services/strategies/evals/sp500_strategy_test.py):
+#   k_atr 1.0, floor 0.4% of the mid: the stop buffer beyond the 24h edge.
+#     The S&P's 1h ATR14 is 0.166% of price at the median, so the floor
+#     binds on most ticks. Oil's 0.8% floor cannot trade at 50x at all
+#     (0 entries in 208 days): at 50x liquidation is 1.01% away and the stop
+#     may use half of it, 0.505%.
+#   target_offset_frac 0: the target is the far 24h edge itself. The S&P's
+#     median 24h range is 0.9% of price; oil's 0.5% offset eats more than
+#     half of it.
+#   50x only (SP500_LEVERAGE_FIT): an entry whose stop does not fit 50x is
+#     refused, never refitted lower. With the 0.4% floor that means the mid
+#     must sit within about 0.1% of the 24h edge: the leverage line is the
+#     pullback filter. The same rule at a fixed 40x or 30x took entries
+#     further from the edge and scored worse (the backtest doc has the rows).
+# VERDICT: NOISE. The cell is the least bad of the grid, not an edge: it
+# loses under the cost stress, without its two best trades, and its grid
+# neighbours disagree in sign. `backtest_sides` is what the eval trades in
+# place of a thesis (long near the 24h low, short near the 24h high).
+SP500 = "xyz:SP500"
+SP500_RULE: Dict[str, Any] = {"k_atr": 1.0, "floor_frac": 0.004, "target_offset_frac": 0.0,
+                              "backtest_sides": "both"}
+SP500_LEVERAGE = 50.0
+SP500_LEVERAGE_FIT: Tuple[float, ...] = (SP500_LEVERAGE,)
+
+
+# HYPE (main-dex perp, no xyz: prefix, the hype desk, built 2026-11-20;
+# operator: "Start the research on HYPE and desk for hype, maybe"). Verified
+# live 2026-11-20 (metaAndAssetCtxs, dex=None): maxLeverage 10, marginTableId
+# 52. Research: docs/strategy/HYPE_STRATEGY.md, HYPE_BACKTEST_2026-11-20.md;
+# services/strategies/evals/hype_strategy_test.py.
+#
+#   k_atr 1.0, floor 0: the stop buffer beyond the 24h edge is a PURE ATR14
+#     multiple, no price-fraction floor. HYPE's 1h ATR14 is 1.12% of price at
+#     the median -- six times oil's 0.19% -- so unlike every other coin's
+#     rule, the floor would only ever widen the stop past what the market
+#     itself calls for; the backtest's own grid search picked floor 0 over
+#     every other floor it tried.
+#   target_offset_frac 0: the target is the far 24h edge itself. HYPE's
+#     median 24h range is 5.6% of price, wide enough that oil's 0.5% offset
+#     would still leave most of it on the table; the picked cell took none.
+#   10x only (HYPE_LEVERAGE_FIT): the venue's own max, not a choice -- an
+#     entry whose stop does not fit is refused, never refitted lower. In the
+#     backtest this almost never binds: the median stop (1.5-2.0% of price)
+#     sits well inside the 2.63% half-liquidation budget at 10x, unlike the
+#     S&P's 50x line, which the stop floor sits right against.
+#   trend_gate_span 120 (TREND_GATE_SPAN_BY_COIN; next_trade.trend_gate,
+#     live on no coin until now -- built for oil 2026-11-13, tested, found
+#     not to help there (TREND_GATE_TEST_2026-11-13.md: oil's winners ARE
+#     the dip-buys the veto would block) and left in the code "so it can be
+#     re-run the day the record changes"). HYPE is that day: the plain 24h-
+#     range rule with no filter LOST (-17.75R, 207 days, full sample AND its
+#     held-out tail both negative, oil's own formula too); gated so a new
+#     entry only trades with the sign of the 120h return it made the single
+#     biggest difference in the whole research pass (+38.87R, every leg of
+#     the honesty bar -- full, tail, stress, ex-two-best-trades, grid
+#     neighbours -- positive on both the 1h and 15m datasets). Oil fades
+#     structure; HYPE trends, and the rule that wins is the one that stops
+#     fighting that.
+# VERDICT: EDGE on the research bar (both the trend-gated rule and a
+# Fibonacci-pullback family cleared every leg; see the backtest doc). Ships
+# OFF: no HYPE thesis has been journaled and the operator has not switched
+# the desk on.
+HYPE = "HYPE"
+HYPE_RULE: Dict[str, Any] = {"k_atr": 1.0, "floor_frac": 0.0, "target_offset_frac": 0.0,
+                            "backtest_sides": "trend120", "trend_gate_span": 120}
+HYPE_LEVERAGE = 10.0
+HYPE_LEVERAGE_FIT: Tuple[float, ...] = (HYPE_LEVERAGE,)
+# Per-coin trend-gate span (next_trade.trend_gate's span_h): None/absent =
+# off, the rule for every coin but HYPE. `trend_gate_span_for` reads it.
+TREND_GATE_SPAN_BY_COIN: Dict[str, int] = {HYPE: HYPE_RULE["trend_gate_span"]}
+# The take-profit offset per coin (bracket.TARGET_OFFSET_FRAC, 0.5%, for
+# every coin not listed).
+TARGET_OFFSET_FRAC_BY_COIN: Dict[str, float] = {SP500: SP500_RULE["target_offset_frac"],
+                                               HYPE: HYPE_RULE["target_offset_frac"]}
+
+
+def trend_gate_span_for(coin: str) -> Optional[int]:
+    """The trend_gate span (hours) a new entry on `coin` is gated by, or
+    None (every coin but HYPE: the veto is never applied)."""
+    return TREND_GATE_SPAN_BY_COIN.get(coin)
+
+
+def target_offset_frac_for(coin: str) -> float:
+    """How far inside the structure target `coin`'s take-profit sits, as a
+    fraction of price: the coin's own, else bracket.TARGET_OFFSET_FRAC read
+    at call time (0.5%; Brent, WTI, gold and silver are unchanged)."""
+    return TARGET_OFFSET_FRAC_BY_COIN.get(coin, _bracket.TARGET_OFFSET_FRAC)
+
+
 def stop_buffer_floor_frac_for(coin: str) -> float:
     """The stop buffer floor, as a fraction of the mid, for a non-Brent coin:
     the coin's own (STOP_BUFFER_FLOOR_FRAC_BY_COIN) or the 0.8% default."""
@@ -68,11 +160,24 @@ def stop_buffer_floor_frac_for(coin: str) -> float:
 def stop_buffer_for(coin: str, atr14: Optional[float],
                     mid: Optional[float] = None) -> Optional[float]:
     """0.75 on Brent; on any other desk's coin the larger of 1.3 x the 1h
-    ATR14 and the coin's floor (0.8% of `mid`, when a mid is given)."""
+    ATR14 and the coin's floor (0.8% of `mid`, when a mid is given). The
+    S&P: the larger of 1.0 x ATR14 and 0.4% of `mid` (SP500_RULE). HYPE:
+    1.0 x ATR14, no floor (HYPE_RULE's floor_frac is 0 -- its own ATR is
+    already wide enough that a price-fraction floor only ever hurt it)."""
     if coin == BRENT:
         return BRENT_STOP_BUFFER
     if not atr14:
         return None
+    if coin == SP500:
+        buf = SP500_RULE["k_atr"] * atr14
+        if mid:
+            buf = max(buf, SP500_RULE["floor_frac"] * float(mid))
+        return round(buf, 6)
+    if coin == HYPE:
+        buf = HYPE_RULE["k_atr"] * atr14
+        if mid and HYPE_RULE["floor_frac"]:
+            buf = max(buf, HYPE_RULE["floor_frac"] * float(mid))
+        return round(buf, 6)
     buf = ATR_BUFFER_MULT * atr14
     if mid:
         buf = max(buf, stop_buffer_floor_frac_for(coin) * float(mid))
@@ -245,7 +350,13 @@ def trend_gate(side: str, closes_1h: Sequence[float], span_h: int = 120) -> Dict
 
 def leverage_fit_for(coin: str) -> Tuple[float, ...]:
     """The candidates a coin's new entries fit their leverage from; () = the
-    fixed configured leverage (silver and every other coin, untested there)."""
+    fixed configured leverage (every other coin, untested there). The S&P
+    has one candidate, 50x; HYPE has one, 10x (its own venue max): either
+    way a stop that does not fit it is refused, never refitted lower."""
+    if coin == SP500:
+        return SP500_LEVERAGE_FIT
+    if coin == HYPE:
+        return HYPE_LEVERAGE_FIT
     return LEVERAGE_FIT if coin in LEVERAGE_FIT_COINS else ()
 
 
@@ -339,7 +450,9 @@ def next_trade(side: str, mid: float, low_24h: float, high_24h: float, *,
                breakout: Optional[Dict[str, float]] = None,
                no_break: bool = NO_BREAK_ENTRY,
                thesis_age_min: Optional[float] = None,
-               entry_delay_min: Optional[float] = ENTRY_DELAY_MIN) -> Dict[str, Any]:
+               entry_delay_min: Optional[float] = ENTRY_DELAY_MIN,
+               closes_1h: Optional[Sequence[float]] = None,
+               trend_gate_span: Optional[int] = None) -> Dict[str, Any]:
     """The tick's next trade for a `side` thesis. `ok` is True when the tick
     would send the market order at `mid` right now. Every other answer says
     why not (`blockers`) and where it would trade (`trigger_px`).
@@ -352,7 +465,15 @@ def next_trade(side: str, mid: float, low_24h: float, high_24h: float, *,
     off; `entry_delay_for(coin)` reads the config): no entry while the
     thesis is younger than that, read off `thesis_age_min`; the delay is
     judged last, on top of the main rule or the breakout, so the answer
-    still shows where the tick would trade once the delay has passed."""
+    still shows where the tick would trade once the delay has passed.
+    `trend_gate_span` (None on every coin but HYPE; `trend_gate_span_for(coin)`
+    reads it) + `closes_1h` (CLOSED 1h closes, oldest first, enough to cover
+    the span): the 5-day trend veto (`trend_gate`), judged right after the
+    main rule/breakout and before the entry delay -- no new trade against
+    the sign of that many hours' return. Either argument missing or falsy
+    applies no veto (a caller that does not pass `closes_1h` never blocks
+    on it, the same "missing data blocks nothing" rule `trend_gate` itself
+    follows)."""
     # Read the live offset at CALL time: a default bound at import froze
     # whatever bracket.TARGET_OFFSET_FRAC was when this module first loaded
     # (a test fixture's 0.0 leaked into test_trigger_watch that way).
@@ -361,6 +482,15 @@ def next_trade(side: str, mid: float, low_24h: float, high_24h: float, *,
     out = _next_trade(side, mid, low_24h, high_24h, thesis_entry=thesis_entry, leverage=leverage,
                       coin_max_leverage=coin_max_leverage, stop_buffer=stop_buffer, min_r=min_r,
                       offset_frac=offset_frac, leverage_fit=leverage_fit, breakout=breakout, no_break=no_break)
+    tg = trend_gate(side, closes_1h, trend_gate_span) if (trend_gate_span and closes_1h) else None
+    if tg and tg["blocked"]:
+        out["ok"] = False
+        out["trend_gate"] = tg
+        out["blockers"] = [tg["reason"]] + list(out.get("blockers") or [])
+        out["verdict"] = f"waits: {tg['reason']}" + (
+            "" if not out.get("verdict") or out["verdict"].endswith("now") else f"; then {out['verdict']}")
+    elif tg:
+        out["trend_gate"] = tg
     delay = entry_delay(thesis_age_min, entry_delay_min)
     if delay["blocked"]:
         out["ok"] = False
@@ -513,7 +643,9 @@ def live_rule_line(nt: Dict[str, Any]) -> str:
     return head + "."
 
 
-__all__ = ["next_trade", "stop_buffer_for", "stop_buffer_floor_frac_for", "live_rule_line", "fit_leverage",
+__all__ = ["SP500", "SP500_RULE", "SP500_LEVERAGE", "SP500_LEVERAGE_FIT", "HYPE", "HYPE_RULE", "HYPE_LEVERAGE",
+           "HYPE_LEVERAGE_FIT", "TREND_GATE_SPAN_BY_COIN", "trend_gate_span_for", "TARGET_OFFSET_FRAC_BY_COIN",
+           "target_offset_frac_for", "next_trade", "stop_buffer_for", "stop_buffer_floor_frac_for", "live_rule_line", "fit_leverage",
            "leverage_fit_for", "breakout_for", "breakout_levels", "breakout_trade", "trend_gate",
            "BRENT_STOP_BUFFER", "GOLD", "GOLD_STOP_BUFFER_FLOOR_FRAC", "LEVERAGE_FIT", "BREAKOUT_COINS",
            "BREAKOUT_LOOKBACK_H", "BREAKOUT_STOP_H", "NO_BREAK_ENTRY", "ENTRY_DELAY_MIN", "ENTRY_DELAY_CONFIG_KEY",

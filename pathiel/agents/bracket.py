@@ -17,6 +17,8 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
+from pathiel.agents import ownership
+
 # ── minimum tradable equity ──────────────────────────────────────────────────
 # Hyperliquid rejects orders under roughly $10 notional, so this is the absolute
 # floor below which no order can clear the exchange at all.
@@ -294,13 +296,26 @@ def place_bracket(coin: str, *, entry_px: Optional[float], stop_px: float, tp_px
 
     if not market:
         res = ex.place_hl_bracket_order(coin, is_buy, size, float(entry_px), stop_px, tp_px)
-        return {**base, "ok": bool(res.get("ok")), "placed": bool(res.get("entry", {}).get("ok")),
+        entry_leg = res.get("entry") or {}
+        if entry_leg.get("ok") and entry_leg.get("cloid"):
+            # Resting, not filled yet -- journalled now so the fill it
+            # produces later (same oid) still traces to the desk even if
+            # the venue's own fill read does not echo the cloid back.
+            ownership.record_desk_order(
+                coin, entry_leg["cloid"], "topup" if adding else "entry",
+                oid=entry_leg.get("order_id"), side=gate["side"], size=size, px=float(entry_px))
+        return {**base, "ok": bool(res.get("ok")), "placed": bool(entry_leg.get("ok")),
                 "result": res}
 
     entry = ex.place_hl_order(is_buy, size, ref_px, coin)
     filled = float(entry.get("total_sz") or 0)
     if not entry.get("ok") or filled <= 0:
         return {**base, "ok": False, "placed": False, "result": {"entry": entry}}
+    if entry.get("cloid"):
+        ownership.record_desk_order(
+            coin, entry["cloid"], "topup" if adding else "entry",
+            oid=entry.get("order_id"), side=gate["side"], size=filled,
+            px=entry.get("avg_px") or ref_px)
     sl = ex.place_hl_trigger_order(is_buy, filled, stop_px, "sl", coin)
     tp = ex.place_hl_trigger_order(is_buy, filled, tp_px, "tp", coin)
     out = {**base, "ok": bool(sl.get("ok")), "placed": True, "filled_sz": filled,

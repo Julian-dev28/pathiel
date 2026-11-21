@@ -37,7 +37,7 @@ SKILL_RULES = (
     # pointers (the plugin links nothing that carries return figures).
     ("reverted the\nsame night, see docs/overhaul/BACKTEST_RESULTS_2026-10-25.md).",
      "reverted the\nsame night).", 1),
-    ("(since\n   2026-10-31: oil 90%, metals 10%; metals = gold since 2026-11-05)",
+    ("(since\n   2026-10-31; oil 32%, hype 60%, sp500 0%, metals 0%; metals = gold since 2026-11-05)",
      "(config\n   `desk_equity_share`; metals = gold since 2026-11-05)", 1),
 )
 
@@ -50,7 +50,7 @@ AGENT_RULES = (
     ("tried hourly for one\nevening, the backtest showed it giving up about half the journaled return,\n"
      "back to 15m the same night)",
      "tried hourly for one\nevening, back to 15m the same night)", 1),
-    ("(config\n`desk_equity_share`: oil 90%, metals 10%)",
+    ("(config\n`desk_equity_share`: oil 32%, hype 60%, sp500 0%, metals 0%)",
      "(config\n`desk_equity_share`)", 1),
     ("Leverage up to the risk profile's `max_leverage`\n"
      "(20x since 2026-10-24; `place_bracket` caps it and runs the 20x rule: the\n"
@@ -68,6 +68,29 @@ AGENT_RULES = (
      "WTI (xyz:CL) as the Brent stand-in and its brief says so first; a tool\n"
      "says plainly when a coin is not tradable there: log `action=NONE` with\n"
      "that message and stop.", 1),
+    # the S&P and HYPE desks' own caps are the operator's numbers; a plugin install reads its own
+    ("The S&P desk (sp500, xyz:SP500,\n"
+     "built 2026-11-19) and the HYPE desk (hype, HYPE, built 2026-11-20) have\n"
+     "leverage caps of their own, 50x and 10x (`services/strategies/\n"
+     "desk_leverage.py`), and neither is ever fitted lower: a stop that does not\n"
+     "fit is no trade. HYPE also gates new entries on the 120h trend\n"
+     "(`next_trade.trend_gate`, `next_trade.TREND_GATE_SPAN_BY_COIN`): no new\n"
+     "entry against the sign of the 120-hour return, on no other desk's coin.",
+     "The S&P desk (sp500, xyz:SP500) and the HYPE desk (hype, HYPE) size at\n"
+     "the `desk_max_leverage` saved for each in the config, else the same\n"
+     "`max_leverage`, and neither is ever fitted lower: a stop that does not\n"
+     "fit is no trade. HYPE also gates new entries on the 120h trend\n"
+     "(`next_trade.trend_gate`, `next_trade.TREND_GATE_SPAN_BY_COIN`): no new\n"
+     "entry against the sign of the 120-hour return, on no other desk's coin.", 1),
+    ("The S&P: pass\n"
+     "   `--coin xyz:SP500` and judge a level with `--lev 50`; the script\n"
+     "   defaults that coin to its venue max and its desk cap, both 50.",
+     "The S&P: pass\n"
+     "   `--coin xyz:SP500 --max-lev 50` (its venue max).", 1),
+    ("50x only: when `--next` answers \"stop too\n"
+     "         wide for 50x\" there is no trade, never a lower leverage.",
+     "One leverage only: when `--next` answers \"stop too\n"
+     "         wide\" there is no trade, never a lower leverage.", 1),
     ("`python3 scripts/oil_levels.py --check ENTRY STOP TP --lev 20` judges a\n"
      "   level: the R gate and the 20x line.",
      "`python3 scripts/oil_levels.py --check ENTRY STOP TP --lev L` judges a\n"

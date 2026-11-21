@@ -39,6 +39,18 @@ const fmtPrice = v => {
   return (v < 0 ? '-' : '') + s;
 };
 
+// A price DIFFERENCE (a distance, an ATR) at the precision of the price it
+// is measured on, not its own size: fmtPrice tiers by magnitude, so a 0.45
+// gap on a $62 coin read "0.44750" next to prices printed to 3 decimals
+// (2026-11-20 Desk page report). `ref` is the coin's price (the mid).
+const fmtDelta = (v, ref) => {
+  if (v == null || !isFinite(v)) return '—';
+  if (ref == null || !isFinite(ref)) return fmtPrice(v);
+  const r = Math.abs(ref);
+  const d = r < 1 ? 5 : r < 100 ? 3 : 2;
+  return (v < 0 ? '-' : '') + Math.abs(v).toFixed(d);
+};
+
 const fmtAgeMinutes = mins => {
   if (mins == null || !isFinite(mins)) return '—';
   if (mins < 1) return '<1m';

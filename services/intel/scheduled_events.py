@@ -50,11 +50,40 @@ DAY_MS = 24 * HOUR_MS
 # row and no scan output had to change (scripts/event_scan.py still writes
 # "silver"). New rows may use either; "metals" is the name to prefer.
 METALS_COINS = frozenset({"xyz:SILVER", "xyz:GOLD"})
+# "sp500" is the S&P 500 desk (xyz:SP500, built 2026-11-19). A row may name it
+# directly (a megacap earnings date: coins ["sp500"]). The US macro rows the
+# file and the 12-hour scan already write for oil and metals reach it by
+# their KIND (SP500_MACRO_KINDS below), so no existing row had to change.
+SP500_COINS = frozenset({"xyz:SP500"})
+# "hype" is the candidate hype desk (HYPE, built 2026-11-20). A row may name
+# it directly (a protocol event: coins ["hype"]); FOMC/CPI reach it through
+# GENERATED_BLOCKING like every other desk. No macro-kind mapping like the
+# S&P's (SP500_MACRO_KINDS): HYPE's own calendar is idiosyncratic (protocol
+# votes, unlocks -- token_unlock already turns on automatically for any
+# crypto-ticker desk, desk_rules.is_crypto_desk) rather than the US jobs/
+# inflation print calendar oil/metals/sp500 share.
+HYPE_COINS = frozenset({"HYPE"})
 COIN_GROUPS: Dict[str, frozenset] = {
     "oil": frozenset({"xyz:BRENTOIL", "xyz:CL"}),
     "metals": METALS_COINS,
+    "sp500": SP500_COINS,
+    "hype": HYPE_COINS,
 }
 GROUP_ALIASES: Dict[str, str] = {"silver": "metals"}
+# Kinds that move the S&P whatever coins the row was written for: the jobs,
+# inflation and spending prints, the Fed's minutes, the funding and trade
+# deadlines, elections, holidays and early closes, megacap earnings.
+SP500_MACRO_KINDS = frozenset({
+    "nfp", "ppi", "pce", "gdp", "retail_sales", "jobless_claims", "ism", "fomc_minutes", "us_holiday",
+    "early_close", "election", "funding_deadline", "congress", "trade_deadline", "summit", "earnings"})
+# Kinds that block new S&P entries (2h either side) even when the row's own
+# impact is 2: the monthly jobs report. On xyz:SP500's 1h bars of
+# 2026-04-25..11-19 the four hours around the first-Friday 08:30 ET print
+# ranged 0.61% at the median (any four hours: 0.31%) and went past the 50x
+# stop budget of 0.505% in 4 of 7 months (any four hours: 25%). FOMC (1.55%
+# median, 3 of 5 past it) and CPI block through GENERATED_BLOCKING. A megacap
+# earnings row blocks by its own impact 3.
+SP500_BLOCKING_KINDS = frozenset({"nfp"})
 
 
 def canonical_group(name: str) -> str:
@@ -79,8 +108,8 @@ AFTER_H = 2.0
 
 # Rule-generated events that block too (calendar_us.py): kind -> (title, coins).
 GENERATED_BLOCKING = {
-    "fomc": ("FOMC decision", ("oil", "metals")),
-    "cpi": ("US CPI release", ("oil", "metals")),
+    "fomc": ("FOMC decision", ("oil", "metals", "sp500", "hype")),
+    "cpi": ("US CPI release", ("oil", "metals", "sp500", "hype")),
     "opec_meeting": ("OPEC+ meeting", ("oil",)),
 }
 
@@ -274,8 +303,11 @@ def _row(ev: Dict[str, Any]) -> Dict[str, Any]:
           else _parse_utc(ev["at_utc"]))
     at_ms = _ms(at)
     win = _window(at_ms, all_day, int(ev["impact"]), ev.get("before_h"), ev.get("after_h"))
+    coins = coins_for(ev["coins"])
+    if ev["kind"] in SP500_MACRO_KINDS:
+        coins = coins | SP500_COINS
     return {"title": ev["event"], "kind": ev["kind"], "impact": int(ev["impact"]),
-            "coins": coins_for(ev["coins"]), "at_ms": at_ms, "all_day": all_day,
+            "coins": coins, "at_ms": at_ms, "all_day": all_day,
             "verified": bool(ev.get("verified")), "source": ev.get("source", ""),
             "note": ev.get("note"), "window": win,
             "origin": SCAN_ORIGIN if ev.get("origin") == SCAN_ORIGIN else CURATED_ORIGIN,
@@ -303,6 +335,17 @@ def _generated(start: date, end: date) -> List[Dict[str, Any]]:
     return out
 
 
+def _for_coin(r: Dict[str, Any], coin: Optional[str]) -> Dict[str, Any]:
+    """`r` as `coin` reads it. For the S&P a timed SP500_BLOCKING_KINDS row
+    below impact 3 (the jobs report, impact 2 in the file) is impact 3 with
+    the default 2h window. Every other coin, and the list for no coin, gets
+    `r` itself. Pure."""
+    if coin in SP500_COINS and r["kind"] in SP500_BLOCKING_KINDS and r["window"] is None and not r["all_day"]:
+        return {**r, "impact": BLACKOUT_IMPACT,
+                "window": _window(r["at_ms"], False, BLACKOUT_IMPACT, None, None)}
+    return r
+
+
 def market_events(start_ms: int, end_ms: int, coin: Optional[str] = None,
                   path: str = DATA_PATH) -> List[Dict[str, Any]]:
     """Every event (file rows plus the generated FOMC/CPI/OPEC+) whose time or
@@ -316,6 +359,7 @@ def market_events(start_ms: int, end_ms: int, coin: Optional[str] = None,
     for r in rows:
         if coin is not None and coin not in r["coins"]:
             continue
+        r = _for_coin(r, coin)
         lo = r["window"]["start_ms"] if r["window"] else r["at_ms"]
         hi = r["window"]["end_ms"] if r["window"] else r["at_ms"] + (DAY_MS if r["all_day"] else 1)
         if hi > start_ms and lo < end_ms:
@@ -358,6 +402,6 @@ def short_line(r: Dict[str, Any]) -> str:
 
 
 __all__ = ["BLACKOUT_IMPACT", "COIN_GROUPS", "CURATED_ORIGIN", "DATA_PATH", "FILE_ORIGINS", "GROUP_ALIASES",
-           "METALS_COINS", "SCAN_ORIGIN", "blackout", "calendar_warning", "canonical_group", "coins_for",
+           "METALS_COINS", "SP500_BLOCKING_KINDS", "SP500_COINS", "SP500_MACRO_KINDS", "HYPE_COINS", "SCAN_ORIGIN", "blackout", "calendar_warning", "canonical_group", "coins_for",
            "event_key", "group_of", "load", "market_events", "merge", "normalize_title", "overlay_path",
            "read_overlay", "short_line", "validate_event"]

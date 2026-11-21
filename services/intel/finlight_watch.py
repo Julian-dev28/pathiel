@@ -220,8 +220,8 @@ def enrich(alert: Dict[str, Any], item: Optional[NewsItem], *, mode: str,
 def finlight_pass(runner: Optional[FinlightRunner], targets: Sequence[Tuple[str, str, str]], now_s: float,
                   state: Dict[str, Any], *, prime: bool = False, **enrich_kw: Any) -> List[Tuple[str, Dict[str, Any]]]:
     """Drain the runner into news_alerts for the oil group's desks; enrich
-    each hit. Mutates `state` (seen, primed_sources). Returns (desk, alert)
-    pairs the watcher records and fires on. Never raises."""
+    each hit. Mutates `state` (seen, recent_news, primed_sources). Returns
+    (desk, alert) pairs the watcher records and fires on. Never raises."""
     if runner is None:
         return []
     try:
@@ -235,12 +235,17 @@ def finlight_pass(runner: Optional[FinlightRunner], targets: Sequence[Tuple[str,
         primed = set(state.get("primed_sources") or [])
         learn_only = prime or SOURCE_NAME not in primed
         seen = set(state.get("seen") or [])
+        # the same persisted near-duplicate pool trigger_watch.headline_pass
+        # uses for the RSS feed: a story Finlight pushes first and Google
+        # News retitles minutes later (or the other way around) dedupes
+        # across both sources, not just within one.
+        recent = state.setdefault("recent_news", [])
         by_title = {(i.get("title") or "").strip()[:200]: i for i in items}
         mode = runner.provider.mode
         for desk, _coin, group in targets:
             if group != GROUP:
                 continue
-            hits = HW.news_alerts(group, items, seen, int(now_s * 1000), triggers=True)
+            hits = HW.news_alerts(group, items, seen, int(now_s * 1000), triggers=True, recent=recent)
             if learn_only:
                 continue
             for a in hits:

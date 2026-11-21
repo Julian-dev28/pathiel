@@ -14,10 +14,13 @@ The SDK handles:
 
 from __future__ import annotations
 
+import contextlib
+import contextvars
 import logging
 import math
 import os
-from typing import Any, Callable, Dict, List, Optional, Tuple
+import re
+from typing import Any, Callable, Dict, Iterator, List, Optional, Tuple
 
 # Hyperliquid rejects any order below $10 notional. Target a small buffer above
 # it so the IOC price offset and mark-vs-limit rounding can't dip under.
@@ -30,8 +33,10 @@ from hyperliquid.utils.signing import (
     OrderType,
     TriggerOrderType,
 )
+from hyperliquid.utils.types import Cloid as _HlCloid
 
 import contracts.runtime as _runtime
+from pathiel.agents import ownership as _ownership
 from pathiel.client import hl_client as _hl_client
 from pathiel.client.hl_client import (
     _http_post,
@@ -161,6 +166,62 @@ _exchange_instance = None  # Singleton instance
 _exchange_identity_key: Optional[Tuple[str, str, Optional[str], str]] = None
 
 
+# ── Account target: a sub-account of the signing master (2026-11-16) ──────────
+#
+# Hyperliquid nets one position per coin per account, so a second strategy on
+# a coin the desk already trades needs its own account. A sub-account has no
+# key: "To perform actions on behalf of a subaccount or vault signing should
+# be done by the master account and the vaultAddress field should be set to
+# the address of the subaccount or vault" (Hyperliquid docs, exchange
+# endpoint, "Subaccounts and vaults"), and "A master account can approve API
+# wallets to sign on behalf of the master account or any of the sub-accounts"
+# (docs, "Nonces and API wallets"). The SDK does exactly that when its
+# Exchange is built with vault_address: the address goes into the signed
+# action hash (utils/signing.action_hash) and into the posted payload
+# (Exchange._post_action, hyperliquid-python-sdk 0.24.0).
+#
+# The target is OPT-IN and scoped: `with account_target(addr):` (or the
+# pathiel.client.subaccount.AccountExchange facade, which wraps every call in
+# it). Outside such a block the target is None and every function in this
+# module does what it always did: the same singleton, vaultAddress None, the
+# same user address.
+_account_target: "contextvars.ContextVar[Optional[str]]" = contextvars.ContextVar(
+    "pathiel_account_target", default=None)
+_ADDRESS_RE = re.compile(r"0x[0-9a-fA-F]{40}")
+_target_exchanges: Dict[Tuple[Any, ...], Exchange] = {}
+
+
+def current_account_target() -> Optional[str]:
+    """The sub-account this call acts on, or None (the signing account itself)."""
+    return _account_target.get()
+
+
+@contextlib.contextmanager
+def account_target(address: Optional[str]) -> Iterator[Optional[str]]:
+    """Run the block against sub-account `address`: orders, cancels, leverage
+    and trigger orders carry vaultAddress=address, and this module's own
+    position and order reads ask for that address. None is a no-op (the
+    default account). A malformed address raises before anything is sent."""
+    if address is not None and not _ADDRESS_RE.fullmatch(str(address)):
+        raise ValueError(f"account target must be a 0x address of 40 hex characters, got {address!r}")
+    token = _account_target.set(str(address).lower() if address is not None else None)
+    try:
+        yield _account_target.get()
+    finally:
+        _account_target.reset(token)
+
+
+_main_user_address = resolve_user_address
+
+
+def resolve_user_address() -> str:   # noqa: F811 - wraps the hl_client import above
+    """The address whose positions and orders this module reads: the account
+    target inside `account_target(...)`, else hl_client.resolve_user_address()
+    exactly as before."""
+    target = _account_target.get()
+    return target if target else _main_user_address()
+
+
 def _resolve_perp_dexs() -> Optional[List[str]]:
     """Discover HIP-3 perpDex names so the SDK can resolve colon-namespaced coins.
 
@@ -210,6 +271,9 @@ def _make_exchange() -> Exchange:
     key_hex, main_address, agent_address, is_agent = _resolve_identity()
 
     identity_key = (key_hex, main_address, agent_address, _api())
+    target = _account_target.get()
+    if target is not None:
+        return _make_target_exchange(identity_key, is_agent, target)
     if _exchange_instance is not None and _exchange_identity_key == identity_key:
         return _exchange_instance
 
@@ -243,6 +307,34 @@ def _make_exchange() -> Exchange:
     ))
     _exchange_identity_key = identity_key
     return _exchange_instance
+
+
+def _make_target_exchange(identity_key: Tuple[str, str, Optional[str], str], is_agent: bool,
+                          target: str) -> Exchange:
+    """The SDK client that signs with the SAME key as the default one and
+    acts on sub-account `target` (vault_address). One client per (identity,
+    target), kept apart from the default singleton so a targeted call can
+    never leave the default client pointing at a sub-account. Refuses the
+    signing account's own address: the venue rejects vaultAddress = the
+    account itself, and "no target" is how that account is traded."""
+    key_hex, main_address, _agent_address, _url = identity_key
+    if target.lower() == str(main_address or "").lower():
+        raise ValueError("account target is the signing account itself; trade it without a target")
+    cache_key = identity_key + (target,)
+    cached = _target_exchanges.get(cache_key)
+    if cached is not None:
+        return cached
+    clean_key = key_hex[2:] if key_hex.startswith("0x") else key_hex
+    client = _set_session_timeout(Exchange(
+        wallet=Account.from_key(clean_key),
+        base_url=_api(),
+        vault_address=target,
+        account_address=main_address if is_agent else None,
+        perp_dexs=_resolve_perp_dexs(),
+        timeout=SDK_TIMEOUT_S,
+    ))
+    _target_exchanges[cache_key] = client
+    return client
 
 
 _info_instance: Optional[Info] = None
@@ -601,6 +693,9 @@ def _order_builder() -> Optional[Dict[str, Any]]:
     install: builder.builder_for_order(main account), which is cache only.
     Never raises."""
     if not _runtime.is_public():
+        return None
+    if _account_target.get() is not None:
+        # A builder fee is approved per account; a sub-account has approved none.
         return None
     try:
         from pathiel.client import builder as _builder
@@ -975,6 +1070,7 @@ def place_hl_order(
     mid_price: float,
     coin: str = "BTC",
     reduce_only: bool = False,
+    cloid: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Place an IOC (immediate-or-cancel) limit order on Hyperliquid.
 
@@ -982,11 +1078,17 @@ def place_hl_order(
     $10 minimum, so closing a sub-$10 position (e.g. an illiquid residual) would
     OVERSHOOT and flip the position to the opposite side without this flag. With
     reduce_only, HL fills only up to the live position size and rejects the rest
-    → clean flatten, never a flip."""
+    → clean flatten, never a flip.
+
+    `cloid`: the Hyperliquid client order id this order carries, a fixed
+    pathiel prefix (pathiel.agents.ownership) so a fill this order produces
+    reads as desk-placed straight off the venue, with no local state to
+    lose. Auto-generated when not given; the one every caller uses."""
     if not _has_usable_credential():
         return {"ok": False, "error": "HYPERLIQUID_PRIVATE_KEY not set"}
     if mid_price <= 0:
         return {"ok": False, "error": f"invalid price for {coin}"}
+    cloid = cloid or _ownership.make_cloid()
 
     try:
         # Always get sz_dec from get_coin_index() (px_dec is ignored — we compute it correctly)
@@ -1020,6 +1122,7 @@ def place_hl_order(
             float(price_str),
             order_type,
             reduce_only=reduce_only,
+            cloid=_HlCloid.from_str(cloid),
             **_bkw(b),
         ))
 
@@ -1031,6 +1134,7 @@ def place_hl_order(
                 f"[place_hl_order] {coin} {'BUY' if is_buy else 'SELL'} "
                 f"size={size_str} px={price_str} REJECTED: {parsed.get('error')}"
             )
+        parsed["cloid"] = cloid
         if note is not None:
             parsed["builder"] = note
         return parsed
@@ -1045,6 +1149,7 @@ def place_hl_trigger_order(
     trigger_px: float,
     kind: str,  # 'sl' or 'tp'
     coin: str = "BTC",
+    cloid: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Place a reduce-only trigger order (stop-loss or take-profit).
 
@@ -1055,11 +1160,13 @@ def place_hl_trigger_order(
     exits every bar that reached the target traded through it, so the limit
     never missed, and it beat the market target at every account size
     (docs/overhaul/BACKTEST_RESULTS_2026-10-25.md, "limit vs market target").
-    """
+
+    `cloid`: see place_hl_order. Auto-generated when not given."""
     if not _has_usable_credential():
         return {"ok": False, "error": "HYPERLIQUID_PRIVATE_KEY not set"}
     if size <= 0 or trigger_px <= 0:
         return {"ok": False, "error": "invalid size/price"}
+    cloid = cloid or _ownership.make_cloid()
 
     try:
         _, sz_dec, _ = get_coin_index(coin)
@@ -1097,10 +1204,12 @@ def place_hl_trigger_order(
             trigger_f,
             order_type,
             reduce_only=True,
+            cloid=_HlCloid.from_str(cloid),
             **_bkw(b),
         ))
 
         parsed = _parse_order_result(result, accept_resting=True)
+        parsed["cloid"] = cloid
         if note is not None:
             parsed["builder"] = note
         return parsed
@@ -1115,6 +1224,7 @@ def place_hl_limit_order(
     size: float,
     limit_px: float,
     reduce_only: bool = False,
+    cloid: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Place a resting GTC limit order: a ladder rung or a take-profit.
 
@@ -1125,11 +1235,14 @@ def place_hl_limit_order(
 
     Returns {ok, order_id} when it rests, {ok, order_id, avg_px, total_sz} when
     it fills on arrival, {ok: False, error} otherwise.
+
+    `cloid`: see place_hl_order. Auto-generated when not given.
     """
     if not _has_usable_credential():
         return {"ok": False, "error": "HYPERLIQUID_PRIVATE_KEY not set"}
     if size <= 0 or limit_px <= 0:
         return {"ok": False, "error": f"invalid size/price for {coin}"}
+    cloid = cloid or _ownership.make_cloid()
     try:
         _, sz_dec, _ = get_coin_index(coin)
         price_str = _round_price_for_hl(limit_px, sz_dec, is_perp=True, is_buy=not is_buy)
@@ -1137,11 +1250,13 @@ def place_hl_limit_order(
         exchange = _make_exchange()
         result, note = _send_order(lambda b: exchange.order(
             coin, is_buy, float(size_str), float(price_str),
-            OrderType(limit={"tif": "Gtc"}), reduce_only=reduce_only, **_bkw(b)))
+            OrderType(limit={"tif": "Gtc"}), reduce_only=reduce_only,
+            cloid=_HlCloid.from_str(cloid), **_bkw(b)))
         parsed = _parse_order_result(result, accept_resting=True)
         if not parsed.get("ok"):
             logger.warning(f"[place_hl_limit_order] {coin} {'BUY' if is_buy else 'SELL'} "
                            f"size={size_str} px={price_str} REJECTED: {parsed.get('error')}")
+        parsed["cloid"] = cloid
         if note is not None:
             parsed["builder"] = note
         return parsed
@@ -1156,6 +1271,9 @@ def place_hl_bracket_order(coin: str, is_buy: bool, size: float, entry_px: float
     signed action (Hyperliquid grouping "normalTpsl"). The two reduce-only
     children arm only as the entry fills, sized to what filled, so a resting
     entry can never sit naked after a fill, and nothing has to watch it.
+
+    Each of the three legs carries its own freshly-generated pathiel cloid
+    (pathiel.agents.ownership.make_cloid), returned as `leg["cloid"]`.
 
     Returns {ok, entry: {...}, sl: {...}, tp: {...}} with each leg parsed by
     _parse_order_result; ok is False if the action or ANY leg was rejected.
@@ -1172,16 +1290,19 @@ def place_hl_bracket_order(coin: str, is_buy: bool, size: float, entry_px: float
         stop_f = float(_round_price_for_hl(stop_px, sz_dec, is_perp=True))
         tp_f = float(_round_price_for_hl(tp_px, sz_dec, is_perp=True))
         close_is_buy = not is_buy
+        cloids = {"entry": _ownership.make_cloid(), "sl": _ownership.make_cloid(),
+                  "tp": _ownership.make_cloid()}
 
         def _trigger(px: float, kind: str) -> Dict[str, Any]:
             return {"coin": coin, "is_buy": close_is_buy, "sz": size_f, "limit_px": px,
                     "order_type": OrderType(trigger=TriggerOrderType(
                         triggerPx=px, isMarket=(kind == "sl"), tpsl=kind)),
-                    "reduce_only": True}
+                    "reduce_only": True, "cloid": _HlCloid.from_str(cloids[kind])}
 
         reqs = [
             {"coin": coin, "is_buy": is_buy, "sz": size_f, "limit_px": entry_f,
-             "order_type": OrderType(limit={"tif": "Gtc"}), "reduce_only": False},
+             "order_type": OrderType(limit={"tif": "Gtc"}), "reduce_only": False,
+             "cloid": _HlCloid.from_str(cloids["entry"])},
             _trigger(stop_f, "sl"),
             _trigger(tp_f, "tp"),
         ]
@@ -1204,6 +1325,8 @@ def place_hl_bracket_order(coin: str, is_buy: bool, size: float, entry_px: float
                         else {"ok": True, "status": st})   # e.g. "waitingForFill"
         while len(legs) < 3:
             legs.append({"ok": False, "error": "no status returned"})
+        for leg, kind in zip(legs, ("entry", "sl", "tp")):
+            leg["cloid"] = cloids[kind]
         out = {"ok": all(leg.get("ok") for leg in legs), "entry": legs[0], "sl": legs[1],
                "tp": legs[2], "px": {"entry": entry_f, "stop": stop_f, "tp": tp_f}, "size": size_f}
         if not out["ok"]:

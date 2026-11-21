@@ -87,6 +87,14 @@ COPY services/review/ services/review/
 # line is here because tests/test_deploy_config.py wants a COPY for every
 # services package that code under pathiel/, scripts/ or services/ imports.
 COPY services/pool/ services/pool/
+# The fib sleeve (scripts/fib_sleeve_tick.py): a mechanical rule on its own
+# sub-account, disabled unless the operator enables it. Not on the request
+# path; shipped because scripts/ imports it.
+COPY services/fib_sleeve/ services/fib_sleeve/
+# The memecoin checker (python3 -m services.memecheck <mint>): read-only
+# DexScreener/RugCheck report, no account access. Not on the request path;
+# here because tests/test_deploy_config.py wants a COPY per services package.
+COPY services/memecheck/ services/memecheck/
 COPY conftest.py ./
 
 # ── Runtime state ────────────────────────────────────────────────────────────

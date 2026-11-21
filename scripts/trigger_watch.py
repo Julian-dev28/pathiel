@@ -20,7 +20,14 @@ its stop/target orders handle it), and a desk that fired in the last
 --cooldown-min minutes (a tick that declined must not be re-woken every
 minute). State and a per-minute log live under /tmp/trigger-watch/.
 Read-only on the venue and the journal: it never places, cancels or writes
-anything but its own log, cooldown file and headline state.
+anything but its own log, cooldown file and headline state -- plus, since
+2026-11-20, one line on the desk's OWN shared progress log
+(services/strategies/desk_log.log_path(desk), same file the desk-tick agent
+appends `DESK-TICK <desk> ...` lines to) for a fire that names one specific
+desk: `WATCH <desk> <utc> ...` (`_append_watch_line`). That is the only
+place this module's activity reaches the Desk page's per-desk Loop Log card
+(`GET /api/desks/{id}/log`); this module's own watch.log is unaffected and
+unfiltered either way.
 
 Since 2026-11-05 (operator: "FIX THEM") every pass starts with the headline
 step (services/intel/headline_watch.py): new matching news, a Polymarket
@@ -68,6 +75,73 @@ fire path, with the Stage 2 score (event_score) and the book guard
 (book_guard) riding along on the alert and in
 $PATHIEL_STATE_DIR/intel/finlight_events.jsonl. No key, an import error or
 a dead stream: the watcher runs on RSS exactly as before.
+
+Since 2026-11-17 (operator: a months-old reprint and a retitled duplicate
+each burned a slot of the day's MAX_ALERTS_PER_DAY on nothing): an undated
+headline no longer counts as fresh, and a near-duplicate of a title already
+alerted on (same wire story, a second outlet's headline) does not fire
+twice -- both in services/intel/headline_watch.news_alerts, read its
+docstring and MAX_AGE_MIN / NEWS_DEDUP_MIN_OVERLAP for the data behind
+each. The dedup pool lives in hl_state (`recent_news`), saved to
+headline_state.json on every pass like `seen`, so it survives the restart
+every fire causes.
+
+Also since 2026-11-17 (operator bug: a stale fire). 2026-11-16 12:59Z the watcher
+fired oil at 2.42R (stop 91.05, off the cached hour-12 24h low 91.80); the
+desk-tick's OWN fresh read, started a moment later, landed at 13:00Z, just
+after the 12:00-13:00 1h bar closed and rolled the 24h low to 91.582 while
+the mid climbed past the thesis's own entry (91.91: "never chase"). 1.49R,
+under the 2R gate, so the tick declined.
+
+Replayed with the real candles (tests/test_trigger_watch.py's regression,
+and services/strategies/evals/confirm_fire_replay.py against every real
+fire in this log), the lv_cache below was NOT wrong for the instant it was
+read: a from-scratch read at 12:59Z gives the identical 91.80/2.42R the
+fire printed, so asking the SAME question again at that same instant (no
+wait) would have agreed and fired anyway - a zero-delay recheck is not the
+fix. The fire and the tick read the market about a minute apart (the
+agent-dispatch time to actually run a tick; the eval's 29 real fires show
+0-960s, 60s the typical case), and oil's 24h range rolls exactly on the
+hour, so that one minute was enough to move the ground under the fire.
+`confirm_fire` cannot see the tick's own future moment, but it can stop
+waiting as long as lv_cache does: when the cached-levels pass says a desk
+would fire, the watcher now waits CONFIRM_DELAY_S (one more of its own
+60s polls - trivial next to the up-to-4-hour gap this module exists to
+close) and asks again with a brand-new, uncached levels+mid read
+(`levels.summarize_coin(coin, now_ms=...)`, which bypasses both this
+module's lv_cache and that function's own 75s cache,
+services/strategies/levels.py:122) through the SAME `evaluate()`. For
+12:59Z that wait alone lands the recheck at/past 13:00Z, on the other side
+of the same hour roll the tick saw: confirmed against the venue's own
+1-minute candles for this and the log's other recent fires. The watcher
+fires on that second answer, never the first; a desk the fresh read no
+longer likes is logged as declined on recheck, not fired. A dispatch
+slower than one wait (the log's 960s outlier) still has residual drift
+this cannot close - no fixed short wait can see further into the future
+than it waits.
+
+Since 2026-11-20 (operator bug: HYPE fired "buys now" through its own 120h
+trend gate). 2026-11-20 12:02Z this module fired {"fire": "hype", "mid":
+63.802, ..., "verdict": "buys now"} while the HYPE desk's 120h return sat
+at about -5.8%, exactly the trend the gate (next_trade.trend_gate,
+services/strategies/next_trade.py's HYPE_RULE) exists to veto on a long.
+`evaluate()` never passed `next_trade()` its `closes_1h` / `trend_gate_span`
+arguments, and `next_trade` applies no veto when either is missing (the
+same "missing data blocks nothing" rule `trend_gate` itself follows) -
+`scripts/oil_levels.py --next` passed both all along, so the Desk page and
+the tick's own CLI already judged this correctly; only this watcher (and
+`confirm_fire`, which calls the same `evaluate()`) had the gap. Fixed by
+reading `levels["closes_1h"]` (already in every `summarize()` answer) and
+`trend_gate_span_for(coin)` inside `evaluate()`, the same two facts
+`oil_levels.next_order` reads, so every caller agrees. A second gap fed the
+first: `levels.summarize_coin` always fetched 50 hours of 1h candles, one
+short of the 121 the 120h gate needs to compute a return at all (`trend_gate`
+reports "veto not applied" under that, not a block) - fixed in
+`services/strategies/levels.hours_1h_for`, which both `summarize_coin` and
+`oil_levels.py --next` now call, so their fetch windows cannot drift apart
+either. Desks with no gate (`trend_gate_span_for` returns None: oil, sp500,
+silver, gold) read unchanged: `next_trade` never looks at `closes_1h`
+without a span, and `hours_1h_for` still returns 50 for them.
 """
 from __future__ import annotations
 
@@ -88,6 +162,12 @@ LEVELS_REFRESH_S = 600      # the 24h range and ATR barely move inside 10 minute
 SLOT_REFRESH_S = 300        # positions/resting entries: the tick owns those anyway
 SIGNER_REFRESH_S = 3600     # is the signing API wallet still approved? (2026-11-09)
 SIGNER_REPEAT_S = 6 * 3600  # say it again this often while it stays broken
+# One more of this module's own 60s polls before trusting a candidate fire
+# (2026-11-17, "Since 2026-11-17" above): a zero-delay recheck agrees with
+# the cached pass every time, since lv_cache was already fresh for the
+# instant it was read. Waiting this long before the SECOND, uncached read
+# is what actually lands on the other side of an hour roll.
+CONFIRM_DELAY_S = 60.0
 
 
 def evaluate(side: Optional[str], thesis_entry: Optional[float], mid: Optional[float],
@@ -97,8 +177,16 @@ def evaluate(side: Optional[str], thesis_entry: Optional[float], mid: Optional[f
     """Pure: would the tick trade `coin` at `mid` right now? Same answer as
     GET /api/desks/{id}/next, with the mid refreshed between level reads.
     `thesis_age_min` / `entry_delay_min`: the entry delay (next_trade.
-    entry_delay; off while the config has no oil_entry_delay_min)."""
-    from services.strategies.next_trade import breakout_for, leverage_fit_for, next_trade, stop_buffer_for
+    entry_delay; off while the config has no oil_entry_delay_min).
+    `levels["closes_1h"]` (CLOSED 1h closes, oldest first; levels.summarize)
+    plus `trend_gate_span_for(coin)` (None on every coin but HYPE) feed
+    next_trade's trend gate the same way scripts/oil_levels.py's --next does
+    (operator bug, 2026-11-20: this function never passed either, so the
+    watcher fired HYPE longs straight through a 120h downtrend the gate
+    exists to veto)."""
+    from services.strategies.desk_leverage import entry_leverage
+    from services.strategies.next_trade import (breakout_for, leverage_fit_for, next_trade, stop_buffer_for,
+                                                target_offset_frac_for, trend_gate_span_for)
     r24 = levels.get("range_24h") or {}
     if side not in ("long", "short"):
         return {"ok": False, "reason": f"thesis is {side or 'missing'}"}
@@ -108,12 +196,36 @@ def evaluate(side: Optional[str], thesis_entry: Optional[float], mid: Optional[f
     if buf is None:
         return {"ok": False, "reason": "no ATR for the stop buffer"}
     out = next_trade(side, float(mid), float(r24["low"]), float(r24["high"]),
-                     thesis_entry=thesis_entry, leverage=leverage,
+                     thesis_entry=thesis_entry, leverage=entry_leverage(coin, leverage),
                      coin_max_leverage=coin_max_leverage, stop_buffer=buf,
-                     leverage_fit=leverage_fit_for(coin),
+                     leverage_fit=leverage_fit_for(coin), offset_frac=target_offset_frac_for(coin),
                      breakout=levels.get("breakout_24h") if breakout_for(coin) else None,
-                     thesis_age_min=thesis_age_min, entry_delay_min=entry_delay_min)
+                     thesis_age_min=thesis_age_min, entry_delay_min=entry_delay_min,
+                     closes_1h=levels.get("closes_1h"), trend_gate_span=trend_gate_span_for(coin))
     return out
+
+
+def confirm_fire(side: Optional[str], thesis_entry: Optional[float], coin: str,
+                 coin_max_leverage: Optional[float], leverage: float, now_ms: int, *,
+                 thesis_age_min: Optional[float] = None, entry_delay_min: Optional[float] = None,
+                 fetch_levels: Optional[Callable[[str, int], Dict[str, Any]]] = None) -> Dict[str, Any]:
+    """The last word before a fire: `evaluate()` again, off a brand-new
+    levels+mid read taken AT `now_ms` instead of `lv_cache`'s snapshot.
+    Pure (no sleeping here) - `watch()` is the one that waits CONFIRM_DELAY_S
+    before calling this with a freshly-read `now_ms`; calling it immediately
+    after the first check only reproduces that check (see the module
+    docstring, "Since 2026-11-17": a zero-delay reread is not the fix).
+
+    `fetch_levels` defaults to `services.strategies.levels.summarize_coin(coin,
+    now_ms=now_ms)`, an explicit `now_ms` bypassing both `lv_cache` here and
+    that function's own 75s cache (services/strategies/levels.py:122). Same
+    `evaluate()`, no duplicated math; a test or an eval passes its own
+    `fetch_levels` to replay a real incident without the live network."""
+    from services.strategies import levels as _levels
+    fetch_levels = fetch_levels or (lambda c, ms: _levels.summarize_coin(c, now_ms=ms))
+    fresh = fetch_levels(coin, now_ms)
+    return evaluate(side, thesis_entry, fresh.get("mid"), fresh, coin, coin_max_leverage, leverage,
+                    thesis_age_min=thesis_age_min, entry_delay_min=entry_delay_min)
 
 
 def fetch_headlines(group: str) -> List[Dict[str, Any]]:
@@ -230,6 +342,11 @@ def headline_pass(targets: List[Tuple[str, str, str]], now_s: float, state: Dict
     if now_s - float(state.get("last_news_s") or 0) >= HW.NEWS_POLL_S:
         state["last_news_s"] = now_s
         seen = set(state.get("seen") or [])
+        # the near-duplicate pool (HW.NEWS_DEDUP_MIN_OVERLAP): persisted in
+        # hl_state next to `seen`, so a title already alerted on survives
+        # the restart every fire causes, and Finlight (finlight_watch.
+        # finlight_pass, same `state`) shares the same pool as the RSS feed.
+        recent = state.setdefault("recent_news", [])
         prev_odds = state.setdefault("odds", {})
         try:
             official_items = fetch_official_fn()      # one fetch, every group reads it
@@ -238,11 +355,11 @@ def headline_pass(targets: List[Tuple[str, str, str]], now_s: float, state: Dict
         official_learn_only = prime or "official" not in primed
         for desk, _coin, group in targets:
             try:
-                news = HW.news_alerts(group, fetch_news(group), seen, now_ms)
+                news = HW.news_alerts(group, fetch_news(group), seen, now_ms, recent=recent)
             except Exception:  # noqa: BLE001 - news is best effort; price shocks still work
                 news = []
             try:
-                official = HW.news_alerts(group, official_items, seen, now_ms, shared=True)
+                official = HW.news_alerts(group, official_items, seen, now_ms, shared=True, recent=recent)
             except Exception:  # noqa: BLE001
                 official = []
             try:
@@ -339,6 +456,37 @@ def _log(line: str) -> None:
         fh.write(line + "\n")
 
 
+def _append_watch_line(desk: str, text: str) -> None:
+    """Also note a desk-specific wake-up on THAT DESK'S OWN shared progress
+    log (services/strategies/desk_log.log_path(desk) -- the same file the
+    desk-tick agent appends `DESK-TICK <desk> ...` lines to, read by
+    `GET /api/desks/{id}/log`), prefixed `WATCH <desk> <utc> <text>` so the
+    Desk page's Loop Log card can show when the watcher woke this desk
+    between its own ticks, not only this module's separate watch.log
+    (2026-11-20, Desk page multi-desk build). Called only for a fire that
+    names ONE specific desk (a new entry, a weekend-flat close, a headline
+    alert) -- never for the signer fire, which names a desk only as a
+    representative and is not that desk's own event.
+
+    Best-effort and desk_log-filter-shaped on purpose: desk_log.
+    filter_desk_lines keeps a line only when its prefix names the exact
+    desk asked for, so a malformed `desk` here would simply never show up
+    rather than corrupt another desk's card. A write failure (the loop
+    directory missing, a read-only filesystem) must never crash the
+    watcher or block the fire it is reporting on, so it is swallowed like
+    `_log` is not: the fire itself still prints and still exits 0."""
+    try:
+        from services.strategies import desk_log
+        path = desk_log.log_path(desk)
+        d = os.path.dirname(path)
+        if d:
+            os.makedirs(d, exist_ok=True)
+        with open(path, "a") as fh:
+            fh.write(f"WATCH {desk} {_utc()} {text}\n")
+    except OSError:
+        pass
+
+
 def watch(*, once: bool, cooldown_min: float, sleep: Callable[[float], None] = time.sleep,
           clock: Callable[[], float] = time.time) -> int:
     import _state_env
@@ -422,6 +570,8 @@ def watch(*, once: bool, cooldown_min: float, sleep: Callable[[float], None] = t
                 line = {"fire": wake[0], "also": wake[1:], "reason": "headline", "utc": _utc(),
                         "coin": first.get("coin") or next(c for d, c, _g in targets if d == wake[0]),
                         "label": first.get("label"), "headline": first.get("title")}
+                for d in wake:
+                    _append_watch_line(d, f"action=WAKE headline: {first.get('title') or first.get('label') or 'alert'}")
                 _log(f"{_utc()} FIRE {json.dumps(line)}")
                 print(json.dumps(line), flush=True)
                 return 0
@@ -442,6 +592,7 @@ def watch(*, once: bool, cooldown_min: float, sleep: Callable[[float], None] = t
                 line = weekend_fire(desk, coin, blackout, fired, now, lambda: _slot(desk_slot, desk))
                 if line:
                     _write_json(fired_path, fired)
+                    _append_watch_line(desk, f"coin={coin} action=WAKE weekend flat until {line.get('until_utc')}")
                     _log(f"{_utc()} FIRE {json.dumps(line)}")
                     print(json.dumps(line), flush=True)
                     return 0
@@ -470,17 +621,36 @@ def watch(*, once: bool, cooldown_min: float, sleep: Callable[[float], None] = t
                 parts.append(f"{desk}: read failed ({str(e)[:80]})")
                 continue
             from services.strategies.next_trade import entry_delay_for, thesis_age_minutes
-            res = evaluate(t.call.side if t else None, t.call.entry_px if t else None, mid,
-                           lv[1], coin, coin_max[coin], lev,
-                           thesis_age_min=thesis_age_minutes(getattr(t, "created_at", None)) if t else None,
-                           entry_delay_min=entry_delay_for(coin))
+            side = t.call.side if t else None
+            thesis_entry = t.call.entry_px if t else None
+            age_min = thesis_age_minutes(getattr(t, "created_at", None)) if t else None
+            delay_min = entry_delay_for(coin)
+            res = evaluate(side, thesis_entry, mid, lv[1], coin, coin_max[coin], lev,
+                           thesis_age_min=age_min, entry_delay_min=delay_min)
             if res.get("ok"):
+                # the cached-levels pass likes it; wait one more poll and ask
+                # the SAME gate again off a brand-new read before committing
+                # (2026-11-17, stale-fire fix: module docstring "Since
+                # 2026-11-17" - asking again with no wait only reproduces
+                # this same answer, since lv_cache was already fresh for now)
+                sleep(CONFIRM_DELAY_S)
+                confirm = confirm_fire(side, thesis_entry, coin, coin_max[coin], lev, int(clock() * 1000),
+                                       thesis_age_min=age_min, entry_delay_min=delay_min)
+                if not confirm.get("ok"):
+                    why = "; ".join(confirm.get("blockers") or []) or confirm.get("verdict") \
+                        or confirm.get("reason") or "declined"
+                    parts.append(f"{desk}: mid {mid} {res.get('r_now')}R on cached levels, "
+                                 f"but the fresh gate declined: {why}")
+                    continue
+                res, mid = confirm, confirm.get("mid", mid)
                 fired[desk] = now
                 _write_json(fired_path, fired)
                 line = {"fire": desk, "coin": coin, "utc": _utc(), "mid": mid,
                         "stop_px": res.get("stop_px"), "tp_px": res.get("tp_px"),
                         "r_now": res.get("r_now"), "verdict": res.get("verdict"),
                         "source": res.get("source")}
+                _append_watch_line(desk, f"coin={coin} mid={mid} action=WAKE entry rule passed, "
+                                         f"{res.get('r_now')}R, run /desk-tick {desk}")
                 _log(f"{_utc()} FIRE {json.dumps(line)}")
                 print(json.dumps(line), flush=True)
                 return 0
