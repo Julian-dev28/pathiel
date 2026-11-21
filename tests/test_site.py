@@ -173,7 +173,7 @@ def test_the_page_loads_nothing_from_elsewhere():
         if href.startswith("#"):
             assert href[1:] in p.ids, f"{href} points at no id on the page"
         elif not href.startswith("https://"):
-            assert href in ("scoreboard/",), href
+            assert href in ("scoreboard/", "privacy.html"), href
     # images come from the site itself (img-src 'self'): the published icon only
     assert set(p.srcs) <= {"icon.png"}, p.srcs
     assert "icon.png" in S.FIXED
@@ -201,12 +201,83 @@ def test_copy_follows_the_style_rules(copy_lint):
     assert copy_lint.claim_hits(visible_text()) == []
 
 
+# ── the privacy page: same design, its own file, needed for the plugin
+# directory listing (.claude-plugin/plugin.json privacyPolicyUrl) ───────────
+
+PRIVACY_URL = SITE_URL + "privacy.html"
+
+
+def privacy_text() -> str:
+    return (ROOT / "site" / "privacy.html").read_text(encoding="utf-8")
+
+
+def privacy_parsed() -> _Page:
+    p = _Page()
+    p.feed(privacy_text())
+    return p
+
+
+def privacy_visible_text() -> str:
+    body = privacy_text().split("<body>", 1)[1]
+    return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", body))
+
+
+def test_privacy_page_exists_and_is_wired_into_the_publish_list():
+    assert (ROOT / "site" / "privacy.html").is_file()
+    assert S.FIXED.get("privacy.html") == "site/privacy.html"
+    entries = S.site_entries(B.ls_tree(B.INDEX))
+    assert "privacy.html" in entries
+
+
+def test_privacy_page_search_metadata():
+    p = privacy_parsed()
+    assert p.title and 10 <= len(p.title) <= 65
+    assert p.h1
+    assert p.links.get("canonical") == PRIVACY_URL
+    assert p.meta.get("og:url") == PRIVACY_URL
+
+
+def test_privacy_page_loads_nothing_from_elsewhere():
+    p = privacy_parsed()
+    assert all(not s.get("src") for s in p.scripts)
+    assert p.scripts == []
+    assert "default-src 'none'" in p.meta.get("content-security-policy", "")
+    assert not re.search(r'<link[^>]+rel="stylesheet"', privacy_text())
+    for href in p.hrefs:
+        if href.startswith("#"):
+            assert href[1:] in p.ids, f"{href} points at no id on the page"
+        elif not href.startswith("https://"):
+            assert href == "./", href
+    assert set(p.srcs) == set()
+
+
+def test_privacy_page_states_the_facts_the_code_backs():
+    text = privacy_visible_text()
+    for must in (
+        "runs on your computer", "no account system", "no analytics",
+        "no telemetry", "runs no server", "~/.pathiel/.env.local",
+        "never stored by pathiel", "Hyperliquid's API", "opt-in", "no key",
+        "24 hours late", "GitHub",
+    ):
+        assert must in text, must
+
+
+def test_privacy_page_copy_follows_the_style_rules(copy_lint):
+    assert copy_lint.style_hits(privacy_visible_text()) == []
+    assert copy_lint.claim_hits(privacy_visible_text()) == []
+
+
+def test_privacy_page_links_back_to_the_full_pool_privacy_doc():
+    assert 'href="https://github.com/Julian-dev28/pathiel/blob/main/docs/PRIVACY.md"' in privacy_text()
+    assert 'href="https://github.com/Julian-dev28/pathiel/blob/main/SECURITY.md"' in privacy_text()
+
+
 # ── what the branch holds ───────────────────────────────────────────────────
 
 def test_the_site_holds_the_page_and_the_scoreboard_only():
     entries = S.site_entries(B.ls_tree(B.INDEX))
-    assert {"index.html", "sitemap.xml", "icon.png", ".nojekyll", "scoreboard/index.html",
-            "scoreboard/scoreboard.json"} <= set(entries)
+    assert {"index.html", "privacy.html", "sitemap.xml", "icon.png", ".nojekyll",
+            "scoreboard/index.html", "scoreboard/scoreboard.json"} <= set(entries)
     extra = [p for p in entries if p not in S.FIXED and not p.startswith("scoreboard/")]
     assert extra == []
     assert not any(p.endswith(".md") for p in entries)
@@ -270,8 +341,13 @@ def test_publish_check_and_drift_on_a_clone(tmp_path, real_repo_unchanged):
     _git(clone, "checkout", "-q", "--detach", head)
     for name in ("publish_site.py", "build_plugin_bundle.py"):   # this version, uncommitted
         shutil.copy(ROOT / "scripts" / name, clone / "scripts" / name)
-    if not (clone / "site" / "index.html").exists():                # first commit of the site
-        shutil.copytree(ROOT / "site", clone / "site")
+    # First commit of the site, or a source FIXED now names that history
+    # doesn't have yet (e.g. a new page added to site/): sync the working
+    # tree's site/ into the clone so the publish below has every source
+    # this version of publish_site.py requires.
+    site_sources = {src for src in S.FIXED.values() if src.startswith("site/")}
+    if any(not (clone / src).exists() for src in site_sources):
+        shutil.copytree(ROOT / "site", clone / "site", dirs_exist_ok=True)
         _git(clone, "add", "site")
         _git(clone, "commit", "-q", "-m", "site sources")
     for ref in ("refs/remotes/origin/gh-pages", "refs/heads/gh-pages"):
