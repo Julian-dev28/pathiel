@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import re
+from urllib.parse import urlparse
+
 from services.intel import http_client
 from services.research_mcp import tools
 
@@ -8,8 +11,11 @@ def test_fred_series_tool_refuses_cleanly_without_a_key(monkeypatch):
     monkeypatch.delenv("FRED_API_KEY", raising=False)
     out = tools.fred_series_tool("DGS10")
     assert out["error"] == "FRED_API_KEY_missing"
-    assert "fred.stlouisfed.org" in out["help"]
-    assert "api_key.html" in out["help"]
+    # Parse the link and compare its host exactly: a substring check on a
+    # URL is what CodeQL's py/incomplete-url-substring-sanitization flags.
+    urls = [urlparse(u) for u in re.findall(r"https?://\S+", out["help"])]
+    assert any(u.hostname == "fred.stlouisfed.org" and u.path.endswith("/api_key.html")
+               for u in urls), out["help"]
 
 
 def test_fred_series_tool_never_logs_the_key(monkeypatch, capsys):
