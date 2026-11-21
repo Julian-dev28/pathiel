@@ -3,60 +3,60 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="theme-color" content="#0b0e11">
-<meta name="color-scheme" content="dark">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#f6f3ee" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#121009" media="(prefers-color-scheme: dark)">
 <title>pathiel research pool scoreboard</title>
 <link rel="icon" type="image/png" href="../icon.png">
 <link rel="stylesheet" href="scoreboard.css">
 </head>
 <body>
 
-<div class="topbar">
-  <div class="bar">
-    <a class="logo" href="../"><i aria-hidden="true"></i>PATHIEL</a>
-    <span class="pair"><b>RESEARCH POOL</b> / SCOREBOARD</span>
-    <span class="net"><i aria-hidden="true"></i>24H DELAYED</span>
-    <a class="pill" href="https://github.com/Julian-dev28/pathiel" rel="noopener noreferrer" target="_blank">GitHub &#8599;</a>
+<header class="topbar">
+  <div class="wrap bar">
+    <a class="word" href="../">pathiel</a>
+    <span class="tag">Research pool scoreboard</span>
+    <a class="gh" href="https://github.com/Julian-dev28/pathiel">GitHub</a>
   </div>
-</div>
-
-<header>
-  <p class="eyebrow">Graded public fills &middot; fluke or edge</p>
-  <h1>pathiel research pool <span class="serif">scoreboard</span></h1>
-  <p class="lede">
-    This page shows graded results of pathiel research pool members' public
-    Hyperliquid fills. Hyperliquid already makes fills public; nobody
-    uploads anything here.
-  </p>
 </header>
 
-<section class="about">
-  <p>Graded results of public fills, at least 24 hours late. Not live positions, not advice.</p>
-  <p>No edge is demonstrated until a row with 10 or more independent trades says EDGE.</p>
-  <p>Pool rows count independent trades: trades on the same coin and side entered within 24 hours of the first one count once.</p>
-  <p>Rows are ordered by number of graded trades, not by result.</p>
-  <p>
-    To join, run <code>/pathiel:share</code> in the pathiel Claude Code
-    plugin. Project and source:
-    <a href="https://github.com/Julian-dev28/pathiel" rel="noopener noreferrer" target="_blank">github.com/Julian-dev28/pathiel</a>.
-  </p>
-  <p>
-    What is public and what stays private, and how to leave, is in the
-    <a href="https://github.com/Julian-dev28/pathiel/blob/main/docs/PRIVACY.md" rel="noopener noreferrer" target="_blank">privacy doc</a>.
-  </p>
-</section>
+<main class="wrap">
+  <section class="intro">
+    <p class="eyebrow">Graded public fills &middot; fluke or edge</p>
+    <h1>Research pool scoreboard</h1>
+    <p class="lede">
+      Graded results of pathiel research pool members' public Hyperliquid
+      fills, shown at least 24 hours late. Not live positions, not advice.
+      Hyperliquid already makes fills public; nobody uploads anything here.
+    </p>
+    <ul class="rules">
+      <li>No edge is demonstrated until a row with 10 or more independent trades says EDGE.</li>
+      <li>Pool rows count independent trades: trades on the same coin and side entered within 24 hours of the first one count once.</li>
+      <li>Rows are ordered by number of graded trades, not by result.</li>
+    </ul>
+    <p class="join">
+      Join with <code>/pathiel:share</code> in the pathiel Claude Code
+      plugin. Project and source:
+      <a href="https://github.com/Julian-dev28/pathiel" rel="noopener noreferrer" target="_blank">github.com/Julian-dev28/pathiel</a>.
+      What is public, and how to leave: the
+      <a href="https://github.com/Julian-dev28/pathiel/blob/main/docs/PRIVACY.md" rel="noopener noreferrer" target="_blank">privacy doc</a>.
+    </p>
+  </section>
 
-<noscript>
-  <p>This page needs JavaScript to show the pool counts and tables. The text above still applies without it.</p>
-</noscript>
+  <noscript>
+    <p class="noscript">This page needs JavaScript to show the pool counts and tables. The text above still applies without it.</p>
+  </noscript>
 
-<main id="app" aria-live="polite">
-  <p>Loading the scoreboard&hellip;</p>
+  <section id="app" aria-live="polite">
+    <p>Loading the scoreboard&hellip;</p>
+  </section>
 </main>
 
 <footer>
-  <p>pathiel is free to install. This scoreboard is generated offline and published as a static page; no server reads this address when you view it.</p>
-  <p><a href="../">&#8592; pathiel home</a></p>
+  <div class="wrap status">
+    <span>Static page, generated offline. No server reads this address when you view it.</span>
+    <a class="r" href="../">pathiel home</a>
+  </div>
 </footer>
 
 <script src="scoreboard.js"></script>

@@ -32,7 +32,7 @@ from typing import Dict, List, Set, Tuple
 ROOT = Path(__file__).resolve().parents[1]
 REPO_PREFIX = re.compile(r"^https://github\.com/Julian-dev28/pathiel/(?:blob|tree)/main/([^#?]+)")
 URL = re.compile(r"https://[^\s)>\"'`\]]+")
-SOURCES = ("README.md", "SECURITY.md", "CONTRIBUTING.md", "site/index.html")
+SOURCES = ("README.md", "SECURITY.md", "CONTRIBUTING.md", "site/index.html", "site/privacy.html")
 SOURCE_DIRS = ("commands", "agents", "skills", "docs")
 SKIP_DOCS = ("docs/strategy/learning/", "docs/overhaul/", "docs/security/")   # dated records, not guidance
 UNVERIFIED = {401, 403, 429}

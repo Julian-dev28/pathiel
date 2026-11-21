@@ -297,15 +297,20 @@ def test_listing_json_files_parse(path):
 
 
 def test_listing_urls_point_at_files_that_exist_and_terms_say_what_matters(copy_lint):
-    """The directory listing shows these four links (2026-11-13). Each repo
-    link must name a file on main, and the terms must carry the disclosures."""
+    """The directory listing shows these four links (2026-11-13, privacyPolicyUrl
+    moved to the hosted page on 2026-11-21 for the plugin directory listing,
+    which expects a live privacy policy page rather than a repo blob link).
+    Each repo link must name a file on main, and the terms must carry the
+    disclosures."""
     plugin = _json(PLUGIN_JSON)
     blob = "https://github.com/Julian-dev28/pathiel/blob/main/"
-    for key in ("documentationUrl", "privacyPolicyUrl", "termsOfServiceUrl"):
+    for key in ("documentationUrl", "termsOfServiceUrl"):
         url = plugin[key]
         assert url.startswith(blob) and (ROOT / url[len(blob):]).is_file(), (key, url)
-    assert plugin["supportUrl"] == "https://github.com/Julian-dev28/pathiel/issues"
     assert plugin["homepage"] == "https://julian-dev28.github.io/pathiel/"
+    assert plugin["privacyPolicyUrl"] == plugin["homepage"] + "privacy.html"
+    assert (ROOT / "site" / "privacy.html").is_file()
+    assert plugin["supportUrl"] == "https://github.com/Julian-dev28/pathiel/issues"
     terms = " ".join((ROOT / "docs" / "TERMS.md").read_text(encoding="utf-8").split())
     for must in ("MIT license", "without warranty", "Not financial advice", "US persons",
                  "never withdraw", "charges no fee", "opt-in"):
