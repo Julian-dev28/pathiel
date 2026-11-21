@@ -45,7 +45,12 @@ SCAN_DIRS = ("pathiel", "scripts", "services")
 # so their imports must not force a COPY line into it.
 #   pathiel_data_api  own Dockerfile + Postgres deps
 #                    boot a server against a built file, not the image
-EXCLUDE_PREFIXES = ("services/pathiel_data_api",)
+#   research_mcp      its own Claude Code plugin + launcher
+#                     (scripts/pathiel-research-mcp.{py,sh}), v1 ships local
+#                     stdio only, no hosting, no container of its own yet —
+#                     never bundled into THIS image either way
+EXCLUDE_PREFIXES = ("services/pathiel_data_api", "services/research_mcp",
+                    "scripts/pathiel-research-mcp.py")
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
@@ -216,6 +221,18 @@ def test_dockerfile_does_not_bundle_pathiel_data_api():
     it from the main image would fail anyway)."""
     copies = _dockerfile_copy_sources()
     assert not any("pathiel_data_api" in c for c in copies)
+
+
+def test_dockerfile_does_not_bundle_research_mcp():
+    """services/research_mcp is its own deploy unit too: v1 ships as a
+    second Claude Code plugin with its own launcher (scripts/pathiel-
+    research-mcp.sh, its own venv under its own data directory), not a
+    container, and never runs inside this image (the trading server's
+    Dockerfile/Dockerfile.mcp). Bundling it here would ship dead weight for
+    no running process to ever import."""
+    copies = _dockerfile_copy_sources()
+    assert not any("research_mcp" in c for c in copies)
+    assert "pathiel-research-mcp.py" not in _dockerfile_text()
 
 
 def test_dockerfile_installs_the_package_before_copying_source():

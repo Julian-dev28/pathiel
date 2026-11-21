@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Privacy - pathiel</title>
+<meta name="description" content="pathiel runs on your computer. No account system, no analytics, no telemetry, and no server that receives your data. Where keys live and what leaves your machine.">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#f6f3ee" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#121009" media="(prefers-color-scheme: dark)">
+<link rel="canonical" href="https://julian-dev28.github.io/pathiel/privacy.html">
+<link rel="icon" type="image/png" href="icon.png">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="pathiel">
+<meta property="og:title" content="Privacy - pathiel">
+<meta property="og:description" content="pathiel runs on your computer. No account system, no analytics, no telemetry, and no server that receives your data.">
+<meta property="og:url" content="https://julian-dev28.github.io/pathiel/privacy.html">
+<meta property="og:image" content="https://julian-dev28.github.io/pathiel/icon.png">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src 'self'; base-uri 'none'; form-action 'none'">
+<style>
+  /* Same design as site/index.html, self-contained: no scripts, no web
+     fonts, no outside requests. Duplicated rather than linked so this page
+     has no dependency on the other file loading first (no build step). */
+  :root {
+    --bg: #f6f3ee;
+    --surface: #fffdf9;
+    --fg: #16140f;
+    --soft: #55504a;
+    --faint: #8c8579;
+    --line: rgba(22, 20, 15, 0.14);
+    --line-soft: rgba(22, 20, 15, 0.07);
+    --accent: #6e5329;
+    --accent-soft: rgba(110, 83, 41, 0.12);
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #121009;
+      --surface: #181511;
+      --fg: #f2eee4;
+      --soft: #b9b2a4;
+      --faint: #726c60;
+      --line: rgba(242, 238, 228, 0.16);
+      --line-soft: rgba(242, 238, 228, 0.08);
+      --accent: #c9a461;
+      --accent-soft: rgba(201, 164, 97, 0.14);
+    }
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    margin: 0; color: var(--fg); font: 16px/1.6 var(--sans); background: var(--bg);
+    -webkit-font-smoothing: antialiased; overflow-x: hidden;
+  }
+  ::selection { background: var(--accent); color: var(--bg); }
+  a { color: var(--accent); text-decoration: underline; text-decoration-color: var(--line); text-underline-offset: 2px; }
+  a:hover { text-decoration-color: var(--accent); }
+  code { font-family: var(--mono); font-size: 0.92em; }
+  .wrap { max-width: 680px; margin: 0 auto; padding: 0 20px; }
+
+  header { padding: 28px 0 8px; }
+  .bar { display: flex; align-items: center; gap: 28px; }
+  .word { font: 700 16px var(--sans); letter-spacing: 0.02em; text-decoration: none; color: var(--fg); }
+  .gh { margin-left: auto; font: 500 14px var(--sans); color: var(--soft); text-decoration: none; }
+  .gh:hover { color: var(--fg); }
+
+  main { padding: 48px 0 32px; }
+  .eyebrow { margin: 0 0 14px; font: 600 12px var(--mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent); }
+  h1 { margin: 0 0 16px; font: 700 clamp(2rem, 5.4vw, 2.8rem)/1.1 var(--sans); letter-spacing: -0.02em; }
+  .lede { margin: 0 0 40px; max-width: 54ch; color: var(--soft); font-size: 17px; }
+  h2 { margin: 40px 0 12px; font: 600 13px var(--mono); letter-spacing: 0.1em; text-transform: uppercase; color: var(--faint); border-top: 1px solid var(--line); padding-top: 28px; }
+  main > h2:first-of-type { border-top: 0; padding-top: 0; }
+  p { margin: 0 0 14px; color: var(--soft); font-size: 15.5px; max-width: 62ch; }
+  ul { margin: 0 0 14px; padding-left: 20px; max-width: 62ch; color: var(--soft); font-size: 15.5px; }
+  li { margin-bottom: 6px; }
+  strong { color: var(--fg); }
+
+  footer { border-top: 1px solid var(--line); margin-top: 8px; }
+  .status { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 20px; padding: 20px 0; font: 13px var(--mono); color: var(--faint); }
+  .status a { color: var(--faint); text-decoration: none; }
+  .status a:hover { color: var(--fg); }
+  .status .r { margin-left: auto; }
+
+  a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap bar">
+    <a class="word" href="./">pathiel</a>
+    <a class="gh" href="https://github.com/Julian-dev28/pathiel">GitHub</a>
+  </div>
+</header>
+
+<main id="top" class="wrap">
+  <p class="eyebrow">Privacy</p>
+  <h1>pathiel collects nothing.</h1>
+  <p class="lede">pathiel runs on your computer. There is no account system, no analytics and no telemetry, and the project runs no server that receives your data. This page says exactly what that means.</p>
+
+  <h2>Keys</h2>
+  <p>Your keys stay in <code>~/.pathiel/.env.local</code> on your machine, created with permissions that only you can read. The API wallet key signs requests to Hyperliquid and is never printed, logged or sent anywhere but Hyperliquid. Your master wallet key is never stored by pathiel: connecting a wallet has your browser wallet sign one approval on a page served from your own machine (127.0.0.1), and the signature never leaves it.</p>
+
+  <h2>What leaves your machine</h2>
+  <ul>
+    <li><strong>Hyperliquid's API</strong> (mainnet or testnet): market and account reads, the orders you ask for, and the API wallet approval you sign.</li>
+    <li><strong>Public data feeds</strong>, for research and the desk briefs: EIA, FRED, CFTC, Congress and the Federal Register, prediction markets (Polymarket, Kalshi), and news (Google News). An optional API key for one of these feeds goes only to that feed.</li>
+    <li><strong>GitHub</strong>, only if you join the research pool: the signed statement your pull request carries.</li>
+  </ul>
+  <p>Nothing else leaves your machine. No analytics script, no error reporter, no usage ping.</p>
+
+  <h2>What stays on your machine</h2>
+  <p>Theses, the desk journal, caches and your config stay under <code>~/.pathiel</code> until you delete them. No pathiel process holds a withdrawal key: your master private key is read only at a hidden terminal prompt for the one action that needs it, and never from a file.</p>
+
+  <h2>The research pool (opt-in)</h2>
+  <p>Off by default. If you join, pathiel reads your address's already-public Hyperliquid fills on the pool coins and publishes a graded summary at least 24 hours late: your address, the date you joined, your trade counts, and a win rate, mean result, label and luck score. It never publishes your balance, open positions, single trade prices or sizes, or any key. Leaving removes your rows from the next build. Full terms: <a href="https://github.com/Julian-dev28/pathiel/blob/main/docs/PRIVACY.md">docs/PRIVACY.md</a>.</p>
+
+  <h2>The research server</h2>
+  <p>The separate <code>pathiel-research</code> server needs no account and no key, and cannot place an order. It reads public data: Hyperliquid's public market endpoint, news RSS feeds, Polymarket and Kalshi odds, and FRED macro series with your own free FRED key if you set one. It keeps a local count of how many times each tool was called (no arguments, no results, no identity) under <code>~/.pathiel-research</code>, and sends nothing off your machine.</p>
+
+  <h2>Questions or a problem</h2>
+  <p>Open a <a href="https://github.com/Julian-dev28/pathiel/issues">GitHub issue</a>, or report a security problem privately through a <a href="https://github.com/Julian-dev28/pathiel/security/advisories/new">security advisory</a>. More detail on how keys are handled: <a href="https://github.com/Julian-dev28/pathiel/blob/main/SECURITY.md">SECURITY.md</a>.</p>
+</main>
+
+<footer>
+  <div class="wrap status">
+    <a href="https://github.com/Julian-dev28/pathiel">GitHub</a>
+    <span>MIT license</span>
+    <span>Version 0.9.0</span>
+    <a href="./">Home</a>
+    <a class="r" href="#top">Top</a>
+  </div>
+</footer>
+</body>
+</html>

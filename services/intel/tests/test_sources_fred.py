@@ -100,3 +100,67 @@ def test_no_valid_observations_is_reported(monkeypatch):
     items, err = fred.fetch_fred(_metals_spec())
     assert items == []
     assert err is not None and "no_valid_observations" in err
+
+
+# ── fetch_observations: the research MCP's fred_series tool ─────────────────
+
+def test_fetch_observations_missing_key_is_reported_not_silent(monkeypatch):
+    monkeypatch.delenv("FRED_API_KEY", raising=False)
+    data, err = fred.fetch_observations("DGS10")
+    assert data is None
+    assert err == "FRED_API_KEY_missing"
+
+
+def test_fetch_observations_passes_an_explicit_key_without_reading_the_env(monkeypatch):
+    monkeypatch.delenv("FRED_API_KEY", raising=False)
+    seen = {}
+
+    def fake(url, **kw):
+        seen.update(kw.get("params") or {})
+        return {"observations": _obs([1.0])}, None
+    monkeypatch.setattr(http_client, "fetch_json", fake)
+    data, err = fred.fetch_observations("DGS10", api_key="explicit-key")
+    assert err is None and data is not None
+    assert seen["api_key"] == "explicit-key"
+
+
+def test_fetch_observations_no_range_is_newest_first_capped_at_obs_limit(monkeypatch):
+    monkeypatch.setenv("FRED_API_KEY", "fake-key")
+    seen = {}
+
+    def fake(url, **kw):
+        seen.update(kw.get("params") or {})
+        return {"observations": _obs([1.0, 2.0])}, None
+    monkeypatch.setattr(http_client, "fetch_json", fake)
+    data, err = fred.fetch_observations("DGS10")
+    assert err is None
+    assert seen["sort_order"] == "desc"
+    assert seen["limit"] == fred.OBS_LIMIT
+    assert "observation_start" not in seen and "observation_end" not in seen
+
+
+def test_fetch_observations_with_a_range_is_chronological_and_uncapped(monkeypatch):
+    monkeypatch.setenv("FRED_API_KEY", "fake-key")
+    seen = {}
+
+    def fake(url, **kw):
+        seen.update(kw.get("params") or {})
+        return {"observations": _obs([1.0, 2.0])}, None
+    monkeypatch.setattr(http_client, "fetch_json", fake)
+    data, err = fred.fetch_observations("DGS10", start="2026-01-01", end="2026-06-01")
+    assert err is None
+    assert seen["sort_order"] == "asc"
+    assert seen["observation_start"] == "2026-01-01"
+    assert seen["observation_end"] == "2026-06-01"
+    assert "limit" not in seen
+
+
+def test_fetch_observations_bad_shape_and_http_error_pass_through(monkeypatch):
+    monkeypatch.setenv("FRED_API_KEY", "fake-key")
+    monkeypatch.setattr(http_client, "fetch_json", lambda url, **kw: ({"nope": True}, None))
+    data, err = fred.fetch_observations("DGS10")
+    assert data is None and err == "bad_shape"
+
+    monkeypatch.setattr(http_client, "fetch_json", lambda url, **kw: (None, "timeout"))
+    data, err = fred.fetch_observations("DGS10")
+    assert data is None and err == "timeout"

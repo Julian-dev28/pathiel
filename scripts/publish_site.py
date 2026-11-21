@@ -5,7 +5,8 @@ GitHub Pages first served the whole `docs/` folder from main (2026-11-13),
 which put every research doc, backtest figures included, on the Pages host
 as plain text. The site is now its own branch, `gh-pages`, holding exactly:
 
-    index.html, sitemap.xml   site/
+    index.html, privacy.html,
+      sitemap.xml             site/
     icon.png                  .claude-plugin/icon.png (the directory icon)
     .nojekyll                 docs/.nojekyll (serve files as they are)
     scoreboard/*              docs/scoreboard/* (written by the pool build)
@@ -44,6 +45,7 @@ BRANCH = "gh-pages"
 # published path -> source path on the ref
 FIXED: Dict[str, str] = {
     "index.html": "site/index.html",
+    "privacy.html": "site/privacy.html",
     "sitemap.xml": "site/sitemap.xml",
     "icon.png": ".claude-plugin/icon.png",
     ".nojekyll": "docs/.nojekyll",

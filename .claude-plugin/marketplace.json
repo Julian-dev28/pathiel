@@ -12,6 +12,13 @@
       "description": "AI trading agent for Hyperliquid: Claude trades perps with an exact stop and target on every order. 30 MCP tools: desk briefs for oil and metals, bracket orders, risk sizing (3x, 1% per trade, one position by default), account reads. Mainnet by default, testnet opt-in, read-only without a key. Free: no builder fee.",
       "category": "finance",
       "keywords": ["hyperliquid", "trading", "perps", "mcp", "claude-code", "risk-management", "oil", "gold", "ai-agent", "trading-agent", "ai-trading"]
+    },
+    {
+      "name": "pathiel-research",
+      "source": "./services/research_mcp",
+      "description": "The risk-gated research layer AI agents trade through: a free, read-only, keyless MCP server with 6 tools (research_brief, events, prediction_odds, fred_series, headlines, levels) for BRENTOIL, HYPE, BTC, ETH and SP500. Hyperliquid public candles, news/RSS, Polymarket/Kalshi odds, the scheduled-event calendar, and pathiel's own stored desk thesis. Never touches a key, an account or an order.",
+      "category": "finance",
+      "keywords": ["research", "mcp", "claude-code", "hyperliquid", "polymarket", "kalshi", "fred", "market-research", "oil", "crypto"]
     }
   ]
 }
