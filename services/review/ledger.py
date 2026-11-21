@@ -52,7 +52,7 @@ from services.strategies.evals import loss_audit as LA
 # drags that chain into the plugin bundle (scripts/build_plugin_bundle.py
 # walks every import reachable from the MCP server).
 
-SCHEMA = 2   # 2: trend_20d_pct and other_desk_side (2026-11-02)
+SCHEMA = 3   # 2: trend_20d_pct and other_desk_side (2026-11-02); 3: owner (2026-11-18)
 HOUR_MS = LA.HOUR_MS
 SETTLE_MS = int(max(LA.BACK_HOURS, LA.FLIP_HOURS) * HOUR_MS)
 RANGE_BARS = 24                     # closed 1h bars behind the entry: the 24h range
@@ -151,8 +151,29 @@ def annotate_pairs(records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return records
 
 
+def owner_of(tr: Dict[str, Any], journal: Optional[Sequence[Dict[str, Any]]] = None) -> str:
+    """"desk" or "operator", from the same ownership function the live
+    enforcement uses (pathiel.agents.ownership.is_desk_owned), fed this
+    trade's own opening fills (loss_audit.reconstruct_trades' `fills_open`).
+
+    Every trade from BEFORE the 2026-11-18 cloid fix reads "operator" here:
+    no fill it rebuilds from carries a cloid, and this never backfills the
+    journal for history it did not itself place -- under-counting the desk's
+    own past trades is the safe direction, not over-counting them. A trade
+    the journal/cloid genuinely cannot explain at all (`fills_open` empty,
+    e.g. a trade reconstructed from a short fills window) reads "operator"
+    too, for the same reason is_desk_owned refuses rather than guesses.
+
+    `journal` defaults to the real on-disk journal (pathiel.agents.
+    ownership.load_journal) -- the one impure default in an otherwise pure
+    function, same discipline pathiel.agents.bracket's `ex=None` uses."""
+    from pathiel.agents import ownership as O
+    journal = O.load_journal() if journal is None else journal
+    return "desk" if O.is_desk_owned({"coin": tr["coin"]}, tr.get("fills_open") or [], journal) else "operator"
+
+
 def to_record(tr: Dict[str, Any], theses: Sequence[Any], bars1h: Sequence[Candle], bars5: Sequence[Candle],
-              as_of_ms: int) -> Dict[str, Any]:
+              as_of_ms: int, journal: Optional[Sequence[Dict[str, Any]]] = None) -> Dict[str, Any]:
     """One ledger record from one enriched, closed loss-audit trade."""
     th = LA.thesis_at(tr["entry_time"], theses)
     r_unit = tr.get("r_unit")
@@ -178,6 +199,7 @@ def to_record(tr: Dict[str, Any], theses: Sequence[Any], bars1h: Sequence[Candle
         "side_agrees": (th.side == tr["side"]) if th else None,
         "weekend": weekend_closed(entry_ms), "hour_utc": int((entry_ms // HOUR_MS) % 24),
         "planned_r": planned_r(tr["entry_px"], tr.get("stop_px"), tr.get("target_px")),
+        "owner": owner_of(tr, journal),
     }
     rec.update(range_position(entry_ms, tr["entry_px"], tr["side"], bars1h))
     rec.update(trend_20d(entry_ms, bars1h))

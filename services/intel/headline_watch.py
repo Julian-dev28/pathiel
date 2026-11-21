@@ -37,6 +37,32 @@ rewrite and the tick agent judge it. This module notices, and reads the
 headline's sign off fixed word lists; a title the lists cannot read is 0 and
 holds, the safe default.
 
+Since 2026-11-17 (operator: recycled headlines burned the day's alert budget
+on nothing): two more guards sit in `news_alerts`, both ahead of
+`match_headline`.
+  1. Age: a headline with no readable published time is DROPPED, not taken
+     as fresh (see MAX_AGE_MIN below for the data this threshold and this
+     rule are read from). 2026-11-17, "Rubio condemns Iran strikes on
+     Bahrain, Manama demands halt at UN" root-caused here: Google News can
+     re-serve a months-old reprint through a feed entry with no <pubDate> at
+     all, and the old code took a missing date as "fresh" instead of
+     dropping it.
+  2. Dedup: `seen` only ever caught a byte-identical title, so the same wire
+     story retitled by a second outlet slipped through as "new" -- see
+     NEWS_DEDUP_MIN_OVERLAP below. `news_alerts(..., recent=state_list)`
+     drops a title that is a near-duplicate (textnorm.is_near_duplicate) of
+     one it already alerted on for the same group inside
+     NEWS_DEDUP_WINDOW_MIN; `recent` is the caller's own persisted list
+     (scripts/trigger_watch.py keeps it in the same headline_state.json
+     `seen` already lives in, so it survives the restart every fire causes).
+     This does NOT catch a genuinely different follow-up angle on the same
+     underlying event (2026-11-17's CNN "dirty bomb" plot story and its
+     3-hours-later "triggers emergency meetings" write-up share only 18% of
+     their tokens -- the same ratio as two real, unrelated same-day
+     headlines in the same log, so text overlap cannot tell them apart
+     without risking a real escalation). That case is left to
+     MAX_ALERTS_PER_DAY and the operator, not silently merged.
+
 Pure functions plus a small JSON file; the fetching lives in trigger_watch.
 """
 from __future__ import annotations
@@ -49,19 +75,62 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 from urllib.parse import urlparse
 
+from services.intel.textnorm import is_near_duplicate
+
 ALERTS_PATH = os.environ.get("PATHIEL_HEADLINE_ALERTS") or "/tmp/trigger-watch/headline_alerts.json"
 STATE_PATH = os.environ.get("PATHIEL_HEADLINE_STATE") or "/tmp/trigger-watch/headline_state.json"
 
 NEWS_POLL_S = 120
 POSTS_POLL_S = 60                  # Trump's posts (the trumpstruth.org archive): every pass
+# 45 min, from the real fires that mattered: /tmp/trigger-watch/watch.log's
+# 19 kind="news" headline fires of 2026-11-05..17 ranged 2.1 to 39.7 minutes
+# old by their own published_at (the slowest: "WTI trades weakly below $85
+# on US-Iran deal hopes", 39.7 min). 45 leaves ~5 minutes of margin above the
+# slowest real fire without being loose enough to admit a stale one. A
+# headline with NO readable published_at is dropped outright, never taken as
+# fresh (news_alerts, below) -- Google News and oilprice.com sometimes
+# re-serve a months-old reprint through an entry with no <pubDate> at all
+# (2026-11-17: "Rubio condemns Iran strikes on Bahrain, Manama demands halt
+# at UN" read as a months-old June story once traced; the real fires above
+# all carry a published_at, so an undated item is categorically different,
+# not just "old"). A streaming provider (`triggers=True`, Finlight) that
+# omits its own publishDate still carries `received_at` -- OUR clock, set
+# the instant the socket delivered it -- so a real-time push is judged on
+# that instead of being dropped for the wire's missing metadata.
 MAX_AGE_MIN = 45
+# One story told by several outlets (or re-synced by Finlight and Google
+# News within minutes of each other) must fire once, not once per retitling.
+# `seen` (news_alerts) already drops a byte-identical title; it misses a
+# paraphrase. 2026-11-13's real duplicate -- "Trump directs Vance to shift
+# focus from Iran war to U.S. 'corruption and crime'" (NBC 7 San Diego) and
+# "President Donald Trump Directs Vice President JD Vance to Shift Focus
+# From Iran War to Crime" (CNBC TV18), 76 minutes apart -- share 71% of the
+# smaller title's tokens (textnorm.is_near_duplicate's own ratio). The
+# highest-overlap pair of genuinely DIFFERENT same-day Hormuz headlines in
+# the same log (two distinct tanker incidents a day apart) sits at 57%.
+# 0.65 sits between the two: loose enough to catch a same-story retitling,
+# tight enough that two real, different escalations never collide (the
+# 76-minute real gap sits well inside the 180-minute window below).
+NEWS_DEDUP_MIN_OVERLAP = 0.65
+NEWS_DEDUP_WINDOW_MIN = 180
 ODDS_JUMP = 0.08
 PRICE_WINDOW_MIN = 15
 # Gold 0.7% (2026-11-05, the metals desk's primary): on xyz:GOLD's 15m bars
 # of 2026-10-06..11-05 a 0.7% close-to-open move printed 4 times (1.0%: once),
 # about the rate silver's 1.2% (6) and Brent's 1.0% (12) alert at; p99.5 of
 # gold's 15m moves is 0.47%, so 0.7% is a real outlier, not noise.
-PRICE_SHOCK = {"xyz:BRENTOIL": 0.010, "xyz:CL": 0.010, "xyz:SILVER": 0.012, "xyz:GOLD": 0.007}
+# S&P 0.7% (2026-11-19, the sp500 desk): on xyz:SP500's 15m bars of
+# 2026-09-28..11-19 a 0.7% close-to-open move printed 5 times in 52 days
+# (2.9 a month; 0.6%: 9, 0.8%: 2), the rate gold's 0.7% alerts at; p99.5 of
+# its 15m moves is 0.41%.
+# HYPE 2.8% (2026-11-20, the candidate hype desk): a much louder coin than
+# any of the above -- its own 15m bars of 2026-09-28..11-20 put p90 of the
+# absolute close-to-open move at 0.61%, p99 at 1.40%, p99.5 at 1.71%. A
+# threshold at gold/sp500's own 0.7% would fire on roughly 1 in 25 bars of
+# HYPE (noise, not a headline); 2.8% is the level that alerts at the SAME
+# rate they do, 5 times in 52 days, 2.9 a month.
+PRICE_SHOCK = {"xyz:BRENTOIL": 0.010, "xyz:CL": 0.010, "xyz:SILVER": 0.012, "xyz:GOLD": 0.007,
+               "xyz:SP500": 0.007, "HYPE": 0.028}
 HEADLINE_BLACKOUT_MIN = 30
 HEADLINE_MIN_GAP_MIN = 30          # a headline rewrite still waits this long after the last thesis
 MAX_ALERTS_PER_DAY = 6             # per group; caps rewrite cost (~$1 each)
@@ -75,7 +144,12 @@ PRICE_REARM_MIN = PRICE_WINDOW_MIN  # one price-shock alert per coin per window,
 # (xyz:BRENTOIL p90 1.56% p95 1.93%; xyz:GOLD p90 0.66% p95 0.90%); Brent's
 # 1.75% catches that evening's +1.83%. One alert per coin per window.
 DRIFT_WINDOW_MIN = 240
-PRICE_DRIFT = {"xyz:BRENTOIL": 0.0175, "xyz:CL": 0.0175, "xyz:SILVER": 0.025, "xyz:GOLD": 0.009}
+# The S&P's 4h moves: p95 0.60% over 208 days of 1h bars, 0.76% over the last
+# 52 days of 15m bars (p99 1.10% / 1.37%); 0.75% sits at the recent p95.
+# HYPE's 4h moves (1h bars, 2026-04-26..11-20): p90 2.69%, p95 3.57%, p99
+# 5.72%; 3.5% sits at its own p95, the same methodology as the S&P's.
+PRICE_DRIFT = {"xyz:BRENTOIL": 0.0175, "xyz:CL": 0.0175, "xyz:SILVER": 0.025, "xyz:GOLD": 0.009,
+               "xyz:SP500": 0.0075, "HYPE": 0.035}
 DRIFT_REARM_MIN = DRIFT_WINDOW_MIN
 HISTORY_KEEP_MIN = DRIFT_WINDOW_MIN + 2   # minutes of mids the watcher keeps per coin
 KEEP_ALERTS = 100
@@ -93,7 +167,23 @@ NEWS_QUERIES = {
     "metals": ["Powell OR \"Federal Reserve\" OR \"rate cut\" when:1h",
                "gold price OR bullion OR \"central bank\" gold when:1h",
                "silver price OR precious metals OR tariff metals when:1h"],
+    # the sp500 desk (2026-11-19): the Fed, tariffs and Washington, the megacaps
+    "sp500": ["Powell OR \"Federal Reserve\" OR \"rate cut\" when:1h",
+              "tariffs OR \"trade deal\" OR \"government shutdown\" OR \"debt ceiling\" when:1h",
+              "Nvidia OR Apple OR Microsoft OR Amazon OR Alphabet OR Meta OR Tesla guidance when:1h"],
+    # the candidate hype desk (2026-11-20): the protocol itself, a security
+    # incident (existential for a perp DEX token), and bitcoin/crypto risk
+    # appetite it is beta-exposed to.
+    "hype": ["Hyperliquid when:1h", "crypto exchange hack OR exploit when:1h",
+             "bitcoin OR crypto market when:1h"],
 }
+
+# The names that carry about a third of the index's weight.
+_MEGACAP = r"(nvidia|apple|microsoft|amazon|alphabet|google|meta|tesla|broadcom)"
+_GUIDE = r"(guidance|forecast|outlook|earnings|results|revenue|profit)"
+_GUIDE_ACT = r"(miss|beat|cut|rais|slash|warn|lower|lift|top|disappoint|withdraw)"
+_TARIFF_ACT = (r"(impos|announc|rais|hik|doubl|paus|delay|suspend|lift|roll|exempt|retaliat|threaten|"
+               r"new|sweeping|reciprocal|struck down|strikes? down|rul)")
 
 _IRAN = r"(iran|iranian|tehran|hormuz|persian gulf|khamenei|araghchi|pezeshkian)"
 # Event words only. "war" and "sanction" are out on purpose: with a war on,
@@ -130,9 +220,57 @@ PATTERNS: Dict[str, List[Tuple[str, re.Pattern]]] = {
         ("yields/dollar shock", re.compile(r"\b(treasury yields?|real yields?|dollar|dxy|greenback)\b.*"
                                            r"\b(spike|surge|soar|plunge|tumble|crash|jump)\w*", re.I)),
     ],
+    # The S&P (2026-11-19). Event words only, like the groups above: a market
+    # wrap ("Stocks fall as ...") is dropped by PRICE_WRAP and the price shock
+    # catches the move itself.
+    "sp500": [
+        ("fed", re.compile(r"\b(powell|federal reserve|fomc|the fed|fed)\b.*\b(emergency|cut|hike|surprise|resign|fire)\w*",
+                            re.I)),
+        ("trump/fed", re.compile(r"\btrump\b.*\b(fed|powell|rates?)\b", re.I)),
+        ("tariffs", re.compile(rf"\btariffs?\b.*\b{_TARIFF_ACT}\w*|\b{_TARIFF_ACT}\w*\b.*\btariffs?\b", re.I)),
+        ("megacap", re.compile(rf"\b{_MEGACAP}\b.*\b{_GUIDE}\b.*\b{_GUIDE_ACT}\w*|"
+                               rf"\b{_MEGACAP}\b.*\b{_GUIDE_ACT}\w*\b.*\b{_GUIDE}\b", re.I)),
+        ("washington", re.compile(r"\b(government shutdown|debt ceiling|debt limit|u\.?s\.? default|"
+                                  r"credit rating|downgrad\w*)\b.*\b(begin|start|avert|end|deal|vote|fail|loom|"
+                                  r"u\.?s\.?|united states|treasur)\w*|"
+                                  r"\b(avert|end|deal|vote|fail)\w*\b.*\b(government shutdown|debt ceiling|debt limit)\b",
+                                  re.I)),
+        ("market stress", re.compile(r"\b(circuit breaker|trading halt\w*|flash crash|limit[- ]down|"
+                                     r"bank (failure|run|collapse)|fdic (seiz|tak)\w*)\b", re.I)),
+        ("yields shock", re.compile(r"\b(treasury yields?|10-year yields?|bond yields?)\b.*"
+                                    r"\b(spike|surge|soar|plunge|tumble|crash|jump)\w*", re.I)),
+    ],
+    # The candidate hype desk (2026-11-20). Event words only, like the groups
+    # above: a price wrap is caught by the price shock, not a news alert.
+    "hype": [
+        ("protocol", re.compile(r"\b(hyperliquid|hlp vault|assistance fund)\b.*\b(launch\w*|upgrad\w*|propos\w*|"
+                                r"vot\w*|pass\w*|reject\w*|buyback\w*|burn\w*|halt\w*|pause\w*|resum\w*|migrat\w*|"
+                                r"outag\w*|down\w*)\b", re.I)),
+        ("exploit", re.compile(r"\b(hyperliquid|hlp vault|perp dex|perpetual exchange|defi protocol|bridge|"
+                               r"crypto exchange)\b.*\b(exploit\w*|hack\w*|drain\w*|breach\w*|compromis\w*|"
+                               r"stolen|rug pull)\w*|\b(exploit\w*|hack\w*|drain\w*|stolen|rug pull)\w*\b.*"
+                               r"\b(hyperliquid|hlp vault|perp dex|bridge)\b", re.I)),
+        ("unlock", re.compile(r"\bhype\b.*\b(unlock\w*|vesting|cliff)\b|\b(unlock\w*|vesting|cliff)\b.*\bhype\b",
+                              re.I)),
+        ("competition", re.compile(r"\b(binance|coinbase|okx|bybit|kraken)\b.*\b(perp\w*|perpetual exchange|"
+                                   r"derivatives?|futures)\b|\b(perp\w*|perpetual exchange|derivatives?|futures)\b"
+                                   r".*\b(binance|coinbase|okx|bybit|kraken)\b", re.I)),
+        ("regulation", re.compile(r"\b(sec|cftc)\b.*\b(sue\w*|charg\w*|enforc\w*|approv\w*|reject\w*|rule\w*|"
+                                  r"propos\w*)\w*\b.*\b(crypto|digital assets?|stablecoins?|exchange)\b|"
+                                  r"\b(sec|cftc)\b.*\b(crypto|digital assets?|stablecoins?)\b.*"
+                                  r"\b(sue\w*|charg\w*|enforc\w*|approv\w*|reject\w*|rule\w*|propos\w*)\w*|"
+                                  r"\b(crypto market structure|stablecoin)\b.*\b(bill|act|law|legislation)\b.*"
+                                  r"\b(pass\w*|sign\w*|vote\w*|fail\w*)\w*", re.I)),
+        ("btc shock", re.compile(r"\bbitcoin\b.*\b(etf)\b.*\b(approv\w*|reject\w*|launch\w*|outflows?|inflows?)\w*|"
+                                 r"\b(crypto|bitcoin)\b.*\b(liquidat\w*|flash crash)\b", re.I)),
+    ],
 }
 ODDS_TERMS = {"oil": re.compile(r"(iran|hormuz|ceasefire|opec|oil)", re.I),
-              "metals": re.compile(r"(fed|rate cut|powell|recession|gold|iran|ceasefire)", re.I)}
+              "metals": re.compile(r"(fed|rate cut|powell|recession|gold|iran|ceasefire)", re.I),
+              "sp500": re.compile(r"(fed|rate cut|powell|recession|shutdown|tariff|trade deal|s&p|debt ceiling)",
+                                  re.I),
+              "hype": re.compile(r"(hyperliquid|hype token|bitcoin|crypto regulation|crypto market|"
+                                 r"stablecoin|sec crypto)", re.I)}
 
 # Trump's own posts (operator, 2026-11-05: "A Truth Social / X feed for the
 # headline watcher"). A post is short and not headline-shaped: "Oil Prices
@@ -157,6 +295,8 @@ _POST_FED = (r"(the fed|federal reserve|fomc|interest rates?|rate cuts?|rate hik
              r"(jerome|chairman|\"?too late\"?) powell)")
 _POST_FED_NAME = r"(powell|hassett|warsh)"
 _POST_FED_CTX = r"(fed|federal reserve|rates?|interest|too late|jerome|chairman|inflation)"
+_POST_SP_TARIFF_WHO = (r"(china|chinese|india\w*|canad\w*|mexic\w*|europe\w*|eu|japan\w*|korea\w*|taiwan\w*|"
+                       r"vietnam\w*|chips?|semiconductors?|pharma\w*|autos?|cars|steel|aluminum|imports?)")
 POST_PATTERNS: Dict[str, List[Tuple[str, re.Pattern]]] = {
     "oil": [
         ("trump:iran", re.compile(rf"\b{_IRAN}\w*\b", re.I)),
@@ -176,6 +316,17 @@ POST_PATTERNS: Dict[str, List[Tuple[str, re.Pattern]]] = {
         # gold since 2026-11-05: a post on Iran is the safe-haven headline
         # (the 11-02 "there will not be a War with Iran" post moved gold too).
         ("trump:iran", re.compile(rf"\b{_IRAN}\w*\b", re.I)),
+    ],
+    # The S&P (2026-11-19): the Fed (the metals patterns: a Fed name needs Fed
+    # context), tariffs with a trade partner or a sector next to them, and the
+    # market itself by name.
+    "sp500": [
+        ("trump:fed", re.compile(rf"\b{_POST_FED}\b", re.I)),
+        ("trump:fed", re.compile(rf"\b{_POST_FED_NAME}\b.*\b{_POST_FED_CTX}\b|\b{_POST_FED_CTX}\b.*\b{_POST_FED_NAME}\b",
+                                 re.I | re.S)),
+        ("trump:tariff", re.compile(rf"\btariff\w*\b.*\b{_POST_SP_TARIFF_WHO}\b|\b{_POST_SP_TARIFF_WHO}\b.*\btariff\w*\b",
+                                    re.I | re.S)),
+        ("trump:markets", re.compile(r"\b(stock market|stocks|wall street|s&p|dow jones|nasdaq|401\(?k\)?s?)\b", re.I)),
     ],
 }
 # An archived image/video post with no words, or a bare link: nothing to read.
@@ -333,11 +484,67 @@ _METALS_BEAR = [
     r"\bpeace (deal|agreement|talks|accord)\b", r"\b(peace |nuclear )?deal\b", r"\bde-?escalat\w*", r"\brisk[- ]on\b",
     r"\b(central banks?|pboc|people's bank|reserve bank)\b.*\b(sell|sold|dump|cut|reduc)\w*",
 ]
+# The S&P (2026-11-19): risk-on is bullish. A Fed cut, a tariff pause or a
+# trade deal, a ceasefire, a shutdown averted, a megacap beating or raising;
+# bearish the mirror: a hike or hawkish hold, new or higher tariffs, a deal
+# that fails, an attack or an escalation, a shutdown, a downgrade, a miss or
+# a cut to guidance, yields spiking, a bank failing. "no rate cut" and "deal
+# fails" are rewritten first, as for the other groups.
+_SP500_NEGATIONS = [_METALS_NEGATIONS[0], _OIL_NEGATIONS[0], _OIL_NEGATIONS[1], _OIL_NEGATIONS[2]]
+_SP500_BULL = [
+    r"\bwaraverted\b", r"\bemergency\b.*\bcut", r"\b(rate|interest rate) cuts?\b", r"\bcuts? (interest )?rates?\b",
+    r"\bcut by \d+", r"\bdovish\b", r"\bsoft landing\b", r"\bstimulus\b",
+    r"\btariffs?\b.*\b(paus|delay|suspend|lift|roll(ed|s|ing)? back|exempt|cut|lower|struck down)\w*",
+    r"\b(struck|strikes?) down\b.*\btariffs?\b",
+    r"\b(paus|delay|suspend|lift|roll(ed|s|ing)? back|exempt|lower)\w*\b.*\btariffs?\b",
+    r"\btrade (deal|agreement|truce|pact)\b", r"\bceasefire\b", r"\bcease-fire\b", r"\btruce\b",
+    r"\bpeace (deal|agreement|talks|accord)\b", r"\bde-?escalat\w*", r"\brisk[- ]on\b",
+    r"\bshutdown\b.*\b(avert|end|ends|ended|over|deal)\w*", r"\b(avert|end|ends|ended)\w*\b.*\bshutdown\b",
+    r"\b(beat|beats|tops?|topped|crush\w*)\b.*\b(estimates?|expectations?|forecasts?)\b",
+    r"\b(rais|lift|boost|hik)\w*\b.*\b(guidance|forecast|outlook)\b",
+    r"\byields?\b.*\b(plunge|tumble|slide|fall|drop)\w*",
+]
+_SP500_BEAR = [
+    r"\bhawkishhold\b", r"\bdealfails\b", r"\b(rate|interest rate) hikes?\b", r"\bhikes? (interest )?rates?\b",
+    r"\bhawkish\b", r"\bhigher for longer\b", r"\brecession\b", r"\bstagflation\b",
+    r"\btariffs?\b.*\b(impos|rais|hik|doubl|new|sweeping|reciprocal|retaliat|threaten|escalat)\w*",
+    r"\b(impos|rais|hik|doubl|new|sweeping|reciprocal|retaliat|threaten)\w*\b.*\btariffs?\b",
+    r"\btrade war\b", r"\battack\w*", r"\bstrikes?\b(?! (down|a deal|the deal|deal|agreement|accord|truce))",
+    r"\bmissiles?\b", r"(?<!de-)(?<!de)\bescalat\w*", r"\bretaliat\w*", r"\binva(de|sion)\w*", r"\brisk[- ]off\b",
+    r"\bshutdown\b.*\b(begin|start|loom|drag|extend)\w*", r"\bdowngrad\w*", r"\bdefault\b",
+    r"\b(miss|misses|missed|disappoint\w*)\b.*\b(estimates?|expectations?|forecasts?)\b",
+    r"\b(cut|cuts|slash|lower|withdraw)\w*\b.*\b(guidance|forecast|outlook)\b", r"\bprofit warning\b",
+    r"\byields?\b.*\b(surge|spike|soar|jump|climb)\w*", r"\bbank (failure|run|collapse)\b",
+    r"\bcircuit breaker\b", r"\bflash crash\b",
+]
+# The candidate hype desk (2026-11-20): buybacks/burns and revenue growth are
+# bullish for a token whose desk revenue funds them; a hack/exploit/bridge
+# drain is bearish and specific to it (an existential risk for a perp DEX, not
+# a generic risk-off word); crypto risk appetite (rate cuts, a bitcoin ETF
+# catalyst) carries over the same way it does for every risk asset.
+_HYPE_NEGATIONS = [_METALS_NEGATIONS[0]]
+_HYPE_BULL = [
+    r"\bbuyback\w*\b", r"\bburn\w*\b", r"\brevenue\b.*\b(record|surg\w*|grow\w*|ris\w*|jump\w*)\w*",
+    r"\b(rate|interest rate) cuts?\b", r"\bcuts? (interest )?rates?\b", r"\bdovish\b", r"\brisk[- ]on\b",
+    r"\betf\b.*\b(approv\w*|launch\w*|inflows?)\b|\b(approv\w*|launch\w*|inflows?)\b.*\betf\b",
+    r"\blist\w*\b.*\bhype\b|\bhype\b.*\blist\w*\b",
+]
+_HYPE_BEAR = [
+    r"\bexploit\w*\b", r"\bhack\w*\b", r"\bdrain\w*\b", r"\bbreach\w*\b", r"\bstolen\b", r"\brug pull\b",
+    r"\b(rate|interest rate) hikes?\b", r"\bhikes? (interest )?rates?\b", r"\bhawkish\b", r"\brisk[- ]off\b",
+    r"\betf\b.*\b(reject\w*|outflows?)\b|\b(reject\w*|outflows?)\b.*\betf\b",
+    r"\bunlock\w*\b.*\b(dump\w*|sell\w*)\w*", r"\bflash crash\b", r"\bliquidat\w*\b.*\bcascad\w*",
+    r"\bsec\b.*\b(sue\w*|charg\w*|enforc\w*)\w*", r"\bdelist\w*\b",
+]
 DIRECTION_WORDS: Dict[str, Dict[str, Any]] = {
     "oil": {"negations": _OIL_NEGATIONS, "bull": [re.compile(p, re.I | re.S) for p in _OIL_BULL],
             "bear": [re.compile(p, re.I | re.S) for p in _OIL_BEAR]},
     "metals": {"negations": _METALS_NEGATIONS, "bull": [re.compile(p, re.I | re.S) for p in _METALS_BULL],
                "bear": [re.compile(p, re.I | re.S) for p in _METALS_BEAR]},
+    "sp500": {"negations": _SP500_NEGATIONS, "bull": [re.compile(p, re.I | re.S) for p in _SP500_BULL],
+              "bear": [re.compile(p, re.I | re.S) for p in _SP500_BEAR]},
+    "hype": {"negations": _HYPE_NEGATIONS, "bull": [re.compile(p, re.I | re.S) for p in _HYPE_BULL],
+            "bear": [re.compile(p, re.I | re.S) for p in _HYPE_BEAR]},
 }
 # Polymarket questions: +1 when a rising YES is bullish for the group's coins.
 ODDS_POLARITY: Dict[str, List[Tuple[int, re.Pattern]]] = {
@@ -357,6 +564,19 @@ ODDS_POLARITY: Dict[str, List[Tuple[int, re.Pattern]]] = {
                         r"invade\w*|invasion|escalat\w*|(above|over|reach|hit) \$)\b", re.I)),
     ],
 }
+ODDS_POLARITY["sp500"] = [
+    (-1, re.compile(r"\b(rate hike|hikes? rates?|raise rates?|hold rates?|no (rate )?cut|recession|shutdown|default|"
+                    r"downgrade|tariffs?|trade war|war|strikes?|attack\w*|invade\w*|invasion|escalat\w*|"
+                    r"(below|under) \$?\d[\d,.]*)\b", re.I)),
+    (+1, re.compile(r"\b(rate cut|cuts? (interest )?rates?|lower rates?|ceasefire|cease-fire|truce|peace|"
+                    r"trade deal|(above|over|reach|hit) \$?\d[\d,.]*)\b", re.I)),
+]
+ODDS_POLARITY["hype"] = [
+    (-1, re.compile(r"\b(rate hike|hikes? rates?|raise rates?|hold rates?|no (rate )?cut|recession|hack\w*|"
+                    r"exploit\w*|sue\w*|charg\w*|(below|under) \$?\d[\d,.]*)\b", re.I)),
+    (+1, re.compile(r"\b(rate cut|cuts? (interest )?rates?|lower rates?|approv\w*|list\w*|"
+                    r"(above|over|reach|hit) \$?\d[\d,.]*)\b", re.I)),
+]
 _ODDS_TITLE = re.compile(r"(\d+)%\s*->\s*(\d+)%\s*$")
 _PCT_IN_TITLE = re.compile(r"([+-]\d+(?:\.\d+)?)%")
 
@@ -546,8 +766,28 @@ def trusted_source(source: Optional[str]) -> bool:
     return True if not source else bool(_TRUSTED_RX.search(source))
 
 
+def _is_recent_duplicate(group: str, title: str, recent: List[Dict[str, Any]], now_ms: int) -> bool:
+    """True when `title` is a near-duplicate (textnorm.is_near_duplicate,
+    NEWS_DEDUP_MIN_OVERLAP) of a title `news_alerts` already alerted on for
+    `group` inside NEWS_DEDUP_WINDOW_MIN. Pure; does not mutate `recent`."""
+    cutoff = now_ms - NEWS_DEDUP_WINDOW_MIN * MIN_MS
+    return any(r.get("group") == group and int(r.get("at_ms") or 0) >= cutoff
+               and is_near_duplicate(title, r.get("title") or "", min_overlap=NEWS_DEDUP_MIN_OVERLAP)
+               for r in recent)
+
+
+def _remember_recent(group: str, title: str, recent: List[Dict[str, Any]], now_ms: int) -> None:
+    """Record `title` for `_is_recent_duplicate`, dropping anything already
+    past NEWS_DEDUP_WINDOW_MIN. Mutates `recent` in place (same list object
+    the caller persists, e.g. in headline_state.json)."""
+    cutoff = now_ms - NEWS_DEDUP_WINDOW_MIN * MIN_MS
+    recent[:] = [r for r in recent if int(r.get("at_ms") or 0) >= cutoff]
+    recent.append({"group": group, "title": title, "at_ms": now_ms})
+
+
 def news_alerts(group: str, items: Iterable[Dict[str, Any]], seen: set, now_ms: int, *,
-                shared: bool = False, triggers: bool = False) -> List[Dict[str, Any]]:
+                shared: bool = False, triggers: bool = False,
+                recent: Optional[List[Dict[str, Any]]] = None) -> List[Dict[str, Any]]:
     """New matching headlines from trusted sources, feed order. Adds every
     item's key to `seen` (matching or not) so a headline alerts once. Items:
     parse_rss_items rows ({title, url, source, published_at}). `shared`: the
@@ -557,7 +797,19 @@ def news_alerts(group: str, items: Iterable[Dict[str, Any]], seen: set, now_ms: 
     (sources/providers.NewsItem) also match data/oil_triggers.json; the row
     then carries `provider`, `sentiment` and `received_ms` for the event log.
     The dedup key stays the title, so a headline Finlight pushes and Google
-    News lists two minutes later alerts once."""
+    News lists two minutes later alerts once.
+
+    A headline with no readable published_at (and, for a provider item, no
+    received_at either) is dropped: age unknown is treated as stale, not
+    fresh (MAX_AGE_MIN's docstring has the real-world case this covers).
+
+    `recent`: the caller's persisted near-duplicate pool (a list of
+    {group, title, at_ms}, mutated in place -- scripts/trigger_watch.py
+    keeps it in headline_state.json next to `seen`). None (the default, and
+    every call site that does not pass it) skips the near-duplicate check
+    entirely, matching the old behavior; only a title that MATCHES a pattern
+    is added to the pool, so a non-matching title never blocks a real one
+    later. See NEWS_DEDUP_MIN_OVERLAP's docstring for the threshold."""
     out = []
     for it in items:
         title = (it.get("title") or "").strip()
@@ -569,21 +821,28 @@ def news_alerts(group: str, items: Iterable[Dict[str, Any]], seen: set, now_ms: 
         seen.add(k)
         pub = it.get("published_at")
         pub_ms = int(pub.timestamp() * 1000) if isinstance(pub, datetime) else None
-        if pub_ms is not None and now_ms - pub_ms > MAX_AGE_MIN * MIN_MS:
+        rec_at = it.get("received_at")
+        rec_ms = int(rec_at.timestamp() * 1000) if isinstance(rec_at, datetime) else None
+        age_ms = pub_ms if pub_ms is not None else rec_ms
+        if age_ms is None or now_ms - age_ms > MAX_AGE_MIN * MIN_MS:
             continue
         if not trusted_source(it.get("source")):
             continue
         label = match_headline(group, title, triggers=triggers)
-        if label:
-            row = {"group": group, "kind": "news", "label": label, "title": title[:200],
-                   "source": it.get("source"), "url": it.get("url"), "at_ms": now_ms,
-                   "published_ms": pub_ms, "direction": text_direction(group, title)}
-            if it.get("provider"):
-                rec = it.get("received_at")
-                row["provider"] = it["provider"]
-                row["sentiment"] = it.get("sentiment")
-                row["received_ms"] = int(rec.timestamp() * 1000) if isinstance(rec, datetime) else None
-            out.append(row)
+        if not label:
+            continue
+        if recent is not None and _is_recent_duplicate(group, title, recent, now_ms):
+            continue
+        row = {"group": group, "kind": "news", "label": label, "title": title[:200],
+               "source": it.get("source"), "url": it.get("url"), "at_ms": now_ms,
+               "published_ms": pub_ms, "direction": text_direction(group, title)}
+        if it.get("provider"):
+            row["provider"] = it["provider"]
+            row["sentiment"] = it.get("sentiment")
+            row["received_ms"] = rec_ms
+        out.append(row)
+        if recent is not None:
+            _remember_recent(group, title, recent, now_ms)
     return out
 
 

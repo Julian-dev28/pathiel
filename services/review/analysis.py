@@ -108,6 +108,13 @@ def _pair(r: Dict[str, Any]) -> Optional[str]:
 DIMENSIONS: List[tuple] = [
     ("all", lambda r: "all"),
     ("desk", lambda r: r.get("desk")),
+    # owner=desk vs owner=operator (ledger.py's owner_of, 2026-11-18): the
+    # desk's own stats sit right next to "all" in the same slice table
+    # instead of the operator's hand trades silently polluting every other
+    # slice's numbers. A record with no owner (the CSV regression fixture,
+    # or a pre-2026-11-18 record not yet rebuilt under schema 3) sits in
+    # neither bucket -- never guessed into one.
+    ("owner", lambda r: r.get("owner")),
     ("side", lambda r: r.get("side")),
     ("cause", _cause),
     ("week", lambda r: None if r.get("weekend") is None else ("weekend" if r["weekend"] else "weekday")),

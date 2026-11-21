@@ -6,12 +6,62 @@ All notable changes to pathiel. The format follows
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-21
+
+### Security
+
+- The order tools leave alone what pathiel did not place. Every order now
+  carries a pathiel client order id (`cloid`), and `close_position`,
+  `set_stop`, `set_target`, `cancel_order`, `place_bracket` with `add` and
+  `sweep_brackets` refuse to act on a position or order you placed
+  yourself (in the Hyperliquid app, or any other way) unless the call
+  passes `operator_override: true`. `sweep_brackets` only reports on such a
+  position. A failed ownership read refuses rather than guesses.
+
 ### Added
 
+- A HYPE desk, `hype`, trading HYPE (Hyperliquid's own token, main dex)
+  long or short. Off by default. Its stop is a pure ATR multiple with no
+  price floor and its own leverage cap is the venue's max, 10x (config
+  `desk_max_leverage`). New entries are vetoed against the sign of the
+  120-hour return (`next_trade.trend_gate`, built for oil 2026-11-13 and
+  found not to help there; it does here). Its backtest found the plain
+  rule every other desk uses loses on HYPE and the trend-gated version
+  has an edge.
+- On HYPE the desk does nothing while a position or resting order it did
+  not place sits on the coin, the same guard the S&P desk has:
+  `desk_slot.py` answers `slot: operator`, and `place_bracket`,
+  `sweep_brackets` and `set_leverage` refuse.
+- The event calendar and the headline watcher cover HYPE: FOMC and CPI
+  hold new entries, token unlocks reach the thesis as a catalyst
+  automatically (any crypto-ticker desk), and the headline watcher has its
+  own patterns (protocol actions, an exploit, a token unlock, exchange
+  competition, crypto regulation, a bitcoin ETF/liquidation shock).
+- An S&P 500 desk, `sp500`, trading `xyz:SP500` long or short. Off by
+  default. It has its own stop and target numbers and its own leverage cap
+  (config `desk_max_leverage`); every other desk keeps the risk profile's
+  `max_leverage`. Its backtest found no edge in the rule alone.
+- On `xyz:SP500` the desk does nothing while a position or resting order it
+  did not place sits on the coin: `desk_slot.py` answers `slot: operator`,
+  and `place_bracket`, `sweep_brackets` and `set_leverage` refuse.
+- The event calendar and the headline watcher cover the S&P: FOMC, CPI and
+  the monthly jobs report hold new entries, and megacap earnings rows can
+  be added with coins `sp500`.
 - `scripts/glama_health.py` (maintainers): Glama's maintenance data for the
   server next to GitHub's own Dependabot, code scanning and CI state, so an
   "unavailable" line on Glama traces to a GitHub setting or to the Glama AI
   app not being installed on the repo.
+
+### Changed
+
+- The README opens with the two ways pathiel works out of the box:
+  research only (no account, no key) and research plus trading (an API
+  wallet connected with one signature), and lists all four desk briefs.
+
+### Fixed
+
+- The Levels-card route tests pinned the event-blackout clock. They read
+  the real clock and went red on weekends, inside the oil weekend window.
 
 ## [0.7.2] - 2026-11-17
 
@@ -396,6 +446,7 @@ builder fee, and listing metadata for the MCP directories. Release notes:
   `/pathiel:setup`, installed from this repo. Mainnet only.
 
 [Unreleased]: https://github.com/Julian-dev28/pathiel/compare/v0.7.2...HEAD
+[0.8.0]: https://github.com/Julian-dev28/pathiel/releases/tag/v0.8.0
 [0.7.2]: https://github.com/Julian-dev28/pathiel/releases/tag/v0.7.2
 [0.7.1]: https://github.com/Julian-dev28/pathiel/releases/tag/v0.7.1
 [0.7.0]: https://github.com/Julian-dev28/pathiel/releases/tag/v0.7.0

@@ -69,6 +69,21 @@ import pytest  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
+def _desk_log_isolation(monkeypatch, tmp_path):
+    """No test may append to the REAL shared desk log
+    (/tmp/oil-loop/progress.log, which the live desk ticks write and the Desk
+    page's Loop Log card reads). 2026-11-20: services/intel/tests/
+    test_finlight_watch.py drove trigger_watch.watch() without stubbing its
+    new _append_watch_line, and every pytest run (the pre-commit hook too)
+    wrote fake "Tanker struck by missile ... mid=112.04" WATCH lines onto
+    the operator's live oil log. Redirect the default for every test;
+    a test that sets PATHIEL_<DESK>_LOG still wins, as in production."""
+    from services.strategies import desk_log
+    monkeypatch.setattr(desk_log, "DEFAULT_LOG_PATH", str(tmp_path / "progress.log"))
+    yield
+
+
+@pytest.fixture(autouse=True)
 def _fresh_account_snapshot():
     """pathiel.client.account_snapshot shares one account read per address
     across the whole process (that is its job in the server); one test's

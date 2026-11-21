@@ -25,16 +25,42 @@
  */
 
 const REFRESH_MS = 60_000;   // 30s starved the venue budget (2026-10-23)
-const LEVERAGE_CHOICES = [5, 10, 20];
+// Every rung the Next-trade leverage picker can ever offer, cut down to a
+// desk's own cap (leverageChoicesFor below) -- 2026-11-20 bug report: a
+// fixed [5, 10, 20] (oil's own ladder) showed a 20x button on HYPE, whose
+// venue cap is 10x, with 20x selected by default on every desk.
+const LEVERAGE_LADDER = [5, 10, 20, 50];
+// The fallback cap before GET /api/desks/active's `leverage_cap` has loaded
+// (or for an older cached server that doesn't send one yet) -- oil's own
+// number, the ladder's long-standing default.
 const DEFAULT_LEVERAGE = 20;
 const INTEL_CAP = 6;   // small tables, per the ADHD-first brief
 
 let activeDesk = 'oil';
 let activeDesks = ['oil'];
-// id -> {id, name, primary_coin, equity_share} from GET /api/desks/active's
-// `desks` list (2026-10-31, silver joins oil): the switcher's label and the
-// "sizes off X% of equity" note both read this, never a hardcoded share.
+// id -> {id, name, primary_coin, equity_share, leverage_cap} from GET
+// /api/desks/active's `desks` list (2026-10-31, silver joins oil): the
+// switcher's label, the "sizes off X% of equity" note, and the Next-trade
+// leverage picker's rungs + default all read this, never a hardcoded share
+// or cap.
 let activeDeskMeta = {};
+
+/** The rungs of LEVERAGE_LADDER at or under `cap` (hype 10x -> [5, 10],
+ *  sp500 50x -> [5, 10, 20, 50], oil 20x -> [5, 10, 20]). Never empty: a
+ *  cap under 5x still gets its own single button. Pure: no DOM. */
+function leverageChoicesFor(cap) {
+  const choices = LEVERAGE_LADDER.filter(l => l <= cap);
+  return choices.length ? choices : [cap];
+}
+
+/** This desk's own leverage cap (GET /api/desks/active's `leverage_cap`),
+ *  or DEFAULT_LEVERAGE before that has loaded / for an older cached
+ *  server. */
+function currentDeskCap() {
+  const meta = activeDeskMeta[activeDesk];
+  const cap = meta && Number(meta.leverage_cap);
+  return (cap != null && isFinite(cap) && cap > 0) ? cap : DEFAULT_LEVERAGE;
+}
 
 function show(id, on) {
   const el = document.getElementById(id);
@@ -83,7 +109,7 @@ async function loadCall() {
   } catch (e) {
     show('call-loading', false);
     setErrorDetail('call', e);
-    reportRefreshFailure('oil desk call', e, document.getElementById('call-error'));
+    reportRefreshFailure(`${activeDesk} desk call`, e, document.getElementById('call-error'));
     renderIntel(null, e);
     lastThesisCall = null;
     renderPositionMismatch();
@@ -149,6 +175,7 @@ function renderPositionMismatch() {
   el.hidden = !message;
   renderCallLeverage();
   renderLine();
+  renderLevels();
 }
 
 /** The call card's Leverage row: the position's own leverage once one is
@@ -214,9 +241,20 @@ function renderCallCard(brief, deskName) {
 
 let currentLeverage = DEFAULT_LEVERAGE;
 
+/** Resets currentLeverage to the now-active desk's own cap and repaints the
+ *  picker -- called whenever `activeDesk` changes (loadActiveDesks's first
+ *  resolution, and the switcher's own change handler), never on an
+ *  ordinary re-render, so a reader's manual pick on one desk survives a
+ *  plain data refresh of that SAME desk. */
+function resetLeverageForActiveDesk() {
+  currentLeverage = currentDeskCap();
+  renderLevSeg();
+}
+
 function renderLevSeg() {
   const seg = document.getElementById('line-seg');
-  seg.innerHTML = LEVERAGE_CHOICES.map(lev => `
+  const choices = leverageChoicesFor(currentDeskCap());
+  seg.innerHTML = choices.map(lev => `
     <span class="lev-radio-wrap">
       <input type="radio" name="line-leverage-choice" class="lev-radio" id="line-opt-${lev}"
              value="${lev}" ${lev === currentLeverage ? 'checked' : ''}>
@@ -261,7 +299,7 @@ function renderLine() {
   if (line.error) {
     show('line-card', false); show('line-empty', true);
     document.getElementById('line-empty-detail').textContent = 'Could not load the leverage line: ' + line.error.message;
-    reportRefreshFailure('oil desk line', line.error, document.getElementById('line-empty'));
+    reportRefreshFailure(`${activeDesk} desk line`, line.error, document.getElementById('line-empty'));
     return;
   }
   if (!line.ok && !line.verdict) {
@@ -273,6 +311,22 @@ function renderLine() {
   }
   if (line.source === 'desk_rules') { paintNextTrade(line); return; }
   paintLine(line, false);
+}
+
+/** The blockers from a next_trade() answer that are NOT already said, in
+ *  full, by the verdict: next_trade.py's trend-gate and entry-delay blocks
+ *  both set `verdict` to "waits: <reason>" AND prepend that SAME `reason`
+ *  to `blockers` (other callers, e.g. the MCP brief's live_rule_line(),
+ *  read verdict alone and need the full reason there). 2026-11-20 bug
+ *  report: on HYPE, the Desk page's "Mid X: the tick waits: 120h return
+ *  ... downtrend." sentence was followed by "Now: 120h return ...
+ *  downtrend." — the exact same clause twice. The main rule's own blockers
+ *  (R too low, leverage too wide, chase, break) never hit this: their
+ *  verdict text is a short paraphrase, not the blocker's own words, so
+ *  nothing here is ever wrongly dropped. Pure: no DOM. */
+function extraBlockers(n) {
+  const verdict = (n && n.verdict) || '';
+  return ((n && n.blockers) || []).filter(b => !verdict.includes(b));
 }
 
 /** The next trade by the tick's own rules (GET /api/desks/{id}/next): the
@@ -294,11 +348,12 @@ function paintNextTrade(n) {
   // ATR (services/strategies/next_trade.py::stop_buffer_for) -- read the
   // server's own number, never hardcode "0.75" for every desk's coin.
   const bufText = n.stop_buffer != null ? fmtPrice(n.stop_buffer) : '—';
+  const extra = extraBlockers(n);
   const parts = [
     `Mid ${fmtPrice(n.mid)}: the tick ${n.verdict}.`,
     `Stop ${fmtPrice(n.stop_px)} (${bufText} ${long ? 'under the 24h low' : 'over the 24h high'} ${fmtPrice(long ? r24.low : r24.high)}),`
       + ` target ${fmtPrice(n.tp_px)} (0.5% inside the 24h ${long ? 'high' : 'low'} ${fmtPrice(n.structure_tp_px)}), ${Number(n.min_r)}R or better.`,
-    n.blockers && n.blockers.length ? `Now: ${n.blockers.join('; ')}.` : '',
+    extra.length ? `Now: ${extra.join('; ')}.` : '',
   ];
   document.getElementById('line-reason').textContent = parts.filter(Boolean).join(' ');
 }
@@ -406,6 +461,11 @@ function renderWalletAccount(account, snapshot) {
   const marginLine = `<div class="note">Equity ${esc(fmtMoney(equity))} · Margin in use ${esc(fmtMoney(marginUsed))}`
     + (equity > 0 ? ` (${Math.round(marginUsed / equity * 100)}%)` : '')
     + ` · Free ${esc(fmtMoney(Math.max(0, equity - marginUsed)))}</div>`;
+  // Per-dex split (main vs. xyz, 2026-11-20: HYPE trades on main while oil
+  // and the S&P trade on xyz — the combined Equity line above hid that a
+  // HYPE position's margin sits on a different dex than oil's). Only once
+  // there is more than one dex to split across; `dexEquityLine` below.
+  const dexEquity = dexEquityLine(snapshot.accounts || []);
 
   const head = `
     <div class="dc-head">
@@ -428,7 +488,7 @@ function renderWalletAccount(account, snapshot) {
       ? `<div class="note">Equity ${esc(fmtMoney(equity))}. No open position; the resting ${resting.length === 1 ? 'entry' : 'entries'} below ${resting.length === 1 ? 'holds' : 'hold'} the account's one slot until it fills or is cancelled.</div>`
       : `<div class="note">Equity ${esc(fmtMoney(equity))}. No open positions.</div>`;
     const body = failed ? failed : flatNote;
-    return `<div class="card" style="margin-bottom:14px">${head}${body}${strandedNote}${restingBlock}${stale}</div>`;
+    return `<div class="card" style="margin-bottom:14px">${head}${body}${dexEquity}${strandedNote}${restingBlock}${stale}</div>`;
   }
 
   // uPnL in dollars and ROE % in its own column, the way Hyperliquid
@@ -462,13 +522,29 @@ function renderWalletAccount(account, snapshot) {
       <td>${p.naked ? '<span class="badge b-fail">NAKED</span>' : ''}</td>
     </tr>`).join('');
 
-  return `<div class="card" style="margin-bottom:14px">${head}${marginLine}${failed}${stale}
+  return `<div class="card" style="margin-bottom:14px">${head}${marginLine}${dexEquity}${failed}${stale}
     <div class="scroll-x"><table>
       <thead><tr><th>Dex</th><th>Coin</th><th>Side</th><th class="num">Size</th><th class="num">Entry</th><th class="num">Mark</th><th class="num">P&amp;L</th><th class="num">ROE %</th><th class="num">R now</th>
         <th class="num">Lev</th><th class="num">Margin</th><th class="num">Liq</th><th class="num">Dist</th>
         <th>Stop</th><th>Target</th><th></th></tr></thead>
       <tbody>${rows}</tbody>
     </table></div>${strandedNote}${restingBlock}</div>`;
+}
+
+/** "Equity by dex: main $116.00 · xyz $70.00" — one entry per dex this
+ *  account holds margin on (services/accounts/positions.py's
+ *  `_dexes_with_margin`: main whenever it has >= $1, every HIP-3 dex with a
+ *  position or >= $1 of equity). '' with fewer than two dexes: the combined
+ *  Equity line above already says the whole story then. main sorts first
+ *  since it is the account's home dex; HYPE (2026-11-20) trades there while
+ *  oil and the S&P trade on xyz, so a desk with an open HYPE position and
+ *  no xyz business still shows up correctly as "main $X" alone. */
+function dexEquityLine(accounts) {
+  if (!accounts || accounts.length < 2) return '';
+  const parts = [...accounts]
+    .sort((a, b) => (a.dex === 'main' ? -1 : b.dex === 'main' ? 1 : 0))
+    .map(a => `${esc(a.dex)} ${esc(fmtMoney(a.equity_usd || 0))}`);
+  return `<div class="note muted">Equity by dex: ${parts.join(' · ')}</div>`;
 }
 
 async function loadWallets() {
@@ -516,28 +592,129 @@ async function loadWallets() {
 
 // ── 3. LEVELS ────────────────────────────────────────────────────────────────
 
+// position_line.js's own export, loaded just before this file (see the
+// PositionLine fallback above). entry_rows.js, loaded right after it: the
+// pure word/badge builder for the three rows below.
+const EntryRows = window.PathielEntryRows
+  || { entryRows: () => ({ thesis: null, live: null, distance: null, inPosition: false }) };
+
+// The last GET /api/desks/{id}/levels payload, so renderLevels() can
+// repaint (position/thesis changed) without a new fetch — same convention
+// as lastCallLine/renderLine().
+let lastLevels = null;
+
 async function loadLevels() {
   show('levels-loading', true); show('levels-error', false);
   try {
-    const l = await fetchJson(`/api/desks/${encodeURIComponent(activeDesk)}/levels`);
+    lastLevels = await fetchJson(`/api/desks/${encodeURIComponent(activeDesk)}/levels`);
     show('levels-loading', false);
-    const stats = document.getElementById('levels-stats');
-    const last = l.last_closed_1h;
-    stats.innerHTML = `
-      <div><div class="sec-label">Mid</div><div class="kv">${fmtPrice(l.mid)}</div></div>
-      <div><div class="sec-label">Last closed 1h</div><div class="kv">${last ? fmtPrice(last.close) : '—'}</div></div>
-      <div><div class="sec-label">8h range</div><div class="kv">${l.range_8h ? fmtPrice(l.range_8h.low) + ' – ' + fmtPrice(l.range_8h.high) : '—'}</div></div>
-      <div><div class="sec-label">24h range</div><div class="kv">${l.range_24h ? fmtPrice(l.range_24h.low) + ' – ' + fmtPrice(l.range_24h.high) : '—'}</div></div>
-      <div><div class="sec-label">48h range</div><div class="kv">${l.range_48h ? fmtPrice(l.range_48h.low) + ' – ' + fmtPrice(l.range_48h.high) : '—'}</div></div>
-      <div><div class="sec-label">ATR14 (1h)</div><div class="kv">${l.atr14_1h != null ? fmtPrice(l.atr14_1h) + ' (' + pctUnsigned(l.atr14_pct != null ? l.atr14_pct / 100 : null) + ')' : '—'}</div></div>
-      <div><div class="sec-label">Mid position in 24h range</div><div class="kv">${l.mid_pos_in_24h != null ? pctUnsigned(l.mid_pos_in_24h) : '—'}</div></div>`;
+    renderLevels();
     show('levels-stats', true);
   } catch (e) {
     show('levels-loading', false);
     show('levels-stats', false);
+    lastLevels = null;
     setErrorDetail('levels', e);
-    reportRefreshFailure('oil levels', e, document.getElementById('levels-error'));
+    reportRefreshFailure(`${activeDesk} levels`, e, document.getElementById('levels-error'));
   }
+}
+
+/** Paints #levels-stats from `lastLevels` (the candle ranges, unchanged)
+ *  plus three entry rows built by entry_rows.js: the thesis's own entry,
+ *  the live entry next_trade()'s rule will act on (or the open position's
+ *  own entry/stop/target when one is open on this call's coin+side, so
+ *  this card never shows a pending entry the Wallets table already filled),
+ *  and the mid's distance to it. Re-run from renderPositionMismatch() too
+ *  (same as renderLine()) so a position or thesis update repaints this
+ *  without waiting for the next /levels poll. */
+/** "1.865 (2.1%, 2.3 ATR)" from the Levels card's distance-to-live-entry
+ *  fields (services/strategies/entry_card.py's `_distance`); "at the mid"
+ *  when the tick would buy/sell right here (distance 0) instead of the
+ *  useless "0.00000 (0.0%, 0.0 ATR)" (2026-11-20 bug report); "—" with
+ *  nothing to show (no thesis, or in position). Pure: no DOM, so a node
+ *  test runs it directly, same convention as lastDeskTickLine below. */
+function distanceTile(d, ref) {
+  if (!d || d.price == null) return '—';
+  if (d.price === 0) return 'at the mid';
+  const atrPart = d.atr != null ? `, ${Number(d.atr).toFixed(1)} ATR` : '';
+  return `${fmtDelta(d.price, ref)} (${pctUnsigned(d.pct)}${atrPart})`;
+}
+
+/** "62%" while the mid sits inside the 24h range (l.mid_pos_in_24h is
+ *  (mid - low) / (high - low), a fraction in [0, 1] there); "below the 24h
+ *  low by 1.19 (1.9%)" / "above the 24h high by ..." once the mid has
+ *  broken out of it -- the field is UNCLAMPED, so a value under 0 or over 1
+ *  means a break, not "a position in the range" at all, and printing it as
+ *  a raw signed percentage ("-14.8%") answered a question nobody asked
+ *  (2026-11-20 HYPE bug report: the mid traded under the 24h low). The
+ *  distance and its % are off `mid` and `range_24h`, the same two fields
+ *  every other cell on this card already reads, not a second computation.
+ *  Pure: no DOM. */
+function midPositionTile(l) {
+  const pos = l && l.mid_pos_in_24h;
+  if (pos == null) return '—';
+  const r = (l && l.range_24h) || {};
+  const mid = l.mid;
+  if (pos < 0 && r.low != null && mid != null) {
+    const dist = r.low - mid;
+    return `below the 24h low by ${fmtDelta(dist, mid)} (${pctUnsigned(mid ? dist / mid : null)})`;
+  }
+  if (pos > 1 && r.high != null && mid != null) {
+    const dist = mid - r.high;
+    return `above the 24h high by ${fmtDelta(dist, mid)} (${pctUnsigned(mid ? dist / mid : null)})`;
+  }
+  return pctUnsigned(pos);
+}
+
+/** Whether midPositionTile(l) returned a sentence (outside the range) and
+ *  not a short percentage -- the cell's class switches to kv-text for the
+ *  same reason the Thesis-entry/Distance cells already use it: a sentence
+ *  wrapping at the numeric kv's nowrap/20px styling is how the next overlap
+ *  bug gets filed. Pure: no DOM. */
+function midPositionIsOutsideRange(l) {
+  const pos = l && l.mid_pos_in_24h;
+  return pos != null && (pos < 0 || pos > 1);
+}
+
+function renderLevels() {
+  const l = lastLevels;
+  const stats = document.getElementById('levels-stats');
+  if (!l || !stats) return;
+  const last = l.last_closed_1h;
+  const position = PositionLine.positionLine(PositionLine.positionForCall(lastThesisCall, lastPositionsByCoin));
+  const rows = EntryRows.entryRows(l.entry, position);
+
+  const thesisTile = rows.thesis ? `${esc(rows.thesis.side)} ${fmtPrice(rows.thesis.price)}` : 'No thesis yet';
+
+  const live = rows.live || {};
+  // The sentence (entry_rows.js's liveEntrySentence, already at the coin's
+  // tick precision) comes first, the stop/target/R after — the badge sits
+  // BEFORE all of it, inline, in its own flex child (lev-live-line below),
+  // never merged into the sec-label text it used to overlap (2026-11-20 bug
+  // report: a long badge bled into the next grid cell's label).
+  const liveTile = live.sentence
+    ? `${esc(live.sentence)}`
+      + `${live.stop != null ? `. Stop ${fmtPrice(live.stop)}` : ''}`
+      + `${live.tp != null ? `, target ${fmtPrice(live.tp)}` : ''}`
+      + `${live.r != null ? ` (${Number(live.r).toFixed(1)}R)` : ''}`
+    : '—';
+  const liveBadge = live.statusText
+    ? `<span class="badge ${esc(live.badgeClass || 'b-flat')}">${esc(live.statusText)}</span>` : '';
+
+  stats.innerHTML = `
+    <div><div class="sec-label">Mid</div><div class="kv">${fmtPrice(l.mid)}</div></div>
+    <div><div class="sec-label">Last closed 1h</div><div class="kv">${last ? fmtPrice(last.close) : '—'}</div></div>
+    <div><div class="sec-label">8h range</div><div class="kv">${l.range_8h ? fmtPrice(l.range_8h.low) + ' – ' + fmtPrice(l.range_8h.high) : '—'}</div></div>
+    <div><div class="sec-label">24h range</div><div class="kv">${l.range_24h ? fmtPrice(l.range_24h.low) + ' – ' + fmtPrice(l.range_24h.high) : '—'}</div></div>
+    <div><div class="sec-label">48h range</div><div class="kv">${l.range_48h ? fmtPrice(l.range_48h.low) + ' – ' + fmtPrice(l.range_48h.high) : '—'}</div></div>
+    <div><div class="sec-label">ATR14 (1h)</div><div class="kv">${l.atr14_1h != null ? fmtDelta(l.atr14_1h, l.mid) + ' (' + pctUnsigned(l.atr14_pct != null ? l.atr14_pct / 100 : null) + ')' : '—'}</div></div>
+    <div><div class="sec-label">Mid position in 24h range</div><div class="kv${midPositionIsOutsideRange(l) ? ' kv-text' : ''}">${midPositionTile(l)}</div></div>
+    <div><div class="sec-label">Thesis entry</div><div class="kv kv-text">${thesisTile}</div></div>
+    <div><div class="sec-label">Distance to live entry</div><div class="kv kv-text">${distanceTile(rows.distance, l.mid)}</div></div>
+    <div class="lev-stat-full">
+      <div class="sec-label">Live entry</div>
+      <div class="kv kv-text lev-live-line">${liveBadge}<span>${liveTile}</span></div>
+    </div>`;
 }
 
 // ── 4. HEADLINES AND CATALYSTS ───────────────────────────────────────────────
@@ -637,18 +814,61 @@ function renderIntel(brief, loadError) {
 
 // ── 5. LOOP LOG ──────────────────────────────────────────────────────────────
 
+// Default (false): GET .../log already filters server-side to this desk's
+// own `DESK-TICK <desk>` and `WATCH <desk>` lines (services/strategies/
+// desk_log.filter_desk_lines) -- true asks for the complete, unfiltered
+// tail instead (the "Show all lines" toggle), e.g. to see another desk
+// ticking in between, or the oil-only paper-breakout sim's PAPER-A6 lines
+// that share this same file.
+let showAllLogLines = false;
+// The last fetched lines, so toggling the checkbox repaints without a
+// second request only when a fresh one isn't already due (loadLog() always
+// re-fetches on toggle below — the point is to GET with the new `all` flag).
+let lastLogLines = [];
+
 async function loadLog() {
   const body = document.getElementById('log-body');
   try {
-    const r = await fetchJson(`/api/desks/${encodeURIComponent(activeDesk)}/log?n=30`);
-    body.textContent = (r.lines && r.lines.length) ? r.lines.join('\n') : 'no ticks yet';
-    const last = document.getElementById('call-last-tick');
-    if (last && r.lines && r.lines.length) {
-      last.textContent = 'Last tick: ' + r.lines[r.lines.length - 1].replace(/^DESK-TICK \S+ /, '');
-      last.hidden = false;
-    }
+    const all = showAllLogLines ? '&all=1' : '';
+    const r = await fetchJson(`/api/desks/${encodeURIComponent(activeDesk)}/log?n=30${all}`);
+    lastLogLines = r.lines || [];
+    renderLog();
   } catch (e) {
     body.textContent = 'could not read the loop log: ' + e.message;
+  }
+}
+
+/** The last line in `lines` that is `desk`'s OWN `DESK-TICK <desk>` tick
+ *  line (case-insensitive on the desk id), or null when there is none.
+ *  Never just `lines[lines.length - 1]`: with "Show all lines" on (or,
+ *  before the 2026-11-20 fix, even with it off) the array's actual last
+ *  entry can belong to another desk, or to nothing at all (the oil-only
+ *  paper-breakout sim's `PAPER-A6 ...` lines, which share this same file)
+ *  -- treating that as "this desk's last tick" is the exact bug report. A
+ *  `WATCH <desk>` line (the price-trigger watcher waking this desk) is
+ *  real log content but never "the last tick": only a DESK-TICK line is.
+ *  Pure: no DOM, so a node test can run it directly against sample lines. */
+function lastDeskTickLine(lines, desk) {
+  const tickRe = new RegExp(`^DESK-TICK\\s+${desk}\\b`, 'i');
+  const matches = (lines || []).filter(l => tickRe.test(l));
+  return matches.length ? matches[matches.length - 1] : null;
+}
+
+/** Paints #log-body from `lastLogLines` and sets "Last tick" on the call
+ *  card from `lastDeskTickLine`. */
+function renderLog() {
+  const body = document.getElementById('log-body');
+  const lines = lastLogLines;
+  body.textContent = lines.length ? lines.join('\n') : 'no ticks yet';
+  const last = document.getElementById('call-last-tick');
+  if (!last) return;
+  const tickLine = lastDeskTickLine(lines, activeDesk);
+  if (tickLine) {
+    last.textContent = 'Last tick: ' + tickLine.replace(/^DESK-TICK \S+ /, '');
+    last.hidden = false;
+  } else {
+    last.textContent = '';
+    last.hidden = true;
   }
 }
 
@@ -695,15 +915,43 @@ function renderTrackRecord(tr) {
 
 let pollStarted = false;
 
+/** The `?desk=` query param on the current URL, or null (none set, or
+ *  URLSearchParams unsupported — never throws). */
+function urlDesk() {
+  try {
+    return new URLSearchParams(window.location.search).get('desk');
+  } catch {
+    return null;
+  }
+}
+
+/** Writes `?desk=<id>` onto the current URL without a navigation or a
+ *  history entry per click (replaceState — "back" should leave the page,
+ *  not step through every desk switch). Best-effort: a browser that
+ *  refuses the History API (sandboxed iframe) leaves the page working,
+ *  just without the shareable link. */
+function setUrlDesk(id) {
+  try {
+    const url = new URL(window.location.href);
+    if (url.searchParams.get('desk') === id) return;
+    url.searchParams.set('desk', id);
+    history.replaceState(history.state, '', url);
+  } catch { /* URL/History unsupported; localStorage still remembers it */ }
+}
+
 /** Which desk(s) to render (GET /api/desks/active). One entry -> no
  *  switcher; several -> a small tab row, switching re-fetches every
  *  section for the clicked desk. Also repoints the Thesis nav link and
  *  "Full thesis" link at the active desk, and the page's H1 at its name.
  *
- *  Prefers the reader's last-selected desk (localStorage, via PathielDesk)
- *  over activeDesks[0] so a reload keeps the desk they were actually
- *  looking at, falling back to the first active desk only when nothing is
- *  stored yet or the stored id is no longer active. */
+ *  Picks the active desk in this order: the URL's own `?desk=` (a shared
+ *  link should open on the desk it names), else the reader's last-selected
+ *  desk (localStorage, via PathielDesk, so a plain reload keeps the desk
+ *  they were actually looking at), else the first active desk (oil, by
+ *  position in the live config's `active_desks`) when neither says
+ *  anything valid. Either way the resolved desk is written back to BOTH
+ *  the URL and localStorage, so the page one lands on is always the one
+ *  the address bar and a later reload agree on. */
 async function loadActiveDesks() {
   try {
     const d = await fetchJson('/api/desks/active');
@@ -714,9 +962,14 @@ async function loadActiveDesks() {
     activeDesks = ['oil'];
     activeDeskMeta = {};
   }
+  const fromUrl = urlDesk();
   const stored = PathielDesk.get();
-  activeDesk = (stored && activeDesks.includes(stored)) ? stored : activeDesks[0];
+  activeDesk = (fromUrl && activeDesks.includes(fromUrl)) ? fromUrl
+    : (stored && activeDesks.includes(stored)) ? stored
+    : activeDesks[0];
   PathielDesk.set(activeDesk);
+  setUrlDesk(activeDesk);
+  resetLeverageForActiveDesk();
   renderDeskSwitcher();
   repointDeskLinks();
 }
@@ -753,6 +1006,8 @@ function renderDeskSwitcher() {
       if (!radio.checked) return;
       activeDesk = radio.value;
       PathielDesk.set(activeDesk);
+      setUrlDesk(activeDesk);
+      resetLeverageForActiveDesk();
       repointDeskLinks();
       loadAll();
     });
@@ -764,9 +1019,40 @@ function renderDeskSwitcher() {
 // behind a slow account read, and pausing while the tab is hidden. Same
 // convention every page's own refresh loop uses; see
 // tests/test_page_polling.py.
+//
+// De-duped per desk (2026-11-20 bug report: the Wallets card showed its card
+// on the very first paint, then emptied once the page "settled"). This page
+// has TWO independent triggers that both call loadAll() on the same
+// tab-resume: pollEvery's own internal visibilitychange listener
+// (pathiel.js, fires when a scheduled tick was skipped while hidden) and
+// this file's own resumeIfVisible (visibilitychange/prerenderingchange,
+// below — added 2026-10-24 for a DIFFERENT gap, see its own comment).
+// Neither knows about the other, so a single resume event could start TWO
+// concurrent loadWallets() runs; whichever's fetches settled last won
+// #wallets-list with its own result, and a transient failure on the slower
+// one blanked a card the faster one had just painted correctly. A second
+// call for the SAME desk just awaits the one already in flight instead of
+// starting another; a desk switch (a different activeDesk) is never
+// de-duped, so clicking the tab row is never delayed by a load the click
+// itself just made obsolete.
+let loadAllPromise = null;
+let loadAllForDesk = null;
+
+/** Whether a loadAll() call for `desk` should reuse `promise` (already in
+ *  flight for `forDesk`) instead of starting a new round of fetches: only
+ *  when one is in flight AND it is for the SAME desk. Pure: no DOM, so a
+ *  node test runs it directly. */
+function shouldReuseInFlightLoad(promise, forDesk, desk) {
+  return !!promise && forDesk === desk;
+}
+
 async function loadAll() {
     if (document.hidden) return;   // a hidden tab must not spend the venue budget
-  await Promise.all([loadCall(), loadLine(), loadWallets(), loadLevels(), loadLog(), loadEquitySlice()]);
+  if (shouldReuseInFlightLoad(loadAllPromise, loadAllForDesk, activeDesk)) return loadAllPromise;
+  loadAllForDesk = activeDesk;
+  loadAllPromise = Promise.all([loadCall(), loadLine(), loadWallets(), loadLevels(), loadLog(), loadEquitySlice()])
+    .finally(() => { loadAllPromise = null; loadAllForDesk = null; });
+  return loadAllPromise;
 }
 
 async function startOilDesk() {
@@ -926,3 +1212,8 @@ async function startOilDesk() {
 })();
 
 renderLevSeg();
+
+document.getElementById('log-show-all')?.addEventListener('change', (e) => {
+  showAllLogLines = e.target.checked;
+  loadLog();
+});

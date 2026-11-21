@@ -140,9 +140,135 @@ def test_news_alerts_match_dedup_and_stale():
     # the same titles again (even re-cased, re-punctuated) alert nothing
     again = [_item("IRAN, US REACH DEAL TO REOPEN STRAIT OF HORMUZ!"), _item("US strikes Iran's Qeshm Island")]
     assert HW.news_alerts("oil", again, seen, NOW_MS) == []
-    # an item without a date is taken as fresh; an empty title is skipped
+    # 2026-11-17: an item with no readable published_at is DROPPED, not taken
+    # as fresh (root cause of "Rubio condemns Iran strikes on Bahrain" firing
+    # on a months-old reprint) -- age unknown reads as stale. An empty title
+    # is skipped either way.
     nodate = [{"title": "Iran seizes tanker in Hormuz", "published_at": None}, {"title": ""}]
-    assert len(HW.news_alerts("oil", nodate, seen, NOW_MS)) == 1
+    assert HW.news_alerts("oil", nodate, seen, NOW_MS) == []
+
+
+# ── regressions: the 2026-11-16/17 recycled and duplicate headlines ────────
+
+def test_regression_undated_bahrain_reprint_never_fires():
+    """2026-11-17: /tmp/trigger-watch/watch.log FIRE'd on "Rubio condemns
+    Iran strikes on Bahrain, Manama demands halt at UN" -- traced back to a
+    months-old June story Google News re-served with no <pubDate> at all.
+    The real alert that day carried a fresh published_at (see MAX_AGE_MIN's
+    docstring), so this regression constructs the actual failure mode: the
+    identical real headline text, with the date Google omitted, must never
+    alert, under any source."""
+    seen: set = set()
+    stale = [{"title": "Rubio condemns Iran strikes on Bahrain, Manama demands halt at UN",
+              "source": "Iran International", "published_at": None}]
+    assert HW.news_alerts("oil", stale, seen, NOW_MS) == []
+    # the same title with a real, months-old published_at is dropped too (the
+    # ordinary MAX_AGE_MIN path, already correct, kept here as a belt-and-
+    # braces check against the exact regression headline)
+    seen2: set = set()
+    june = [_item("Rubio condemns Iran strikes on Bahrain, Manama demands halt at UN",
+                  age_min=60 * 24 * 150, source="Iran International")]     # ~5 months old
+    assert HW.news_alerts("oil", june, seen2, NOW_MS) == []
+
+
+def test_regression_dirty_bomb_retitled_duplicate_fires_once():
+    """2026-11-17: the real CNN "dirty bomb" plot story fired, and a
+    differently-worded 3-hours-later write-up of the SAME report ("Irans
+    Alleged U.S. Attack Plans Trigger Emergency Meetings In Washington
+    Report") fired again, burning a second slot of the day's
+    MAX_ALERTS_PER_DAY. That pair shares only 18% of its tokens (the same
+    ratio as two real, unrelated same-day Hormuz headlines in the log), so
+    near-duplicate matching correctly leaves it alone -- it is NOT the
+    regression this test covers (see NEWS_DEDUP_MIN_OVERLAP's docstring for
+    why forcing that match would risk suppressing a real escalation).
+    What near-duplicate matching DOES fix: the same wire report retitled by
+    a second outlet within the dedup window, which is what actually drives
+    "one story, several outlets" duplication. This constructs that case
+    directly from the real dirty-bomb headline."""
+    seen: set = set()
+    recent: list = []
+    first = [_item("Iran plans attack on Trump officials with dirty bomb, CNN reports",
+                   age_min=3, source="Investing.com UK")]
+    out1 = HW.news_alerts("oil", first, seen, NOW_MS, recent=recent)
+    assert len(out1) == 1 and recent == [{"group": "oil", "at_ms": NOW_MS,
+                                          "title": "Iran plans attack on Trump officials with dirty bomb, CNN reports"}]
+    # a second outlet, 40 minutes later, picks up the identical wire line
+    # with a reordered attribution clause and a different quote style.
+    # (`_item`'s age_min is relative to the fixed module `NOW`, not to
+    # whatever now_ms a call uses, so a shifted poll needs an explicit
+    # published_at -- here, 3 minutes old at its own poll time.)
+    later_ms = NOW_MS + 40 * MIN
+    reword = [{"title": "CNN reports Iran plans attack on Trump officials with a dirty bomb",
+               "url": "https://x/2", "source": "Yahoo News", "published_at": NOW + timedelta(minutes=37)}]
+    out2 = HW.news_alerts("oil", reword, seen, later_ms, recent=recent)
+    assert out2 == []                           # suppressed: same story, retitled
+    assert len(recent) == 1                      # the duplicate is not added again
+    # proof the genuinely different 3-hour-later follow-up still fires (the
+    # known, documented boundary above) when recent-dedup is in play too;
+    # 39 minutes old at its own poll, matching the real log's recorded age
+    followup_ms = NOW_MS + 187 * MIN
+    followup = [{"title": "Irans Alleged U.S. Attack Plans Trigger Emergency Meetings In Washington Report",
+                 "url": "https://x/3", "source": "The Times of India", "published_at": NOW + timedelta(minutes=148)}]
+    out3 = HW.news_alerts("oil", followup, seen, followup_ms, recent=recent)
+    assert len(out3) == 1                        # a real, differently-angled development: not suppressed
+
+
+def test_regression_trump_vance_duplicate_across_outlets_fires_once():
+    """2026-11-13: the real log recorded this exact pair as two separate
+    alerts, 76 minutes apart ("Trump directs Vance to shift focus from Iran
+    war to U.S. 'corruption and crime'" / NBC 7 San Diego, then "President
+    Donald Trump Directs Vice President JD Vance to Shift Focus From Iran
+    War to Crime" / CNBC TV18) -- the clearest real cross-outlet retitling
+    in the data (71% token overlap). With the dedup pool wired in, the
+    second alert is suppressed."""
+    seen: set = set()
+    recent: list = []
+    a = [_item("Trump directs Vance to shift focus from Iran war to U.S. ‘corruption and crime'", age_min=4)]
+    assert len(HW.news_alerts("oil", a, seen, NOW_MS, recent=recent)) == 1
+    # 12 minutes old at ITS OWN poll (76 min after the first), matching the
+    # real log; `_item`'s age_min is relative to the fixed NOW, not to a
+    # shifted now_ms, so this one is built explicitly (see the comment above)
+    later_ms = NOW_MS + 76 * MIN
+    b = [{"title": "President Donald Trump Directs Vice President JD Vance to Shift Focus From Iran War to Crime",
+          "url": "https://x/vance2", "source": "CNBC TV18", "published_at": NOW + timedelta(minutes=64)}]
+    assert HW.news_alerts("oil", b, seen, later_ms, recent=recent) == []
+
+
+def test_recent_dedup_is_scoped_per_group_and_skipped_without_a_pool():
+    """`recent=None` (every call site that predates this fix, and any new
+    one that does not care) skips the near-duplicate check entirely -- the
+    exact pre-fix behavior for an exact-duplicate-free feed. A pool is
+    scoped to its own group: the same near-duplicate title alerting for a
+    different group is not blocked by the first group's history."""
+    seen: set = set()
+    a = [_item("Iran, US reach deal to reopen Strait of Hormuz", age_min=4)]
+    b = [_item("Iran and US agree a deal to reopen the Strait of Hormuz", age_min=1)]   # 89% token overlap
+    assert len(HW.news_alerts("oil", a, seen, NOW_MS)) == 1          # no recent= at all
+    assert len(HW.news_alerts("oil", b, set(), NOW_MS + MIN)) == 1   # still fires: no pool, no memory
+    recent: list = []
+    seen2: set = set()
+    assert len(HW.news_alerts("oil", a, seen2, NOW_MS, recent=recent)) == 1
+    # metals also matches "iran/hormuz" (gold's safe-haven bid), but its own
+    # pool starts empty: oil's history does not block it
+    assert len(HW.news_alerts("metals", b, seen2, NOW_MS + MIN, recent=recent)) == 1
+
+
+def test_news_alerts_provider_item_with_no_published_at_uses_received_at():
+    """A streaming provider item (Finlight, `triggers=True`) can omit its
+    own publishDate; `received_at` -- set the instant OUR process saw it --
+    stands in for the age check instead of the item being dropped, so a
+    fast real-time push is never punished for the wire's missing metadata."""
+    seen: set = set()
+    item = {"title": "Iran, US reach deal to reopen Strait of Hormuz", "url": "https://x/1",
+            "source": "Reuters", "published_at": None, "received_at": NOW - timedelta(minutes=2),
+            "provider": "finlight", "sentiment": "negative"}
+    out = HW.news_alerts("oil", [item], seen, NOW_MS, triggers=True)
+    assert len(out) == 1 and out[0]["published_ms"] is None and out[0]["received_ms"] == int(
+        (NOW - timedelta(minutes=2)).timestamp() * 1000)
+    # too old by received_at too: dropped
+    seen2: set = set()
+    stale_item = dict(item, received_at=NOW - timedelta(minutes=HW.MAX_AGE_MIN + 1))
+    assert HW.news_alerts("oil", [stale_item], seen2, NOW_MS, triggers=True) == []
 
 
 # ── odds_alerts ─────────────────────────────────────────────────────────────

@@ -33,7 +33,23 @@ What uses the calendar:
      Iran/Hormuz talks, sanctions deadlines and IAEA board dates.
 
    Every row needs: date, at_utc (or null for all day or unknown), event,
-   kind, coins (oil and/or metals; "silver" is the old name of the metals group and still accepted), impact (1 to 3), verified, source.
+   kind, coins (oil, metals, sp500 and/or hype; "silver" is the old name of the metals group and still accepted), impact (1 to 3), verified, source.
+   The S&P desk (sp500) gets every US macro row by its kind (nfp, pce, ppi,
+   retail_sales, fomc_minutes, holidays, funding and trade deadlines:
+   `scheduled_events.SP500_MACRO_KINDS`), so those rows keep their oil and
+   metals coins. Megacap earnings are the rows to add for it by hand: kind
+   `earnings`, coins `["sp500"]`, the company's confirmed date and time
+   from its investor-relations page, impact 3 for Nvidia, Apple, Microsoft,
+   Amazon, Alphabet, Meta and Tesla (impact 3 blocks new S&P entries 2h
+   either side), `verified: false` until the company confirms the date.
+   HYPE (hype) has no macro-kind mapping like the S&P's -- FOMC and CPI
+   reach it the same way they reach every desk, and nothing else carries
+   over from oil or metals rows. Its own rows are protocol events (a HIP
+   governance vote, a known buyback/burn date, a scheduled token unlock
+   past what the automatic `token_unlock` catalyst already covers): kind
+   a plain lowercase word (`congress` fits a governance vote loosely; add
+   a new kind if none fits), coins `["hype"]`, impact by how much it could
+   move price.
    Unverified dates stay `verified: false`. Never guess a time.
 3. **Impact 3 is for events that can move price 2% or more within hours.**
    Those block entries. Keep it to:

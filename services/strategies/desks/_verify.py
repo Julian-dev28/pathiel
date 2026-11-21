@@ -35,6 +35,7 @@ _CANDIDATES: Dict[str, List[str]] = {
     "indices": ["XYZ100", "SP500", "JP225", "KR200", "IBOV", "NIFTY", "NDX", "DJI", "VIX"],
     "ai": ["NVDA", "AMD", "MSFT", "GOOGL", "GOOG", "META", "TSM", "PLTR", "MU", "AVGO",
           "ORCL", "ARM", "AAPL", "AMZN", "TSLA", "SMCI", "INTC", "COIN", "CRWD"],
+    "hype": ["HYPE"],
 }
 
 

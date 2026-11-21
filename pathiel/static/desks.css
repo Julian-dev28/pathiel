@@ -136,12 +136,32 @@
 }
 .lev-stats{
   display:grid; gap:16px 24px;
-  grid-template-columns:repeat(auto-fit,minmax(118px,1fr));
+  /* 160px, the same floor /stat-row and .track-cols already use elsewhere on
+     this page: 118px let a cell wrap mid-value ("8H RANGE 87.707 – 90.149"
+     across two lines, 2026-11-20 bug report). auto-fit alone collapses this
+     to one column on a phone-width card, same as .track-cols -- no extra
+     breakpoint needed. */
+  grid-template-columns:repeat(auto-fit,minmax(160px,1fr));
   margin-bottom:16px;
 }
 .lev-stats .kv{ font-size:20px; }
+/* Every plain (non-sentence) value here is one line, never wrapped mid-number
+   even when a cell's column ends up narrower than the text wants. */
+.lev-stats .kv:not(.kv-text){ white-space:nowrap; }
 /* a key/value cell whose value is a sentence, not a number */
 .kv.kv-text{ font-size:14px; font-weight:500; line-height:1.35; font-variant-numeric:normal; }
+/* The Live entry row (2026-11-20 bug report): its badge used to sit inside
+   the narrow grid cell's own sec-label and bleed into the next cell's label
+   beside it. Spanning the full row gives the badge and the sentence a whole
+   line's width, so neither ever overlaps a neighbour. */
+.lev-stats .lev-stat-full{
+  grid-column:1 / -1;
+  padding-top:14px; margin-top:2px; border-top:1px solid var(--rule);
+}
+/* Badge inline, before the sentence, both free to wrap onto their own line
+   on a narrow card rather than ever overlapping. */
+.lev-live-line{ display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; }
+.lev-live-line .badge{ flex:none; }
 .lev-verdict-row{
   display:flex; align-items:baseline; gap:10px; flex-wrap:wrap;
   padding-top:14px; border-top:1px solid var(--rule);

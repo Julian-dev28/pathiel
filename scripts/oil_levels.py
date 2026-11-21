@@ -7,6 +7,8 @@ the model never eyeballs ranges or does R arithmetic in its head:
   python3 scripts/oil_levels.py --coin xyz:CL
   python3 scripts/oil_levels.py --check 107.20 106.70 108.45   # entry stop tp -> R
   python3 scripts/oil_levels.py --coin xyz:GOLD --next long --thesis-entry 4100 --max-lev 25
+  python3 scripts/oil_levels.py --coin xyz:SP500 --next short --thesis-entry 7200   # 50x by default
+  python3 scripts/oil_levels.py --coin HYPE --next long --thesis-entry 64.0         # 10x by default
 
 `--next SIDE` prints the live entry rule's answer at the mid
 (services/strategies/next_trade.next_trade: the 24h-range rule, leverage
@@ -42,9 +44,18 @@ from typing import Any, Dict, List, Optional
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from contracts import runtime  # noqa: E402
-from services.strategies.levels import HOUR_MS, check, summarize  # noqa: E402
+from services.strategies.levels import HOUR_MS, check, hours_1h_for, summarize  # noqa: E402
 from services.strategies.next_trade import (breakout_for, leverage_fit_for, next_trade,  # noqa: E402
-                                            stop_buffer_for)
+                                            stop_buffer_for, target_offset_frac_for, trend_gate_span_for)
+
+# Defaults for --max-lev and --risk-lev. Every coin read 20 until 2026-11-19;
+# xyz:SP500's venue max is 50 (metaAndAssetCtxs dex=xyz) and its desk trades
+# at its own cap (services/strategies/desk_leverage.py). Gold's 25 stays a
+# flag the tick passes, so no existing command changes its answer. HYPE's
+# venue max is 10 (metaAndAssetCtxs dex=None, 2026-11-20) and its desk's cap
+# is the same number -- the venue's own ceiling, not a choice.
+DEFAULT_LEVERAGE = 20.0
+VENUE_MAX_LEVERAGE = {"xyz:SP500": 50.0, "HYPE": 10.0}
 
 # The resolved network's /info URL (contracts/runtime). Unset: mainnet, as before.
 INFO_URL = runtime.info_url()
@@ -108,9 +119,10 @@ def next_order(coin: str, side: str, levels: Dict[str, Any], thesis_entry: Optio
         return {"ok": False, "reason": "no ATR for the stop buffer", "coin": coin}
     out = next_trade(side, float(mid), float(r24["low"]), float(r24["high"]), thesis_entry=thesis_entry,
                      leverage=leverage, coin_max_leverage=max_leverage, stop_buffer=buf,
-                     leverage_fit=leverage_fit_for(coin),
+                     leverage_fit=leverage_fit_for(coin), offset_frac=target_offset_frac_for(coin),
                      breakout=levels.get("breakout_24h") if breakout_for(coin) else None,
-                     thesis_age_min=thesis_age_min, entry_delay_min=entry_delay_min)
+                     thesis_age_min=thesis_age_min, entry_delay_min=entry_delay_min,
+                     closes_1h=levels.get("closes_1h"), trend_gate_span=trend_gate_span_for(coin))
     out["coin"] = coin
     if out.get("ok"):
         out["place_bracket"] = {"coin": coin, "stop_px": out["stop_px"], "tp_px": out["structure_tp_px"]}
@@ -123,18 +135,26 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--coin", default="xyz:BRENTOIL")
     ap.add_argument("--check", nargs=3, type=float, metavar=("ENTRY", "STOP", "TP"))
     ap.add_argument("--lev", type=float, help="with --check: leverage to judge (e.g. 20)")
-    ap.add_argument("--max-lev", type=float, default=20.0, help="venue max leverage for the coin (Brent/WTI 20)")
+    ap.add_argument("--max-lev", type=float, default=None,
+                    help="venue max leverage for the coin (default 20: Brent/WTI; xyz:SP500 50; HYPE 10; "
+                         "gold: pass 25)")
     ap.add_argument("--next", choices=("long", "short"), help="the live entry rule's answer for this side")
     ap.add_argument("--thesis-entry", type=float, help="with --next: the thesis entry (never-chase line)")
-    ap.add_argument("--risk-lev", type=float, default=20.0, help="with --next: the risk profile's leverage (20)")
+    ap.add_argument("--risk-lev", type=float, default=None,
+                    help="with --next: the leverage a new entry sizes at (default: the coin's desk cap, "
+                         "50 on xyz:SP500, 10 on HYPE, else the risk profile's 20)")
     ap.add_argument("--thesis-age-min", type=float, help="with --next: minutes since the thesis was written "
                     "(the entry delay reads it; off while the config has no oil_entry_delay_min)")
     a = ap.parse_args(argv)
+    a.max_lev = a.max_lev if a.max_lev is not None else VENUE_MAX_LEVERAGE.get(a.coin, DEFAULT_LEVERAGE)
+    if a.risk_lev is None:
+        from services.strategies.desk_leverage import entry_leverage
+        a.risk_lev = entry_leverage(a.coin, DEFAULT_LEVERAGE)
     if a.check:
         print(json.dumps(check(*a.check, leverage=a.lev, max_leverage=a.max_lev)))
         return 0
     now_ms = int(time.time() * 1000)
-    out = summarize(fetch_candles(a.coin, "1h", 50, now_ms), fetch_candles(a.coin, "15m", 3, now_ms),
+    out = summarize(fetch_candles(a.coin, "1h", hours_1h_for(a.coin), now_ms), fetch_candles(a.coin, "15m", 3, now_ms),
                     fetch_mid(a.coin), now_ms)
     out["coin"] = a.coin
     if a.next:
