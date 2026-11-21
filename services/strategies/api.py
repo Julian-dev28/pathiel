@@ -28,7 +28,7 @@ from pydantic import BaseModel
 import pathiel
 from contracts.strategies.models import DeskBrief, DeskCard, RefreshJob, Thesis, UserThesisIn
 
-from services.strategies import desk_log, desks, facade, journal, levels
+from services.strategies import desk_leverage, desk_log, desks, entry_card, facade, journal, levels
 from services.strategies.call_line import call_line
 from services.strategies import next_trade as next_trade_mod
 
@@ -37,6 +37,13 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 _TEMPLATES_DIR = Path(pathiel.__file__).parent / "templates"
+
+# The leverage the Levels card's live-entry row is priced at: the same
+# default GET /next and the Desk page's "Next trade" box start on
+# (oil_desk.js DEFAULT_LEVERAGE) -- the leverage-fit rule can change the
+# ACTUAL leverage used (next_trade's own "leverage" field), this is only
+# the ceiling a reader has not yet picked a different rung for.
+DEFAULT_ENTRY_LEVERAGE = 20.0
 
 # In-process background-job registry for POST /refresh. One FastAPI process
 # per SWARM_RULES (dev servers are single-port, single-process), so a plain
@@ -122,7 +129,15 @@ def get_active_desks() -> Dict[str, object]:
     `desk_equity_share` is saved (the legacy whole-equity rule). A bad
     `desk_equity_share` config (DeskShareError) is reported as a top-level
     `share_error` string rather than 500ing the page; every desk's
-    `equity_share` is null in that case."""
+    `equity_share` is null in that case.
+
+    `leverage_cap` (2026-11-20) is this desk's own leverage ceiling, fully
+    resolved to a number (services/strategies/desk_leverage.effective_cap):
+    sp500 50x and hype 10x regardless of the account's own profile, oil (no
+    entry of its own there) the account's saved risk profile cap. The Desk
+    page's "Next trade" leverage picker and the call card's "the desk's
+    rule" line both read this -- before it existed every desk showed oil's
+    own 20x line."""
     from pathiel.agents.config_store import read_agent_config
     try:
         config = read_agent_config()
@@ -146,7 +161,12 @@ def get_active_desks() -> Dict[str, object]:
         spec = desks.require_spec(d)
         primary = next((i for i in spec.instruments if i.role == "primary"), spec.instruments[0])
         desk_entries.append({"id": d, "name": spec.name, "primary_coin": primary.coin,
-                             "equity_share": shares.get(d)})
+                             "equity_share": shares.get(d),
+                             # This desk's own leverage cap (desk_leverage.effective_cap: sp500 50x,
+                             # hype 10x, oil the account's saved profile cap) -- 2026-11-20 bug report:
+                             # the Desk page hardcoded 20x (oil's number) for every desk's leverage
+                             # picker and call-card line, including HYPE's 10x.
+                             "leverage_cap": desk_leverage.effective_cap(primary.coin, config)})
 
     out: Dict[str, object] = {"active_desks": active, "default_desk": active[0], "desks": desk_entries}
     if share_error:
@@ -344,12 +364,21 @@ def desk_next_trade(desk_id: str, leverage: float, brief=None) -> Dict[str, obje
     if buf is None:
         return {"ok": False, "source": "desk_rules", "reason": f"no ATR for {coin} to size the stop buffer"}
     out = next_trade_mod.next_trade(call.side, float(lv["mid"]), float(r24["low"]), float(r24["high"]),
-                                    thesis_entry=call.entry_px, leverage=leverage,
+                                    thesis_entry=call.entry_px,
+                                    # the coin's desk cap when it has one (the S&P: 50x), else as asked
+                                    leverage=desk_leverage.entry_leverage(coin, leverage),
                                     coin_max_leverage=coin_max, stop_buffer=buf,
                                     leverage_fit=next_trade_mod.leverage_fit_for(coin),
+                                    offset_frac=next_trade_mod.target_offset_frac_for(coin),
                                     breakout=lv.get("breakout_24h") if next_trade_mod.breakout_for(coin) else None,
                                     thesis_age_min=next_trade_mod.thesis_age_minutes(brief.thesis.created_at),
-                                    entry_delay_min=next_trade_mod.entry_delay_for(coin))
+                                    entry_delay_min=next_trade_mod.entry_delay_for(coin),
+                                    # 2026-11-20: the same closes_1h / trend_gate_span gap as the watcher
+                                    # (scripts/trigger_watch.py's evaluate()) -- without these this route
+                                    # (the Desk page and the MCP desk_brief) never applied HYPE's 120h
+                                    # trend gate either.
+                                    closes_1h=lv.get("closes_1h"),
+                                    trend_gate_span=next_trade_mod.trend_gate_span_for(coin))
     out["coin"] = coin
     return out
 
@@ -364,29 +393,83 @@ def _primary_coin(desk_id: str) -> str:
 def get_desk_levels(desk_id: str) -> Dict[str, object]:
     """Candle-derived levels for this desk's primary instrument: mid, last
     closed 1h candle, 8h/24h/48h range, ATR14, where the mid sits in the
-    24h range. See services/strategies/levels.py::summarize_coin."""
+    24h range, PLUS (2026-11-19) an `entry` field: the thesis's own entry,
+    the live entry next_trade() will actually act on (stop/target/R/
+    status), and the mid's distance to it. See services/strategies/
+    levels.py::summarize_coin and services/strategies/entry_card.py."""
     try:
         coin = _primary_coin(desk_id)
     except desks.UnknownDeskError:
         raise _unknown_desk(desk_id)
     try:
-        return levels.summarize_coin(coin)
+        out = levels.summarize_coin(coin)
     except Exception as e:  # noqa: BLE001 - report the failure, never a 500 with no detail
         raise HTTPException(status_code=502, detail=f"could not read live levels for {coin}: {e}")
+    out["entry"] = _levels_entry(desk_id, coin, out)
+    return out
+
+
+def _levels_entry(desk_id: str, coin: str, lv: Dict[str, object]) -> Dict[str, object]:
+    """entry_card.build() for the Levels card, off the SAME next_trade()
+    and event_blackout() calls GET /next and the tick use -- never a
+    second, re-derived stop/target/R calculation. A thesis, venue-leverage
+    or blackout read that fails degrades to entry_card's own "no thesis"/
+    "waiting" shape instead of 500ing the whole Levels card (every other
+    piece of it already follows that rule)."""
+    try:
+        brief = facade.get_brief(desk_id)
+    except Exception as e:  # noqa: BLE001 - desk_id is already validated by the caller
+        logger.warning(f"[strategies.api] brief read for {desk_id}'s entry card failed: {e!r}")
+        return entry_card.build(mid=lv.get("mid"), atr14=lv.get("atr14_1h"), side=None,
+                                thesis_entry_px=None, next_trade_result=None, blackout=None)
+
+    side: Optional[str] = None
+    thesis_entry_px: Optional[float] = None
+    nt: Optional[Dict[str, object]] = None
+    if brief.thesis is not None:
+        call = brief.thesis.call
+        side = call.side if call.side in ("long", "short") else None
+        thesis_entry_px = call.entry_px
+        if side:
+            try:
+                nt = desk_next_trade(desk_id, DEFAULT_ENTRY_LEVERAGE, brief=brief)
+            except Exception as e:  # noqa: BLE001 - a next_trade miss must not 500 the Levels card
+                logger.warning(f"[strategies.api] next_trade for {desk_id}'s entry card failed: {e!r}")
+                nt = {"ok": False, "reason": "could not compute the live entry"}
+
+    blackout: Optional[Dict[str, object]] = None
+    if side:
+        from services.strategies.event_blackout import event_blackout
+        try:
+            blackout = event_blackout(coin, side=side)
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"[strategies.api] event_blackout for {coin!r} failed: {e!r}")
+
+    return entry_card.build(mid=lv.get("mid"), atr14=lv.get("atr14_1h"), side=side,
+                            thesis_entry_px=thesis_entry_px, next_trade_result=nt, blackout=blackout)
 
 
 @router.get("/api/desks/{desk_id}/log")
 def get_desk_log(request: Request, desk_id: str,
-                 n: int = Query(30, ge=1, le=500)) -> Dict[str, object]:
+                 n: int = Query(30, ge=1, le=500),
+                 all_lines: bool = Query(False, alias="all")) -> Dict[str, object]:
     """The last `n` lines of this desk's loop progress log (env
     PATHIEL_<DESK>_LOG, e.g. PATHIEL_OIL_LOG, default /tmp/oil-loop/progress.log
     for desk_id "oil" and /tmp/<desk>-loop/progress.log otherwise). An empty
     `lines` list — including when the file does not exist yet, or this desk
-    has no loop at all — means "no ticks yet", not an error."""
+    has no loop at all — means "no ticks yet", not an error.
+
+    Default (`all` unset/false): only this desk's own lines (a `DESK-TICK
+    <desk>` tick line or a `WATCH <desk>` watcher-wake line; see
+    desk_log.filter_desk_lines) — every other desk's lines, and any line
+    the shared file picked up that names no desk at all (the oil-only
+    paper-breakout sim's `PAPER-A6 ...` lines, 2026-11-20 bug report), are
+    dropped. `?all=1`: the raw tail exactly as written, for the Desk
+    page's "show all lines" toggle."""
     _require_operator_or_local(request)
     if desks.get_spec(desk_id) is None:
         raise _unknown_desk(desk_id)
-    return {"lines": desk_log.read_desk_log(desk_id, n)}
+    return {"lines": desk_log.read_desk_log(desk_id, n, include_all=all_lines)}
 
 
 # ── HTML routes ────────────────────────────────────────────────────────────

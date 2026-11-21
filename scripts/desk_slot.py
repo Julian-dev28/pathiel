@@ -14,6 +14,11 @@ silver 5%, services/strategies/desk_share.py) every desk with a share owns
 its own slot, so only THIS desk's coins can hold it ("mode": "per_desk") and
 oil holding Brent never stops the silver tick. A desk with no share while
 shares are saved reads "slot": "inactive": the tick skips it.
+
+Operator guard (2026-11-19, the sp500 desk): on a guarded coin (xyz:SP500)
+a position or a resting order the desk did not place reads
+"slot": "operator" with "reason": "operator position open on xyz:SP500".
+The tick logs HOLD with that reason and stops: no brief, no sweep, no order.
 """
 from __future__ import annotations
 
@@ -60,8 +65,34 @@ def slot_view(desk_coins: List[str], raws: List[Dict[str, Any]], own_slot: bool 
             "positions": positions, "resting_entries": entries, **mode}
 
 
+def operator_on(desk_coins: List[str], raws: List[Dict[str, Any]], user: str,
+                presence: Optional[Callable[..., Dict[str, Any]]] = None) -> Optional[Dict[str, Any]]:
+    """The operator's own position or resting orders on one of this desk's
+    GUARDED coins (pathiel/agents/ownership.OPERATOR_GUARD_COINS: xyz:SP500),
+    or None. A coin is checked only when something sits on it, so a flat,
+    empty coin costs no extra read. The resting orders come from `raws`, the
+    reads this script already made; the position's ownership is one fills
+    read (ownership.check_operator_presence). A failed read counts as the
+    operator's: the tick holds rather than guess."""
+    from pathiel.agents import ownership
+    presence = presence or ownership.check_operator_presence
+    for coin in desk_coins:
+        if not ownership.is_guarded(coin):
+            continue
+        orders = [o for raw in raws for o in (raw.get("orders") or []) if o.get("coin") == coin]
+        held = any(((row or {}).get("position") or {}).get("coin") == coin
+                   for raw in raws for row in (raw.get("state") or {}).get("assetPositions") or [])
+        if not orders and not held:
+            continue
+        got = presence(coin, user=user, orders=orders)
+        if got.get("operator"):
+            return got
+    return None
+
+
 def main(argv: Optional[List[str]] = None, fetch_raw: Optional[Callable[[str, str], Dict[str, Any]]] = None,
-         dexes: Optional[List[str]] = None, user: Optional[str] = None) -> int:
+         dexes: Optional[List[str]] = None, user: Optional[str] = None,
+         presence: Optional[Callable[..., Dict[str, Any]]] = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--desk", required=True)
     a = ap.parse_args(argv)
@@ -86,8 +117,16 @@ def main(argv: Optional[List[str]] = None, fetch_raw: Optional[Callable[[str, st
     from services.accounts import positions as acc_pos
     fetch_raw = fetch_raw or acc_pos._fetch_raw
     dexes = acc_pos._dexes_with_margin(user) if dexes is None else dexes
-    out = slot_view(coins, [fetch_raw(user, d) for d in dexes], own_slot=bool(shares))
+    raws = [fetch_raw(user, d) for d in dexes]
+    out = slot_view(coins, raws, own_slot=bool(shares))
     out.update({"desk": a.desk, "desk_coins": coins})
+    op = operator_on(coins, raws, user, presence=presence)
+    if op:
+        # The operator's own position or orders on this desk's coin: the
+        # tick logs HOLD with `reason` and stops. Not ours, whatever
+        # slot_view said about the coin holding the slot.
+        out.update({"slot": "operator", "mine": False, "holder": op["coin"], "kind": "operator",
+                    "operator": op, "reason": op["reason"]})
     if shares:
         out["equity_share"] = shares[a.desk]
     print(json.dumps(out))

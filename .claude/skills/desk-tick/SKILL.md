@@ -1,6 +1,6 @@
 ---
 name: desk-tick
-description: One tick of a desk's trading loop on pathiel, for the desk id given as the argument (oil, metals, ai, gas). Slot check here, then the desk-tick agent (Opus 5.5, medium effort) runs sweep, levels, brief, one decision, one log line. Run on a schedule with /loop 15m /desk-tick oil. Live money on the pathiel wallet.
+description: One tick of a desk's trading loop on pathiel, for the desk id given as the argument (oil, metals, sp500, hype, ai, gas). Slot check here, then the desk-tick agent (Opus 5.5, medium effort) runs sweep, levels, brief, one decision, one log line. Run on a schedule with /loop 15m /desk-tick oil. Live money on the pathiel wallet.
 ---
 
 # desk-tick $ARGUMENTS
@@ -19,9 +19,17 @@ same night, see docs/overhaul/BACKTEST_RESULTS_2026-10-25.md).
    `mine` is false, another desk's coin holds the account's one slot: append
    `DESK-TICK $ARGUMENTS <utc> action=SKIP slot held by <holder>`, print it,
    and STOP. No agent, no MCP calls. With desk equity shares saved (since
-   2026-10-31: oil 90%, metals 10%; metals = gold since 2026-11-05) every desk owns its own slot, so
+   2026-10-31; oil 32%, hype 60%, sp500 0%, metals 0%; metals = gold since 2026-11-05) every desk owns its own slot, so
    the second case only happens without shares (the 2026-10-23 rule: the
    desk holding the one slot is the only one that ticks).
+   If `slot` is `operator` (the sp500 and hype desks only, on their own
+   guarded coin: the operator's own position or resting order sits on
+   xyz:SP500 or HYPE), append
+   `DESK-TICK $ARGUMENTS <utc> coin=<the guarded coin> action=HOLD <reason>`
+   with the script's `reason` (`operator position open on xyz:SP500`, or
+   the same for HYPE), print it, and STOP. No agent, no MCP calls: the
+   desk places nothing and never closes, cancels, sweeps or moves a stop
+   or target on his trade.
 2. **Otherwise launch the agent.** Agent tool, `subagent_type` `desk-tick`,
    prompt `DESK: $ARGUMENTS`. Do not run the tick steps yourself and do not
    launch more than one agent per tick. The agent file

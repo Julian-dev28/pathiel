@@ -1295,7 +1295,10 @@ def handle_config(params: Dict[str, Any]) -> str:
     # Nested blocks still deep-merge through the generic path below.
     # 2026-10-31: desk_equity_share ({desk: fraction}, e.g. oil 0.95, metals
     # 0.05) is validated by update_agent_config (services/strategies/desk_share.py).
-    _NESTED_KEYS: List[str] = ["desk_equity_share"]
+    # 2026-11-19: desk_max_leverage ({desk: cap}, e.g. sp500 25) lowers or sets
+    # one desk's leverage cap (services/strategies/desk_leverage.py). Checked
+    # here: a value outside [1, 50] is refused, never saved and then ignored.
+    _NESTED_KEYS: List[str] = ["desk_equity_share", "desk_max_leverage"]
 
     updates: Dict[str, Any] = {}
     for key in _DIRECT_KEYS:
@@ -1329,6 +1332,13 @@ def handle_config(params: Dict[str, Any]) -> str:
         obj = _as_object(key, params[key])
         if obj is None:
             return json.dumps({"status": "error", "error": f"{key} must be an object"})
+        if key == "desk_max_leverage":
+            from services.strategies import desk_leverage
+            bad = sorted(str(d) for d, v in obj.items() if desk_leverage._valid(v) is None)
+            if bad:
+                return json.dumps({"status": "error", "error": (
+                    f"desk_max_leverage for {', '.join(bad)} must be a number from "
+                    f"{desk_leverage.MIN_CAP:g} to {desk_leverage.MAX_CAP:g}")})
         updates[key] = obj
 
     # Any other key already in the live config (risk_profile, a hand-added
@@ -2628,12 +2638,143 @@ def handle_get_candles(params: Dict[str, Any]) -> str:
     candles = fetch_hl_candles(coin, interval, count)
     return json.dumps([c.model_dump() for c in candles], default=str)
 
+# ── ownership enforcement: the desk never acts on a position or order it
+# did not place (2026-11-17 23:25Z: sweep_brackets reported the operator's
+# own hand-placed Brent long "NOT FULLY COVERED" and a tick closed it; this
+# is the structural fix, in code rather than a prompt note). Every live-
+# money tool below that can touch an EXISTING position or order checks
+# ownership first; `operator_override: true` is the one escape hatch, and it
+# must be asked for explicitly in the same call, every time.
+
+def _operator_override(params: Dict[str, Any]) -> bool:
+    return _as_bool(params.get("operator_override"))
+
+
+def _ownership_refusal(coin: str, params: Dict[str, Any], action: str) -> "Dict[str, Any] | None":
+    """None when `action` may proceed on `coin`'s open position: flat (no
+    position to misjudge), desk-owned, or an explicit operator_override.
+    Otherwise the refusal payload to return verbatim, isError-worthy (it
+    carries "error"). A read failure refuses too (pathiel.agents.ownership:
+    refuse, don't guess) rather than blocking the tick on a transient venue
+    error -- never silently proceeds as if nothing were there."""
+    if _operator_override(params):
+        return None
+    from pathiel.agents import ownership
+    own = ownership.check_position_ownership(coin)
+    if own.get("flat") or own.get("desk_owned"):
+        return None
+    where = f"{abs(own['size']):g} @ {own['entry_px']:g}" if own.get("entry_px") else f"{own.get('size')!r}"
+    reason = (f"{action} refused: the open {coin} position ({where}) was not placed by the desk "
+              "(no pathiel cloid traced to its opening fills, no journal entry). This is the "
+              "operator's own trade -- pass operator_override=true in this same call to act on it "
+              "anyway.")
+    return {"ok": False, "coin": coin, "error": reason, "operator_position": True,
+            "position": own.get("size"), "entry_px": own.get("entry_px")}
+
+
+def _operator_guard_refusal(coin: str, params: Dict[str, Any], action: str) -> "Dict[str, Any] | None":
+    """On a guarded coin (pathiel.agents.ownership.OPERATOR_GUARD_COINS:
+    xyz:SP500), the refusal for `action` while ANYTHING on the coin is the
+    operator's: a position the desk did not open, a resting order it did not
+    place, or a read that failed. None on every other coin (their path is
+    unchanged), when the coin is clear, or with operator_override. 2026-11-19:
+    the operator holds a hand-placed xyz:SP500 long on the desk's account; a
+    desk entry would merge into it."""
+    from pathiel.agents import ownership
+    if not ownership.is_guarded(coin) or _operator_override(params):
+        return None
+    try:
+        got = ownership.check_operator_presence(coin)
+    except Exception as e:  # noqa: BLE001 - an unknown state is refused, never traded on
+        got = {"operator": True, "position": False, "orders": [], "read_failed": True,
+               "reason": ownership.OPERATOR_UNKNOWN_REASON.format(coin=coin) + f": {type(e).__name__}"}
+    if not got.get("operator"):
+        return None
+    return {"ok": False, "coin": coin, "placed": False, "changed": False, "operator_position": True,
+            "position": got.get("position_size"), "entry_px": got.get("entry_px"),
+            "operator_orders": got.get("orders") or [], "reason": got["reason"],
+            "error": f"{action} refused: {got['reason']}. The desk holds and touches nothing on {coin} "
+                     "until the operator's own position and orders are gone (operator_override=true in "
+                     "this same call acts anyway)."}
+
+
+def _order_ownership_refusal(coin: str, order_id: Any, params: Dict[str, Any]) -> "Dict[str, Any] | None":
+    """None when cancel_order may proceed on this specific order: not found
+    among the coin's resting orders (nothing here to misjudge -- the venue
+    itself will answer), tagged with a pathiel cloid, journalled by oid, or
+    an explicit operator_override. Otherwise the refusal payload."""
+    if _operator_override(params):
+        return None
+    try:
+        oid_int = int(order_id)
+    except (TypeError, ValueError):
+        return None
+    try:
+        from pathiel.client.exchange import _resting_orders_for_coin, resolve_user_address
+        user = resolve_user_address()
+        orders = _resting_orders_for_coin(user, coin) if user else []
+    except Exception:
+        return None   # a read failure here must not block a cancel the venue can still refuse on its own
+    order = next((o for o in orders if int(o.get("oid") or 0) == oid_int), None)
+    if order is None:
+        return None
+    from pathiel.agents import ownership
+    if ownership.is_pathiel_cloid(order.get("cloid")) or oid_int in ownership.journal_oids():
+        return None
+    return {"cancelled": False, "coin": coin, "order_id": oid_int, "operator_order": True,
+            "error": f"cancel_order refused: order {oid_int} on {coin} was not placed by the desk "
+                     "(no pathiel cloid, no journal entry). This is the operator's own order -- pass "
+                     "operator_override=true in this same call to cancel it anyway."}
+
+
+def _operator_sweep_report(coin: str, own: Dict[str, Any]) -> Dict[str, Any]:
+    """The read-only report `bracket_sweep` returns for a position the desk
+    did not place: no cancel, no fold, no touch (bracket.sweep's own
+    consolidate-protection path is never reached). Covers both an uncovered
+    operator position (the exact case the 2026-11-17 bug mishandled) and a
+    covered one, so a non-desk position never silently goes through
+    bracket.sweep()'s mutating path either way."""
+    from pathiel.agents import bracket
+    from pathiel.client.exchange import _resting_orders_for_coin, resolve_user_address
+    size = own.get("size") or 0.0
+    entry_px, leverage = own.get("entry_px"), own.get("leverage")
+    liq_px = None
+    if entry_px and leverage:
+        try:
+            coin_max, _ = _coin_specs(coin)
+            if coin_max:
+                liq_px = round(bracket.liq_estimate(float(entry_px), float(leverage), coin_max, size > 0), 6)
+        except Exception:
+            liq_px = None
+    covered = None
+    try:
+        user = resolve_user_address()
+        orders = _resting_orders_for_coin(user, coin) if user else []
+        stops = [o for o in orders if o.get("reduceOnly") and "Stop" in str(o.get("orderType", ""))]
+        covered = round(sum(bracket.order_cover(o, size) for o in stops), 6)
+    except Exception:
+        covered = None
+    ok = covered is not None and covered + 1e-9 >= abs(size)
+    status = "uncovered" if not ok else "covered"
+    bits = [f"{abs(size):g}"]
+    if entry_px:
+        bits.append(f"@ {entry_px:g}")
+    if liq_px:
+        bits.append(f"liq {liq_px:g}")
+    return {"ok": ok, "coin": coin, "operator_position": True, "position": size, "entry_px": entry_px,
+           "leverage": leverage, "liq_px": liq_px, "stop_covers": covered, "changed": False,
+           "reason": f"operator trade, {status}: " + " ".join(bits)}
+
+
 def handle_close_position(params: Dict[str, Any]) -> str:
     """Handle close_position tool call."""
     from pathiel.agents.bracket import close_position as close_position_market
 
     coin = _norm_coin(params.get('coin', 'BTC'))
     fraction = params.get('fraction')
+    refusal = _ownership_refusal(coin, params, "close_position")
+    if refusal is not None:
+        return json.dumps(refusal, default=str)
 
     try:
         result = close_position_market(coin) if fraction is None else close_position_market(coin, fraction=fraction)
@@ -2655,6 +2796,9 @@ def handle_set_leverage(params: Dict[str, Any]) -> str:
     from pathiel.client.exchange import set_leverage as set_leverage_fn
     coin = _norm_coin(params.get('coin', 'BTC'))
     leverage = int(params.get('leverage', 5))
+    guard = _operator_guard_refusal(coin, params, "set_leverage")
+    if guard is not None:
+        return json.dumps(guard, default=str)
     is_cross = _open_position_margin_is_cross(coin)
     result = set_leverage_fn(coin, leverage, is_cross=is_cross, strict=True)
     result["margin_type"] = ("position's own: " if is_cross is not None else "market default: ") + (
@@ -2737,6 +2881,10 @@ def handle_cancel_order(params: Dict[str, Any]) -> str:
         return json.dumps({'cancelled': False, 'error': 'order_id plus coin (or asset index) required'})
     if not _has_usable_credential():
         return json.dumps({'cancelled': False, 'error': 'HYPERLIQUID_PRIVATE_KEY not set'})
+    if coin is not None:
+        refusal = _order_ownership_refusal(coin, order_id, params)
+        if refusal is not None:
+            return json.dumps(refusal, default=str)
     try:
         res = cancel_orders(int(order_id), coin=coin, asset_idx=int(asset) if asset is not None and coin is None else None)
         return json.dumps({'cancelled': bool(res.get('ok')), 'order_id': int(order_id), 'coin': coin,
@@ -4120,13 +4268,29 @@ def _thesis_sizing(brief: Any) -> "Dict[str, Any] | None":
     if call is None or call.side not in ("long", "short") or not call.entry_px or not call.stop_px:
         return None
     try:
-        from services.risk.size import size_trade
+        from services.risk.size import equity_excluding_position_pnl, size_trade, topup_room
         profile, books, venue = _risk_inputs()
         acct = getattr(brief.analytics, "account", None) if brief.analytics else None
         equity = acct.equity_usd if acct is not None and acct.source == "venue" else _live_equity()
+        try:
+            user = resolve_user_address()
+        except Exception:
+            user = None
+        pos = _coin_position(user, call.instrument)
+        # FIXED 2026-11-17: `equity` above is the account's total equity,
+        # which includes THIS coin's own open position's unrealized P&L, so
+        # "full size" (what a same-side top-up is measured against) swung
+        # with the position's own mark-to-market instead of staying a
+        # stable function of the desk's capital (observed: 13.59, 19.62,
+        # the 7.71 at 16:20Z was the new thesis's wider stop, not this). Back
+        # the position's own GAIN out first (a loss stays in, see size.py): full size reads the same
+        # whether the desk is flat or already holds it.
+        equity = equity_excluding_position_pnl(equity, pos["upnl"])
         dslice = _desk_slice(call.instrument, equity)   # the desk's share of it, as place_bracket sizes
         equity = dslice["slice_usd"]
         coin_max, sz_dec = _coin_specs(call.instrument)
+        from services.strategies.desk_leverage import profile_for_coin
+        profile = profile_for_coin(profile, call.instrument)   # the desk's own cap, as place_bracket sizes
         # FIXED 2026-10-27: this sized at the thesis's own leverage (5x) while
         # place_bracket sizes at the profile's (20x), so "Your size" read 2.93
         # against an 11.84 position and the tick's top-up rule ("brief size
@@ -4143,6 +4307,13 @@ def _thesis_sizing(brief: Any) -> "Dict[str, Any] | None":
                            targets=call.targets or [], venue=venue, sz_decimals=sz_dec)
         out = {"coin": call.instrument, "equity_usd": equity, "desk": dslice["desk"],
                "equity_share": dslice["equity_share"], **sized.model_dump(mode="json")}
+        if pos["size"]:
+            # how much of full size is already on, and the room left to
+            # add -- the exact numbers a same-side top-up decision needs,
+            # from the same stable full size above (never negative).
+            out["held_size"] = round(abs(pos["size"]), 8)
+            if sized.size is not None:
+                out["topup_room"] = round(topup_room(sized.size, pos["size"]), 8)
         if dslice["equity_share"] < 1:
             out["reason"] = f"{dslice['equity_share']:.0%} of equity: " + out["reason"]
         if sized.warnings:
@@ -4237,6 +4408,48 @@ def _desk_slice(coin: str, equity: float) -> Dict[str, Any]:
             "slice_usd": round(equity * share, 6), "shares_on": bool(desk_share.desk_shares(cfg)),
             "desk_coins": desk_share.desk_coins(desk) if desk else [],
             "slots": desk_share.slots(cfg, 1)}
+
+
+def _coin_position(user: "str | None", coin: str) -> Dict[str, float]:
+    """This coin's own open position right now, from the shared account
+    snapshot: {"size": signed szi, "upnl": unrealizedPnl}. Zeros when flat,
+    when `user` is falsy, or on a read failure -- a sizing helper degrades
+    to "no position", it never raises and blocks a read-only brief."""
+    if not user:
+        return {"size": 0.0, "upnl": 0.0}
+    try:
+        from pathiel.client.account_snapshot import account_state
+        state = account_state(user, include_hip3=True) or {}
+        for row in state.get("asset_positions") or []:
+            pos = (row or {}).get("position") or {}
+            if pos.get("coin") == coin:
+                return {"size": float(pos.get("szi") or 0.0),
+                        "upnl": float(pos.get("unrealizedPnl") or 0.0)}
+    except Exception:
+        pass
+    return {"size": 0.0, "upnl": 0.0}
+
+
+def _stable_equity_for_sizing(coin: str, total_equity_usd: float, user: "str | None" = None) -> float:
+    """`total_equity_usd` with THIS coin's own open position's unrealized
+    P&L backed out (services.risk.size.equity_excluding_position_pnl), so
+    "full size" -- place_bracket's fresh-entry size, shown on the brief as
+    "Your size" and read by a top-up decision -- sizes from a basis that is
+    stable whether the desk is flat or already holds the position it is
+    being measured against. FIXED 2026-11-17: without this, full size
+    tracked the SAME position's own mark-to-market uPnL (observed on
+    xyz:BRENTOIL, one unchanged thesis, full size swinging 13.59 / 19.62 /
+    across ticks; 7.71 was a wider stop). `user`: the caller's already-resolved address, when
+    it has one (so sizing and placement never disagree on which account);
+    resolved here otherwise. A resolve failure degrades to the raw,
+    unstabilized equity rather than raising."""
+    from services.risk.size import equity_excluding_position_pnl
+    if user is None:
+        try:
+            user = resolve_user_address()
+        except Exception:
+            user = None
+    return equity_excluding_position_pnl(total_equity_usd, _coin_position(user, coin)["upnl"])
 
 
 def _coin_specs(coin: str) -> "Tuple[float | None, int | None]":
@@ -4357,6 +4570,17 @@ def handle_place_bracket(params: Dict[str, Any]) -> str:
     coin = _norm_coin(str(params.get("coin") or ""))
     if not coin:
         return json.dumps({"ok": False, "error": "coin is required"})
+    guard = _operator_guard_refusal(coin, params, "place_bracket")
+    if guard is not None:
+        return json.dumps(guard, default=str)
+    if _as_bool(params.get("add")):
+        # A top-up is the one place place_bracket adds to an EXISTING
+        # position; everywhere else a second position on the coin is
+        # already refused regardless of ownership. Refuse a desk top-up
+        # onto a position the desk did not open.
+        refusal = _ownership_refusal(coin, params, "place_bracket(add=true)")
+        if refusal is not None:
+            return json.dumps(refusal, default=str)
     try:
         stop = float(params["stop_px"])
         tp = float(params["tp_px"])
@@ -4385,8 +4609,12 @@ def handle_place_bracket(params: Dict[str, Any]) -> str:
     lev_raw = params.get("leverage")
     try:
         from pathiel.client.exchange import get_hl_price
-        from services.risk.size import size_trade
+        from services.risk.size import size_trade, topup_room
         profile, books, venue = _risk_inputs()
+        # The cap is per desk since 2026-11-19: the S&P desk sizes at its own
+        # (50x), every other coin gets `profile` back unchanged (20x live).
+        from services.strategies.desk_leverage import profile_for_coin
+        profile = profile_for_coin(profile, coin)
         coin_max, sz_dec = _coin_specs(coin)
         if not coin_max:
             # Refuse rather than guess: without the venue's max leverage the
@@ -4405,12 +4633,25 @@ def handle_place_bracket(params: Dict[str, Any]) -> str:
         # profile's slots, the whole equity).
         from pathiel.client.exchange import resolve_user_address
         from services.strategies.desk_share import DeskShareError
+        user = resolve_user_address()
+        add = _as_bool(params.get("add"))
         try:
-            dslice = _desk_slice(coin, _live_equity())
+            equity_for_slice = _live_equity()
+            if add:
+                # FIXED 2026-11-17: sizing off the account's raw equity let a
+                # desk's own open position's floating P&L feed back into its
+                # own full-size target (services.risk.size.
+                # equity_excluding_position_pnl; _stable_equity_for_sizing
+                # backs THIS coin's uPnL out first), so "full size" reads the
+                # same whether this desk is flat or already holds the
+                # position it is about to top up. A non-add entry is refused
+                # below if a position is already open, so this basis is a
+                # no-op there -- skip the extra read.
+                equity_for_slice = _stable_equity_for_sizing(coin, equity_for_slice, user)
+            dslice = _desk_slice(coin, equity_for_slice)
         except DeskShareError as e:
             return json.dumps({"ok": False, "coin": coin, "placed": False, "error": f"desk share: {e}"})
         slots = dslice["slots"] if dslice["shares_on"] else int(getattr(profile, "max_open_positions", None) or 1)
-        user = resolve_user_address()
         if dslice["shares_on"]:
             # one position per desk: another coin of THIS desk holding a
             # position or an entry blocks it (oil cannot hold Brent and WTI)
@@ -4423,7 +4664,6 @@ def handle_place_bracket(params: Dict[str, Any]) -> str:
             return json.dumps({"ok": False, "coin": coin, "placed": False,
                                "error": f"slot taken by {taken}: the account allows {slots} open position(s)"})
         ref = entry if entry is not None else float(get_hl_price(coin))
-        add = _as_bool(params.get("add"))
         leverage = _bracket_leverage(profile, lev_raw)
         if lev_raw in (None, "") and not add and leverage:
             # Leverage fit (operator 2026-11-04 "TURN ON LEVERAGE FIT"): a
@@ -4463,7 +4703,7 @@ def handle_place_bracket(params: Dict[str, Any]) -> str:
             # top-up rounded up past the free margin and the venue refused it
             # ("Insufficient margin to place order") after the dry run passed.
             cap = _floor_size(budget * lev_used / ref, sz_dec)
-            wanted = _round_size(size - abs(held), sz_dec)
+            wanted = _round_size(topup_room(size, held), sz_dec)   # full size minus held, never negative
             size = _round_size(min(wanted, cap), sz_dec)
             topup = {"held": held, "full_size": sized.size, "free_margin_usd": round(free, 2),
                      "topup_cap_size": cap, "topup_size": size}
@@ -4501,9 +4741,17 @@ def handle_place_bracket(params: Dict[str, Any]) -> str:
     if not sized.can_trade or not sized.size:
         return json.dumps({"ok": False, "coin": coin, "placed": False,
                            "error": f"sizing refused: {sized.reason}"}, default=str)
+    # The take-profit offset is the coin's own (0.5% everywhere; none on the
+    # S&P, whose whole 24h range is under 1%): next_trade.target_offset_frac_for.
+    # Passed only for a coin that has its own, so every other coin's call is
+    # the one it always was (bracket.TARGET_OFFSET_FRAC applies inside).
+    from services.strategies.next_trade import TARGET_OFFSET_FRAC_BY_COIN
+    own_offset = ({"target_offset_frac": TARGET_OFFSET_FRAC_BY_COIN[coin]}
+                  if coin in TARGET_OFFSET_FRAC_BY_COIN else {})
     out = bracket.place_bracket(coin, entry_px=entry, stop_px=stop, tp_px=tp, size=size,
                                 leverage=int(sized.leverage or 1), min_r=min_r,
-                                coin_max_leverage=coin_max, dry_run=bool(params.get("dry_run")), add=add)
+                                coin_max_leverage=coin_max, dry_run=bool(params.get("dry_run")), add=add,
+                                **own_offset)
     out["sizing"] = {"notional_usd": sized.notional_usd, "margin_usd": sized.margin_usd,
                      "risk_usd": sized.risk_usd, "risk_pct": sized.risk_pct,
                      "desk": dslice["desk"], "equity_share": dslice["equity_share"],
@@ -4555,6 +4803,9 @@ def handle_set_target(params: Dict[str, Any]) -> str:
         return json.dumps({"ok": False, "coin": coin, "error": "tp_px is required"})
     if not coin:
         return json.dumps({"ok": False, "error": "coin is required"})
+    refusal = _ownership_refusal(coin, params, "set_target")
+    if refusal is not None:
+        return json.dumps(refusal, default=str)
     try:
         return json.dumps(bracket.set_target(coin, tp), default=str)
     except Exception as e:
@@ -4570,6 +4821,9 @@ def handle_set_stop(params: Dict[str, Any]) -> str:
         return json.dumps({"ok": False, "coin": coin, "error": "stop_px is required"})
     if not coin:
         return json.dumps({"ok": False, "error": "coin is required"})
+    refusal = _ownership_refusal(coin, params, "set_stop")
+    if refusal is not None:
+        return json.dumps(refusal, default=str)
     try:
         out = bracket.set_stop(coin, stop)
     except Exception as e:
@@ -4584,6 +4838,26 @@ def handle_bracket_sweep(params: Dict[str, Any]) -> str:
     coin = _norm_coin(str(params.get("coin") or ""))
     if not coin:
         return json.dumps({"ok": False, "error": "coin is required"})
+    if not _operator_override(params):
+        guard = _operator_guard_refusal(coin, params, "sweep_brackets")
+        if guard is not None and not guard.get("position"):
+            # a guarded coin with the operator's ORDERS on it (or an unread
+            # state): a read-only answer, nothing folded, nothing cancelled.
+            # His open position takes the report path just below.
+            report = {k: v for k, v in guard.items() if k != "error"}
+            return json.dumps({**report, "ok": True, "swept": False}, default=str)
+        # An operator position never reaches bracket.sweep()'s mutating path
+        # (consolidate/cancel): report it read-only and stop (2026-11-17
+        # 23:25Z: sweep reported one "NOT FULLY COVERED" and a tick closed
+        # it). A read failure here falls through to the normal sweep rather
+        # than silently skipping housekeeping.
+        try:
+            from pathiel.agents import ownership
+            own = ownership.check_position_ownership(coin)
+        except Exception:
+            own = {"flat": True, "desk_owned": True}
+        if not own.get("flat") and not own.get("desk_owned") and not own.get("read_failed"):
+            return json.dumps(_operator_sweep_report(coin, own), default=str)
     # Bounded the same way as handle_desk_brief (see HANDLER_DEADLINE_S /
     # _bounded above): sweep()'s reads (position, resting orders, price) go
     # through the same venue HTTP path that stacked to 900+s in the
@@ -4623,11 +4897,16 @@ def handle_risk_size_trade(params: Dict[str, Any]) -> str:
         if eq_raw is not None:
             equity = _fnum(eq_raw)          # a what-if equity is taken as given
         else:
-            dslice = _desk_slice(coin, _live_equity())
+            # the same stable basis place_bracket sizes a fresh entry from
+            # (_stable_equity_for_sizing backs this coin's own open
+            # position's uPnL out first; see its docstring)
+            dslice = _desk_slice(coin, _stable_equity_for_sizing(coin, _live_equity()))
             equity = dslice["slice_usd"]    # live: the desk's share, as place_bracket sizes
             share_note = {"desk": dslice["desk"], "equity_share": dslice["equity_share"],
                           "account_equity_usd": round(dslice["equity_usd"], 2)}
         coin_max, sz_dec = _coin_specs(coin)
+        from services.strategies.desk_leverage import profile_for_coin
+        profile = profile_for_coin(profile, coin)               # the desk's own cap, as place_bracket sizes
         sized = size_trade(equity, profile, books, entry_px=entry, stop_px=stop,
                            leverage=leverage or None, coin_max_leverage=coin_max,
                            targets=targets, venue=venue, sz_decimals=sz_dec)

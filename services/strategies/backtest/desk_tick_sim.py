@@ -637,6 +637,30 @@ class Params:
     # takes priority over `target_r` when both are set. None (the default)
     # keeps every existing result byte-identical.
     pb_target_r: Optional[float] = None
+    # ── breakout/continuation entry, mode a6 (2026-11-19, BREAKOUT_ENTRY_TEST_
+    # 2026-11-19.md; operator: "ur like doing one trade every 2 weeks" ... "i
+    # need to see some profitable trades soon"). Distinct from a5 above: a5's
+    # trigger/stop/lookback are all one fixed shape (24h break, stop beyond
+    # the last N hours' extreme); a6 is the research grid this file's README
+    # documents elsewhere -- an 8h break (`pb_breakout_entry_h`), confirmed
+    # on a closed 15m OR 1h bar (`pb_breakout_confirm`), stopped either back
+    # inside the broken level by k x ATR14 or at the entry range's own
+    # midpoint (`pb_breakout_stop_mode`/`_stop_k`), sized at a fraction of
+    # the desk's full size (`pb_breakout_size_frac`), capped at one fill per
+    # thesis (`pb_breakout_cap_one`, enforced by the caller in
+    # `simulate_steps` -- pullback_setup itself stays pure and call-history-
+    # free). Target and its own R gate reuse the existing shared fields
+    # (`pb_target`/`pb_target_r` below; `pb_breakout_min_r` only overrides
+    # the gate for a6, never the live rule's own `min_r`). Every default
+    # keeps every existing result byte-identical (test_breakout_entry_sim.py's
+    # golden check) -- a6 only runs when `pullback_entry == "a6"`.
+    pb_breakout_entry_h: int = 8          # the prior N hours' high/low that must break
+    pb_breakout_confirm: str = "1h"       # "1h" | "15m" -- which closed bar confirms the break
+    pb_breakout_stop_mode: str = "level_atr"  # "level_atr" | "midpoint"
+    pb_breakout_stop_k: float = 0.75      # level_atr: stop = broken level -/+ k x ATR14(1h)
+    pb_breakout_size_frac: float = 1.0    # scales ONLY this mode's entry size (and its top-up ceiling)
+    pb_breakout_cap_one: bool = False     # True: at most one a6 fill per thesis call (regime_id)
+    pb_breakout_min_r: Optional[float] = None  # a6's own min_r gate; None falls back to `min_r`
 
 
 # Per-side market-sell slippage (bps) by notional (USD), walked on the live
@@ -1312,7 +1336,7 @@ def _stop_buffer(params: Params, lv: Dict[str, Any], entry: float) -> Tuple[floa
     return buf, raw_buf
 
 
-PULLBACK_MODES = ("a1", "a2", "a3", "a4", "a5")
+PULLBACK_MODES = ("a1", "a2", "a3", "a4", "a5", "a6")
 PB_TARGETS = ("far", "thesis", "measured")
 # The live refusals a pullback entry may answer: the mid is past the thesis
 # entry ("chase"), or the 24h-edge stop leaves under min_r ("min_r").
@@ -1368,12 +1392,15 @@ def pb_cancel(rest: "_Resting", d: Optional[Direction], t: int) -> bool:
 
 
 def pullback_setup(d: Direction, t: int, mid: float, lv: Dict[str, Any], closed_1h: Sequence[Candle],
-                   params: Params, leverage: Optional[float] = None) -> Optional[Dict[str, Any]]:
+                   params: Params, leverage: Optional[float] = None,
+                   closed_15m: Optional[Sequence[Candle]] = None) -> Optional[Dict[str, Any]]:
     """The pullback entry (`Params.pullback_entry`, see "Pullback entry") for
     a flat tick whose live setup was refused: a setup dict with `is_market`,
     `pb` (the mode), `expires_at` and `call_id`; {"refused": "pb_*"}; or
     None (nothing to try: no retest, too little history). `closed_1h`: 1h
-    bars closed by `t`, oldest first. Pure."""
+    bars closed by `t`, oldest first. `closed_15m` (mode a6, `pb_breakout_
+    confirm == "15m"` only): 15m bars closed by `t`, oldest first; unused
+    (and may be None) by every other mode and confirmation setting. Pure."""
     mode = params.pullback_entry
     lev = params.leverage if leverage is None else leverage
     is_long = d.side == "long"
@@ -1394,7 +1421,7 @@ def pullback_setup(d: Direction, t: int, mid: float, lv: Dict[str, Any], closed_
             return {"refused": "pb_" + s["refused"]}
         return {**s, "pb": mode, "expires_at": start + int(params.pb_fresh_h * HOUR_MS), "call_id": d.regime_id,
                 "leverage": lev}
-    if mode != "a5" and len(closed_1h) < max(params.pb_struct_h, 1):
+    if mode not in ("a5", "a6") and len(closed_1h) < max(params.pb_struct_h, 1):
         return None
     expires_at = None
     breakout_level: Optional[float] = None
@@ -1439,10 +1466,40 @@ def pullback_setup(d: Direction, t: int, mid: float, lv: Dict[str, Any], closed_
         entry, is_market = mid, True
         recent = closed_1h[-stop_h:]
         struct = min(min(c.l for c in recent), mid) if is_long else max(max(c.h for c in recent), mid)
+    elif mode == "a6":
+        entry_h = max(params.pb_breakout_entry_h, 1)
+        if params.pb_breakout_confirm == "15m":
+            n_bars = entry_h * 4
+            bars = closed_15m
+        else:
+            n_bars = entry_h
+            bars = closed_1h
+        if bars is None or len(bars) < n_bars + 1:
+            return None
+        last = bars[-1]
+        prior_bars = bars[-(n_bars + 1):-1]
+        if is_long:
+            breakout_level = max(c.h for c in prior_bars)
+            broke = last.c > breakout_level
+        else:
+            breakout_level = min(c.l for c in prior_bars)
+            broke = last.c < breakout_level
+        if not broke:
+            return None            # the last closed bar did not confirm the break: nothing to chase yet
+        entry, is_market = mid, True
+        if params.pb_breakout_stop_mode == "midpoint":
+            stop_px = (lv["range_8h_low"] + lv["range_8h_high"]) / 2.0
+        else:
+            k = params.pb_breakout_stop_k
+            stop_px = breakout_level - k * lv["atr14"] if is_long else breakout_level + k * lv["atr14"]
+        if (stop_px >= entry) if is_long else (stop_px <= entry):
+            return {"refused": "pb_breakout_bad_stop"}
+        struct = None            # a6 sets stop_px directly; the shared buffer step below is skipped for it
     else:
         raise ValueError(f"unknown pullback_entry {mode!r}")
-    buf, _ = _stop_buffer(params, lv, entry)
-    stop_px = struct - buf if is_long else struct + buf
+    if mode != "a6":
+        buf, _ = _stop_buffer(params, lv, entry)
+        stop_px = struct - buf if is_long else struct + buf
     if params.pb_cap_thesis_stop and d.stop_px is not None and (
             stop_px < d.stop_px if is_long else stop_px > d.stop_px):
         return {"refused": "pb_wide"}
@@ -1473,11 +1530,15 @@ def pullback_setup(d: Direction, t: int, mid: float, lv: Dict[str, Any], closed_
         if fit is None:
             return {"refused": "pb_leverage"}
         lev = fit
-    if not check_levels(entry, stop_px, target_px, params.min_r)["ok"]:
+    gate_min_r = params.pb_breakout_min_r if (mode == "a6" and params.pb_breakout_min_r is not None) else params.min_r
+    if not check_levels(entry, stop_px, target_px, gate_min_r)["ok"]:
         return {"refused": "pb_min_r"}
-    return {"side": d.side, "entry_px": entry, "stop_px": stop_px, "target_px": target_px,
-            "orig_target_px": structural, "is_market": is_market, "pb": mode, "expires_at": expires_at,
-            "call_id": d.regime_id, "leverage": lev}
+    out = {"side": d.side, "entry_px": entry, "stop_px": stop_px, "target_px": target_px,
+          "orig_target_px": structural, "is_market": is_market, "pb": mode, "expires_at": expires_at,
+          "call_id": d.regime_id, "leverage": lev}
+    if mode == "a6":
+        out["size_frac"] = params.pb_breakout_size_frac
+    return out
 
 
 def zone_position(mid: float, lo: float, hi: float, side: str) -> Optional[float]:
@@ -1755,6 +1816,16 @@ def simulate_steps(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], 
             raise ValueError("pb_cancel_h and pb_fresh_h must be over 0, pb_bounce_atr 0 or more")
         if params.pb_breakout_lookback_h < 1 or params.pb_breakout_stop_h < 1:
             raise ValueError("pb_breakout_lookback_h and pb_breakout_stop_h must be 1 or more")
+        if params.pb_breakout_entry_h < 1:
+            raise ValueError("pb_breakout_entry_h must be 1 or more")
+        if params.pb_breakout_confirm not in ("1h", "15m"):
+            raise ValueError(f"unknown pb_breakout_confirm {params.pb_breakout_confirm!r}")
+        if params.pb_breakout_stop_mode not in ("level_atr", "midpoint"):
+            raise ValueError(f"unknown pb_breakout_stop_mode {params.pb_breakout_stop_mode!r}")
+        if params.pb_breakout_stop_k < 0:
+            raise ValueError("pb_breakout_stop_k must be 0 or more")
+        if not (0 < params.pb_breakout_size_frac <= 1.0):
+            raise ValueError("pb_breakout_size_frac must be in (0, 1]")
     c15 = sorted(candles_15m, key=lambda c: c.t)
     c1h = sorted(candles_1h, key=lambda c: c.t)
     regime: Optional[RegimeSeries] = None
@@ -1794,6 +1865,12 @@ def simulate_steps(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], 
     stop_count_by_call: Counter = Counter()
     reclaim_wait: Optional[Dict[str, Any]] = None
     seen_1h_close: set = set()
+    # One a6 fill per thesis call (Params.pb_breakout_cap_one): call_id
+    # (Direction.regime_id) of every call that has already opened an a6
+    # position, so a later chase/min_r refusal under the SAME call never
+    # tries a6 again, even after that position closes. Empty (and never
+    # read) unless pullback_entry == "a6" and pb_breakout_cap_one is True.
+    breakout_used_calls: set = set()
     cap_on = params.daily_stop_cap is not None
     reclaim_on = params.reclaim_after_stops is not None
     trend_on = params.trend_gate_span is not None
@@ -1817,8 +1894,17 @@ def simulate_steps(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], 
     by_close = {c.t + HOUR_MS: c for c in c1h}
     need = max(15, params.entry_lookback_h, params.target_lookback_h)
     pb_need = max(params.pb_struct_h, params.pb_retest_h + RANGE_H + 1,
-                 params.pb_breakout_lookback_h + 1, params.pb_breakout_stop_h)
+                 params.pb_breakout_lookback_h + 1, params.pb_breakout_stop_h,
+                 params.pb_breakout_entry_h + 1)
+    # a6, pb_breakout_confirm == "15m" only: how many closed 15m bars its own
+    # break check needs (entry_h hours x 4 + 1, the one extra for "the bar
+    # before the prior window"). 0 (never sliced) for every other mode/
+    # confirmation setting -- c15 stays unread for them, same as before a6
+    # existed.
+    pb_need_15 = params.pb_breakout_entry_h * 4 + 1 if (
+        params.pullback_entry == "a6" and params.pb_breakout_confirm == "15m") else 0
     n_closed = 0
+    n_closed_15 = 0
 
     for bar in ticks:
         if run.liquidated:
@@ -1828,6 +1914,9 @@ def simulate_steps(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], 
         trades_before_bar = len(run.trades)
         while n_closed < len(c1h) and c1h[n_closed].t + HOUR_MS <= t:
             n_closed += 1
+        if pb_need_15:
+            while n_closed_15 < len(c15) and c15[n_closed_15].t + FIFTEEN_MIN_MS <= t:
+                n_closed_15 += 1
         lv = _levels(c1h[max(0, n_closed - need):n_closed], params.entry_lookback_h, params.target_lookback_h)
         if reclaim_wait is not None and not reclaim_wait["ok"] and n_closed > reclaim_wait["since_n_closed"]:
             # only a bar that closed strictly AFTER the stop counts -- a bar
@@ -2192,7 +2281,16 @@ def simulate_steps(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], 
                         open_now = params.entry_mode == "market"
                 if (params.pullback_entry is not None and setup is not None
                         and setup.get("refused") in PB_TRIGGERS):
-                    pb = pullback_setup(d, t, mid, lv, c1h[max(0, n_closed - pb_need):n_closed], params, lev)
+                    capped = (params.pullback_entry == "a6" and params.pb_breakout_cap_one
+                             and d.regime_id is not None and d.regime_id in breakout_used_calls)
+                    if capped:
+                        run.refused["pb_breakout_capped"] += 1
+                        pb = None
+                    else:
+                        c15_closed = (c15[max(0, n_closed_15 - pb_need_15):n_closed_15]
+                                     if pb_need_15 else None)
+                        pb = pullback_setup(d, t, mid, lv, c1h[max(0, n_closed - pb_need):n_closed], params, lev,
+                                            closed_15m=c15_closed)
                     if pb is not None and not pb.get("refused"):
                         setup = pb
                         open_now = pb["is_market"]
@@ -2234,9 +2332,13 @@ def simulate_steps(candles_15m: Sequence[Candle], candles_1h: Sequence[Candle], 
                         mult = entry_guard(t, setup["side"])
                         sz_eq *= mult
                         run.guard_scaled += 1 if mult < 1.0 else 0
+                    size_frac = setup.get("size_frac", 1.0)      # a6 only (Params.pb_breakout_size_frac); 1.0 elsewhere
+                    sz_eq *= size_frac
                     position, initial_size, equity = _market_open(setup, bar, t, equity, params, lev, sz_eq)
-                    position.size_mult = mult
+                    position.size_mult = mult * size_frac   # caps a top-up at this SAME scaled size (line ~2057)
                     position.pb = setup.get("pb")
+                    if setup.get("pb") == "a6" and params.pb_breakout_cap_one and setup.get("call_id") is not None:
+                        breakout_used_calls.add(setup["call_id"])
                     # conservative: the entry bar's own range can stop it out
                     is_long = position.side == "long"
                     if (bar.l <= position.stop_px) if is_long else (bar.h >= position.stop_px):

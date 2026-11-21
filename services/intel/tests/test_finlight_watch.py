@@ -256,9 +256,19 @@ def _stub(monkeypatch, tmp_path, mids, runner, held=""):
         "active_desks": ["oil"], "desk_equity_share": {"oil": 1.0}, "risk_profile": {"max_leverage": 20}})
     call = SimpleNamespace(side="long", entry_px=112.20, instrument="xyz:BRENTOIL")
     monkeypatch.setattr(journal, "latest_thesis", lambda desk: SimpleNamespace(call=call))
-    monkeypatch.setattr(levels, "summarize_coin", lambda coin: BRENT_LV)
     it = iter(mids)
-    monkeypatch.setattr(levels, "fetch_mid", lambda coin: next(it))
+    last_mid = {"v": None}
+
+    def _fetch_mid(coin):
+        last_mid["v"] = next(it)
+        return last_mid["v"]
+    monkeypatch.setattr(levels, "fetch_mid", _fetch_mid)
+    # real summarize_coin(coin, now_ms=None) takes an optional now_ms
+    # (services/strategies/levels.py:122); confirm_fire (scripts/trigger_watch.py,
+    # the 2026-11-17 stale-fire fix) always passes one on its post-wait
+    # recheck, and reads "mid" off this same return value, so the stub
+    # must accept it and agree with the pass's own mid.
+    monkeypatch.setattr(levels, "summarize_coin", lambda coin, now_ms=None: dict(BRENT_LV, mid=last_mid["v"]))
     monkeypatch.setattr(ex, "get_max_leverage", lambda coin: 20)
     monkeypatch.setattr(W, "_slot", lambda mod, desk: held)
     from services.accounts import signer_status
@@ -319,7 +329,9 @@ def test_the_watcher_keeps_running_when_finlight_raises_everywhere(monkeypatch, 
     sleeps = []
     assert W.watch(once=False, cooldown_min=30, sleep=sleeps.append, clock=lambda: NOW_S) == 0
     out = json.loads(capsys.readouterr().out.strip())
-    assert out["fire"] == "oil" and out["mid"] == 112.04 and sleeps == [60, 60]   # the plain sleep took over
+    # 2 plain inter-pass sleeps + 1 confirm_fire wait (CONFIRM_DELAY_S) on
+    # the firing pass (2026-11-17, stale-fire fix).
+    assert out["fire"] == "oil" and out["mid"] == 112.04 and sleeps == [60, 60, W.CONFIRM_DELAY_S]
     assert "finlight: status unavailable" in (tmp_path / "watch.log").read_text()
 
 
@@ -327,7 +339,8 @@ def test_the_watcher_without_a_runner_is_exactly_the_old_watcher(monkeypatch, tm
     _stub(monkeypatch, tmp_path, [112.30, 112.04], None)
     sleeps = []
     assert W.watch(once=False, cooldown_min=30, sleep=sleeps.append, clock=lambda: NOW_S) == 0
-    assert json.loads(capsys.readouterr().out.strip())["mid"] == 112.04 and sleeps == [60]
+    assert json.loads(capsys.readouterr().out.strip())["mid"] == 112.04
+    assert sleeps == [60, W.CONFIRM_DELAY_S]
     assert "finlight" not in (tmp_path / "watch.log").read_text()
 
 

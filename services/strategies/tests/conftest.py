@@ -27,10 +27,27 @@ DAY_MS = 86_400_000
 def state_dir(tmp_path, monkeypatch):
     """Every test's state lives under its own tmp_path. Resolved at call
     time by journal.py/pipeline.py (os.environ.get(...)), so monkeypatch's
-    setenv is all that's needed — no module reload dance."""
+    setenv is all that's needed — no module reload dance.
+
+    Also redirects services.intel.headline_watch's alert/state files.
+    Unlike PATHIEL_STATE_DIR, ALERTS_PATH/STATE_PATH are read from their
+    env vars ONCE at import time and then held as plain module globals —
+    so a test setenv after the module is already imported (true for most
+    of this suite, since something else imports it first) does nothing.
+    Patching the module attributes directly is the only way that reaches
+    the default `path or ALERTS_PATH` every call site uses. Without this,
+    event_blackout()'s headline leg reads whatever a live trigger_watch.py
+    process has actually written to /tmp/trigger-watch/headline_alerts.json
+    on this machine, and a test that exercises event_blackout() (e.g.
+    test_levels_entry_route.py) can flip to "blackout" depending on what
+    that live process fired in the last 30 minutes — found 2026-11-20
+    chasing a failure that had nothing to do with the change in flight."""
     d = tmp_path / "pathiel_state"
     d.mkdir()
     monkeypatch.setenv("PATHIEL_STATE_DIR", str(d))
+    from services.intel import headline_watch
+    monkeypatch.setattr(headline_watch, "ALERTS_PATH", str(d / "headline_alerts.json"))
+    monkeypatch.setattr(headline_watch, "STATE_PATH", str(d / "headline_state.json"))
     return str(d)
 
 

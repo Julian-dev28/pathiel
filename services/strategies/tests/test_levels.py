@@ -60,6 +60,31 @@ def test_summarize_coin_stamps_the_coin_on_the_result(monkeypatch):
     assert out["coin"] == "xyz:BRENTOIL" and out["mid"] == 107.5
 
 
+# ── the 1h fetch window must cover a coin's own trend-gate span (operator
+# bug, 2026-11-20: HYPE's 120h gate silently never applied -- summarize_coin
+# fetched only 50 hours, one short of the 121 closed bars trend_gate needs
+# to compute a return at all) ───────────────────────────────────────────────
+
+def test_hours_1h_for_covers_a_coins_trend_gate_span_with_margin():
+    assert L.hours_1h_for("HYPE") == 120 + L.TREND_GATE_FETCH_MARGIN_H == 130
+    for coin in ("xyz:BRENTOIL", "xyz:CL", "xyz:GOLD", "xyz:SILVER", "xyz:SP500"):
+        assert L.hours_1h_for(coin) == L.DEFAULT_HOURS_1H == 50   # no span: the usual window
+
+
+def test_summarize_coin_asks_for_the_wider_window_only_for_a_coin_with_a_gate(monkeypatch):
+    monkeypatch.setattr(L, "fetch_mid", lambda coin: 65.0)
+    seen: dict = {}
+
+    def fake_fetch_candles(coin, interval, hours, now_ms=None):
+        if interval == "1h":
+            seen[coin] = hours
+        return []
+    monkeypatch.setattr(L, "fetch_candles", fake_fetch_candles)
+    L.summarize_coin("HYPE", now_ms=1_000_000)
+    L.summarize_coin("xyz:BRENTOIL", now_ms=1_000_000)
+    assert seen == {"HYPE": 130, "xyz:BRENTOIL": 50}
+
+
 # ── LEVELS_TTL_S vs the Desk page's own poll interval (2026-10-24) ──────────
 #
 # oil_desk.js polls GET /api/desks/{id}/levels every REFRESH_MS. At the old

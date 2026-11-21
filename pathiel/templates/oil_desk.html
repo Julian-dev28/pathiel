@@ -6,7 +6,7 @@
 <title>Desk · pathiel</title>
 <link rel="stylesheet" href="/static/app.css" />
 <link rel="stylesheet" href="/static/pathiel.css" />
-<link rel="stylesheet" href="/static/desks.css?v=20261023" />
+<link rel="stylesheet" href="/static/desks.css?v=20261120" />
 <!-- pathiel.js installs the window.fetch wrapper this page's own script
      depends on, so it loads first and un-deferred. desks.js carries the
      shared formatters/badges this page reuses (pctSigned, fmtMoney,
@@ -244,9 +244,19 @@
     <div id="odds-list"></div>
   </section>
 
-  <!-- 5. LOOP LOG — the last 30 lines of this desk's loop. -->
+  <!-- 5. LOOP LOG — the last 30 lines of this desk's own ticks (DESK-TICK)
+       plus any watcher wake-up (WATCH) that names it; filtered server-side
+       (services/strategies/desk_log.filter_desk_lines) so another desk's
+       ticks, or anything else sharing this file (the oil-only paper-
+       breakout sim's PAPER-A6 lines), never show here by default. The
+       toggle asks for the raw, unfiltered tail instead. -->
   <section class="section" id="log-section">
-    <div class="section-head"><h2 class="sec-label">Loop log</h2></div>
+    <div class="section-head">
+      <h2 class="sec-label">Loop log</h2>
+      <label class="section-meta" id="log-show-all-label" style="cursor:pointer">
+        <input type="checkbox" id="log-show-all"> Show all lines
+      </label>
+    </div>
     <pre class="mono log-body" id="log-body">no ticks yet</pre>
   </section>
 
@@ -270,8 +280,9 @@
 
 
 <script src="/static/call_history.js?v=20261113"></script>
-<script src="/static/desks.js?v=20261113"></script>
+<script src="/static/desks.js?v=20261120b"></script>
 <script src="/static/position_line.js?v=20261028"></script>
-<script src="/static/oil_desk.js?v=20261028"></script>
+<script src="/static/entry_rows.js?v=20261120"></script>
+<script src="/static/oil_desk.js?v=20261120b"></script>
 </body>
 </html>
