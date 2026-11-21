@@ -6,7 +6,7 @@
 [![pathiel MCP server – quality and maintenance score on Glama](https://glama.ai/mcp/servers/Julian-dev28/pathiel/badges/score.svg)](https://glama.ai/mcp/servers/Julian-dev28/pathiel)
 [![Listed on mcpservers.org](https://mcpservers.org/badge.svg)](https://mcpservers.org/servers/julian-dev28/pathiel)
 [![pathiel MCP on mcprush](https://mcprush.com/badge/pathiel-mcp/score.svg)](https://mcprush.com/to/pathiel-mcp?ref=badge)
-[![Version 0.8.0](https://img.shields.io/badge/version-0.8.0-informational.svg)](https://github.com/Julian-dev28/pathiel/blob/main/CHANGELOG.md)
+[![Version 0.9.0](https://img.shields.io/badge/version-0.9.0-informational.svg)](https://github.com/Julian-dev28/pathiel/blob/main/CHANGELOG.md)
 [![MCP server](https://img.shields.io/badge/MCP-30_tools-6f42c1.svg)](https://github.com/Julian-dev28/pathiel/blob/main/docs/overhaul/MCP.md)
 [![CI](https://github.com/Julian-dev28/pathiel/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Julian-dev28/pathiel/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -31,6 +31,8 @@ Desk briefs for crude oil (Brent and WTI), metals (gold and silver), the S&P 500
 | **Research and trading** | all of the above, plus bracket orders sized from your risk profile | a Hyperliquid API wallet, connected with one signature |
 
 pathiel never touches a position or order you placed yourself unless you say so in that call.
+
+Research only, as its own server: `/plugin install pathiel-research@pathiel` adds `pathiel-research`, six read-only tools (a research brief, levels, the event calendar, headlines, prediction-market odds, FRED macro series) that need no account and no key and cannot place an order ([details](https://github.com/Julian-dev28/pathiel/blob/main/services/research_mcp/README.md)).
 
 ## Install in 30 seconds
 
@@ -301,6 +303,7 @@ the keys and state gone.
 | [docs/BUILDER_FEE.md](docs/BUILDER_FEE.md) | the fee is waived; revoking a 0.4.0 approval; how it works if it returns |
 | [docs/strategy/OIL_RULES.md](https://github.com/Julian-dev28/pathiel/blob/main/docs/strategy/OIL_RULES.md) | the rules every oil bracket must pass, and what is not known |
 | [docs/overhaul/MCP.md](https://github.com/Julian-dev28/pathiel/blob/main/docs/overhaul/MCP.md) | all 30 public tools, and the operator's 60 |
+| [services/research_mcp/README.md](https://github.com/Julian-dev28/pathiel/blob/main/services/research_mcp/README.md) | the research MCP: a free, read-only, keyless second plugin (`/plugin install pathiel-research@pathiel`) for levels, catalysts, headlines, prediction-market odds, FRED series and pathiel's stored desk theses; no key, no account, no order, ever |
 | [docs/PRIVACY.md](https://github.com/Julian-dev28/pathiel/blob/main/docs/PRIVACY.md) | the research pool: what is public, what is not, how to join, leave and come back |
 | [Scoreboard](https://julian-dev28.github.io/pathiel/scoreboard/) | the research pool's public, graded results |
 | [SECURITY.md](SECURITY.md) | where keys live, what pathiel never does, how to report a problem |
