@@ -6,24 +6,17 @@ All notable changes to pathiel. The format follows
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-21
+
 ### Security
 
-- A main account key set as the trading key is refused. On a public install
-  the live-money tools refuse when the signing key's address is your
-  `HYPERLIQUID_MASTER_ADDRESS` or Hyperliquid reports it as a main account,
-  and `state` says "Trading: BLOCKED". Use an API wallet key, which can
-  trade and never withdraw.
-- No pathiel process loads `HYPERLIQUID_MASTER_PRIVATE_KEY` unless it signs
-  with it. The MCP server, the dashboard and the desk scripts skip it; the
-  scripts that need it ask for it at a hidden prompt when it is not in the
-  env file.
-- Every `claude` process pathiel starts runs without keys, tokens or
-  passwords in its environment, so a prompt injection in a news headline
-  finds nothing to steal.
-- Code scanning fixes: a post filter in the headline watch could backtrack
-  exponentially on a crafted post (now linear); the desk page escapes the
-  desk id it echoes; HTTP answers name a failure's exception class and keep
-  its text in the log; the Telegram webhook check matches the host exactly.
+- The order tools leave alone what pathiel did not place. Every order now
+  carries a pathiel client order id (`cloid`), and `close_position`,
+  `set_stop`, `set_target`, `cancel_order`, `place_bracket` with `add` and
+  `sweep_brackets` refuse to act on a position or order you placed
+  yourself (in the Hyperliquid app, or any other way) unless the call
+  passes `operator_override: true`. `sweep_brackets` only reports on such a
+  position. A failed ownership read refuses rather than guesses.
 
 ### Added
 
@@ -54,6 +47,50 @@ All notable changes to pathiel. The format follows
 - The event calendar and the headline watcher cover the S&P: FOMC, CPI and
   the monthly jobs report hold new entries, and megacap earnings rows can
   be added with coins `sp500`.
+- `scripts/glama_health.py` (maintainers): Glama's maintenance data for the
+  server next to GitHub's own Dependabot, code scanning and CI state, so an
+  "unavailable" line on Glama traces to a GitHub setting or to the Glama AI
+  app not being installed on the repo.
+
+### Changed
+
+- The README opens with the two ways pathiel works out of the box:
+  research only (no account, no key) and research plus trading (an API
+  wallet connected with one signature), and lists all four desk briefs.
+
+### Fixed
+
+- The Levels-card route tests pinned the event-blackout clock. They read
+  the real clock and went red on weekends, inside the oil weekend window.
+
+## [0.7.2] - 2026-11-17
+
+### Security
+
+- A main account key set as the trading key is refused. On a public install
+  the live-money tools refuse when the signing key's address is your
+  `HYPERLIQUID_MASTER_ADDRESS` or Hyperliquid reports it as a main account,
+  and `state` says "Trading: BLOCKED". Use an API wallet key, which can
+  trade and never withdraw.
+- No pathiel process loads `HYPERLIQUID_MASTER_PRIVATE_KEY` unless it signs
+  with it. The MCP server, the dashboard and the desk scripts skip it; the
+  scripts that need it ask for it at a hidden prompt when it is not in the
+  env file.
+- Every `claude` process pathiel starts runs without keys, tokens or
+  passwords in its environment, so a prompt injection in a news headline
+  finds nothing to steal.
+- Code scanning fixes: a post filter in the headline watch could backtrack
+  exponentially on a crafted post (now linear); the desk page escapes the
+  desk id it echoes; HTTP answers name a failure's exception class and keep
+  its text in the log; the Telegram webhook check matches the host exactly.
+
+### Added
+
+- `scripts/master_key_to_keychain.py` (macOS, maintainers): moves
+  `HYPERLIQUID_MASTER_PRIVATE_KEY` from the env file into the login Keychain.
+  It stores the key through `security -i` on stdin, reads it back and
+  compares before it removes the line, and never prints the key. The README
+  and `docs/SECRETS.md` show how to pass it to one `treasury.py` command.
 - `close_position` takes an optional `fraction` (0.5 closes half). A partial
   close keeps the stop and target, which are reduce-only and still cover
   what is left; the full close cancels them as before.
@@ -66,6 +103,19 @@ All notable changes to pathiel. The format follows
   then `place_bracket`). The server instructions say the same in four lines.
 - The public instructions cap is 3000 characters (was 2500), so a long
   trading or fee line can never cut the LIVE MONEY rule off the end.
+
+### Fixed
+
+- A take-profit or stop placed for the whole position (Hyperliquid's app
+  sends it with size 0) now counts as covering the position. `sweep_brackets`
+  and the positions view read such a stop as covering nothing, and the desk
+  tick answers an uncovered position with a close.
+- Polymarket markets past their end date no longer reach the thesis or the
+  odds watcher. One listed as open eight days after it ended woke the oil
+  desk and fed a thesis rewrite.
+- A new thesis must pay at least 2R, the floor `place_bracket` enforces. The
+  prompt and validator asked for 1.5R, so a thesis between 1.5R and 2R passed
+  and was then refused when placed.
 
 ## [0.7.1] - 2026-11-14
 
@@ -395,7 +445,9 @@ builder fee, and listing metadata for the MCP directories. Release notes:
 - First Claude Code plugin release: the MCP server, the desk-tick skill and
   `/pathiel:setup`, installed from this repo. Mainnet only.
 
-[Unreleased]: https://github.com/Julian-dev28/pathiel/compare/v0.7.1...HEAD
+[Unreleased]: https://github.com/Julian-dev28/pathiel/compare/v0.7.2...HEAD
+[0.8.0]: https://github.com/Julian-dev28/pathiel/releases/tag/v0.8.0
+[0.7.2]: https://github.com/Julian-dev28/pathiel/releases/tag/v0.7.2
 [0.7.1]: https://github.com/Julian-dev28/pathiel/releases/tag/v0.7.1
 [0.7.0]: https://github.com/Julian-dev28/pathiel/releases/tag/v0.7.0
 [0.6.0]: https://github.com/Julian-dev28/pathiel/releases/tag/v0.6.0

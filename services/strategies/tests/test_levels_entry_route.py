@@ -11,6 +11,8 @@ test_next_trade.py's own route test.
 """
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -35,6 +37,13 @@ def client(stub_live_analytics, monkeypatch):
     # and this test fixes that explicitly rather than depending on a
     # config read nobody here controls.
     monkeypatch.setattr(strategies_api.next_trade_mod, "entry_delay_for", lambda coin: None)
+    # event_blackout() reads the real clock. On 2026-11-21 (a Saturday, in the
+    # oil weekend window) every status here came back "blackout" with no code
+    # change. Pin a quiet weekday minute, Wed 2026-11-18 10:08Z (the tick this
+    # fixture's numbers come from); the EIA-window test sets its own time.
+    from services.strategies import event_blackout as _EB
+    _quiet = int(datetime(2026, 11, 18, 10, 8, tzinfo=timezone.utc).timestamp() * 1000)
+    monkeypatch.setattr(_EB, "now_ms", lambda: _quiet)
     monkeypatch.setattr("pathiel.client.exchange.get_max_leverage", lambda coin: 20)
     monkeypatch.setattr(strategies_api.levels, "summarize_coin", lambda coin: {
         "mid": MID, "range_24h": {"low": LOW, "high": HIGH}, "atr14_1h": ATR})
