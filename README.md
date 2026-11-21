@@ -6,7 +6,7 @@
 [![pathiel MCP server – quality and maintenance score on Glama](https://glama.ai/mcp/servers/Julian-dev28/pathiel/badges/score.svg)](https://glama.ai/mcp/servers/Julian-dev28/pathiel)
 [![Listed on mcpservers.org](https://mcpservers.org/badge.svg)](https://mcpservers.org/servers/julian-dev28/pathiel)
 [![pathiel MCP on mcprush](https://mcprush.com/badge/pathiel-mcp/score.svg)](https://mcprush.com/to/pathiel-mcp?ref=badge)
-[![Version 0.7.2](https://img.shields.io/badge/version-0.7.2-informational.svg)](https://github.com/Julian-dev28/pathiel/blob/main/CHANGELOG.md)
+[![Version 0.8.0](https://img.shields.io/badge/version-0.8.0-informational.svg)](https://github.com/Julian-dev28/pathiel/blob/main/CHANGELOG.md)
 [![MCP server](https://img.shields.io/badge/MCP-30_tools-6f42c1.svg)](https://github.com/Julian-dev28/pathiel/blob/main/docs/overhaul/MCP.md)
 [![CI](https://github.com/Julian-dev28/pathiel/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Julian-dev28/pathiel/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -20,8 +20,17 @@
 ## What it does
 
 pathiel is a free, open-source Hyperliquid MCP server and Claude Code plugin: 30 tools that read Hyperliquid perpetual futures (perps) markets and your account, and place orders, from Claude Code, Claude Desktop, Cursor or any MCP client.
-Every trade is one bracket order: an entry, a stop-loss and a take-profit target, sized from your risk profile (3x and 1% of equity per trade by default).
-Desk briefs for crude oil (Brent and WTI) and metals (gold and silver) on Hyperliquid's HIP-3 markets give Claude a written call to trade from; nothing trades unless you ask.
+It works out of the box for research with no account and no key; add a Hyperliquid API wallet and every trade is one bracket order (entry, stop-loss, take-profit) sized from your risk profile (3x and 1% of equity per trade by default).
+Desk briefs for crude oil (Brent and WTI), metals (gold and silver), the S&P 500 and HYPE give Claude a written call to research or trade from; nothing trades unless you ask.
+
+## Research only, or research and trading
+
+| | what you get | what you need |
+|---|---|---|
+| **Research only** | market data, order books, funding, candles, desk briefs with a written call, any wallet's positions read-only | nothing: no account, no key |
+| **Research and trading** | all of the above, plus bracket orders sized from your risk profile | a Hyperliquid API wallet, connected with one signature |
+
+pathiel never touches a position or order you placed yourself unless you say so in that call.
 
 ## Install in 30 seconds
 
@@ -98,9 +107,10 @@ other account.
 
 The oil desk is the one active desk on a fresh install. It trades Brent
 (`xyz:BRENTOIL`) on mainnet, and WTI (`xyz:CL`) on testnet, where Brent is
-not listed. The metals desk (gold, silver) is registered and off by default;
-`get_desk_brief` still reads it. The rules each bracket must pass are in
-[docs/strategy/OIL_RULES.md](https://github.com/Julian-dev28/pathiel/blob/main/docs/strategy/OIL_RULES.md).
+not listed. The metals desk (gold, silver), the S&P 500 desk (`sp500`,
+`xyz:SP500`) and the HYPE desk (`hype`, `HYPE`) are registered and off by
+default; `get_desk_brief` still reads them. The rules each bracket must pass
+are in [docs/strategy/OIL_RULES.md](https://github.com/Julian-dev28/pathiel/blob/main/docs/strategy/OIL_RULES.md).
 
 ## Before you trade
 
