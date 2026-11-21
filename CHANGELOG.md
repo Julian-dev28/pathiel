@@ -6,6 +6,18 @@ All notable changes to pathiel. The format follows
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-21
+
+### Security
+
+- The order tools leave alone what pathiel did not place. Every order now
+  carries a pathiel client order id (`cloid`), and `close_position`,
+  `set_stop`, `set_target`, `cancel_order`, `place_bracket` with `add` and
+  `sweep_brackets` refuse to act on a position or order you placed
+  yourself (in the Hyperliquid app, or any other way) unless the call
+  passes `operator_override: true`. `sweep_brackets` only reports on such a
+  position. A failed ownership read refuses rather than guesses.
+
 ### Added
 
 - A HYPE desk, `hype`, trading HYPE (Hyperliquid's own token, main dex)
@@ -39,6 +51,17 @@ All notable changes to pathiel. The format follows
   server next to GitHub's own Dependabot, code scanning and CI state, so an
   "unavailable" line on Glama traces to a GitHub setting or to the Glama AI
   app not being installed on the repo.
+
+### Changed
+
+- The README opens with the two ways pathiel works out of the box:
+  research only (no account, no key) and research plus trading (an API
+  wallet connected with one signature), and lists all four desk briefs.
+
+### Fixed
+
+- The Levels-card route tests pinned the event-blackout clock. They read
+  the real clock and went red on weekends, inside the oil weekend window.
 
 ## [0.7.2] - 2026-11-17
 
@@ -423,6 +446,7 @@ builder fee, and listing metadata for the MCP directories. Release notes:
   `/pathiel:setup`, installed from this repo. Mainnet only.
 
 [Unreleased]: https://github.com/Julian-dev28/pathiel/compare/v0.7.2...HEAD
+[0.8.0]: https://github.com/Julian-dev28/pathiel/releases/tag/v0.8.0
 [0.7.2]: https://github.com/Julian-dev28/pathiel/releases/tag/v0.7.2
 [0.7.1]: https://github.com/Julian-dev28/pathiel/releases/tag/v0.7.1
 [0.7.0]: https://github.com/Julian-dev28/pathiel/releases/tag/v0.7.0
