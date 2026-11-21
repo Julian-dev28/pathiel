@@ -259,19 +259,35 @@ def merge(curated: Dict[str, Any], overlay: Dict[str, Any]) -> Dict[str, Any]:
 _CACHE: Dict[Tuple[str, str], Tuple[Tuple[Any, Any], Dict[str, Any]]] = {}
 
 
-def load(path: str = DATA_PATH, overlay: Optional[str] = None) -> Dict[str, Any]:
+def load(path: str = DATA_PATH, overlay: Optional[str] = None, *,
+         use_overlay: bool = True) -> Dict[str, Any]:
     """The curated file merged with the scan overlay. Cached on both files'
     (mtime, size), so a long-running process re-reads within one call of a
-    scan writing, and never re-parses when nothing changed."""
-    overlay = overlay or overlay_path()
-    key = (path, overlay)
-    sig = (_sig(path), _sig(overlay))
+    scan writing, and never re-parses when nothing changed.
+
+    `use_overlay=False` (added for services/research_mcp, the read-only
+    research MCP) skips `overlay_path()` entirely, so this call never
+    reaches `env.state_dir()` -> `env._load_dotenv()`, which reads the
+    repo's own `.env.local` into the process environment on a checkout
+    that has one. The research MCP must never touch that file (CLAUDE.md:
+    "never open .env.local or ~/.pathiel"), so it always passes
+    `use_overlay=False` and gets the curated file only -- no 12-hour scan
+    rows, which is the right trade for an external reader anyway: the scan
+    overlay is this operator's own live state, not a published dataset."""
+    if use_overlay:
+        overlay = overlay or overlay_path()
+        key: Tuple[str, str] = (path, overlay)
+        sig = (_sig(path), _sig(overlay))
+    else:
+        key = (path, "__no_overlay__")
+        sig = (_sig(path), None)
     hit = _CACHE.get(key)
     if hit and hit[0] == sig:
         return hit[1]
     with open(path) as fh:
         curated = json.load(fh)
-    data = merge(curated, read_overlay(overlay))
+    overlay_data = read_overlay(overlay) if use_overlay else {"version": 1, "events": [], "state": {}}
+    data = merge(curated, overlay_data)
     _CACHE[key] = (sig, data)
     return data
 
@@ -347,11 +363,11 @@ def _for_coin(r: Dict[str, Any], coin: Optional[str]) -> Dict[str, Any]:
 
 
 def market_events(start_ms: int, end_ms: int, coin: Optional[str] = None,
-                  path: str = DATA_PATH) -> List[Dict[str, Any]]:
+                  path: str = DATA_PATH, *, use_overlay: bool = True) -> List[Dict[str, Any]]:
     """Every event (file rows plus the generated FOMC/CPI/OPEC+) whose time or
     blackout window touches [start_ms, end_ms), for `coin` when given, sorted
-    by time. Pure given the file."""
-    rows = [_row(e) for e in load(path)["events"]]
+    by time. Pure given the file. `use_overlay`: see load()."""
+    rows = [_row(e) for e in load(path, use_overlay=use_overlay)["events"]]
     d0 = datetime.fromtimestamp(start_ms / 1000, tz=timezone.utc).date() - timedelta(days=2)
     d1 = datetime.fromtimestamp(end_ms / 1000, tz=timezone.utc).date() + timedelta(days=2)
     rows += _generated(d0, d1)
@@ -367,9 +383,11 @@ def market_events(start_ms: int, end_ms: int, coin: Optional[str] = None,
     return sorted(out, key=lambda r: r["at_ms"])
 
 
-def blackout(coin: str, at_ms: int, path: str = DATA_PATH) -> Optional[Dict[str, Any]]:
-    """The impact-3 event window `at_ms` sits in for `coin`, or None."""
-    for r in market_events(at_ms - 3 * DAY_MS, at_ms + 3 * DAY_MS, coin, path):
+def blackout(coin: str, at_ms: int, path: str = DATA_PATH, *,
+            use_overlay: bool = True) -> Optional[Dict[str, Any]]:
+    """The impact-3 event window `at_ms` sits in for `coin`, or None.
+    `use_overlay`: see load()."""
+    for r in market_events(at_ms - 3 * DAY_MS, at_ms + 3 * DAY_MS, coin, path, use_overlay=use_overlay):
         w = r["window"]
         if w and w["start_ms"] <= at_ms < w["end_ms"]:
             return {"coin": coin, "event": r["title"], "kind": r["kind"], "start_ms": w["start_ms"],

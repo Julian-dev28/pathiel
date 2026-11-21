@@ -75,8 +75,14 @@ def active_kinds(spec: DeskSpec) -> set:
     return kinds
 
 
-def calendar_catalysts(spec: DeskSpec, now: datetime) -> List[Catalyst]:
-    """Pure, instant, no I/O — every date-rule-based catalyst in window."""
+def calendar_catalysts(spec: DeskSpec, now: datetime, *, use_overlay: bool = True) -> List[Catalyst]:
+    """Pure, instant, no I/O (given `use_overlay=False`) — every date-rule-
+    based catalyst in window, plus the curated scheduled-event rows
+    (scheduled_catalysts below). `use_overlay=False` (added for
+    services/research_mcp): see scheduled_catalysts()'s docstring — a
+    caller that must never reach services.intel.env.state_dir() (which
+    loads the repo's own .env.local) passes it through. Default True keeps
+    every existing caller's behavior unchanged."""
     start, end = desk_window(spec, now)
     kinds = active_kinds(spec)
     out: List[Catalyst] = []
@@ -94,22 +100,35 @@ def calendar_catalysts(spec: DeskSpec, now: datetime) -> List[Catalyst]:
                 kind=kind, title=title, at=rel.at_utc, importance=importance,
                 source=source, expected=expected,
             ))
-    out += scheduled_catalysts(spec, now)
+    out += scheduled_catalysts(spec, now, use_overlay=use_overlay)
     return out
 
 
-def scheduled_catalysts(spec: DeskSpec, now: datetime) -> List[Catalyst]:
+def scheduled_catalysts(spec: DeskSpec, now: datetime, *, use_overlay: bool = True) -> List[Catalyst]:
     """Rows of services/intel/data/scheduled_events.json (elections, jobs,
     PCE, OPEC/IEA monthly reports, funding deadlines, holidays...) for the
     desk's coins, in its window. Operator, 2026-11-05: the 11-03 midterms
-    were not on the calendar and Brent fell 9% on the result. Pure."""
+    were not on the calendar and Brent fell 9% on the result. Pure given
+    `use_overlay=False`.
+
+    `use_overlay=False`: skips the 12-hour scan overlay and, with it, the
+    one call in this whole module that is NOT pure — scheduled_events.
+    market_events()'s default path calls overlay_path() ->
+    services.intel.env.state_dir() -> env._load_dotenv(), which reads the
+    repo's own `.env.local` into this process's environment on a checkout
+    that has one. services/research_mcp (CLAUDE.md: "never open .env.local
+    or ~/.pathiel" for that server) always passes False and gets the
+    curated file's rows only, no scan overlay — the right trade for an
+    external reader anyway, since the scan overlay is this operator's own
+    live state, not a published dataset. Default True keeps every existing
+    caller (the live desk loop, by way of calendar_catalysts) unchanged."""
     from services.intel import scheduled_events
     coins = {i.coin for i in spec.instruments}
     start, end = desk_window(spec, now)
     t0 = int(now.timestamp() * 1000)
     t1 = int(datetime(end.year, end.month, end.day, tzinfo=timezone.utc).timestamp() * 1000)
     out: List[Catalyst] = []
-    for r in scheduled_events.market_events(t0, t1):
+    for r in scheduled_events.market_events(t0, t1, use_overlay=use_overlay):
         # Curated rows and the 12-hour scan's overlay rows; the generated
         # FOMC/CPI/OPEC+ rows already come from _CALENDAR_GENERATORS above.
         if r["origin"] not in scheduled_events.FILE_ORIGINS or not (r["coins"] & coins) or r["at_ms"] < t0:

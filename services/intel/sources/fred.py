@@ -64,6 +64,48 @@ def fetch_series(series_id: str, api_key: str) -> Tuple[Optional[List[Dict[str, 
     return data["observations"], None
 
 
+def fetch_observations(series_id: str, *, start: Optional[str] = None, end: Optional[str] = None,
+                        api_key: Optional[str] = None
+                        ) -> Tuple[Optional[List[Dict[str, Any]]], Optional[str]]:
+    """Raw FRED observations for ANY series_id, with an optional date range —
+    added for the research MCP's `fred_series` tool (services/research_mcp),
+    which lets a caller read any series its own free FRED_API_KEY can see.
+    `fetch_fred`/`fetch_series` above stay scoped to the fixed four-series,
+    5-day-change read the desks consume; this is the same http_client.fetch_json
+    call with start/end wired through, exposed as a public function instead of
+    a second ad-hoc fetch_json call site outside this module (the research MCP
+    never pokes FRED_OBSERVATIONS_URL directly).
+
+    `api_key` None (the normal case) reads FRED_API_KEY from the environment,
+    same as fetch_fred; the caller is responsible for not logging it. Missing
+    key: (None, "FRED_API_KEY_missing"), same string fetch_fred already uses,
+    so a caller can match on it without inventing a second sentinel.
+
+    With `start`/`end`, results are chronological (oldest first) and
+    uncapped by OBS_LIMIT (FRED's own default page size, 100000, applies
+    instead) -- a range query is asking for the range, not "the latest 15".
+    With neither, this is `fetch_series`'s own newest-15-observations shape."""
+    key = api_key or _api_key()
+    if not key:
+        return None, "FRED_API_KEY_missing"
+    params: Dict[str, Any] = {"series_id": series_id, "api_key": key, "file_type": "json"}
+    if start or end:
+        params["sort_order"] = "asc"
+        if start:
+            params["observation_start"] = start
+        if end:
+            params["observation_end"] = end
+    else:
+        params["sort_order"] = "desc"
+        params["limit"] = OBS_LIMIT
+    data, err = http_client.fetch_json(FRED_OBSERVATIONS_URL, params=params, timeout_s=8.0)
+    if err:
+        return None, err
+    if not isinstance(data, dict) or not isinstance(data.get("observations"), list):
+        return None, "bad_shape"
+    return data["observations"], None
+
+
 def _to_datapoint(series_id: str, observations: List[Dict[str, Any]]) -> Optional[DataPoint]:
     label, unit = SERIES[series_id]
     valid = [(o.get("date"), _safe_float(o.get("value"))) for o in observations]
@@ -108,3 +150,6 @@ def fetch_fred(spec: DeskSpec) -> Tuple[List[DataPoint], Optional[str]]:
 
 
 ATOMIC_FETCHERS = (fetch_fred,)
+
+__all__ = ["SERIES", "FRED_OBSERVATIONS_URL", "fetch_series", "fetch_observations", "fetch_fred",
+          "ATOMIC_FETCHERS"]

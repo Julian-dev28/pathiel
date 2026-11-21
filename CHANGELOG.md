@@ -6,6 +6,28 @@ All notable changes to pathiel. The format follows
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-11-21
+
+### Added
+
+- `pathiel-research`, a second plugin and MCP server in this repo: free,
+  read-only and keyless. Six tools (`research_brief`, `levels`, `events`,
+  `headlines`, `prediction_odds`, `fred_series`) for BRENTOIL, HYPE, BTC,
+  ETH and SP500, built from the same intel the trading desks read. Install:
+  `/plugin install pathiel-research@pathiel`. `fred_series` uses your own
+  free `FRED_API_KEY`; every other tool needs no key.
+
+### Changed
+
+- The privacy page describes the research server: what it reads, the local
+  usage count it keeps, and that it sends nothing off your machine.
+
+### Security
+
+- The research server cannot import order or signing code and never opens
+  `~/.pathiel` or `.env.local`; a gate test
+  (`services/research_mcp/tests/test_no_trading_imports.py`) checks both.
+
 ## [0.8.0] - 2026-11-21
 
 ### Security
@@ -446,6 +468,7 @@ builder fee, and listing metadata for the MCP directories. Release notes:
   `/pathiel:setup`, installed from this repo. Mainnet only.
 
 [Unreleased]: https://github.com/Julian-dev28/pathiel/compare/v0.7.2...HEAD
+[0.9.0]: https://github.com/Julian-dev28/pathiel/releases/tag/v0.9.0
 [0.8.0]: https://github.com/Julian-dev28/pathiel/releases/tag/v0.8.0
 [0.7.2]: https://github.com/Julian-dev28/pathiel/releases/tag/v0.7.2
 [0.7.1]: https://github.com/Julian-dev28/pathiel/releases/tag/v0.7.1
