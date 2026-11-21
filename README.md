@@ -86,6 +86,132 @@ the same default network, profile and fee rules as the plugin. Starting
 `scripts/pathiel-mcp-server.py` directly, or accepting the repo `.mcp.json`
 when you open a clone in Claude Code, is the maintainer path (see
 [Maintainer setup](#maintainer-setup)).
+
+## Plug it into your stack
+
+pathiel is two MCP servers that speak stdio, so anything that runs MCP can use them: Claude Code, Claude Desktop, Cursor, or your own agent built on the [Claude Agent SDK](https://code.claude.com/docs/en/agent-sdk/mcp).
+
+```mermaid
+flowchart LR
+    subgraph stack["Your stack"]
+        cc["Claude Code / Desktop / Cursor"]
+        sdk["Your agent<br/>(Claude Agent SDK)"]
+    end
+
+    subgraph pathiel["pathiel, on your machine"]
+        research["pathiel-research<br/>6 read-only tools, no key"]
+        trading["pathiel<br/>30 tools"]
+        gate{{"Risk gate<br/>stop, size, 2R, liquidation,<br/>your trades left alone"}}
+        keys[("~/.pathiel/.env.local<br/>API wallet key")]
+    end
+
+    cc -- "MCP stdio" --> research
+    cc -- "MCP stdio" --> trading
+    sdk -- "MCP stdio" --> research
+    sdk -- "MCP stdio" --> trading
+
+    research --> data[("Public data<br/>Hyperliquid, news,<br/>Polymarket, Kalshi, FRED")]
+    trading -- "reads" --> hl[("Hyperliquid")]
+    trading -- "orders" --> gate
+    gate -- "bracket order" --> hl
+    keys -. "signs, never leaves" .-> gate
+```
+
+Every order goes through the gate; nothing reaches the venue another way. The research server has no gate because it cannot place an order: it never imports the order or signing code.
+
+### Claude Code
+
+```bash
+# Research only: no account, no key
+claude mcp add --transport stdio --scope user pathiel-research -- \
+  /path/to/pathiel/scripts/pathiel-research-mcp.sh
+
+# Research and trading, from the published container
+claude mcp add --transport stdio --scope user pathiel -- \
+  docker run -i --rm --user "$(id -u):$(id -g)" -v "$HOME/.pathiel:/data" \
+  ghcr.io/julian-dev28/pathiel-mcp:0.9.0
+```
+
+`--scope user` makes the server available in every project; `--scope project` writes it to the repo's `.mcp.json` for your team. Everything after `--` is the server's own command. The plugin install (`/plugin install pathiel@pathiel`, `/plugin install pathiel-research@pathiel`) sets both up for you.
+
+### Claude Agent SDK
+
+Python (`pip install claude-agent-sdk`):
+
+```python
+import asyncio
+import os
+from claude_agent_sdk import query, ClaudeAgentOptions, ResultMessage
+
+PATHIEL_DIR = os.path.expanduser("~/.pathiel")
+
+options = ClaudeAgentOptions(
+    mcp_servers={
+        "pathiel-research": {"command": "/path/to/pathiel/scripts/pathiel-research-mcp.sh"},
+        "pathiel": {
+            "command": "docker",
+            "args": ["run", "-i", "--rm", "--user", f"{os.getuid()}:{os.getgid()}",
+                     "-v", f"{PATHIEL_DIR}:/data", "ghcr.io/julian-dev28/pathiel-mcp:0.9.0"],
+        },
+    },
+    # Reads are allowed; every live-money tool stays denied unless you list it.
+    allowed_tools=[
+        "mcp__pathiel-research__*",
+        "mcp__pathiel__get_desk_brief",
+        "mcp__pathiel__get_market",
+        "mcp__pathiel__size_trade",
+    ],
+)
+
+async def main():
+    async for message in query(prompt="What is the HYPE desk's call, and how big would it be for my account?", options=options):
+        if isinstance(message, ResultMessage) and message.subtype == "success":
+            print(message.result)
+
+asyncio.run(main())
+```
+
+TypeScript (`npm install @anthropic-ai/claude-agent-sdk`):
+
+```typescript
+import { query } from "@anthropic-ai/claude-agent-sdk";
+import { homedir } from "node:os";
+
+for await (const message of query({
+  prompt: "Brief me on Brent: levels, events this week, and the odds markets.",
+  options: {
+    mcpServers: {
+      "pathiel-research": { command: "/path/to/pathiel/scripts/pathiel-research-mcp.sh" },
+      pathiel: {
+        command: "docker",
+        args: ["run", "-i", "--rm", "-v", `${homedir()}/.pathiel:/data`, "ghcr.io/julian-dev28/pathiel-mcp:0.9.0"],
+      },
+    },
+    allowedTools: ["mcp__pathiel-research__*", "mcp__pathiel__get_desk_brief", "mcp__pathiel__size_trade"],
+  },
+})) {
+  if (message.type === "result" && message.subtype === "success") console.log(message.result);
+}
+```
+
+To let an agent trade, add `mcp__pathiel__place_bracket` to the allowed tools yourself. Keep `dry_run: true` in its prompt until you trust it: the gate still checks every order either way.
+
+### Any other MCP client
+
+Use the same command in the client's MCP config file:
+
+```json
+{
+  "mcpServers": {
+    "pathiel-research": { "command": "/path/to/pathiel/scripts/pathiel-research-mcp.sh" },
+    "pathiel": {
+      "command": "docker",
+      "args": ["run", "-i", "--rm", "-v", "/Users/you/.pathiel:/data", "ghcr.io/julian-dev28/pathiel-mcp:0.9.0"]
+    }
+  }
+}
+```
+
 <!-- /bundle:omit -->
 
 ## First prompts to try
