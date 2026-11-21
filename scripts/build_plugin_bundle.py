@@ -143,6 +143,10 @@ DATA_EXCLUDE = (
     "pathiel/static/*",               # the dashboard's browser assets
     "pathiel/templates/*",            # the dashboard's pages
     "services/pathiel_data_api/*",    # a separately deployed service
+    "services/research_mcp/*",        # a second, separate plugin (its own
+                                      # .claude-plugin/plugin.json, launcher
+                                      # and bundle; see
+                                      # services/research_mcp/README.md)
 )
 
 REPO_URL = "https://github.com/Julian-dev28/pathiel"

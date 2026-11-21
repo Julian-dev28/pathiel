@@ -1,0 +1,24 @@
+{
+  "name": "pathiel-research",
+  "displayName": "pathiel research",
+  "version": "0.1.0",
+  "description": "The risk-gated research layer AI agents trade through: a free, read-only, keyless MCP server with 6 tools (research_brief, events, prediction_odds, fred_series, headlines, levels) for BRENTOIL, HYPE, BTC, ETH and SP500. Hyperliquid public candles, news/RSS, Polymarket/Kalshi odds, the scheduled-event calendar, and pathiel's own stored desk thesis. Never touches a key, an account or an order.",
+  "author": {
+    "name": "Julian Martinez",
+    "url": "https://github.com/Julian-dev28"
+  },
+  "homepage": "https://julian-dev28.github.io/pathiel/",
+  "documentationUrl": "https://github.com/Julian-dev28/pathiel/blob/main/services/research_mcp/README.md",
+  "privacyPolicyUrl": "https://github.com/Julian-dev28/pathiel/blob/main/docs/PRIVACY.md",
+  "supportUrl": "https://github.com/Julian-dev28/pathiel/issues",
+  "termsOfServiceUrl": "https://github.com/Julian-dev28/pathiel/blob/main/docs/TERMS.md",
+  "repository": "https://github.com/Julian-dev28/pathiel",
+  "license": "MIT",
+  "keywords": ["research", "mcp", "claude-code", "hyperliquid", "polymarket", "kalshi", "fred", "market-research", "oil", "crypto"],
+  "mcpServers": {
+    "pathiel-research": {
+      "command": "bash",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/../../scripts/pathiel-research-mcp.sh"]
+    }
+  }
+}

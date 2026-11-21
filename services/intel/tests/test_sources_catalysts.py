@@ -127,6 +127,40 @@ def test_calendar_catalysts_ids_stable():
     assert [c.id for c in a] == [c.id for c in b]
 
 
+# ── use_overlay=False: the research MCP's keyless-reader path ───────────────
+# Added for services/research_mcp, which must never reach
+# services.intel.env.state_dir() (it loads the repo's own .env.local —
+# CLAUDE.md's "never open .env.local or ~/.pathiel" hard rule for that
+# server). These pin that calendar_catalysts()/scheduled_catalysts() with
+# use_overlay=False never call it, not just that today's answer matches.
+
+def test_calendar_catalysts_use_overlay_false_never_touches_env_state_dir(monkeypatch):
+    from services.intel import env
+
+    def _boom(*a, **kw):
+        raise AssertionError("env.state_dir() must not be called when use_overlay=False")
+    monkeypatch.setattr(env, "state_dir", _boom)
+    spec = _spec(coin="xyz:BRENTOIL", label="Brent", catalyst_kinds=["eia_weekly"])
+    cats = catalysts.calendar_catalysts(spec, NOW, use_overlay=False)
+    assert isinstance(cats, list) and any(c.kind == "eia_weekly" for c in cats)
+
+
+def test_calendar_catalysts_use_overlay_false_still_includes_curated_rows():
+    """use_overlay=False drops the scan overlay, not the curated file: the
+    real desk's scheduled_events.json rows (elections, jobs, earnings...)
+    still come through."""
+    from services.strategies import desks
+    spec = desks.require_spec("oil")
+    now = datetime(2026, 10, 20, tzinfo=timezone.utc)
+    with_overlay = catalysts.calendar_catalysts(spec, now)
+    without_overlay = catalysts.calendar_catalysts(spec, now, use_overlay=False)
+    curated_kinds = {c.kind for c in without_overlay} - {"fomc", "cpi"}
+    assert curated_kinds, "scheduled_catalysts() must still contribute curated rows"
+    # Same curated rows either way (this fixture's state dir has no scan
+    # overlay to begin with, so the two calls agree on content, not just type).
+    assert {c.id for c in with_overlay} == {c.id for c in without_overlay}
+
+
 def test_calendar_catalysts_assumption_shift_sets_expected_field():
     """A generator whose note mentions an assumption/shift must surface
     that on the Catalyst's `expected` field — nothing about an unverified

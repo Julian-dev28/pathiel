@@ -131,6 +131,45 @@ def test_an_impact_3_scan_row_blocks_entries_like_a_curated_one(tmp_path, isolat
     assert S.blackout(SILVER, ms(2026, 11, 17, 23, 59)) is None
 
 
+# ── use_overlay=False: the research MCP's keyless-reader path ───────────────
+# Added for services/research_mcp, which must never call env.state_dir() (it
+# reads the repo's own .env.local -- CLAUDE.md's "never open .env.local or
+# ~/.pathiel" hard rule for that server). These pin that load()/market_events()/
+# blackout() with use_overlay=False never reach overlay_path() at all, not just
+# that they happen to return the same thing today.
+
+def test_load_use_overlay_false_never_calls_overlay_path(tmp_path, monkeypatch):
+    curated = _curated(tmp_path, [ROW])
+
+    def _boom():
+        raise AssertionError("overlay_path() must not be called when use_overlay=False")
+    monkeypatch.setattr(S, "overlay_path", _boom)
+    data = S.load(curated, use_overlay=False)
+    assert len(data["events"]) == 1 and data["scanned"] == 0
+
+
+def test_load_use_overlay_false_ignores_an_overlay_file_that_exists(tmp_path, isolated_state_dir):
+    """Even when a real scan overlay sits right where overlay_path() would
+    find it, use_overlay=False never reads it."""
+    curated = _curated(tmp_path, [ROW])
+    p = isolated_state_dir / "intel" / "scanned_events.json"
+    p.parent.mkdir(parents=True)
+    p.write_text(json.dumps({"version": 1, "state": {}, "events": [
+        dict(ROW, date="2026-11-12", event="Scanned row")]}))
+    data = S.load(curated, use_overlay=False)
+    assert len(data["events"]) == 1 and data["scanned"] == 0
+
+
+def test_market_events_and_blackout_use_overlay_false_never_call_env_state_dir(monkeypatch):
+    def _boom(*a, **kw):
+        raise AssertionError("env.state_dir() must not be called when use_overlay=False")
+    from services.intel import env
+    monkeypatch.setattr(env, "state_dir", _boom)
+    now = ms(2026, 11, 5, 11)
+    assert isinstance(S.market_events(now, now + S.DAY_MS, BRENT, use_overlay=False), list)
+    assert S.blackout(BRENT, now, use_overlay=False) is None or True  # must not raise
+
+
 # ── blackout windows ────────────────────────────────────────────────────────
 
 def test_the_real_11_03_entry_falls_inside_the_midterm_blackout():

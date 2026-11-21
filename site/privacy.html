@@ -118,8 +118,8 @@
   <h2>The research pool (opt-in)</h2>
   <p>Off by default. If you join, pathiel reads your address's already-public Hyperliquid fills on the pool coins and publishes a graded summary at least 24 hours late: your address, the date you joined, your trade counts, and a win rate, mean result, label and luck score. It never publishes your balance, open positions, single trade prices or sizes, or any key. Leaving removes your rows from the next build. Full terms: <a href="https://github.com/Julian-dev28/pathiel/blob/main/docs/PRIVACY.md">docs/PRIVACY.md</a>.</p>
 
-  <h2>Coming next (0.9)</h2>
-  <p>A keyless research server is built and lands in the next release: macro series, the event calendar, headlines and prediction-market odds, with no account and no key required to read it.</p>
+  <h2>The research server</h2>
+  <p>The separate <code>pathiel-research</code> server needs no account and no key, and cannot place an order. It reads public data: Hyperliquid's public market endpoint, news RSS feeds, Polymarket and Kalshi odds, and FRED macro series with your own free FRED key if you set one. It keeps a local count of how many times each tool was called (no arguments, no results, no identity) under <code>~/.pathiel-research</code>, and sends nothing off your machine.</p>
 
   <h2>Questions or a problem</h2>
   <p>Open a <a href="https://github.com/Julian-dev28/pathiel/issues">GitHub issue</a>, or report a security problem privately through a <a href="https://github.com/Julian-dev28/pathiel/security/advisories/new">security advisory</a>. More detail on how keys are handled: <a href="https://github.com/Julian-dev28/pathiel/blob/main/SECURITY.md">SECURITY.md</a>.</p>
@@ -129,7 +129,7 @@
   <div class="wrap status">
     <a href="https://github.com/Julian-dev28/pathiel">GitHub</a>
     <span>MIT license</span>
-    <span>Version 0.8.0</span>
+    <span>Version 0.9.0</span>
     <a href="./">Home</a>
     <a class="r" href="#top">Top</a>
   </div>

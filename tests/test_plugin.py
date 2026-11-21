@@ -40,16 +40,35 @@ def _marketplace() -> dict:
 
 def test_the_plugin_and_marketplace_names_agree_and_the_version_is_the_packages():
     """The install id is <entry name>@<marketplace name>; a mismatch between
-    the entry and the manifest is the documented way an install fails."""
+    the entry and the manifest is the documented way an install fails.
+
+    Two plugins live in this one marketplace (2026-11-20): "pathiel" (the
+    trading server, this repo's root) and "pathiel-research" (the research
+    server, services/research_mcp/ — its own deploy unit, see
+    tests/test_deploy_config.py::test_dockerfile_does_not_bundle_research_mcp).
+    Only the trading plugin's version tracks pathiel/__init__.py; the
+    research plugin is a genuinely separate product with its own version."""
     from pathiel import __version__
     m, mk = _manifest(), _marketplace()
     assert m["name"] == "pathiel"
     assert mk["name"] == "pathiel"
     entries = mk["plugins"]
-    assert len(entries) == 1 and entries[0]["name"] == m["name"]
-    assert entries[0]["source"] in ("./", "."), "this repo is the plugin; the source is its own root"
+    assert len(entries) == 2
+    by_name = {e["name"]: e for e in entries}
+    assert set(by_name) == {"pathiel", "pathiel-research"}
+
+    assert by_name["pathiel"]["name"] == m["name"]
+    assert by_name["pathiel"]["source"] in ("./", "."), "this repo is the plugin; the source is its own root"
     assert m["version"] == __version__, "bump plugin.json with pathiel/__init__.py"
     assert m["author"]["name"] and mk["owner"]["name"]
+
+    research_source = by_name["pathiel-research"]["source"]
+    assert research_source == "./services/research_mcp"
+    research_manifest = json.loads((ROOT / research_source.removeprefix("./") /
+                                    ".claude-plugin" / "plugin.json").read_text())
+    assert research_manifest["name"] == "pathiel-research" == by_name["pathiel-research"]["name"]
+    assert re.fullmatch(r"\d+\.\d+\.\d+", research_manifest["version"])
+    assert research_manifest["author"]["name"]
 
 
 def test_the_plugin_manifest_has_no_component_paths_outside_the_defaults():

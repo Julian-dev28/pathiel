@@ -186,7 +186,7 @@ def network_defaults() -> List[Tuple[str, bool]]:
 
 def test_versions_agree_everywhere():
     sources = version_sources()
-    assert {v for _, v in sources} == {"0.8.0"}, sources
+    assert {v for _, v in sources} == {"0.9.0"}, sources
     assert oci_package()["identifier"].endswith(":" + package_version())
 
 
@@ -269,10 +269,14 @@ def test_manifests_carry_discovery_keywords_and_category():
 
 
 def test_manifest_key_set_unchanged():
+    """Two entries since 2026-11-20 (the research MCP plugin joined the
+    trading one): every entry still has exactly MARKET_ENTRY_KEYS, whatever
+    the count."""
     plugin, market = _json(PLUGIN_JSON), _json(MARKET_JSON)
     assert set(plugin) == PLUGIN_KEYS
     assert set(market) == MARKET_KEYS
-    assert len(market["plugins"]) == 1 and set(market["plugins"][0]) == MARKET_ENTRY_KEYS
+    assert len(market["plugins"]) == 2
+    assert all(set(entry) == MARKET_ENTRY_KEYS for entry in market["plugins"])
     assert plugin["mcpServers"] == {"pathiel": {"command": "bash",
                                                 "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/pathiel-mcp.sh"]}}
     assert sorted(p.name for p in (ROOT / ".claude-plugin").iterdir()) == \
