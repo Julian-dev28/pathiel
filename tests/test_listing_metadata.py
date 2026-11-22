@@ -320,3 +320,16 @@ def test_listing_urls_point_at_files_that_exist_and_terms_say_what_matters(copy_
                  "never withdraw", "charges no fee", "opt-in"):
         assert must in terms, must
     assert copy_lint.style_hits(terms) == [] and copy_lint.claim_hits(terms) == []
+
+
+def test_research_plugin_privacy_url_matches_the_trading_one():
+    """services/research_mcp/.claude-plugin/plugin.json shares the same
+    hosted privacy page (site/privacy.html has its own "The research
+    server" section) instead of the old docs/PRIVACY.md repo-blob link,
+    which described only the trading server's keys."""
+    research = _json(ROOT / "services" / "research_mcp" / ".claude-plugin" / "plugin.json")
+    plugin = _json(PLUGIN_JSON)
+    assert research["privacyPolicyUrl"] == plugin["privacyPolicyUrl"] == \
+        "https://julian-dev28.github.io/pathiel/privacy.html"
+    privacy_text = (ROOT / "site" / "privacy.html").read_text(encoding="utf-8")
+    assert "pathiel-research" in privacy_text and "research server" in privacy_text.lower()

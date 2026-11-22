@@ -44,7 +44,7 @@ SERVER_NAME = "pathiel-research"
 # cert-bundle patch, PATHIA_*/PATHIEL_* environment mirroring) that this
 # server has no reason to carry, and importing it would be one more thing
 # tests/test_no_trading_imports.py's reviewer has to re-check stays clean.
-SERVER_VERSION = "0.1.0"
+SERVER_VERSION = "0.2.0"
 
 SERVER_INSTRUCTIONS = (
     "pathiel research: the risk-gated research layer AI agents trade through. Read-only and "
