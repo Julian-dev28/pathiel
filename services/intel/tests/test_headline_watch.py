@@ -302,6 +302,37 @@ def test_expired_odds_market_never_alerts_and_is_forgotten():
     assert len(HW.odds_alerts("oil", [live], prev, end_ms + 7 * 86_400_000)) == 1
 
 
+def test_thin_odds_market_never_alerts_and_is_forgotten():
+    """2026-11-22: "Will Hyperliquid reach $76 in November?" had $146 of
+    lifetime volume; one small trade moved it 19% -> 45% and woke the HYPE
+    desk. Under the volume floor a jump is noise, so it never alerts."""
+    prev = {"t": 0.19}
+    thin = {"id": "t", "question": "Will Hyperliquid reach $76 in November?",
+            "probability": 0.45, "volume_usd": 146.55}
+    assert HW.odds_alerts("hype", [thin], prev, NOW_MS) == []
+    assert "t" not in prev            # forgotten, so it cannot fire on a later poll either
+
+
+def test_liquid_odds_market_still_alerts_at_the_floor():
+    prev = {"l": 0.19}
+    liquid = {"id": "l", "question": "Will Hyperliquid reach $76 in November?",
+              "probability": 0.45, "volume_usd": HW.ODDS_ALERT_MIN_VOLUME_USD}
+    out = HW.odds_alerts("hype", [liquid], prev, NOW_MS)
+    assert len(out) == 1 and "19% -> 45%" in out[0]["title"]
+
+
+def test_odds_row_without_volume_alerts_as_before():
+    prev = {"n": 0.19}
+    row = {"id": "n", "question": "Will Hyperliquid reach $76 in November?", "probability": 0.45}
+    assert len(HW.odds_alerts("hype", [row], prev, NOW_MS)) == 1
+
+
+def test_the_floor_sits_between_thin_hype_markets_and_typical_oil_ones():
+    # $377 and $146: the two thin markets that woke the desk on 11-21.
+    # $40,847: the oil desk's median Polymarket market on the same day.
+    assert 377 < HW.ODDS_ALERT_MIN_VOLUME_USD < 40_847
+
+
 # ── price_shock ─────────────────────────────────────────────────────────────
 
 def _hist(start_ms, mids, step_min=1):
