@@ -61,7 +61,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Set, Tuple
+from typing import Dict, FrozenSet, Iterable, List, Optional, Set, Tuple
 
 ROOT = Path(__file__).resolve().parents[1]
 BRANCH = "plugin"
@@ -232,10 +232,20 @@ def _package_of(path: str) -> List[str]:
     return parts[:-1]
 
 
-def imports_of(path: str, source: bytes, files: Set[str]) -> Set[str]:
+def _is_forbidden(name: str, forbidden: FrozenSet[str]) -> bool:
+    return any(name == f or name.startswith(f + ".") for f in forbidden)
+
+
+def imports_of(path: str, source: bytes, files: Set[str],
+              forbidden: FrozenSet[str] = frozenset()) -> Set[str]:
     """Repo files `path` imports: every Import/ImportFrom anywhere in the tree
     (lazy ones inside functions included), dotted first-party module strings,
-    and for scripts/ files, siblings imported by bare name."""
+    and for scripts/ files, siblings imported by bare name. `forbidden`
+    (dotted module names, exact or by prefix) are never resolved to a file,
+    so a shipped file's own dead/lazy import of one of them (e.g.
+    services/strategies/levels.py's `check()` importing pathiel.agents.
+    bracket, never called by services/research_mcp) cannot pull that file
+    or its own imports into the result -- see RESEARCH_FORBIDDEN_MODULES."""
     try:
         tree = ast.parse(source, filename=path)
     except SyntaxError as exc:
@@ -243,6 +253,8 @@ def imports_of(path: str, source: bytes, files: Set[str]) -> Set[str]:
     found: Set[str] = set()
 
     def add(name: str) -> None:
+        if _is_forbidden(name, forbidden):
+            return
         found.update(_module_files(name, files))
 
     for node in ast.walk(tree):
@@ -269,8 +281,10 @@ def imports_of(path: str, source: bytes, files: Set[str]) -> Set[str]:
     return found
 
 
-def closure(entries: Iterable[str], files: Dict[str, Tuple[str, str]]) -> Set[str]:
-    """Every .py file reachable from `entries`, with each package's __init__."""
+def closure(entries: Iterable[str], files: Dict[str, Tuple[str, str]],
+           forbidden: FrozenSet[str] = frozenset()) -> Set[str]:
+    """Every .py file reachable from `entries`, with each package's __init__.
+    `forbidden` is passed straight through to imports_of()."""
     names = set(files)
     seen: Set[str] = set()
     todo = [e for e in entries]
@@ -287,7 +301,8 @@ def closure(entries: Iterable[str], files: Dict[str, Tuple[str, str]]) -> Set[st
                 init = "/".join(parts[:i]) + "/__init__.py"
                 if init in names and init not in seen:
                     todo.append(init)
-            todo.extend(p for p in imports_of(path, blobs[files[path][1]], names) if p not in seen)
+            todo.extend(p for p in imports_of(path, blobs[files[path][1]], names, forbidden)
+                       if p not in seen)
     return seen
 
 
@@ -414,8 +429,8 @@ def _rev(name: str) -> Optional[str]:
     return out.stdout.strip() or None
 
 
-def publish(ref: str, push: bool) -> str:
-    """Commit the bundle of ref onto the `plugin` branch. Returns its sha."""
+def _publish_guard(ref: str) -> None:
+    """Shared by publish() and research_publish()."""
     if ref == INDEX:
         raise SystemExit("publish needs a commit (a tag or main), not the index")
     # Inside a git hook, git exports GIT_DIR / GIT_INDEX_FILE for the repo
@@ -426,24 +441,28 @@ def publish(ref: str, push: bool) -> str:
     if hooked:
         raise SystemExit(f"publish refused: {', '.join(hooked)} is set (a git hook or a "
                          f"nested git command); run it from a plain shell")
-    tree = tree_sha(ref)
-    source = _git("rev-parse", f"{ref}^{{commit}}").strip()
+
+
+def _do_publish(branch: str, tree: str, version: str, source: str, push: bool, label: str) -> str:
+    """One commit onto `branch` whose tree is `tree`, fast-forward only.
+    Shared by publish() (BRANCH, label "plugin bundle") and research_publish()
+    (RESEARCH_BRANCH, label "research plugin bundle")."""
     if push:
-        subprocess.run(["git", "fetch", "-q", "origin", BRANCH], cwd=ROOT, capture_output=True)
-    parent = _rev(f"refs/heads/{BRANCH}") or _rev(f"refs/remotes/origin/{BRANCH}")
-    remote = _rev(f"refs/remotes/origin/{BRANCH}")
+        subprocess.run(["git", "fetch", "-q", "origin", branch], cwd=ROOT, capture_output=True)
+    parent = _rev(f"refs/heads/{branch}") or _rev(f"refs/remotes/origin/{branch}")
+    remote = _rev(f"refs/remotes/origin/{branch}")
     if parent and remote and parent != remote:
         merged = subprocess.run(["git", "merge-base", "--is-ancestor", remote, parent], cwd=ROOT)
         if merged.returncode != 0:
-            raise SystemExit(f"local {BRANCH} does not contain origin/{BRANCH}; "
-                             f"run: git branch -f {BRANCH} origin/{BRANCH}")
+            raise SystemExit(f"local {branch} does not contain origin/{branch}; "
+                             f"run: git branch -f {branch} origin/{branch}")
     if parent and _git("rev-parse", f"{parent}^{{tree}}").strip() == tree:
         commit = parent
-        if not _rev(f"refs/heads/{BRANCH}"):   # only origin/plugin had it: track it locally
-            _git("update-ref", f"refs/heads/{BRANCH}", commit, "")
-        print(f"{BRANCH}: already the bundle of {source[:7]} ({commit[:7]})", file=sys.stderr)
+        if not _rev(f"refs/heads/{branch}"):   # only origin/<branch> had it: track it locally
+            _git("update-ref", f"refs/heads/{branch}", commit, "")
+        print(f"{branch}: already the bundle of {source[:7]} ({commit[:7]})", file=sys.stderr)
     else:
-        msg = (f"plugin bundle {version_at(ref)} from {source[:12]}\n\n"
+        msg = (f"{label} {version} from {source[:12]}\n\n"
                f"Built by scripts/build_plugin_bundle.py from {source}.\n"
                f"Do not edit this branch by hand: publish again from main.\n")
         args = ["commit-tree", tree, "-m", msg] + (["-p", parent] if parent else [])
@@ -454,23 +473,197 @@ def publish(ref: str, push: bool) -> str:
         if sign == "true":
             args.insert(1, "-S")
         commit = _git(*args).strip()
-        _git("update-ref", f"refs/heads/{BRANCH}", commit, *( [parent] if parent and
-             _rev(f"refs/heads/{BRANCH}") else []))
-        print(f"{BRANCH}: {commit[:7]} = bundle {version_at(ref)} of {source[:7]}", file=sys.stderr)
+        _git("update-ref", f"refs/heads/{branch}", commit, *( [parent] if parent and
+             _rev(f"refs/heads/{branch}") else []))
+        print(f"{branch}: {commit[:7]} = bundle {version} of {source[:7]}", file=sys.stderr)
     if push:
-        _git("push", "origin", f"refs/heads/{BRANCH}:refs/heads/{BRANCH}")
-        print(f"pushed {BRANCH}", file=sys.stderr)
+        _git("push", "origin", f"refs/heads/{branch}:refs/heads/{branch}")
+        print(f"pushed {branch}", file=sys.stderr)
     return commit
 
 
-def check(ref: str, against: str) -> bool:
-    want, have = tree_sha(ref), _git("rev-parse", f"{against}^{{tree}}").strip()
-    if want == have:
-        print(f"ok: {against} holds the bundle of {ref} ({version_at(ref)})")
+def publish(ref: str, push: bool) -> str:
+    """Commit the bundle of ref onto the `plugin` branch. Returns its sha."""
+    _publish_guard(ref)
+    source = _git("rev-parse", f"{ref}^{{commit}}").strip()
+    return _do_publish(BRANCH, tree_sha(ref), version_at(ref), source, push, "plugin bundle")
+
+
+def _do_check(tree: str, version: str, ref: str, against: str, publish_cmd: str) -> bool:
+    """Shared by check() and research_check()."""
+    have = _git("rev-parse", f"{against}^{{tree}}").strip()
+    if tree == have:
+        print(f"ok: {against} holds the bundle of {ref} ({version})")
         return True
-    print(f"MISMATCH: the bundle of {ref} is tree {want[:12]}, {against} has {have[:12]}. "
-          f"Run: python3 scripts/build_plugin_bundle.py publish --ref {ref} --push", file=sys.stderr)
+    print(f"MISMATCH: the bundle of {ref} is tree {tree[:12]}, {against} has {have[:12]}. "
+          f"Run: {publish_cmd}", file=sys.stderr)
     return False
+
+
+def check(ref: str, against: str) -> bool:
+    return _do_check(tree_sha(ref), version_at(ref), ref, against,
+                     f"python3 scripts/build_plugin_bundle.py publish --ref {ref} --push")
+
+
+# ── the research bundle (services/research_mcp/) ───────────────────────────
+#
+# A second, independent plugin in this same repo: the read-only research MCP
+# server. Bundled onto its own branch, `plugin-research`, whose ROOT is a
+# self-contained plugin root -- not nested under services/research_mcp/ the
+# way the checked-in manifest sits, because Claude Code only copies a plugin
+# ENTRY's own source directory into its cache: a marketplace entry whose
+# source is the relative path "./services/research_mcp" ships none of
+# scripts/, services/intel/, services/strategies/ or contracts/, so the
+# launcher it starts cannot import the server at all (see
+# code.claude.com/docs/en/plugins/loading#in-place-and-copied-plugins: "Every
+# other marketplace plugin: ... Files outside the plugin directory aren't
+# copied"). This bundle instead ships, at ITS OWN root, every real-repo-root
+# relative file the server's import closure touches (the exact same relative
+# layout as a checkout, just a subset of files), so
+# ${CLAUDE_PLUGIN_ROOT}/scripts/pathiel-research-mcp.sh keeps working
+# whichever root it loads from -- see .claude-plugin/marketplace.json's
+# pathiel-research entry, a `github` source pinned to this branch.
+RESEARCH_BRANCH = "plugin-research"
+RESEARCH_PLUGIN_JSON_SRC = "services/research_mcp/.claude-plugin/plugin.json"
+RESEARCH_README_SRC = "services/research_mcp/README.md"
+RESEARCH_ENTRY_SCRIPTS = ("scripts/pathiel-research-mcp.py",)
+# requirements.lock: the one root lock file (scripts/pathiel-research-mcp.sh
+# pip-installs from it, same as scripts/pathiel-mcp.sh does for the trading
+# bundle). It is the full repo's lock, not a trimmed one -- same tradeoff the
+# trading bundle already makes (ship the one tested lock file, accept the
+# extra packages this server does not import, rather than maintain a second
+# lock that could drift from what CI actually runs against).
+RESEARCH_RUNTIME_FILES = ("scripts/pathiel-research-mcp.sh", "requirements.lock")
+# services/intel/data/scheduled_events.json: the one non-.py data file any
+# module in the closure actually reads (services/intel/scheduled_events.py's
+# DATA_PATH). Everything else DATA_INCLUDE allows for the trading bundle
+# (pathiel/agents/unlock_map.json, contracts/*/fixtures) is reachable only
+# through this server's own dead trading-code imports (see
+# RESEARCH_FORBIDDEN_MODULES) and ships to neither bundle.
+RESEARCH_REPO_DATA = ("services/intel/data/scheduled_events.json",)
+# Reused byte for byte at the bundle root, same path (no relocation: the
+# icon already lives at ".claude-plugin/icon.png", same relative path the
+# research bundle needs it at). This plugin's security posture (no key,
+# keeps no key, see SECURITY.md) does not apply, so that file does not ship.
+RESEARCH_LISTING_FILES = ("LICENSE", ".claude-plugin/icon.png")
+# source path -> bundle path. Every other shipped file keeps its repo path.
+RESEARCH_PATH_MAP: Dict[str, str] = {
+    RESEARCH_PLUGIN_JSON_SRC: ".claude-plugin/plugin.json",
+    RESEARCH_README_SRC: "README.md",
+}
+# services/research_mcp/tests/test_no_trading_imports.py's own
+# FORBIDDEN_MODULES (order placement and signing code), duplicated here --
+# not imported from the test, since a build script importing a test module
+# is backwards -- and pinned a superset of it by
+# tests/test_eval_plugin_bundle_research.py::
+# test_research_forbidden_modules_cover_the_servers_own_gate. "scripts.
+# pathiel-mcp-server" is that test's own documentary entry (not a valid
+# dotted module name; closure() never sees it as an import target) and is
+# left out here on purpose. "services.accounts" is added on top of that
+# test's list: it is credential/key-vault code, not itself order or signing
+# code, but a keyless, read-only server (this README: "Never touches a key,
+# an account, or an order") must not ship it either, even as dead weight
+# reached only through pathiel.client.hl_client.resolve_user_address (a
+# function this server never calls -- see levels.py's fetch_mid/fetch_candles,
+# which use fetch_all_mids/_http_post instead).
+RESEARCH_FORBIDDEN_MODULES: FrozenSet[str] = frozenset({
+    "pathiel.agents.bracket", "pathiel.agents.executor", "pathiel.client.exchange",
+    "services.strategies.next_trade", "eth_account", "hyperliquid.exchange",
+    "services.accounts",
+})
+
+
+def research_bundle_paths(files: Dict[str, Tuple[str, str]]) -> List[str]:
+    """The sorted repo (source) paths the research bundle holds. Two of them
+    (RESEARCH_PATH_MAP's keys) ship at a different bundle path; see
+    research_build()/research_tree_sha()."""
+    required = (RESEARCH_PLUGIN_JSON_SRC, RESEARCH_README_SRC) + RESEARCH_LISTING_FILES \
+        + RESEARCH_RUNTIME_FILES + RESEARCH_ENTRY_SCRIPTS
+    missing = [p for p in required if p not in files]
+    if missing:
+        raise SystemExit(f"research bundle source is missing required files: {', '.join(missing)}")
+    picked: Set[str] = {RESEARCH_PLUGIN_JSON_SRC, RESEARCH_README_SRC} | set(RESEARCH_LISTING_FILES)
+    picked |= set(RESEARCH_RUNTIME_FILES)
+    picked |= closure(RESEARCH_ENTRY_SCRIPTS, files, RESEARCH_FORBIDDEN_MODULES)
+    picked |= {p for p in files if any(fnmatch.fnmatch(p, pat) for pat in RESEARCH_REPO_DATA)}
+    return sorted(picked)
+
+
+def _research_dest(path: str) -> str:
+    return RESEARCH_PATH_MAP.get(path, path)
+
+
+def research_version_at(ref: str) -> str:
+    spec = (":" if ref == INDEX else f"{ref}:") + RESEARCH_PLUGIN_JSON_SRC
+    return json.loads(_git("show", spec))["version"]
+
+
+def _research_shipped_blobs(files: Dict[str, Tuple[str, str]], paths: List[str]) -> Dict[str, bytes]:
+    """Bundle-dest-path -> content, for the one research file that gets a
+    text transform (README.md: its one relative link outside
+    services/research_mcp/ would otherwise be dead at the bundle's new root;
+    see bundle_text())."""
+    if RESEARCH_README_SRC not in paths:
+        return {}
+    shipped, names = set(paths), set(files)
+    raw = read_blobs([files[RESEARCH_README_SRC][1]])
+    text = raw[files[RESEARCH_README_SRC][1]].decode("utf-8")
+    return {_research_dest(RESEARCH_README_SRC): bundle_text(RESEARCH_README_SRC, text, shipped,
+                                                             names).encode("utf-8")}
+
+
+def research_tree_sha(ref: str) -> str:
+    """The git tree of the research bundle built from ref. Same files, same
+    sha, with RESEARCH_PATH_MAP's relocations applied."""
+    files = ls_tree(ref)
+    paths = research_bundle_paths(files)
+    entries = {_research_dest(p): files[p] for p in paths}
+    for dest, data in _research_shipped_blobs(files, paths).items():
+        sha = subprocess.run(["git", "hash-object", "-w", "--stdin"], cwd=ROOT, input=data,
+                             capture_output=True, check=True).stdout.decode().strip()
+        entries[dest] = ("100644", sha)
+    lines = "".join(f"{entries[d][0]} {entries[d][1]}\t{d}\n" for d in sorted(entries))
+    with tempfile.TemporaryDirectory() as tmp:
+        env = dict(os.environ, GIT_INDEX_FILE=os.path.join(tmp, "index"))
+        _git("read-tree", "--empty", env=env)
+        _git("update-index", "--index-info", env=env, input_text=lines)
+        return _git("write-tree", env=env).strip()
+
+
+def research_build(ref: str, out: Path) -> List[str]:
+    """Write the research bundle's files into an empty directory (relocated
+    paths included), exec bits kept. Returns the SOURCE paths, as build()
+    does."""
+    out.mkdir(parents=True, exist_ok=True)
+    if any(out.iterdir()):
+        raise SystemExit(f"{out} is not empty")
+    files = ls_tree(ref)
+    paths = research_bundle_paths(files)
+    blobs = read_blobs(files[p][1] for p in paths)
+    changed = _research_shipped_blobs(files, paths)
+    for p in paths:
+        mode, sha = files[p]
+        dest_path = _research_dest(p)
+        dest = out / dest_path
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(changed.get(dest_path, blobs[sha]))
+        if mode == "100755":
+            dest.chmod(0o755)
+    return paths
+
+
+def research_publish(ref: str, push: bool) -> str:
+    """Commit the research bundle of ref onto the `plugin-research` branch."""
+    _publish_guard(ref)
+    source = _git("rev-parse", f"{ref}^{{commit}}").strip()
+    return _do_publish(RESEARCH_BRANCH, research_tree_sha(ref), research_version_at(ref), source,
+                       push, "research plugin bundle")
+
+
+def research_check(ref: str, against: str) -> bool:
+    return _do_check(research_tree_sha(ref), research_version_at(ref), ref, against,
+                     f"python3 scripts/build_plugin_bundle.py publish --plugin research "
+                     f"--ref {ref} --push")
 
 
 def main(argv: Optional[List[str]] = None) -> int:
@@ -479,24 +672,31 @@ def main(argv: Optional[List[str]] = None) -> int:
     for name in ("list", "tree", "build", "publish", "check"):
         p = sub.add_parser(name)
         p.add_argument("--ref", default="HEAD")
+        p.add_argument("--plugin", choices=("pathiel", "research"), default="pathiel",
+                       help="which plugin's bundle to operate on (default: pathiel)")
         if name == "build":
             p.add_argument("out", type=Path)
         if name == "publish":
             p.add_argument("--push", action="store_true")
         if name == "check":
-            p.add_argument("--against", default=f"origin/{BRANCH}")
+            p.add_argument("--against", default=None)
     a = ap.parse_args(argv)
+    research = a.plugin == "research"
+    if a.cmd == "check" and a.against is None:
+        a.against = f"origin/{RESEARCH_BRANCH if research else BRANCH}"
     if a.cmd == "list":
-        print("\n".join(bundle_paths(ls_tree(a.ref))))
+        paths = research_bundle_paths(ls_tree(a.ref)) if research else bundle_paths(ls_tree(a.ref))
+        print("\n".join(paths))
     elif a.cmd == "tree":
-        print(tree_sha(a.ref))
+        print(research_tree_sha(a.ref) if research else tree_sha(a.ref))
     elif a.cmd == "build":
-        paths = build(a.ref, a.out)
+        paths = research_build(a.ref, a.out) if research else build(a.ref, a.out)
         print(f"{len(paths)} files -> {a.out}", file=sys.stderr)
     elif a.cmd == "publish":
-        print(publish(a.ref, a.push))
+        print(research_publish(a.ref, a.push) if research else publish(a.ref, a.push))
     elif a.cmd == "check":
-        return 0 if check(a.ref, a.against) else 1
+        ok = research_check(a.ref, a.against) if research else check(a.ref, a.against)
+        return 0 if ok else 1
     return 0
 
 

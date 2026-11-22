@@ -1,12 +1,21 @@
 #!/usr/bin/env bash
 # The pathiel research MCP server as a Claude Code plugin entry point.
 #
-# services/research_mcp/.claude-plugin/plugin.json runs this as
-# "${CLAUDE_PLUGIN_ROOT}/../../scripts/pathiel-research-mcp.sh" (the plugin's
-# source is the services/research_mcp/ subdirectory of this same monorepo; a
-# relative-path plugin source resolves against the already-cloned repo, so
-# that ../../ reaches the repo root on disk -- see the marketplace docs on
-# relative-path plugin sources).
+# .claude-plugin/plugin.json (bundle root; the checked-in copy lives at
+# services/research_mcp/.claude-plugin/plugin.json and is relocated there by
+# scripts/build_plugin_bundle.py --plugin research) runs this as
+# "${CLAUDE_PLUGIN_ROOT}/scripts/pathiel-research-mcp.sh". Claude Code only
+# copies a plugin's OWN source directory into its cache -- a relative-path
+# marketplace entry scoped to services/research_mcp/ alone never carries
+# scripts/, services/intel/, services/strategies/ or contracts/ along with
+# it, so this file could not import the server at all (see
+# code.claude.com/docs/en/plugins/loading#in-place-and-copied-plugins). The
+# real install instead comes from the self-contained `plugin-research`
+# branch, whose root holds this same scripts/ directory alongside every
+# other file the server's import closure touches -- see
+# .claude-plugin/marketplace.json's pathiel-research entry (a `github`
+# source pinned to that branch) and build_plugin_bundle.py's own
+# RESEARCH_* constants for the exact file list.
 #
 # Deliberately does NOT source scripts/_plugin_env.sh: that file resolves
 # PATHIEL_HOME=~/.pathiel and loads the trading server's keys/config. This

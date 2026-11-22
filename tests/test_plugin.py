@@ -47,7 +47,18 @@ def test_the_plugin_and_marketplace_names_agree_and_the_version_is_the_packages(
     server, services/research_mcp/ — its own deploy unit, see
     tests/test_deploy_config.py::test_dockerfile_does_not_bundle_research_mcp).
     Only the trading plugin's version tracks pathiel/__init__.py; the
-    research plugin is a genuinely separate product with its own version."""
+    research plugin is a genuinely separate product with its own version.
+
+    pathiel-research's entry is a `github` source pinned to the
+    `plugin-research` branch (scripts/build_plugin_bundle.py --plugin
+    research), not a relative path: Claude Code only copies a relative-path
+    entry's OWN directory into the cache, so "./services/research_mcp" ships
+    none of scripts/, services/intel/, services/strategies/ or contracts/ on
+    a real (non-local) marketplace install and the server cannot start (see
+    code.claude.com/docs/en/plugins/loading#in-place-and-copied-plugins).
+    The checked-in services/research_mcp/.claude-plugin/plugin.json is bundle
+    SOURCE input only now (relocated to the branch's own .claude-plugin/
+    plugin.json byte for byte); see tests/test_plugin_bundle_research.py."""
     from pathiel import __version__
     m, mk = _manifest(), _marketplace()
     assert m["name"] == "pathiel"
@@ -63,11 +74,16 @@ def test_the_plugin_and_marketplace_names_agree_and_the_version_is_the_packages(
     assert m["author"]["name"] and mk["owner"]["name"]
 
     research_source = by_name["pathiel-research"]["source"]
-    assert research_source == "./services/research_mcp"
-    research_manifest = json.loads((ROOT / research_source.removeprefix("./") /
+    assert research_source == {"source": "github", "repo": "Julian-dev28/pathiel",
+                               "ref": "plugin-research"}
+    research_manifest = json.loads((ROOT / "services" / "research_mcp" /
                                     ".claude-plugin" / "plugin.json").read_text())
     assert research_manifest["name"] == "pathiel-research" == by_name["pathiel-research"]["name"]
     assert re.fullmatch(r"\d+\.\d+\.\d+", research_manifest["version"])
+    assert research_manifest["mcpServers"]["pathiel-research"]["args"] == \
+        ["${CLAUDE_PLUGIN_ROOT}/scripts/pathiel-research-mcp.sh"], \
+        "the args must stay inside ${CLAUDE_PLUGIN_ROOT}: see the bug this plugin shipped with " \
+        "(../../scripts/...), fixed by building a self-contained bundle instead"
     assert research_manifest["author"]["name"]
 
 
