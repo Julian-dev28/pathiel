@@ -114,6 +114,16 @@ MAX_AGE_MIN = 45
 NEWS_DEDUP_MIN_OVERLAP = 0.65
 NEWS_DEDUP_WINDOW_MIN = 180
 ODDS_JUMP = 0.08
+# An odds jump alerts only on a market with at least this much lifetime
+# volume (2026-11-22). Overnight 11-21 two thin HYPE markets woke the desk and
+# forced thesis rewrites: "Will Hyperliquid reach $76 in November?" ($146 of
+# volume in total) went 19% -> 45%, and "$88 in November?" ($377) went 4% ->
+# 27%, each on one small trade. Typical volume in the cached markets: oil
+# median $40.8k, metals $18-40k, sp500 $10.1k, hype $1.3k, btc $0.7k. $5,000
+# keeps oil's and the S&P's real markets and drops the ones a $10 bet can move.
+# The thesis still reads every market; only the alert is gated. A row with no
+# volume (a caller that does not pass it) alerts as before.
+ODDS_ALERT_MIN_VOLUME_USD = 5_000.0
 PRICE_WINDOW_MIN = 15
 # Gold 0.7% (2026-11-05, the metals desk's primary): on xyz:GOLD's 15m bars
 # of 2026-10-06..11-05 a 0.7% close-to-open move printed 4 times (1.0%: once),
@@ -880,7 +890,9 @@ def odds_alerts(group: str, odds: Iterable[Dict[str, Any]], prev: Dict[str, floa
                 now_ms: int) -> List[Dict[str, Any]]:
     """Markets whose probability moved ODDS_JUMP or more since `prev` (id ->
     probability; updated in place). odds rows: {id, question, probability, url,
-    closes_ms?}. A row whose closes_ms is at or before now_ms is past its
+    closes_ms?, volume_usd?}. A row under ODDS_ALERT_MIN_VOLUME_USD of
+    lifetime volume never alerts (2026-11-22: a $146 market moved 19% -> 45%
+    on one trade and woke the HYPE desk). A row whose closes_ms is at or before now_ms is past its
     deadline and never alerts (2026-11-16: an expired "ceasefire by November
     8?" market drifted 24% -> 32% and woke the oil desk)."""
     out = []
@@ -895,6 +907,10 @@ def odds_alerts(group: str, odds: Iterable[Dict[str, Any]], prev: Dict[str, floa
         closes_ms = o.get("closes_ms")
         if closes_ms is not None and closes_ms <= now_ms:
             prev.pop(mid, None)
+            continue
+        vol = o.get("volume_usd")
+        if vol is not None and float(vol) < ODDS_ALERT_MIN_VOLUME_USD:
+            prev.pop(mid, None)      # too thin to mean anything; never alerts
             continue
         p = float(o["probability"])
         old = prev.get(mid)
