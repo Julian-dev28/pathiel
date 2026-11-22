@@ -156,3 +156,72 @@ def test_sweep_heartbeat_unreadable_is_none():
     with open(J.sweep_path(), "w") as fh:
         fh.write("[]")
     assert J.load_sweep() is None
+
+
+# ── replay snapshots (2026-11-22) ────────────────────────────────────────
+
+def test_save_snapshot_writes_under_its_own_hash():
+    journal.save_snapshot("oil", "abc123", {"as_of": "2026-01-01", "x": 1})
+    path = journal.snapshot_path("oil", "abc123")
+    assert os.path.exists(path)
+    with open(path) as fh:
+        assert json.load(fh) == {"as_of": "2026-01-01", "x": 1}
+    assert journal.load_snapshot("oil", "abc123") == {"as_of": "2026-01-01", "x": 1}
+
+
+def test_save_snapshot_is_write_once_does_not_rewrite(monkeypatch):
+    journal.save_snapshot("oil", "dup-hash", {"v": 1})
+    import services.strategies.journal as journal_mod
+    calls = []
+    real_write = journal_mod.write_json_atomic
+
+    def spy(path, data, **kwargs):
+        calls.append(path)
+        return real_write(path, data, **kwargs)
+
+    monkeypatch.setattr(journal_mod, "write_json_atomic", spy)
+    journal.save_snapshot("oil", "dup-hash", {"v": 2})   # same hash, different payload on purpose
+    assert calls == []                                   # never even attempted a second write
+    assert journal.load_snapshot("oil", "dup-hash") == {"v": 1}   # original content untouched
+
+
+def test_save_snapshot_write_failure_is_logged_not_raised(monkeypatch):
+    import services.strategies.journal as journal_mod
+
+    def boom(path, data, **kwargs):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(journal_mod, "write_json_atomic", boom)
+    journal.save_snapshot("oil", "will-fail", {"v": 1})   # must not raise
+    assert journal.load_snapshot("oil", "will-fail") is None
+
+
+def test_load_snapshot_missing_is_none():
+    assert journal.load_snapshot("oil", "never-saved") is None
+
+
+def test_load_snapshot_unreadable_is_none():
+    path = journal.snapshot_path("oil", "corrupt")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w") as fh:
+        fh.write("not json at all{")
+    assert journal.load_snapshot("oil", "corrupt") is None
+
+
+def test_prune_snapshots_deletes_only_older_than_cutoff():
+    from datetime import timedelta
+
+    journal.save_snapshot("oil", "old-one", {"v": 1})
+    journal.save_snapshot("oil", "new-one", {"v": 2})
+    old_path = journal.snapshot_path("oil", "old-one")
+    old_time = (datetime(2026, 1, 1, tzinfo=timezone.utc) - timedelta(days=10)).timestamp()
+    os.utime(old_path, (old_time, old_time))
+
+    deleted = journal.prune_snapshots(5, now=datetime(2026, 1, 1, tzinfo=timezone.utc))
+    assert deleted == {"oil": 1}
+    assert journal.load_snapshot("oil", "old-one") is None
+    assert journal.load_snapshot("oil", "new-one") == {"v": 2}
+
+
+def test_prune_snapshots_no_snapshots_dir_is_a_noop():
+    assert journal.prune_snapshots(5) == {}

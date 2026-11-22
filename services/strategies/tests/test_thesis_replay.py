@@ -99,6 +99,89 @@ def test_resolve_replay_inputs_intel_ref_also_checked():
     assert "intel_ref" in inputs.reason
 
 
+# ── resolve_replay_inputs: content-addressed snapshots (2026-11-22) ──────
+
+def test_resolve_replay_inputs_resolves_from_snapshot_with_no_live_cache_at_all():
+    """A snapshotted thesis is replayable even when the desk's "latest"
+    cache has moved on to something completely different (or was never
+    written this test run) -- the whole point of the snapshot."""
+    from services.strategies import journal
+
+    analytics = minimal_analytics("oil", mid=77.0, as_of=T0)
+    the_hash = hash_payload(analytics)
+    journal.save_snapshot("oil", the_hash, analytics.model_dump(mode="json"))
+    # the live cache is something else entirely (simulating ticks since)
+    pipeline_mod.save_analytics("oil", minimal_analytics("oil", mid=999.0, as_of=T0 + timedelta(days=5)))
+
+    thesis = make_thesis(desk_id="oil", created_at=T0).model_copy(update={
+        "analytics_ref": PayloadRef(as_of=T0, sha256=the_hash)})
+
+    inputs = R.resolve_replay_inputs("oil", thesis)
+    assert inputs.replayable is True
+    assert inputs.analytics == analytics
+    assert inputs.reason is None
+
+
+def test_resolve_replay_inputs_old_thesis_without_a_snapshot_is_still_unreplayable():
+    """Old behavior is preserved for a thesis that predates snapshotting:
+    no snapshot file, and the live cache has moved on -> unreplayable,
+    exactly as before this feature existed."""
+    from services.strategies import journal
+
+    analytics_then = minimal_analytics("oil", mid=100.0, as_of=T0)
+    pipeline_mod.save_analytics("oil", minimal_analytics("oil", mid=105.0, as_of=T0 + timedelta(days=1)))
+    thesis = make_thesis(desk_id="oil", created_at=T0).model_copy(update={
+        "analytics_ref": PayloadRef(as_of=T0, sha256=hash_payload(analytics_then))})
+
+    assert journal.load_snapshot("oil", hash_payload(analytics_then)) is None   # confirm: no snapshot
+    inputs = R.resolve_replay_inputs("oil", thesis)
+    assert inputs.replayable is False
+    assert "no longer matches" in inputs.reason
+
+
+def test_resolve_replay_inputs_rejects_a_snapshot_whose_hash_does_not_match_its_content():
+    """Hash-verified on read: a snapshot file saved under hash H, whose
+    content does NOT actually hash to H (corruption, a hand-edit, a bug
+    upstream), is never trusted -- it falls back to the live-cache check
+    exactly as if the snapshot did not exist."""
+    from services.strategies import journal
+
+    analytics = minimal_analytics("oil", mid=50.0, as_of=T0)
+    real_hash = hash_payload(analytics)
+    # saved under real_hash, but with DIFFERENT content than what actually hashes to it
+    tampered = minimal_analytics("oil", mid=999.0, as_of=T0)
+    journal.save_snapshot("oil", real_hash, tampered.model_dump(mode="json"))
+    assert hash_payload(tampered) != real_hash   # sanity: the fixture really is mismatched
+
+    # no live cache either, so the fallback also fails -> unreplayable, not silently
+    # served the tampered snapshot
+    thesis = make_thesis(desk_id="oil", created_at=T0).model_copy(update={
+        "analytics_ref": PayloadRef(as_of=T0, sha256=real_hash)})
+    inputs = R.resolve_replay_inputs("oil", thesis)
+    assert inputs.replayable is False
+    assert "no cached analytics" in inputs.reason   # fell through to the live-cache branch
+
+
+def test_resolve_replay_inputs_rejects_hash_mismatch_but_accepts_the_live_cache_underneath():
+    """Same tampered snapshot as above, but THIS time the live cache
+    happens to be the real, correct payload -- resolve_replay_inputs must
+    still fall through past the untrusted snapshot and succeed via the
+    live-cache path, not get stuck on the rejected snapshot."""
+    from services.strategies import journal
+
+    analytics = minimal_analytics("oil", mid=50.0, as_of=T0)
+    real_hash = hash_payload(analytics)
+    tampered = minimal_analytics("oil", mid=999.0, as_of=T0)
+    journal.save_snapshot("oil", real_hash, tampered.model_dump(mode="json"))
+    pipeline_mod.save_analytics("oil", analytics)   # the live cache still has the real payload
+
+    thesis = make_thesis(desk_id="oil", created_at=T0).model_copy(update={
+        "analytics_ref": PayloadRef(as_of=T0, sha256=real_hash)})
+    inputs = R.resolve_replay_inputs("oil", thesis)
+    assert inputs.replayable is True
+    assert inputs.analytics == analytics
+
+
 # ── HARD RULE: never prev / scorecard into a replayed prompt ────────────
 
 def test_build_replay_prompt_never_passes_prev_or_scorecard(monkeypatch):
@@ -319,3 +402,21 @@ def test_main_replay_records_invalid_draft_without_crashing(tmp_path):
     assert sonnet_rows[0]["unreplayable"] is False
     assert sonnet_rows[0]["parse_ok"] is False
     assert sonnet_rows[0]["direction_24h"]["outcome"] == "void"
+
+
+# ── CLI: --prune-snapshots-older-than ────────────────────────────────────
+
+def test_main_prune_snapshots_deletes_and_exits_without_requiring_models():
+    from services.strategies import journal
+
+    journal.save_snapshot("oil", "old", {"v": 1})
+    old_path = journal.snapshot_path("oil", "old")
+    old_time = (T0 - timedelta(days=200)).timestamp()
+    import os
+    os.utime(old_path, (old_time, old_time))
+    journal.save_snapshot("oil", "new", {"v": 2})
+
+    rc = R.main(["--prune-snapshots-older-than", "90"], now=T0)
+    assert rc == 0
+    assert journal.load_snapshot("oil", "old") is None
+    assert journal.load_snapshot("oil", "new") == {"v": 2}

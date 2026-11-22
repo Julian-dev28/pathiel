@@ -197,6 +197,98 @@ def test_refresh_writes_thesis_when_gate_passes_and_providers_available(
     assert pipeline.load_cached_intel("oil") is not None
 
 
+# ── replay snapshots (2026-11-22 follow-up) ─────────────────────────────
+
+def test_refresh_saves_replay_snapshots_matching_the_thesis_refs(monkeypatch, stub_live_analytics):
+    """The hook point: refresh() must persist the EXACT analytics/intel
+    payloads under the same sha256 the saved thesis's own refs carry, so
+    a later replay can resolve them by hash (services.strategies.evals.
+    thesis_replay.resolve_replay_inputs)."""
+    from contracts.strategies.models import DeskAnalytics, PayloadRef
+    from services.thesis.hashing import hash_payload
+
+    result = minimal_analytics("oil", mid=99.0)
+    stub_live_analytics(result)
+    intel = IntelPacket(desk_id="oil", as_of=NOW)
+
+    written = make_thesis(desk_id="oil", thesis_id="snap-1", instrument="xyz:BRENTOIL",
+                          scenarios=[], created_at=NOW)
+    written = written.model_copy(update={
+        "analytics_ref": PayloadRef(as_of=NOW, sha256=hash_payload(result)),
+        "intel_ref": PayloadRef(as_of=NOW, sha256=hash_payload(intel)),
+    })
+
+    def fake_resolve(path):
+        if path == pipeline.INTEL_PROVIDER_PATH:
+            return lambda spec: intel
+        if path == pipeline.THESIS_PROVIDER_PATH:
+            return lambda spec, a, i, p: written
+        raise ImportError(path)
+
+    monkeypatch.setattr(pipeline, "_resolve_provider", fake_resolve)
+    job = pipeline.refresh("oil", force=True)
+
+    assert job.state == "done"
+    saved_analytics = journal.load_snapshot("oil", written.analytics_ref.sha256)
+    assert saved_analytics is not None
+    assert DeskAnalytics.model_validate(saved_analytics) == result
+    saved_intel = journal.load_snapshot("oil", written.intel_ref.sha256)
+    assert saved_intel is not None
+    assert IntelPacket.model_validate(saved_intel) == intel
+
+
+def test_refresh_does_not_rewrite_an_existing_snapshot(monkeypatch, stub_live_analytics):
+    from contracts.strategies.models import PayloadRef
+    from services.thesis.hashing import hash_payload
+
+    result = minimal_analytics("oil", mid=99.0)
+    stub_live_analytics(result)
+    the_hash = hash_payload(result)
+    journal.save_snapshot("oil", the_hash, {"sentinel": "pre-existing, must survive"})
+
+    written = make_thesis(desk_id="oil", thesis_id="snap-2", instrument="xyz:BRENTOIL",
+                          scenarios=[], created_at=NOW).model_copy(
+        update={"analytics_ref": PayloadRef(as_of=NOW, sha256=the_hash)})
+
+    def fake_resolve(path):
+        if path == pipeline.INTEL_PROVIDER_PATH:
+            return lambda spec: None
+        if path == pipeline.THESIS_PROVIDER_PATH:
+            return lambda spec, a, i, p: written
+        raise ImportError(path)
+
+    monkeypatch.setattr(pipeline, "_resolve_provider", fake_resolve)
+    job = pipeline.refresh("oil", force=True)
+
+    assert job.state == "done"
+    assert journal.load_snapshot("oil", the_hash) == {"sentinel": "pre-existing, must survive"}
+
+
+def test_refresh_snapshot_write_failure_does_not_block_the_thesis_save(monkeypatch, stub_live_analytics):
+    result = minimal_analytics("oil", mid=99.0)
+    stub_live_analytics(result)
+    written = make_thesis(desk_id="oil", thesis_id="snap-fail-1", instrument="xyz:BRENTOIL",
+                          scenarios=[], created_at=NOW)
+
+    def fake_resolve(path):
+        if path == pipeline.INTEL_PROVIDER_PATH:
+            return lambda spec: None
+        if path == pipeline.THESIS_PROVIDER_PATH:
+            return lambda spec, a, i, p: written
+        raise ImportError(path)
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("simulated snapshot write failure")
+
+    monkeypatch.setattr(pipeline, "_resolve_provider", fake_resolve)
+    monkeypatch.setattr(journal, "save_snapshot", boom)
+    job = pipeline.refresh("oil", force=True)
+
+    assert job.state == "done"
+    saved = journal.get_thesis("oil", "snap-fail-1")
+    assert saved is not None   # the thesis itself was saved despite the snapshot write raising
+
+
 def test_load_thesis_omits_scorecard_kwarg_by_default(monkeypatch):
     """A provider stub that only takes 4 positional args (every caller
     before 2026-10-31) must keep working when the flag is off."""

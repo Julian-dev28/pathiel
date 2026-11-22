@@ -31,6 +31,10 @@ export PATHIEL_STATE_DIR="$HOME/Documents/code/pathia/.state"   # read-only arch
 # Multiple models, exported as fine-tuning records (input prompt + answer + scores):
 .venv/bin/python -m services.strategies.evals.thesis_replay \
     --desk oil --models opus,sonnet --limit 20 --export-jsonl /tmp/thesis-ft-records.jsonl
+
+# Maintenance only, off by default, never scheduled: delete snapshot files
+# older than N days, across every desk, then exit.
+.venv/bin/python -m services.strategies.evals.thesis_replay --prune-snapshots-older-than 90
 ```
 
 Every run writes `/tmp/thesis-replay/<run>/results.jsonl` (one row per
@@ -74,7 +78,68 @@ Each rate is reported with a 95% Wilson interval
 (`services.review.stats.wilson_ci`, reused unchanged) -- the same
 small-n-honest interval used elsewhere in this repo for a win rate.
 
+## Follow-up (2026-11-22): every NEW thesis is replayable
+
+The limitation below is now fixed going forward. `services.strategies.
+pipeline.save_replay_snapshots` is called from `refresh()` right before
+`journal.save_thesis(thesis)` -- the one place every production writer
+(the `refresh_desk`/`desk_refresh` MCP tools, a forced desk-tick rewrite)
+goes through. It persists the EXACT `DeskAnalytics`/`IntelPacket`
+payloads the thesis's own `analytics_ref`/`intel_ref` point at, content-
+addressed by the same sha256 the ref already carries, to
+`$PATHIEL_STATE_DIR/strategies/<desk_id>/snapshots/<sha256>.json`
+(`journal.save_snapshot`/`load_snapshot`/`prune_snapshots`).
+
+- **Write-once**: an existing file at that hash is left alone (same hash
+  implies same content -- nothing to gain from rewriting it, and most
+  refreshes that don't materially change the analytics will hit the same
+  hash as a recent prior thesis).
+- **Never blocks the thesis save**: a snapshot write failure is logged
+  and swallowed inside `journal.save_snapshot` itself, with a second
+  try/except around the whole call in `pipeline.save_replay_snapshots`
+  for good measure -- the thesis record is what matters; the snapshot is
+  a best-effort extra.
+- **Hash-verified on read**: `resolve_replay_inputs` checks the snapshot
+  FIRST, but only trusts it if re-hashing the parsed object reproduces
+  the exact sha256 named in the ref (`_load_verified_snapshot`). A
+  missing, corrupt, or (somehow) mismatched snapshot falls back to
+  today's live-"latest"-cache check, exactly as if the snapshot feature
+  did not exist -- so an old thesis written before 2026-11-22 is still
+  correctly marked `unreplayable`, never silently served the wrong data.
+
+**Typical payload size** (measured on the live archive): analytics
+~5-8KB, intel ~5-150KB (headline-heavy desks like oil/hype run toward the
+top of that range). A desk whose analytics/intel genuinely changes every
+refresh adds roughly that much new snapshot data per thesis; a desk
+ticking without a material change reuses an existing hash and adds
+nothing. At ~100 new theses this is a few MB at most, not a storage
+concern -- but `--prune-snapshots-older-than DAYS` (default: not run,
+nothing schedules it) is there for an operator who wants to reclaim the
+space for very old snapshots by hand:
+
+```
+.venv/bin/python -m services.strategies.evals.thesis_replay --prune-snapshots-older-than 90
+```
+
+**The sample-size caveat gets sharper, not weaker, from here**: the 142
+archived theses this harness grades today remain permanently
+unreplayable (their refs point at payloads that were already gone before
+this fix existed) -- they stay the free, deterministic `--dry-run`
+baseline forever. The A/B comparison (model A vs model B on the SAME
+saved inputs) only has real cases to run on once new theses accumulate
+after 2026-11-22; with 0 replayable cases on day one, expect the
+leaderboard's `unreplayable` count to fall roughly 1-for-1 with new
+theses written from here. Treat any model-vs-model read as noise until
+there are enough of them -- rule of thumb, **~100 new theses** before a
+Wilson interval on either score is narrow enough to trust, the same
+small-n caveat as the rest of this doc, just starting from a smaller base.
+
 ## Replay, and why most history is unreplayable
+
+This section describes the state as first built, and still describes every
+one of the 142 archived theses permanently (their refs point at payloads
+that were already gone before snapshotting existed) -- the follow-up
+above is what changes it for every thesis written from 2026-11-22 on.
 
 Reconstructing "the exact prompt the thesis writer used" means resolving
 `thesis.analytics_ref` / `intel_ref` (an `as_of` + a sha256,

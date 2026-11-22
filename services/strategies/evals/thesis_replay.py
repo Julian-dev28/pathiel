@@ -111,38 +111,73 @@ class ReplayInputs:
     reason: Optional[str] = None
 
 
+def _load_verified_snapshot(desk_id: str, sha256: str, model_cls):
+    """journal.load_snapshot's raw dict, parsed as `model_cls` and
+    re-hashed -- "hash-verified on read": a snapshot file is only ever
+    trusted when re-hashing the object it parses to reproduces the exact
+    sha256 named in its own filename/ref. None for a missing snapshot, a
+    file that fails to parse as `model_cls`, or (corruption, a hand-edited
+    file, a filename that does not match its own content) a hash that does
+    not match -- every one of those falls back to the live-cache check in
+    resolve_replay_inputs exactly as if no snapshot existed."""
+    raw = journal.load_snapshot(desk_id, sha256)
+    if raw is None:
+        return None
+    try:
+        obj = model_cls.model_validate(raw)
+    except Exception:  # noqa: BLE001 - an unparseable snapshot is a missing one
+        return None
+    if hash_payload(obj) != sha256:
+        return None
+    return obj
+
+
 def resolve_replay_inputs(desk_id: str, thesis: Thesis) -> ReplayInputs:
-    """Resolve `thesis.analytics_ref`/`intel_ref` against this desk's live
-    cache (services.strategies.pipeline.load_cached_analytics/intel --
-    reused unchanged, including its own contract-mismatch and wrong-
-    primaries guards). `replayable` is True only when the cache's CURRENT
-    hash equals the ref's sha256 -- the one honest test of "is this the
-    exact payload the thesis was written from", per hashing.hash_payload,
-    the same function the pipeline used to STAMP the ref in the first
-    place. No fallback, no reconstruction from candles or anything else:
-    an unreplayable case stays unreplayable rather than being fed invented
-    inputs."""
+    """Resolve `thesis.analytics_ref`/`intel_ref` back to the real payload.
+
+    Checked in order, per ref: (1) the content-addressed snapshot
+    services.strategies.pipeline.save_replay_snapshots wrote when this
+    thesis was saved (journal.load_snapshot, hash-verified by
+    `_load_verified_snapshot`) -- present for every thesis written since
+    2026-11-22; (2) services.strategies.pipeline.load_cached_analytics/
+    intel, the desk's single mutable "latest" cache -- reused unchanged,
+    including its own contract-mismatch and wrong-primaries guards, and
+    only ever a hit for the single most recent refresh on a desk that
+    has not ticked again since. `replayable` is True only when one of
+    those two actually reproduces the ref's own sha256
+    (services.thesis.hashing.hash_payload, the same function the pipeline
+    used to stamp the ref in the first place). No third fallback, no
+    reconstruction from candles or anything else: an unreplayable case
+    stays unreplayable rather than being fed invented inputs."""
     if thesis.analytics_ref is None:
         return ReplayInputs(False, reason="thesis has no analytics_ref")
-    analytics = pipeline_mod.load_cached_analytics(desk_id)
+
+    analytics = _load_verified_snapshot(desk_id, thesis.analytics_ref.sha256, DeskAnalytics)
     if analytics is None:
-        return ReplayInputs(False, reason="no cached analytics on disk for this desk "
-                                          "(analytics/latest.json missing, unreadable, or "
-                                          "built for other primaries)")
-    if hash_payload(analytics) != thesis.analytics_ref.sha256:
-        return ReplayInputs(False, reason="analytics_ref no longer matches the cached analytics on "
-                                          "disk -- the cache is a single mutable 'latest' snapshot, "
-                                          "overwritten by every refresh tick since this thesis was "
-                                          "written")
+        analytics = pipeline_mod.load_cached_analytics(desk_id)
+        if analytics is None:
+            return ReplayInputs(False, reason="no replay snapshot and no cached analytics on disk "
+                                              "for this desk (analytics/latest.json missing, "
+                                              "unreadable, or built for other primaries)")
+        if hash_payload(analytics) != thesis.analytics_ref.sha256:
+            return ReplayInputs(False, reason="no replay snapshot, and analytics_ref no longer "
+                                              "matches the cached analytics on disk -- the cache is "
+                                              "a single mutable 'latest' snapshot, overwritten by "
+                                              "every refresh tick since this thesis was written")
+
     intel: Optional[IntelPacket] = None
     if thesis.intel_ref is not None:
-        intel = pipeline_mod.load_cached_intel(desk_id)
+        intel = _load_verified_snapshot(desk_id, thesis.intel_ref.sha256, IntelPacket)
         if intel is None:
-            return ReplayInputs(False, reason="no cached intel on disk for this desk "
-                                              "(intel/latest.json missing or unreadable)")
-        if hash_payload(intel) != thesis.intel_ref.sha256:
-            return ReplayInputs(False, reason="intel_ref no longer matches the cached intel on disk "
-                                              "-- same single-'latest'-snapshot limit as analytics")
+            intel = pipeline_mod.load_cached_intel(desk_id)
+            if intel is None:
+                return ReplayInputs(False, reason="no replay snapshot and no cached intel on disk "
+                                                  "for this desk (intel/latest.json missing or "
+                                                  "unreadable)")
+            if hash_payload(intel) != thesis.intel_ref.sha256:
+                return ReplayInputs(False, reason="no replay snapshot, and intel_ref no longer "
+                                                  "matches the cached intel on disk -- same "
+                                                  "single-'latest'-snapshot limit as analytics")
     return ReplayInputs(True, analytics=analytics, intel=intel)
 
 
@@ -362,7 +397,18 @@ def main(argv: Optional[List[str]] = None, *, fetch_page: Optional[CandlePager] 
     ap.add_argument("--cache-dir", default=None, help="default: <out-root>/candle-cache")
     ap.add_argument("--export-jsonl", default=None, help="write graded, replayed cases as "
                                                           "fine-tuning records to this path")
+    ap.add_argument("--prune-snapshots-older-than", type=float, default=None, metavar="DAYS",
+                    help="maintenance only, off by default, never scheduled by this tool: delete "
+                        "replay snapshot files (journal.snapshots_dir) older than DAYS, across "
+                        "every desk, then exit without running a replay")
     args = ap.parse_args(argv)
+
+    if args.prune_snapshots_older_than is not None:
+        deleted = journal.prune_snapshots(args.prune_snapshots_older_than, now=now)
+        total = sum(deleted.values())
+        print(f"pruned {total} snapshot file(s) older than {args.prune_snapshots_older_than} day(s): "
+             f"{deleted or '{}'}")
+        return 0
 
     model_specs = [m.strip() for m in args.models.split(",") if m.strip()]
     if not args.dry_run and not model_specs:

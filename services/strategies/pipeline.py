@@ -177,6 +177,42 @@ def cached_intel_age_s(desk_id: str, *, now: Optional[float] = None) -> Optional
     return max(0.0, (time.time() if now is None else now) - mtime)
 
 
+def save_replay_snapshots(desk_id: str, result: DeskAnalytics, intel: Optional[IntelPacket],
+                          thesis: Thesis) -> None:
+    """Persist the exact analytics/intel payloads `thesis`'s own refs point
+    at, content-addressed by the same sha256 already in
+    thesis.analytics_ref/intel_ref (services.thesis.hashing.hash_payload —
+    assemble.py and fallback.py both stamp the ref from this exact `result`
+    / `intel`, so reusing the ref's own hash here instead of recomputing it
+    is not a shortcut, it IS the same value).
+
+    2026-11-22 follow-up to the thesis replay eval
+    (services.strategies.evals.thesis_replay): before this, the live cache
+    (analytics/latest.json, intel/latest.json) was the only copy of either
+    payload, overwritten every refresh tick, which made every historical
+    thesis's ref unreplayable within a tick or two of being written. Now
+    every NEW thesis's exact inputs survive under
+    strategies/<desk_id>/snapshots/<sha256>.json
+    (journal.save_snapshot — write-once, atomic, logs and swallows any
+    write failure) so resolve_replay_inputs can read them back by hash
+    long after the "latest" cache has moved on.
+
+    Called from refresh() right before journal.save_thesis(thesis) — the
+    one place every production writer (refresh_desk, desk_refresh, a
+    forced desk-tick rewrite) goes through. Never raises itself (each
+    save_snapshot call already swallows its own failure); wrapped in one
+    more try/except anyway so a bug in THIS function's own bookkeeping
+    (not the write itself) still cannot take the thesis save down with
+    it."""
+    try:
+        if thesis.analytics_ref is not None:
+            journal.save_snapshot(desk_id, thesis.analytics_ref.sha256, result.model_dump(mode="json"))
+        if thesis.intel_ref is not None and intel is not None:
+            journal.save_snapshot(desk_id, thesis.intel_ref.sha256, intel.model_dump(mode="json"))
+    except Exception as exc:  # noqa: BLE001 - replay snapshots are best-effort, never load-bearing
+        logger.warning(f"[strategies.pipeline] {desk_id}: could not save replay snapshot(s): {exc}")
+
+
 def build_and_cache_intel(spec: DeskSpec) -> Tuple[Optional[IntelPacket], Optional[str]]:
     """Rebuild and cache the intel packet alone — headlines, policy, odds,
     catalysts, hard data — without touching the thesis. refresh() still
@@ -406,6 +442,7 @@ def refresh(desk_id: str, force: bool = False,
                           message=f"thesis kept, not rewritten ({reason}): {degraded_reason}", usage=usage)
 
     thesis = thesis.model_copy(update={"primary_coins": primary_coins(spec)})
+    save_replay_snapshots(desk_id, result, intel, thesis)
     journal.save_thesis(thesis)
     usage = thesis.usage or Usage()
     if usage.duration_s is None:

@@ -3,6 +3,7 @@
 Layout, under PATHIEL_STATE_DIR:
 
     strategies/<desk_id>/theses/<thesis_id>.json
+    strategies/<desk_id>/snapshots/<sha256>.json   replay snapshots (save_snapshot)
     strategies/grade_sweep.json          the grader's heartbeat (save_sweep)
 
 `PATHIEL_STATE_DIR` is resolved at CALL time (not frozen at import), the same
@@ -13,14 +14,32 @@ save_thesis() is an upsert (same id -> same file, overwritten atomically via
 pathiel.agents.atomic_io.write_json_atomic), which is also how the grader
 attaches a Grade to a thesis after it expires: load, set .grade, save_thesis
 again.
+
+save_snapshot()/load_snapshot() (2026-11-22, the thesis replay eval's
+follow-up) are the fix for "every historical thesis's analytics_ref/
+intel_ref is unreplayable": services.strategies.pipeline.refresh() calls
+save_snapshot right before journal.save_thesis, content-addressed by the
+SAME sha256 services.thesis.hashing.hash_payload already put in the
+thesis's own ref — so a later replay
+(services.strategies.evals.thesis_replay.resolve_replay_inputs) can read
+the exact payload back by hash instead of only the single, constantly
+overwritten "latest" analytics/intel cache. Write-once (an existing file
+at that hash is never rewritten — same content, same hash, nothing to
+gain from writing it twice) and never raises (a snapshot write failure is
+logged and swallowed, never blocking or failing the thesis save it rides
+along with).
 """
 from __future__ import annotations
 
+import logging
 import os
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from contracts.strategies.models import Author, Thesis
 from pathiel.agents.atomic_io import write_json_atomic
+
+logger = logging.getLogger(__name__)
 
 _FALLBACK_STATE_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), ".state")
@@ -129,3 +148,87 @@ def all_desk_ids() -> List[str]:
         return []
     return sorted(name for name in os.listdir(base)
                  if os.path.isdir(os.path.join(base, name, "theses")))
+
+
+# ── replay snapshots: the exact payload a ref points at, by its own hash ───
+
+def snapshots_dir(desk_id: str) -> str:
+    return os.path.join(strategies_dir(), desk_id, "snapshots")
+
+
+def snapshot_path(desk_id: str, sha256: str) -> str:
+    return os.path.join(snapshots_dir(desk_id), f"{sha256}.json")
+
+
+def save_snapshot(desk_id: str, sha256: str, payload: Dict[str, Any]) -> None:
+    """Write `payload` (an analytics or intel dict, already model_dump'd)
+    to strategies/<desk_id>/snapshots/<sha256>.json, content-addressed by
+    the same sha256 services.thesis.hashing.hash_payload already computed
+    for the thesis's own ref.
+
+    Write-once: an existing file at this path is left alone (same hash
+    implies same content; there is nothing to gain, and no race to lose,
+    from overwriting it). Atomic when it does write
+    (pathiel.agents.atomic_io.write_json_atomic — temp file in the same
+    directory, then os.replace). Never raises: any failure (a read-only
+    filesystem, a full disk, a bad path) is logged and swallowed, so a
+    snapshot write NEVER blocks or fails the thesis save it rides along
+    with — the thesis itself is the record that matters; the snapshot is
+    a best-effort extra for later replay."""
+    path = snapshot_path(desk_id, sha256)
+    if os.path.exists(path):
+        return
+    try:
+        write_json_atomic(path, payload)
+    except Exception as exc:  # noqa: BLE001 - must never block or fail the thesis save
+        logger.warning(f"[journal] could not save replay snapshot {desk_id}/{sha256}: {exc}")
+
+
+def load_snapshot(desk_id: str, sha256: str) -> Optional[Dict[str, Any]]:
+    """The raw dict saved at this hash, or None if it was never saved (or
+    is unreadable) — the caller (services.strategies.evals.thesis_replay.
+    resolve_replay_inputs) re-validates and re-hashes it before trusting
+    it; this function does no validation of its own."""
+    path = snapshot_path(desk_id, sha256)
+    if not os.path.exists(path):
+        return None
+    import json
+    try:
+        with open(path) as fh:
+            raw = json.load(fh)
+    except (OSError, ValueError):
+        return None
+    return raw if isinstance(raw, dict) else None
+
+
+def prune_snapshots(older_than_days: float, *, now: Optional[datetime] = None) -> Dict[str, int]:
+    """Delete snapshot files older than `older_than_days` (by file mtime)
+    across every desk's snapshots/ dir. Returns {desk_id: n_deleted} for
+    desks that actually had something to delete. Maintenance only — this
+    module never calls it itself and nothing schedules it; an operator
+    runs it by hand via
+    `thesis_replay.py --prune-snapshots-older-than DAYS`, off by default."""
+    now = now or datetime.now(timezone.utc)
+    cutoff = now.timestamp() - older_than_days * 86400.0
+    base = strategies_dir()
+    out: Dict[str, int] = {}
+    if not os.path.isdir(base):
+        return out
+    for desk_id in os.listdir(base):
+        d = snapshots_dir(desk_id)
+        if not os.path.isdir(d):
+            continue
+        n = 0
+        for name in os.listdir(d):
+            if not name.endswith(".json"):
+                continue
+            path = os.path.join(d, name)
+            try:
+                if os.path.getmtime(path) < cutoff:
+                    os.remove(path)
+                    n += 1
+            except OSError:
+                continue
+        if n:
+            out[desk_id] = n
+    return out
